@@ -23,7 +23,14 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 // ⚙️ DATABASE SCHEMAS & MIDDLEWARE
 // ============================================================
 
-app.use(cors({ origin: CLIENT_URL, credentials: true })); // Одоо Render дээрх CLIENT_URL-ыг шууд уншина
+app.use(cors({
+  origin: function (origin, callback) {
+    // origin байхгүй үед (жишээ нь Postman) зөвшөөрөх, 
+    // эсвэл ямар ч хаягнаас ирсэн хүсэлтийг түр зөвшөөрөх
+    callback(null, true); 
+  },
+  credentials: true
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
