@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* @layer base ашиглан бүх элементийг хүчээр Montserrat болгох */
+@layer base {
+  html, body, #root, .App {
+    font-family: 'Montserrat', sans-serif !important;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Гарчиг болон font-display ангитай бүх зүйлийг мөн адил хүчээр солих */
+  h1, h2, h3, h4, h5, h6, .font-display {
+    font-family: 'Montserrat', sans-serif !important;
+    font-variant-numeric: lining-nums; /* Тоог тэгшхэн болгох тохиргоо */
+  }
+}
