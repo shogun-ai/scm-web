@@ -24,7 +24,6 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 // ============================================================
 
 app.use(cors()); // Энэ нь ямар ч хаягнаас ирэх хүсэлтийг хамгаалалтгүйгээр зөвшөөрнө
-}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
