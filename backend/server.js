@@ -16,13 +16,14 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = 'super_secret_key_change_this';
-const CLIENT_URL = process.env.NODE_ENV === 'production' ? 'https://scm-okjs.onrender.com' : 'http://localhost:5173';
+// Энэ хэсгийг ингэж өөрчил:
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 // ============================================================
 // ⚙️ DATABASE SCHEMAS & MIDDLEWARE
 // ============================================================
 
-app.use(cors({ origin: CLIENT_URL, credentials: true }));
+app.use(cors({ origin: CLIENT_URL, credentials: true })); // Одоо Render дээрх CLIENT_URL-ыг шууд уншина
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -230,7 +231,7 @@ app.post('/api/chat', async (req, res) => {
         }
         return res.json({ reply: `Сонголтоо хийнэ үү:\n\n[OPTIONS: Зээл, Итгэлцэл, Холбоо барих]` });
     } catch (e) { res.status(500).json({ message: "Error" }); }
-});
+});иүб
 // ============================================================
 // 🔐 AUTH & 2FA & ADMIN ROUTES
 // ============================================================
