@@ -11,13 +11,13 @@ import OpenAI from 'openai';
 import dotenv from 'dotenv';
 
 dotenv.config();
-
 const app = express();
-// БҮХ ЮМНЫ ДЭЭД ТАЛД - Энэ нь бусад бүх CORS тохиргоог хүчээр дарна
+
+// 1. БҮХ ЮМНЫ ДЭЭД ТАЛД - Энэ дүрэм хамгийн түрүүнд ажиллах ёстой
 app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*'); // Хаанаас ч хандсан зөвшөөрөх
+    res.header('Access-Control-Allow-Origin', '*'); 
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', '*'); // Бүх төрлийн Header (x-session-id г.м)-ийг зөвшөөрөх
+    res.header('Access-Control-Allow-Headers', '*'); 
     res.header('Access-Control-Allow-Credentials', 'true');
 
     if (req.method === 'OPTIONS') {
@@ -25,10 +25,14 @@ app.use((req, res, next) => {
     }
     next();
 });
+
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = 'super_secret_key_change_this';
-// Энэ хэсгийг ингэж өөрчил:
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+
+// 2. MIDDLEWARE - Энд давхардалгүй нэг удаа бичнэ
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // ============================================================
 // ⚙️ DATABASE SCHEMAS & MIDDLEWARE
