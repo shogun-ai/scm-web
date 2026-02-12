@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import mongoose from 'mongoose';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -14,6 +13,18 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
+// БҮХ ЮМНЫ ДЭЭД ТАЛД - Энэ нь бусад бүх CORS тохиргоог хүчээр дарна
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*'); // Хаанаас ч хандсан зөвшөөрөх
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', '*'); // Бүх төрлийн Header (x-session-id г.м)-ийг зөвшөөрөх
+    res.header('Access-Control-Allow-Credentials', 'true');
+
+    if (req.method === 'OPTIONS') {
+        return res.status(200).send();
+    }
+    next();
+});
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = 'super_secret_key_change_this';
 // Энэ хэсгийг ингэж өөрчил:
@@ -23,18 +34,18 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 // ⚙️ DATABASE SCHEMAS & MIDDLEWARE
 // ============================================================
 
-// 1. CORS сан ашиглахгүйгээр бүх хүсэлтийг гараар зөвшөөрөх
+// server.js доторх хуучин CORS кодыг ҮҮГЭЭР СОЛЬ:
 app.use((req, res, next) => {
-    // Чиний вэб сайт хаанаас ч хандсан зөвшөөрнө
+    // Бүх хаягийг (scm.mn г.м) зөвшөөрөх
     res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     // x-session-id болон бусад бүх header-ийг хүчээр зөвшөөрөх
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-id');
     res.header('Access-Control-Allow-Credentials', 'true');
 
-    // OPTIONS хүсэлт (preflight) ирвэл шууд 200 хариу өгнө
+    // OPTIONS хүсэлтэд (Preflight) шууд 200 хариу өгөх
     if (req.method === 'OPTIONS') {
-        return res.status(200).send();
+        return res.status(200).end();
     }
     next();
 });
