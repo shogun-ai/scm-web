@@ -23,18 +23,16 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 // ⚙️ DATABASE SCHEMAS & MIDDLEWARE
 // ============================================================
 
-// Энэ код нь бүх төрлийн толгой мэдээлэл болон хаягийг хүчээр зөвшөөрнө
+// 1. CORS сан ашиглахгүйгээр бүх хүсэлтийг гараар зөвшөөрөх
 app.use((req, res, next) => {
-    // 1. Бүх хаягийг зөвшөөрөх
-    res.header('Access-Control-Allow-Origin', '*');
-    
-    // 2. Бүх төрлийн үйлдлийг зөвшөөрөх
+    // Чиний вэб сайт хаанаас ч хандсан зөвшөөрнө
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    
-    // 3. ЧУХАЛ: x-session-id болон БҮХ толгой мэдээллийг зөвшөөрөх
-    res.header('Access-Control-Allow-Headers', '*'); 
-    
-    // 4. OPTIONS (Preflight) хүсэлтэд шууд 200 хариу өгөх
+    // x-session-id болон бусад бүх header-ийг хүчээр зөвшөөрөх
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-id');
+    res.header('Access-Control-Allow-Credentials', 'true');
+
+    // OPTIONS хүсэлт (preflight) ирвэл шууд 200 хариу өгнө
     if (req.method === 'OPTIONS') {
         return res.status(200).send();
     }
