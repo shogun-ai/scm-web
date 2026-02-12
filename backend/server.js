@@ -23,7 +23,19 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 // ⚙️ DATABASE SCHEMAS & MIDDLEWARE
 // ============================================================
 
-app.use(cors()); // Энэ нь ямар ч хаягнаас ирэх хүсэлтийг хамгаалалтгүйгээр зөвшөөрнө
+// Энэ код нь бүх төрлийн толгой мэдээлэл болон OPTIONS хүсэлтийг хүчээр зөвшөөрнө
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', '*'); // Бүх төрлийн Header-ийг (x-session-id г.м) шууд зөвшөөрөх
+    res.header('Access-Control-Allow-Credentials', 'true');
+    
+    if (req.method === 'OPTIONS') {
+        return res.status(200).send();
+    }
+    next();
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
