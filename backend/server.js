@@ -23,19 +23,26 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 // ⚙️ DATABASE SCHEMAS & MIDDLEWARE
 // ============================================================
 
-// Энэ код нь бүх төрлийн толгой мэдээлэл болон OPTIONS хүсэлтийг хүчээр зөвшөөрнө
+// Энэ код нь бүх төрлийн толгой мэдээлэл болон хаягийг хүчээр зөвшөөрнө
 app.use((req, res, next) => {
+    // 1. Бүх хаягийг зөвшөөрөх
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', '*'); // Бүх төрлийн Header-ийг (x-session-id г.м) шууд зөвшөөрөх
-    res.header('Access-Control-Allow-Credentials', 'true');
     
+    // 2. Бүх төрлийн үйлдлийг зөвшөөрөх
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    
+    // 3. ЧУХАЛ: x-session-id болон БҮХ толгой мэдээллийг зөвшөөрөх
+    res.header('Access-Control-Allow-Headers', '*'); 
+    
+    // 4. OPTIONS (Preflight) хүсэлтэд шууд 200 хариу өгөх
     if (req.method === 'OPTIONS') {
         return res.status(200).send();
     }
     next();
 });
 
+// Үүний ард express.json заавал байх ёстой
+app.use(express.json({ limit: '50mb' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
