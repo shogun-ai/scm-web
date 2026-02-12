@@ -35,10 +35,13 @@ const ChatBot = () => {
   ]);
 
   const messagesEndRef = useRef(null);
-  const isLocal = window.location.hostname === 'localhost';
-  const API_BASE_URL = isLocal 
+  // ChatBot.jsx доторх API_BASE_URL хэсгийг ингэж засаарай:
+const isLocal = window.location.hostname === 'localhost';
+
+// ⚠️ Render Dashboard дээрх Backend URL-ээ энд яг зөв тавь (жишээ нь: scm.onrender.com)
+const API_BASE_URL = isLocal 
   ? 'http://localhost:5000' 
-  : 'https://scm-backend.onrender.com'; // Энд заавал backend гэсэн үг байх ёстой
+  : 'https://scm-backend.onrender.com';
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -83,18 +86,18 @@ const ChatBot = () => {
       const sid = sessionIdRef.current || localStorage.getItem('scm_chat_session') || '';
 
       const res = await axios.post(
-        `${API_BASE_URL}/api/chat`,
-        {
-          sessionId: sid,
-          message: messageText,
-          history: chatHistory
-        },
-        {
-          headers: {
-            'x-session-id': sid
-          }
-        }
-      );
+  `${API_BASE_URL}/api/chat`,
+  {
+    sessionId: sid,
+    message: messageText,
+    history: chatHistory
+  },
+  {
+    headers: {
+      'x-session-id': sid
+    },
+      }
+);
 
       const aiReply = res.data?.reply ?? '';
       let cleanText = aiReply;
