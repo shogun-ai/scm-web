@@ -41,8 +41,8 @@ const isLocal = window.location.hostname === 'localhost';
 // ⚠️ Render Dashboard дээрх Backend URL-ээ энд яг зөв тавь (жишээ нь: scm.onrender.com)
 const API_BASE_URL = isLocal 
   ? 'http://localhost:5000' 
-  : 'https://scm-backend.onrender.com';
-
+  : 'https://scm-okjs.onrender.com'; // 👈 Энэ хаягийг яг ингээд бичээрэй
+  
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };

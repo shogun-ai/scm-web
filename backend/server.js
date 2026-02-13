@@ -13,16 +13,12 @@ import dotenv from 'dotenv';
 dotenv.config();
 const app = express();
 
-// 1. БҮХ ЮМНЫ ДЭЭД ТАЛД - Зөвхөн энэ кодыг үлдээгээд, доор байгаа бусад бүх CORS хэсгийг устга!
+// БҮХ ЮМНЫ ДЭЭД ТАЛД - Энэ дүрэм хамгийн түрүүнд ажиллах ёстой
 app.use((req, res, next) => {
-    // Вэб сайт хаанаас ч хандсан (scm.mn эсвэл localhost) зөвшөөрөх
     res.header('Access-Control-Allow-Origin', '*'); 
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    // x-session-id болон бусад БҮХ header-ийг зөвшөөрөх
-    res.header('Access-Control-Allow-Headers', '*'); 
-    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-session-id');
 
-    // OPTIONS (preflight) хүсэлт ирвэл шууд 200 хариу өгөөд зогсох
     if (req.method === 'OPTIONS') {
         return res.status(200).send();
     }
