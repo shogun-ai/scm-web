@@ -189,26 +189,27 @@ const AdminPanel = ({ user, onLogout }) => {
   // 🗄️ CMS FUNCTIONS
   // ============================================================
   const fetchCMSData = async () => {
-    try {
-      const [cfgRes, prodRes, teamRes, loanFormRes, trustFormRes, blogRes] = await Promise.all([
-        axios.get(`${API_URL}/api/config`),
-        axios.get(`${API_URL}/api/products/content`),
-        axios.get(`${API_URL}/api/team/all`),
-        axios.get(`${API_URL}/api/form-config/loan`),
-        axios.get(`${API_URL}/api/form-config/trust`),
-        axios.get(`${API_URL}/api/blogs?isCustom=true`),
-      ]);
-      setSiteConfig(cfgRes.data);
+    const [cfgRes, prodRes, teamRes, loanFormRes, trustFormRes, blogRes] = await Promise.allSettled([
+      axios.get(`${API_URL}/api/config`),
+      axios.get(`${API_URL}/api/products/content`),
+      axios.get(`${API_URL}/api/team/all`),
+      axios.get(`${API_URL}/api/form-config/loan`),
+      axios.get(`${API_URL}/api/form-config/trust`),
+      axios.get(`${API_URL}/api/blogs?isCustom=true`),
+    ]);
+    if (cfgRes.status === 'fulfilled') {
+      setSiteConfig(cfgRes.value.data);
       const flat = {};
-      Object.values(cfgRes.data).forEach(group => {
+      Object.values(cfgRes.value.data).forEach(group => {
         Object.entries(group).forEach(([key, obj]) => { flat[key] = obj.value; });
       });
       setConfigEdits(flat);
-      setProducts(prodRes.data);
-      setTeamMembers(teamRes.data);
-      setFormConfigs({ loan: loanFormRes.data, trust: trustFormRes.data });
-      setBlogPosts(blogRes.data || []);
-    } catch (e) { console.error('CMS fetch error', e); }
+    }
+    if (prodRes.status === 'fulfilled') setProducts(prodRes.value.data);
+    if (teamRes.status === 'fulfilled') setTeamMembers(teamRes.value.data);
+    if (loanFormRes.status === 'fulfilled' && trustFormRes.status === 'fulfilled')
+      setFormConfigs({ loan: loanFormRes.value.data, trust: trustFormRes.value.data });
+    if (blogRes.status === 'fulfilled') setBlogPosts(blogRes.value.data || []);
   };
 
   useEffect(() => {

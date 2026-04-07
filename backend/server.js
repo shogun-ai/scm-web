@@ -852,12 +852,13 @@ app.delete('/api/products/content/:key', async (req, res) => {
 
 app.put('/api/products/content/:key', async (req, res) => {
     try {
+        const { _id, __v, ...updateData } = req.body;
         await ProductContent.findOneAndUpdate(
             { productKey: req.params.key },
-            { ...req.body, updatedAt: new Date() },
+            { $set: { ...updateData, updatedAt: new Date() } },
             { new: true }
         );
-        chatbotCache = null; // cache шинэчлэх
+        chatbotCache = null;
         res.json({ message: 'Амжилттай шинэчлэгдлээ' });
     } catch (err) { res.status(500).json({ message: err.message }); }
 });

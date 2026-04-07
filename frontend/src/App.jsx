@@ -630,7 +630,7 @@ const FinancialReportsPage = ({ onBack }) => {
                         <span className="text-white font-bold text-sm">PDF Харах</span>
                         <button onClick={() => setPdfUrl(null)} className="text-white hover:text-red-400 font-bold text-lg px-4">✕ Хаах</button>
                     </div>
-                    <iframe src={pdfUrl} className="flex-1 w-full" title="PDF Viewer" />
+                    <iframe src={`https://docs.google.com/viewer?url=${encodeURIComponent(pdfUrl)}&embedded=true`} className="flex-1 w-full" title="PDF Viewer" />
                 </div>
              )}
         </div>
@@ -682,7 +682,7 @@ const PoliciesPage = ({ onBack }) => {
                         <span className="text-white font-bold text-sm">PDF Харах</span>
                         <button onClick={() => setPdfUrl(null)} className="text-white hover:text-red-400 font-bold text-lg px-4">✕ Хаах</button>
                     </div>
-                    <iframe src={pdfUrl} className="flex-1 w-full" title="PDF Viewer" />
+                    <iframe src={`https://docs.google.com/viewer?url=${encodeURIComponent(pdfUrl)}&embedded=true`} className="flex-1 w-full" title="PDF Viewer" />
                 </div>
              )}
         </div>
