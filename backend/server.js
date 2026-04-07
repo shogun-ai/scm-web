@@ -13,7 +13,6 @@ import QRCode from 'qrcode';
 import OpenAI from 'openai';
 import Parser from 'rss-parser';
 import cron from 'node-cron';
-import puppeteer from 'puppeteer';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import Stat from './models/Stat.js';
@@ -115,66 +114,43 @@ const scrapeNews = async () => {
         await Blog.deleteMany({});
         console.log("🧹 Бааз цэвэрлэгдлээ.");
 
-        const browser = await puppeteer.launch({ 
-            headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox'] 
-        });
-        const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36');
-
         const targets = [
-    { name: 'Ikon', url: 'https://ikon.mn/l/2' },
-    { name: 'Golomt', url: 'https://golomtcapital.com/news' },
-    { name: 'TavanBogd', url: 'https://tavanbogdcapital.com/news/c/662' },
-    { name: 'TDB Securities', url: 'https://www.tdbsecurities.mn/category/weekly-news' } // 👈 Нэмэгдсэн
-];
+            { name: 'Ikon', url: 'https://ikon.mn/l/2' },
+            { name: 'Golomt', url: 'https://golomtcapital.com/news' },
+            { name: 'TavanBogd', url: 'https://tavanbogdcapital.com/news/c/662' },
+            { name: 'TDB Securities', url: 'https://www.tdbsecurities.mn/category/weekly-news' }
+        ];
 
         for (const target of targets) {
             try {
                 console.log(`📡 ${target.name} руу хандаж байна...`);
-                await page.goto(target.url, { waitUntil: 'networkidle2', timeout: 60000 });
-
-                // 🧠 УХААЛАГ ХАЙЛТ: Хуудас дээрх бүх линкийг авна
-                const articles = await page.evaluate(() => {
-                    const results = [];
-                    // Бүх <a> тагуудыг шүүх
-                    const links = document.querySelectorAll('a');
-                    
-                    links.forEach(link => {
-                        const title = link.innerText.trim();
-                        const href = link.href;
-                        
-                        // Хэрэв гарчиг нь 30-аас олон тэмдэгттэй байвал мэдээ байх магадлал өндөр
-                        if (title.length > 30 && href.includes('http')) {
-                            results.push({ title, link: href });
-                        }
-                    });
-                    return results;
+                const { data: html } = await axios.get(target.url, {
+                    timeout: 30000,
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36' }
                 });
-
-                let count = 0;
-                // Давхардсан линкүүдийг арилгахын тулд Set ашиглаж болно
+                const $ = cheerio.load(html);
+                const articles = [];
+                $('a').each((_, el) => {
+                    const title = $(el).text().trim();
+                    const href = $(el).attr('href') || '';
+                    const fullHref = href.startsWith('http') ? href : (href.startsWith('/') ? new URL(href, target.url).href : '');
+                    if (title.length > 30 && fullHref.includes('http')) {
+                        articles.push({ title, link: fullHref });
+                    }
+                });
                 const uniqueArticles = [...new Map(articles.map(item => [item.link, item])).values()];
-
                 for (const art of uniqueArticles) {
                     await Blog.findOneAndUpdate(
                         { link: art.link },
-                        {
-                            title: art.title,
-                            link: art.link,
-                            source: target.name,
-                            pubDate: new Date()
-                        },
+                        { title: art.title, link: art.link, source: target.name, pubDate: new Date() },
                         { upsert: true }
                     );
-                    count++;
                 }
-                console.log(`✅ ${target.name}: ${count} мэдээ олж хадгаллаа.`);
+                console.log(`✅ ${target.name}: ${uniqueArticles.length} мэдээ олж хадгаллаа.`);
             } catch (e) {
                 console.log(`❌ ${target.name} алдаа: ${e.message}`);
             }
         }
-        await browser.close();
         console.log("🏁 Процесс дууслаа.");
     } catch (err) {
         console.error("Ерөнхий алдаа:", err);
