@@ -1,99 +1,107 @@
-import React, { useEffect } from 'react';
-import { ArrowLeft, Calendar, ArrowRight, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 
-const BlogList = ({ posts, onBack, onNavigate }) => {
-  useEffect(() => window.scrollTo(0, 0), []);
+const BlogList = ({ onBack, limit }) => {
+    const [blogs, setBlogs] = useState([]);
+    const [loading, setLoading] = useState(true);
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 pb-20">
-      
-      {/* Header */}
-      <div className="bg-[#003B5C] py-20 px-6 relative overflow-hidden">
-        <div className="absolute inset-0 bg-black/20"></div>
-        <div className="max-w-7xl mx-auto relative z-10">
-            <button 
-                onClick={onBack} 
-                className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#D4AF37] mb-6 hover:text-white transition-colors"
-            >
-                <ArrowLeft size={14} /> Нүүр хуудас руу буцах
-            </button>
-            <h1 className="text-4xl md:text-5xl font-display font-bold text-white mb-4">Мэдээ мэдээлэл</h1>
-            <p className="text-blue-100 max-w-2xl font-light">Санхүүгийн зах зээлийн сүүлийн үеийн мэдээ, манай байгууллагын үйл ажиллагааны тайлан.</p>
-        </div>
-      </div>
+    useEffect(() => {
+        const fetchBlogs = async () => {
+            try {
+                setLoading(true);
+                const baseUrl = window.location.hostname === 'localhost' 
+                    ? 'http://localhost:5000/api/blogs' 
+                    : 'https://scm-backend-okjs.onrender.com/api/blogs';
+                
+                const finalUrl = limit ? `${baseUrl}?limit=${limit}` : baseUrl;
+                const response = await axios.get(finalUrl);
+                setBlogs(response.data); 
+            } catch (err) {
+                console.error("Алдаа:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchBlogs();
+    }, [limit]);
 
-      {/* List */}
-      <div className="max-w-7xl mx-auto px-6 -mt-10 relative z-20">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {posts.map((post) => {
-                // Линк байгаа эсэхийг шалгах
-                const hasLink = post.externalLink && post.externalLink.length > 0;
+    if (loading) {
+        return (
+            <div className="flex justify-center items-center py-20 w-full">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#D4AF37]"></div>
+            </div>
+        );
+    }
 
-                return (
-                    <div key={post.id} className="bg-white rounded-2xl shadow-xl overflow-hidden hover:-translate-y-2 transition-transform duration-300 border border-gray-100 flex flex-col group">
-                        
-                        {/* Image */}
-                        <div className="h-52 overflow-hidden relative">
-                            <img src={post.image} alt={post.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                            {/* Image Overlay Link */}
-                            {hasLink && (
+    return (
+        /* 1. Дээд талаас нь зай авч (pt-24) цэсэнд даруулахаас хамгаална */
+        <div className="w-full max-w-7xl mx-auto px-4 pt-24 pb-12">
+            
+            {/* 2. Нүүр хуудас руу буцах товчийг цэвэрхэн байрлуулах */}
+            {onBack && (
+                <button 
+                    onClick={onBack}
+                    className="mb-8 flex items-center text-white/70 hover:text-[#D4AF37] transition-colors group"
+                >
+                    <span className="mr-2">←</span> 
+                    <span className="text-sm font-bold uppercase tracking-wider">Буцах</span>
+                </button>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                {blogs.map((blog, idx) => {
+                    const sourceColors = {
+                        'Ikon': 'bg-[#00A651]',
+                        'Golomt': 'bg-[#1a2e5a]',
+                        'TavanBogd': 'bg-[#ed1c24]',
+                        'TDB Securities': 'bg-[#f68b1e]'
+                    };
+
+                    return (
+                        <div key={blog._id || idx} className="bg-[#1a1a1a] border border-white/10 rounded-2xl overflow-hidden hover:border-[#D4AF37]/40 transition-all duration-300 flex flex-col h-full shadow-2xl">
+                            {/* Зургийн хэсэг */}
+                            <div className="h-48 overflow-hidden relative">
+                                <img 
+                                    src={blog.imageUrl || "https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=800&q=80"} 
+                                    alt={blog.title} 
+                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-500" 
+                                />
+                                <div className={`absolute top-4 left-4 text-white text-[10px] font-bold px-2 py-1 rounded-md shadow-lg ${sourceColors[blog.source] || 'bg-gray-600'}`}>
+                                    {blog.source}
+                                </div>
+                            </div>
+
+                            {/* Агуулгын хэсэг - Текстийг тод харагдуулах (text-white) */}
+                            <div className="p-6 flex flex-col flex-grow bg-[#1a1a1a]">
+                                <span className="text-[#D4AF37] text-[10px] font-bold uppercase mb-2">
+                                    {blog.pubDate ? new Date(blog.pubDate).toLocaleDateString('mn-MN') : 'Саяхан'}
+                                </span>
+                                
+                                {/* Гарчиг - text-white өнгө өгсөн */}
+                                <h3 className="font-bold text-base text-white mb-3 line-clamp-2 leading-snug min-h-[3rem]">
+                                    {blog.title}
+                                </h3>
+                                
+                                {/* Хураангуй - Текст харагдахгүй байвал text-gray-400 болгосон */}
+                                <p className="text-gray-400 text-xs line-clamp-3 mb-6 flex-grow leading-relaxed">
+                                    {blog.contentSnippet || "Мэдээний дэлгэрэнгүйг холбоос дээр дарж үзнэ үү."}
+                                </p>
+                                
                                 <a 
-                                    href={post.externalLink} 
+                                    href={blog.link} 
                                     target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                                    rel="noopener noreferrer" 
+                                    className="inline-flex items-center text-[#D4AF37] font-bold text-[10px] uppercase hover:gap-2 transition-all duration-300"
                                 >
-                                    <span className="text-white font-bold uppercase text-xs tracking-widest border border-white px-4 py-2 flex items-center gap-2">
-                                        Унших <ExternalLink size={12}/>
-                                    </span>
+                                    Дэлгэрэнгүй унших <span className="ml-1">↗</span>
                                 </a>
-                            )}
-                        </div>
-                        
-                        {/* Content */}
-                        <div className="p-6 flex flex-col flex-grow">
-                            <div className="flex items-center gap-2 text-xs font-bold text-[#00A651] uppercase tracking-wider mb-3">
-                                <Calendar size={14} />
-                                <span>{post.date}</span>
-                            </div>
-                            
-                            <h3 className="font-display font-bold text-xl mb-3 line-clamp-2 text-slate-800">
-                                {post.title}
-                            </h3>
-                            
-                            <p className="text-gray-500 text-sm line-clamp-3 mb-6 flex-grow">{post.excerpt}</p>
-                            
-                            {/* Buttons */}
-                            <div className="pt-4 border-t border-gray-100">
-                                {hasLink ? (
-                                    // Хэрэв FRC линк байвал <a> таг ашиглана
-                                    <a 
-                                        href={post.externalLink}
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        className="text-sm font-bold text-[#003B5C] hover:text-[#D4AF37] flex items-center gap-2 transition-colors w-fit"
-                                    >
-                                        Дэлгэрэнгүй <ExternalLink size={14} />
-                                    </a>
-                                ) : (
-                                    // Линк байхгүй бол дотоод хуудас руу
-                                    <button 
-                                        onClick={() => onNavigate('blog_detail', post)}
-                                        className="text-sm font-bold text-[#003B5C] hover:text-[#D4AF37] flex items-center gap-2 transition-colors"
-                                    >
-                                        Дэлгэрэнгүй <ArrowRight size={14} />
-                                    </button>
-                                )}
                             </div>
                         </div>
-                    </div>
-                );
-            })}
+                    );
+                })}
+            </div>
         </div>
-      </div>
-
-    </div>
-  );
+    );
 };
 
 export default BlogList;

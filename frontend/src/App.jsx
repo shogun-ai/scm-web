@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 // 1. ICON-уудыг import хийх
 import { 
   Users, TrendingUp, ShieldCheck, PieChart, Briefcase, CreditCard, 
@@ -77,36 +77,9 @@ const getImage = (onlineUrl, localVariable) => {
 };
 
 // ======================================================================
-// 6. PDF ЛИНКҮҮД
+// 6. API URL
 // ======================================================================
-const financialReports = [
-    { name: "2024 оны жилийн эцсийн тайлан", size: "4.5 MB", link: "/report-2024.pdf" },
-    { name: "2023 оны жилийн эцсийн тайлан", size: "3.8 MB", link: "/report-2023.pdf" },
-];
-
-const policyFiles = [
-    { name: "Байгууллагын дүрэм", size: "PDF", link: "/policies/company-charter.pdf" },
-    { name: "Компанийн засаглалын кодекс", size: "PDF", link: "/policies/governance-code.pdf" },
-    { name: "Ёс зүйн дүрэм", size: "PDF", link: "/policies/ethics-code.pdf" },
-    { name: "ТУЗ-ийн үйл ажиллагааны журам", size: "PDF", link: "/policies/board-procedure.pdf" },
-    { name: "ТУЗ гишүүдийн мэдээлэл", size: "PDF", link: "/policies/board-members-info.pdf" },
-    { name: "Эрсдэлийн удирдлагын бодлого", size: "PDF", link: "/policies/risk-policy.pdf" },
-    { name: "Аудит хорооны журам", size: "PDF", link: "/policies/audit-committee.pdf" },
-    { name: "Нэр дэвшүүлэх, цалин урамшууллын хорооны журам", size: "PDF", link: "/policies/nomination-committee.pdf" },
-    { name: "Сонирхлын зөрчилтэй хэлцэл хийх журам", size: "PDF", link: "/policies/conflict-interest.pdf" },
-    { name: "Залгамж халааны бодлого", size: "PDF", link: "/policies/succession-policy.pdf" },
-    { name: "Ногдол ашгийн бодлого", size: "PDF", link: "/policies/dividend-policy.pdf" },
-    { name: "Дотоод аудитын журам", size: "PDF", link: "/policies/internal-audit.pdf" },
-    { name: "Дотоод хяналтын журам", size: "PDF", link: "/policies/internal-control.pdf" },
-    { name: "Комплайнсийн бодлого", size: "PDF", link: "/policies/compliance-policy.pdf" },
-    { name: "Комплайнсын хяналтын заавар", size: "PDF", link: "/policies/compliance-control-instruction.pdf" },
-    { name: "Шүгэл үлээх бодлого", size: "PDF", link: "/policies/whistleblowing-policy.pdf" },
-    { name: "Хөрөнгө оруулагчтай харилцах хөтөлбөр", size: "PDF", link: "/policies/investor-relations-program.pdf" },
-    { name: "Хөдөлмөрийн дотоод журам", size: "PDF", link: "/policies/labor-rules.pdf" },
-    { name: "Мэдээллийн ил тод байдлын журам", size: "PDF", link: "/policies/transparency-rule.pdf" },
-    { name: "Цалин хөлс урамшууллын журам", size: "PDF", link: "/policies/salary-bonus-rule.pdf" },
-    { name: "Үйл ажиллагааны тайлан 2024", size: "PDF", link: "/policies/report-2024.pdf" },
-];
+const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com';
 
 // ======================================================================
 // 7. ДЭВСГЭР ЗУРГУУД
@@ -326,14 +299,6 @@ const OrgChart = () => {
   );
 };
 
-const financialStats = [
-    { val: "7 Тэрбум", label: "Өөрийн хөрөнгө" },
-    { val: "10.8 Тэрбум", label: "Нийт хөрөнгө" },
-    { val: "9.2 Тэрбум", label: "Нийт зээлийн дүн" },
-    { val: "3.6%", label: "Чанаргүй зээлийн хувь" },
-    { val: "13.7%", label: "Өөрийн хөрөнгийн өгөөж (ROE)" },
-    { val: "2.6%", label: "Дундаж хүү" },
-];
 
 const governanceItems = [
     { 
@@ -380,34 +345,7 @@ const governanceItems = [
         bgImage: getImage("https://images.unsplash.com/photo-1450101499163-c8848c66ca85?lib=rb-1.2.1&auto=format&fit=crop&w=800&q=80") 
     }
 ];
-const menuItems = [
-  { name: 'Нүүр', id: 'home' },
-  { 
-    name: 'Бидний тухай', 
-    id: 'about-intro',
-    submenu: [
-      { name: 'Бид хэн бэ?', type: 'scroll', target: 'about-intro' },
-      { name: 'Санхүүгийн үзүүлэлтүүд', type: 'scroll', target: 'financials' },
-      { name: 'Компанийн засаглал', type: 'scroll', target: 'governance' }
-    ]
-  },
-  { 
-    name: 'Бүтээгдэхүүн', 
-    id: 'products',
-    submenu: productsData.map(prod => ({
-      name: prod.title,
-      type: 'product',
-      data: prod
-    }))
-  },
-  { name: 'Блог', id: 'blog' },
-  { name: 'Холбоо барих', id: 'contact' },
-];
-
-// ======================================================================
-// 10. КОМПОНЕНТУУД (UI)
-// ======================================================================
-
+// menuItems нь доор App компонент дотор useMemo-р тодорхойлогдоно
 const BackButton = ({ onClick, currentView }) => {
     if (currentView === 'home') return null;
 
@@ -433,6 +371,9 @@ const ScrollDownArrow = ({ targetId, color = "text-white/70" }) => {
         </div>
     );
 };
+// ======================================================================
+// 10. КОМПОНЕНТУУД (UI)
+// ======================================================================
 
 // ======================================================================
 // 11. ХУУДАСНУУД (Pages)
@@ -645,61 +586,105 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
 };
 
 const FinancialReportsPage = ({ onBack }) => {
-    useEffect(() => window.scrollTo(0, 0), []);
+    const [files, setFiles] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [pdfUrl, setPdfUrl] = useState(null);
+
+    useEffect(() => {
+        window.scrollTo(0, 0);
+        fetch(`${API_URL}/api/policies?category=report`)
+            .then(r => r.json()).then(d => setFiles(d)).catch(() => {}).finally(() => setLoading(false));
+    }, []);
+
+    const getFileUrl = (f) => `/policies/${f.fileName}`;
+
     return (
-        <div className="min-h-screen font-sans text-slate-800 pt-20 pb-20 px-4 md:px-6" style={{ backgroundImage: `url(${BACKGROUNDS.detail_page})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
+        <div className="min-h-screen font-sans text-slate-800 pt-20 pb-20 px-4 md:px-6 relative" style={{ backgroundImage: `url(${BACKGROUNDS.detail_page})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
              <div className="absolute inset-0 bg-[#003B5C]/90 pointer-events-none"></div>
              <BackButton onClick={onBack} />
              <div className="max-w-4xl mx-auto relative z-10 pt-10">
                 <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-3xl shadow-xl p-8 md:p-10 animate-fade-in-up">
                     <h2 className="font-display font-bold text-2xl md:text-3xl text-[#D4AF37] mb-2">Санхүүгийн тайлангууд</h2>
+                    {loading ? <p className="text-white/60 mt-8">Уншиж байна...</p> : (
                     <div className="space-y-4 mt-8">
-                        {financialReports.map((file, idx) => (
+                        {files.length === 0 && <p className="text-white/50 text-sm">Тайлан байхгүй байна.</p>}
+                        {files.map((file, idx) => (
                             <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-5 border border-white/10 rounded-xl hover:bg-white/5 transition gap-4">
-                                <div className="flex items-center gap-4"><FileText className="text-[#D4AF37]" size={32} /><div><h4 className="font-bold text-white text-sm">{file.name}</h4><span className="text-xs text-gray-400">{file.size}</span></div></div>
-                                <a 
-                                    href={file.link} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    className="text-[#00A651] font-bold text-xs uppercase hover:underline ml-auto md:ml-0 flex items-center gap-1"
-                                >
+                                <div className="flex items-center gap-4">
+                                    <FileText className="text-[#D4AF37]" size={32} />
+                                    <div><h4 className="font-bold text-white text-sm">{file.title}</h4><span className="text-xs text-gray-400">PDF</span></div>
+                                </div>
+                                <button onClick={() => setPdfUrl(getFileUrl(file))}
+                                    className="text-[#00A651] font-bold text-xs uppercase hover:underline ml-auto md:ml-0 flex items-center gap-1">
                                     Харах <ArrowRight size={14} />
-                                </a>
+                                </button>
                             </div>
                         ))}
                     </div>
+                    )}
                 </div>
              </div>
+             {pdfUrl && (
+                <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
+                    <div className="flex justify-between items-center p-4 bg-[#003B5C]">
+                        <span className="text-white font-bold text-sm">PDF Харах</span>
+                        <button onClick={() => setPdfUrl(null)} className="text-white hover:text-red-400 font-bold text-lg px-4">✕ Хаах</button>
+                    </div>
+                    <iframe src={pdfUrl} className="flex-1 w-full" title="PDF Viewer" />
+                </div>
+             )}
         </div>
     );
 };
 
 const PoliciesPage = ({ onBack }) => {
-    useEffect(() => window.scrollTo(0, 0), []);
+    const [files, setFiles] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [pdfUrl, setPdfUrl] = useState(null);
+
+    useEffect(() => {
+        window.scrollTo(0, 0);
+        fetch(`${API_URL}/api/policies?category=policy`)
+            .then(r => r.json()).then(d => setFiles(d)).catch(() => {}).finally(() => setLoading(false));
+    }, []);
+
+    const getFileUrl = (f) => `/policies/${f.fileName}`;
+
     return (
-        <div className="min-h-screen font-sans text-slate-800 pt-20 pb-20 px-4 md:px-6" style={{ backgroundImage: `url(${BACKGROUNDS.detail_page})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
+        <div className="min-h-screen font-sans text-slate-800 pt-20 pb-20 px-4 md:px-6 relative" style={{ backgroundImage: `url(${BACKGROUNDS.detail_page})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
              <div className="absolute inset-0 bg-[#003B5C]/90 pointer-events-none"></div>
              <BackButton onClick={onBack} />
              <div className="max-w-4xl mx-auto relative z-10 pt-10">
                 <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-3xl shadow-xl p-8 md:p-10 animate-fade-in-up">
                     <h2 className="font-display font-bold text-2xl md:text-3xl text-[#D4AF37] mb-2">Байгууллагын бодлого журам</h2>
+                    {loading ? <p className="text-white/60 mt-8">Уншиж байна...</p> : (
                     <div className="space-y-4 mt-8">
-                        {policyFiles.map((file, idx) => (
+                        {files.length === 0 && <p className="text-white/50 text-sm">Файл байхгүй байна.</p>}
+                        {files.map((file, idx) => (
                             <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-5 border border-white/10 rounded-xl hover:bg-white/5 transition gap-4">
-                                <div className="flex items-center gap-4"><Scale className="text-[#D4AF37]" size={32} /><div><h4 className="font-bold text-white text-sm">{file.name}</h4><span className="text-xs text-gray-400">{file.size}</span></div></div>
-                                <a 
-                                    href={file.link} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    className="text-[#00A651] font-bold text-xs uppercase hover:underline ml-auto md:ml-0 flex items-center gap-1"
-                                >
+                                <div className="flex items-center gap-4">
+                                    <Scale className="text-[#D4AF37]" size={32} />
+                                    <div><h4 className="font-bold text-white text-sm">{file.title}</h4><span className="text-xs text-gray-400">PDF</span></div>
+                                </div>
+                                <button onClick={() => setPdfUrl(getFileUrl(file))}
+                                    className="text-[#00A651] font-bold text-xs uppercase hover:underline ml-auto md:ml-0 flex items-center gap-1">
                                     Харах <ArrowRight size={14} />
-                                </a>
+                                </button>
                             </div>
                         ))}
                     </div>
+                    )}
                 </div>
              </div>
+             {pdfUrl && (
+                <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
+                    <div className="flex justify-between items-center p-4 bg-[#003B5C]">
+                        <span className="text-white font-bold text-sm">PDF Харах</span>
+                        <button onClick={() => setPdfUrl(null)} className="text-white hover:text-red-400 font-bold text-lg px-4">✕ Хаах</button>
+                    </div>
+                    <iframe src={pdfUrl} className="flex-1 w-full" title="PDF Viewer" />
+                </div>
+             )}
         </div>
     );
 };
@@ -707,16 +692,86 @@ const PoliciesPage = ({ onBack }) => {
 function App() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
-  const [currentView, setCurrentView] = useState('home'); 
-  const [currentUser, setCurrentUser] = useState(null); 
-  const [selectedItem, setSelectedItem] = useState(null); 
+  const [currentView, setCurrentView] = useState('home');
+  const [currentUser, setCurrentUser] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
   const [selectedGovernance, setSelectedGovernance] = useState(null);
+
+  // CMS state
+  const [cfg, setCfg] = useState({});
+  const [financialStats, setFinancialStats] = useState([]);
+  const [products, setProducts] = useState(productsData);
+
+  const PRODUCT_KEY_MAP = { 1: 'biz_loan', 2: 'car_loan', 3: 'cons_loan', 4: 'trust', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' };
+
+  const menuItems = useMemo(() => [
+    { name: 'Нүүр', id: 'home' },
+    {
+      name: 'Бидний тухай',
+      id: 'about-intro',
+      submenu: [
+        { name: 'Бид хэн бэ?', type: 'scroll', target: 'about-intro' },
+        { name: 'Санхүүгийн үзүүлэлтүүд', type: 'scroll', target: 'financials' },
+        { name: 'Компанийн засаглал', type: 'scroll', target: 'governance' }
+      ]
+    },
+    {
+      name: 'Бүтээгдэхүүн',
+      id: 'products',
+      submenu: products.map(prod => ({ name: prod.title, type: 'product', data: prod }))
+    },
+    { name: 'Блог', id: 'blog' },
+    { name: 'Холбоо барих', id: 'contact' },
+  ], [products]);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/config/flat`).then(r => r.json()).then(setCfg).catch(() => {});
+    fetch(`${API_URL}/api/stats`).then(r => r.json())
+      .then(d => setFinancialStats(d.map(s => ({ val: s.value, label: s.label, _id: s._id }))))
+      .catch(() => {});
+    fetch(`${API_URL}/api/products/content`).then(r => r.json())
+      .then(dbProds => {
+        const existingKeys = Object.values(PRODUCT_KEY_MAP);
+        const mapped = productsData.map(p => {
+          const key = PRODUCT_KEY_MAP[p.id];
+          const db = dbProds.find(d => d.productKey === key);
+          if (!db) return p;
+          return {
+            ...p,
+            title: db.title || p.title,
+            shortDesc: db.shortDesc || p.shortDesc,
+            description: db.description || p.description,
+            bgImage: db.bgImageUrl ? db.bgImageUrl : p.bgImage,
+            headerImage: db.headerImageUrl ? db.headerImageUrl : p.headerImage,
+            ...(db.individual?.conditions?.length > 0 ? { individual: db.individual } : {}),
+            ...(db.organization?.conditions?.length > 0 ? { organization: db.organization } : {}),
+            ...(db.purchase?.individual?.conditions?.length > 0 ? { purchase: db.purchase } : {}),
+            ...(db.collateral?.individual?.conditions?.length > 0 ? { collateral: db.collateral } : {}),
+          };
+        });
+        // DB-д байгаа гэхдээ productsData-д байхгүй шинэ бүтээгдэхүүнүүдийг нэмэх
+        const newProds = dbProds
+          .filter(d => !existingKeys.includes(d.productKey))
+          .map(d => ({
+            id: `db_${d.productKey}`,
+            title: d.title || d.productKey,
+            icon: Briefcase,
+            shortDesc: d.shortDesc || '',
+            description: d.description || '',
+            bgImage: d.bgImageUrl || null,
+            headerImage: d.headerImageUrl || null,
+            individual: d.individual,
+            organization: d.organization,
+            chatbotText: d.chatbotText,
+          }));
+        setProducts([...mapped, ...newProds]);
+      }).catch(() => {});
   }, []);
 
   const navigateTo = (view, item = null) => {
@@ -872,7 +927,7 @@ function App() {
             ) : currentView === 'trust_request' ? (
                 <TrustRequest onBack={() => navigateTo('home')} />
               ) : currentView === 'blog_list' ? (
-                <BlogList posts={blogPosts} onBack={() => navigateTo('home')} onNavigate={navigateTo} />
+                <BlogList onBack={() => navigateTo('home')} />
             ) : currentView === 'shogun_studio' ? (
                 <ShogunStudio onBack={() => navigateTo('home')} />
             ) : (
@@ -890,17 +945,18 @@ function App() {
                           className={`${IS_VERTICAL_HERO_LOGO ? 'h-32 md:h-40 lg:h-52' : 'h-24 md:h-32'} object-contain mb-4 opacity-90`} 
                         />
                         <h1 className="font-display font-bold text-4xl md:text-5xl lg:text-7xl leading-[1.1] tracking-tight">
-                            Бизнесийн <br/> <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00A651] to-emerald-400">Өсөлтийг</span> Дэмжинэ
+                            {cfg.hero_line1 || 'Бизнесийн'} <br/>
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00A651] to-emerald-400">{cfg.hero_highlight || 'Өсөлтийг'}</span> {cfg.hero_line2 || 'Дэмжинэ'}
                         </h1>
                         <p className="font-sans font-normal text-base md:text-lg lg:text-xl text-blue-100 max-w-2xl mx-auto leading-relaxed opacity-90">
-                            Бид танд зах зээлийн хамгийн уян хатан нөхцөлийг санал болгож, таны санхүүгийн найдвартай түнш байх болно.
+                            {cfg.hero_description || 'Бид танд зах зээлийн хамгийн уян хатан нөхцөлийг санал болгож, таны санхүүгийн найдвартай түнш байх болно.'}
                         </p>
                         <div className="pt-8">
-                            <button 
-                              onClick={() => scrollToSection('products')} 
+                            <button
+                              onClick={() => scrollToSection('products')}
                               className="px-10 py-4 bg-transparent border border-white/30 text-white font-display font-bold rounded-full transition transform hover:bg-white/10 hover:border-white shadow-2xl uppercase tracking-wide text-small"
                             >
-                              Бүтээгдэхүүн үзэх
+                              {cfg.hero_button || 'Бүтээгдэхүүн үзэх'}
                             </button>
                         </div>
                       </div>
@@ -912,23 +968,23 @@ function App() {
                         <div className="absolute inset-0 bg-[#003B5C]/60"></div> 
                         <div className="relative z-10 max-w-4xl space-y-12 animate-fade-in-up">
                             <div className="space-y-6">
-                                <h2 className="font-display font-bold text-4xl md:text-6xl text-white leading-tight">Бид хэн бэ?</h2>
+                                <h2 className="font-display font-bold text-4xl md:text-6xl text-white leading-tight">{cfg.about_title || 'Бид хэн бэ?'}</h2>
                                 <p className="font-sans text-xl md:text-2xl text-white/90 leading-relaxed font-light">
-                                    <span className="text-[#D4AF37] font-bold">Солонго Капитал ББСБ ХХК</span> нь харилцагч төвтэй үйлчилгээг эрхэмлэн, санхүүгийн салбарт шинэ жишиг тогтоохоор зорин ажиллаж байна.
+                                    <span className="text-[#D4AF37] font-bold">Солонго Капитал ББСБ ХХК</span> {cfg.about_intro || 'нь харилцагч төвтэй үйлчилгээг эрхэмлэн, санхүүгийн салбарт шинэ жишиг тогтоохоор зорин ажиллаж байна.'}
                                 </p>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-8 border-t border-white/20">
                                 <div className="p-6">
-                                    <h4 className="font-display font-bold text-2xl text-[#D4AF37] mb-3">Эрхэм зорилго</h4>
-                                    <p className="font-sans text-white/80 leading-relaxed">Харилцагчдын санхүүгийн хэрэгцээг шуурхай, уян хатан шийдлээр хангах.</p>
+                                    <h4 className="font-display font-bold text-2xl text-[#D4AF37] mb-3">{cfg.about_mission_title || 'Эрхэм зорилго'}</h4>
+                                    <p className="font-sans text-white/80 leading-relaxed">{cfg.about_mission_text || 'Харилцагчдын санхүүгийн хэрэгцээг шуурхай, уян хатан шийдлээр хангах.'}</p>
                                 </div>
                                 <div className="p-6 border-t md:border-t-0 md:border-l border-white/20">
-                                    <h4 className="font-display font-bold text-2xl text-[#D4AF37] mb-3">Алсын хараа</h4>
-                                    <p className="font-sans text-white/80 leading-relaxed">Итгэлд суурилсан, дижитал, хэрэглэгч төвтэй байгууллага болох.</p>
+                                    <h4 className="font-display font-bold text-2xl text-[#D4AF37] mb-3">{cfg.about_vision_title || 'Алсын хараа'}</h4>
+                                    <p className="font-sans text-white/80 leading-relaxed">{cfg.about_vision_text || 'Итгэлд суурилсан, дижитал, хэрэглэгч төвтэй байгууллага болох.'}</p>
                                 </div>
                                 <div className="p-6 border-t md:border-t-0 md:border-l border-white/20">
-                                    <h4 className="font-display font-bold text-2xl text-[#D4AF37] mb-3">Үнэ цэнэ</h4>
-                                    <p className="font-sans text-white/80 leading-relaxed">Шударга ёс, Ил тод байдал, Хамтын ажиллагаа, Инноваци.</p>
+                                    <h4 className="font-display font-bold text-2xl text-[#D4AF37] mb-3">{cfg.about_values_title || 'Үнэ цэнэ'}</h4>
+                                    <p className="font-sans text-white/80 leading-relaxed">{cfg.about_values_text || 'Шударга ёс, Ил тод байдал, Хамтын ажиллагаа, Инноваци.'}</p>
                                 </div>
                             </div>
                         </div>
@@ -939,12 +995,12 @@ function App() {
                         <div className="absolute inset-0 bg-[#003B5C]/80"></div>
                         <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
                             <div className="text-center mb-16">
-                                <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-2 block">Бидний амжилт</span>
-                                <h2 className="font-display font-bold text-3xl md:text-5xl text-white">Санхүүгийн үзүүлэлтүүд</h2>
+                                <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-2 block">{cfg.financial_section_label || 'Бидний амжилт'}</span>
+                                <h2 className="font-display font-bold text-3xl md:text-5xl text-white">{cfg.financial_section_title || 'Санхүүгийн үзүүлэлтүүд'}</h2>
                                 <p className="text-[#C0C0C0] text-lg md:text-xl max-w-4xl mx-auto mt-6 font-light leading-relaxed">
-                                    Бид богино хугацааны өндөр ашигт бус, урт хугацаанд тогтвортой, хүртээмжтэй санхүүгийн экосистемийг бүтээхийг зорьдог.
+                                    {cfg.financial_section_desc || 'Бид богино хугацааны өндөр ашигт бус, урт хугацаанд тогтвортой, хүртээмжтэй санхүүгийн экосистемийг бүтээхийг зорьдог.'}
                                 </p>
-                                <p className="text-blue-200/60 font-sans text-sm mt-4">{FINANCIAL_DATE}</p> 
+                                <p className="text-blue-200/60 font-sans text-sm mt-4">{cfg.financial_date || FINANCIAL_DATE}</p>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-8 md:gap-12 text-center">
                                 {financialStats.map((stat, i) => (
@@ -1002,7 +1058,7 @@ function App() {
                             <h2 className="font-display font-bold text-3xl md:text-5xl text-white leading-tight">Бүтээгдэхүүн үйлчилгээ</h2>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                            {productsData.map((item) => {
+                            {products.map((item) => {
                               const Icon = item.icon;
                               return (
                                   <div 
@@ -1022,79 +1078,29 @@ function App() {
                             })}
                           </div>
                       </div>
-                      <ScrollDownArrow targetId="blog" color="text-white/50" />
-                    </section>
+                     
+<ScrollDownArrow targetId="blog" color="text-white/50" />
+                   </section> {/* Бүтээгдэхүүн дууссан хаалт */}
 
+                    {/* ✅ БЛОГ СЕКЦИЙГ ЭНД НЭМЖ БАЙРЛУУЛ (ЯГ CONTACT-ИЙН ДЭЭР) */}
                     <section id="blog" className="py-24 bg-slate-50 relative min-h-[90vh] flex items-center" style={{ backgroundImage: `url(${BACKGROUNDS.blog})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
-                      <div className="absolute inset-0 bg-slate-900/90"></div>
-                      <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
-                          
-                          <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
-                              <div className="text-center md:text-left">
-                                <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-2 block">Мэдээ мэдээлэл</span>
-                                <h2 className="font-display font-bold text-3xl md:text-5xl text-white">Блог & Мэдээ</h2>
-                              </div>
-                              <button 
-                                  onClick={() => navigateTo('blog_list')}
-                                  className="px-8 py-3 border border-white/30 text-white rounded-full font-bold text-xs uppercase hover:bg-[#D4AF37] hover:text-black hover:border-[#D4AF37] transition-all"
-                              >
-                                  Бүх мэдээг харах
-                              </button>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                            {blogPosts.slice(0, 4).map((post) => {
-                                const hasLink = post.externalLink && post.externalLink.length > 0;
-                                return (
-                                    <div key={post.id} className="bg-transparent border border-white/10 rounded-2xl overflow-hidden hover:border-white/30 hover:bg-white/5 transition duration-300 group flex flex-col">
-                                      <div className="h-48 overflow-hidden opacity-80 group-hover:opacity-100 transition duration-300 relative">
-                                          <img src={post.image} alt={post.title} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
-                                          {hasLink && (
-                                              <a 
-                                                  href={post.externalLink} 
-                                                  target="_blank" 
-                                                  rel="noopener noreferrer" 
-                                                  className="absolute inset-0 z-10 block"
-                                              ></a>
-                                          )}
-                                      </div>
-                                      <div className="p-6 flex flex-col flex-grow">
-                                          <span className="text-[#00A651] text-xs font-bold uppercase tracking-wider block mb-2">{post.date}</span>
-                                          <h3 className="font-display font-bold text-lg text-white mb-3 line-clamp-2 leading-snug group-hover:text-[#D4AF37] transition">
-                                              {hasLink ? (
-                                                  <a href={post.externalLink} target="_blank" rel="noopener noreferrer">{post.title}</a>
-                                              ) : (
-                                                  post.title
-                                              )}
-                                          </h3>
-                                          <p className="text-gray-400 text-sm line-clamp-3 mb-4 flex-grow">{post.excerpt}</p>
-                                          {hasLink ? (
-                                              <a 
-                                                  href={post.externalLink} 
-                                                  target="_blank" 
-                                                  rel="noopener noreferrer"
-                                                  className="text-white/70 font-bold text-xs uppercase hover:text-[#D4AF37] transition mt-auto text-left flex items-center gap-2"
-                                              >
-                                                  Унших <span className="text-lg">↗</span>
-                                              </a>
-                                          ) : (
-                                              <button 
-                                                  onClick={() => navigateTo('blog_detail', post)} 
-                                                  className="text-white/70 font-bold text-xs uppercase hover:text-[#D4AF37] transition mt-auto text-left"
-                                              >
-                                                  Дэлгэрэнгүй →
-                                              </button>
-                                          )}
-                                      </div>
-                                    </div>
-                                );
-                            })}
-                          </div>
-                      </div>
-                      <ScrollDownArrow targetId="contact" />
+                        <div className="absolute inset-0 bg-slate-900/90"></div>
+                        <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
+                            <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
+                                <div className="text-center md:text-left">
+                                    <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-2 block">Мэдээ мэдээлэл</span>
+                                    <h2 className="font-display font-bold text-3xl md:text-5xl text-white">Блог & Мэдээ</h2>
+                                </div>
+                                <button onClick={() => navigateTo('blog_list')} className="px-8 py-3 border border-white/30 text-white rounded-full font-bold text-xs uppercase hover:bg-[#D4AF37] hover:text-black transition-all">Бүх мэдээг харах</button>
+                            </div>
+                            <BlogList limit={4} />
+                        </div>
+                        <ScrollDownArrow targetId="contact" />
                     </section>
 
+                    {/* ✅ КОНТАКТ СЕКЦИЙГ ЗӨВХӨН НЭГ УДАА НЭЭХ */}
                     <section id="contact" className="relative min-h-screen flex items-center bg-gray-900 text-white" style={{ backgroundImage: `url(${BACKGROUNDS.contact})`, backgroundSize: 'cover' }}>
+
                       <div className="absolute inset-0 bg-[#002a42]/90"></div>
                       <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-6 w-full grid grid-cols-1 lg:grid-cols-2 gap-20 items-center py-20">
                           <div>
@@ -1106,11 +1112,11 @@ function App() {
                                   <span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651] group-hover:bg-[#00A651] group-hover:text-white transition"><MapPin size={20} /></span>
                                   <div>
                                       <p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">Хаяг</p>
-                                      <p className="font-display font-semibold text-lg leading-snug">Улаанбаатар хот, Хан-Уул дүүрэг, 20 хороо,<br/>Чингисийн өргөн чөлөө, Мишээл оффис төв,<br/>М3 цамхаг 12 давхар, 1207 тоот</p>
+                                      <p className="font-display font-semibold text-lg leading-snug">{cfg.contact_address || 'Улаанбаатар хот, Хан-Уул дүүрэг, 20 хороо, Чингисийн өргөн чөлөө, Мишээл оффис төв, М3 цамхаг 12 давхар, 1207 тоот'}</p>
                                   </div>
                                 </a>
-                                <div className="flex items-start gap-6 group"><span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651]"><Phone size={20} /></span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">Утас</p><p className="font-display font-semibold text-xl tabular-nums">7599 1919, 7599 9191</p></div></div>
-                                <div className="flex items-start gap-6 group"><span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651]"><Mail size={20} /></span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">И-мэйл</p><p className="font-display font-semibold text-xl">info@scm.mn</p></div></div>
+                                <div className="flex items-start gap-6 group"><span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651]"><Phone size={20} /></span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">Утас</p><p className="font-display font-semibold text-xl tabular-nums">{cfg.contact_phone || '7599 1919, 7599 9191'}</p></div></div>
+                                <div className="flex items-start gap-6 group"><span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651]"><Mail size={20} /></span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">И-мэйл</p><p className="font-display font-semibold text-xl">{cfg.contact_email || 'info@scm.mn'}</p></div></div>
                             </div>
                           </div>
                           

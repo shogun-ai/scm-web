@@ -8,17 +8,26 @@ const TrustCalculator = ({ onBack }) => {
   const [duration, setDuration] = useState(12); // Хугацаа (6 or 12)
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]); // Эхлэх огноо
   
-  const rate = 1.8; // Жишээ хүү (Сар)
+  const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com';
+  const [rate, setRate] = useState(1.8);
 
   const [result, setResult] = useState(null);
   const [chartData, setChartData] = useState([]);
   const [schedule, setSchedule] = useState([]); // Дэлгэрэнгүй хуваарь
   const [showSchedule, setShowSchedule] = useState(false); // Хуваарь харагдах эсэх
 
+  // --- CONFIG FETCH ---
+  useEffect(() => {
+    fetch(`${API_URL}/api/config/flat`)
+      .then(r => r.json())
+      .then(d => { if (d.trust_rate) setRate(parseFloat(d.trust_rate)); })
+      .catch(() => {});
+  }, []);
+
   // --- ТОЙМ ТООЦООЛОЛ ---
   useEffect(() => {
     calculateTrust();
-  }, [initialAmount, monthlyContribution, duration, startDate]);
+  }, [initialAmount, monthlyContribution, duration, startDate, rate]);
 
   const calculateTrust = () => {
     const principal = parseFloat(initialAmount.toString().replace(/,/g, '')) || 0;

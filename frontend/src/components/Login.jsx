@@ -88,8 +88,8 @@ const Login = ({ onLogin, onBack }) => {
             {step === 2 && (
                 <div className="relative animate-scale-up">
                     <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-[#00A651]" size={24}/>
-                    <input type="text" placeholder="000 000" maxLength={6} className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#003B5C] text-center text-xl font-bold tracking-[0.5em]" 
-                        value={formData.token} onChange={(e) => setFormData({...formData, token: e.target.value})} autoFocus />
+                    <input type="text" placeholder="000000" maxLength={6} inputMode="numeric" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#003B5C] text-center text-xl font-bold tracking-[0.5em]"
+                        value={formData.token} onChange={(e) => setFormData({...formData, token: e.target.value.replace(/\s/g, '')})} autoFocus />
                 </div>
             )}
 

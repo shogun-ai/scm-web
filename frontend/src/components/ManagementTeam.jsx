@@ -1,19 +1,22 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 
-const teamMembers = [
-  {
-    name: "Ц.Отгонбилэг",
-    role: "Ерөнхий захирал",
-    image: "/board/otgonbileg.jpg" 
-  },
-  {
-    name: "Б.Золбоо",
-    role: "Гүйцэтгэх захирал",
-    image: "/board/zolboo.jpg" 
-  }
+const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com';
+
+const FALLBACK_MEMBERS = [
+  { name: "Ц.Отгонбилэг", role: "Ерөнхий захирал", imagePath: "/board/otgonbileg.jpg" },
+  { name: "Б.Золбоо", role: "Гүйцэтгэх захирал", imagePath: "/board/zolboo.jpg" }
 ];
 
 const ManagementTeam = () => {
+  const [members, setMembers] = useState(FALLBACK_MEMBERS);
+
+  useEffect(() => {
+    axios.get(`${API_URL}/api/team`)
+      .then(res => { if (res.data?.length) setMembers(res.data); })
+      .catch(() => {});
+  }, []);
+
   return (
     <section className="py-16 w-full relative">
       <div className="max-w-7xl mx-auto px-4 relative z-10">
@@ -23,18 +26,18 @@ const ManagementTeam = () => {
           </h2>
           <div className="mt-4 h-1 w-24 bg-[#D4AF37] mx-auto rounded-full"></div>
           <p className="text-blue-100 text-lg max-w-3xl mx-auto mt-6 font-sans font-light leading-relaxed opacity-90">
-             Мэргэжлийн өндөр ур чадвар, туршлага бүхий манай гүйцэтгэх удирдлагын баг.
+            Мэргэжлийн өндөр ур чадвар, туршлага бүхий манай гүйцэтгэх удирдлагын баг.
           </p>
         </div>
 
         <div className="flex flex-wrap justify-center gap-10 md:gap-16">
-          {teamMembers.map((member, index) => (
+          {members.map((member, index) => (
             <div key={index} className="group relative w-full max-w-[300px] h-[380px] overflow-hidden rounded-2xl cursor-pointer shadow-2xl transition-all duration-500 hover:-translate-y-2 border border-white/10">
-              <img 
-                src={member.image} 
-                alt={member.name} 
+              <img
+                src={member.imagePath || member.image}
+                alt={member.name}
                 className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-110"
-                onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/400x500?text=No+Image' }}
+                onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/400x500?text=No+Image'; }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#003B5C] via-[#003B5C]/20 to-transparent opacity-90 transition-opacity duration-300"></div>
               <div className="absolute bottom-0 left-0 w-full p-8 translate-y-2 group-hover:translate-y-0 transition-transform duration-300">

@@ -2,10 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Calculator, ArrowLeft, Banknote, Info, CheckCircle, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 
 const LoanCalculator = ({ onBack }) => {
+  const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com';
+
   // --- STATE ---
   const [amount, setAmount] = useState('10000000');
   const [rate, setRate] = useState(2.5);
   const [months, setMonths] = useState(12);
+  const [rateMin, setRateMin] = useState(2.5);
+  const [rateMax, setRateMax] = useState(3.5);
+  const [maxTerm, setMaxTerm] = useState(96);
+  const [dti, setDti] = useState(0.6);
   const [method, setMethod] = useState('equal');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]); // Эхлэх огноо
   
@@ -15,14 +21,28 @@ const LoanCalculator = ({ onBack }) => {
 
   // --- ХҮҮНИЙ СОНГОЛТУУД ---
   const rateOptions = [];
-  for (let r = 2.5; r <= 3.6; r += 0.1) {
-    rateOptions.push(r.toFixed(1));
+  for (let r = rateMin; r <= rateMax + 0.05; r += 0.1) {
+    rateOptions.push(parseFloat(r.toFixed(1)));
   }
+
+  // --- CONFIG FETCH ---
+  useEffect(() => {
+    fetch(`${API_URL}/api/config/flat`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.loan_rate_min) setRateMin(parseFloat(d.loan_rate_min));
+        if (d.loan_rate_max) setRateMax(parseFloat(d.loan_rate_max));
+        if (d.loan_max_term) setMaxTerm(parseInt(d.loan_max_term));
+        if (d.loan_rate_min) setRate(parseFloat(d.loan_rate_min));
+        if (d.dti_individual) setDti(parseFloat(d.dti_individual) / 100);
+      })
+      .catch(() => {});
+  }, []);
 
   // --- ТООЦООЛОХ ---
   useEffect(() => {
     calculateLoan();
-  }, [amount, rate, months, method, startDate]);
+  }, [amount, rate, months, method, startDate, dti]);
 
   const calculateLoan = () => {
     const rawAmount = amount.toString().replace(/,/g, '');
@@ -101,8 +121,8 @@ const LoanCalculator = ({ onBack }) => {
     // Тэнцүү төлбөрт үед сарын төлбөр тогтмол, Хугацааны эцэст үед зөвхөн хүү
     monthlyPayment = method === 'equal' ? fixedMonthlyPayment : (p * r);
 
-    // ӨОХ 60% байхын тулд шаардлагатай хамгийн бага орлого
-    const minRequiredIncome = monthlyPayment / 0.6;
+    // ӨОХ байхын тулд шаардлагатай хамгийн бага орлого
+    const minRequiredIncome = monthlyPayment / dti;
 
     setResult({
       monthlyPayment,
@@ -208,8 +228,8 @@ const LoanCalculator = ({ onBack }) => {
                                 Хугацаа (Сар)
                             </label>
                             <input 
-                                type="number" 
-                                min="1" max="96"
+                                type="number"
+                                min="1" max={maxTerm}
                                 value={months}
                                 onChange={(e) => setMonths(e.target.value)}
                                 className="w-full p-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#D4AF37] transition font-bold text-lg text-[#003B5C]"
@@ -306,7 +326,7 @@ const LoanCalculator = ({ onBack }) => {
                                 Шаардлагатай сарын орлого
                             </h4>
                             <p className="text-emerald-700 text-sm mb-3 opacity-90">
-                                Өр орлогын харьцааг 60%-д барихын тулд таны сарын цэвэр орлого доод тал нь ийм байх шаардлагатай:
+                                Өр орлогын харьцааг {Math.round(dti * 100)}%-д барихын тулд таны сарын цэвэр орлого доод тал нь ийм байх шаардлагатай:
                             </p>
                             <p className="text-3xl font-bold text-emerald-600 tracking-tight">
                                 {formatMoney(result?.minRequiredIncome)}
