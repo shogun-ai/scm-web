@@ -843,9 +843,10 @@ app.post('/api/products/content', async (req, res) => {
     } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-app.delete('/api/products/content/:key', async (req, res) => {
+app.delete('/api/products/content/:id', async (req, res) => {
     try {
-        await ProductContent.findOneAndDelete({ productKey: req.params.key });
+        const result = await ProductContent.findByIdAndDelete(req.params.id);
+        if (!result) return res.status(404).json({ message: 'Бүтээгдэхүүн олдсонгүй' });
         chatbotCache = null;
         res.json({ message: 'Устгагдлаа' });
     } catch (err) { res.status(500).json({ message: err.message }); }

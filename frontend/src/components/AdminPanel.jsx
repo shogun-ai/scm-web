@@ -789,9 +789,9 @@ const AdminPanel = ({ user, onLogout }) => {
                             {cmsSaving ? 'Хадгалж байна...' : 'Хадгалах'}
                           </button>
                           <button onClick={async () => {
-                              if (!window.confirm(`"${editingProduct.productKey}" устгах уу?`)) return;
+                              if (!window.confirm(`"${editingProduct.title}" устгах уу?`)) return;
                               try {
-                                await axios.delete(`${API_URL}/api/products/content/${editingProduct.productKey}`);
+                                await axios.delete(`${API_URL}/api/products/content/${editingProduct._id}`);
                                 alert('✅ Устгагдлаа!');
                                 setEditingProduct(null);
                                 fetchCMSData();
