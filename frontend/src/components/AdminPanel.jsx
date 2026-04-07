@@ -785,13 +785,14 @@ const AdminPanel = ({ user, onLogout }) => {
                             className="bg-[#003B5C] text-white px-8 py-3 rounded-xl font-bold text-sm">
                             {cmsSaving ? 'Хадгалж байна...' : 'Хадгалах'}
                           </button>
-                          {editingProduct._id && (
-                            <button onClick={async () => {
+                          <button onClick={async () => {
                               if (!window.confirm('Устгах уу?')) return;
-                              await axios.delete(`${API_URL}/api/products/content/${editingProduct.productKey}`);
-                              setEditingProduct(null); fetchCMSData();
+                              try {
+                                await axios.delete(`${API_URL}/api/products/content/${editingProduct.productKey}`);
+                                setEditingProduct(null);
+                                fetchCMSData();
+                              } catch (e) { alert('Устгахад алдаа: ' + (e.response?.data?.message || e.message)); }
                             }} className="px-8 py-3 bg-red-50 text-red-500 rounded-xl font-bold text-sm">Устгах</button>
-                          )}
                           <button onClick={() => setEditingProduct(null)} className="px-8 py-3 border rounded-xl font-bold text-sm text-gray-500">Болих</button>
                         </div>
                       </div>
