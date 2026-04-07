@@ -9,9 +9,9 @@ const BlogList = ({ onBack, limit }) => {
         const fetchBlogs = async () => {
             try {
                 setLoading(true);
-                const baseUrl = window.location.hostname === 'localhost' 
-                    ? 'http://localhost:5000/api/blogs' 
-                    : 'https://scm-backend-okjs.onrender.com/api/blogs';
+                const baseUrl = window.location.hostname === 'localhost'
+                    ? 'http://localhost:5000/api/blogs'
+                    : 'https://scm-okjs.onrender.com/api/blogs';
                 
                 const finalUrl = limit ? `${baseUrl}?limit=${limit}` : baseUrl;
                 const response = await axios.get(finalUrl);

@@ -516,25 +516,25 @@ app.get('/api/policies', async (req, res) => {
     }
 });
 
-// Файл хуулах тохиргоо (frontend/public/policies хавтас руу хадгална)
-const policyStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, '../frontend/public/policies'); 
-    },
-    filename: (req, file, cb) => {
-        // Файлын нэрийг давхцуулахгүйн тулд огноо нэмнэ
-        cb(null, Date.now() + '-' + file.originalname);
+// Файл хуулах тохиргоо — Cloudinary руу PDF upload
+const policyCloudStorage = new CloudinaryStorage({
+    cloudinary,
+    params: {
+        folder: 'scm_policies',
+        resource_type: 'raw',
+        allowed_formats: ['pdf'],
     }
 });
-const uploadPolicy = multer({ storage: policyStorage });
+const uploadPolicy = multer({ storage: policyCloudStorage });
 
-// Шинэ файл (PDF) бааз руу бүртгэж, хавтас руу хуулах
+// Шинэ файл (PDF) Cloudinary руу хуулж, URL-г хадгалах
 app.post('/api/policies', uploadPolicy.single('file'), async (req, res) => {
     try {
         const newPolicy = new Policy({
             title: req.body.title,
             category: req.body.category,
-            fileName: req.file.filename
+            fileName: req.file.originalname,
+            fileUrl: req.file.path,   // Cloudinary URL
         });
         await newPolicy.save();
         res.json(newPolicy);
@@ -548,14 +548,14 @@ app.delete('/api/policies/:id', async (req, res) => {
     try {
         const policy = await Policy.findById(req.params.id);
         if (!policy) return res.status(404).json({ message: "Файл олдсонгүй" });
-
-        // 1. Хавтаснаас нь устгах
-        const filePath = `../frontend/public/policies/${policy.fileName}`;
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
+        // Cloudinary-аас устгах (fileUrl байвал)
+        if (policy.fileUrl) {
+            try {
+                const parts = policy.fileUrl.split('/');
+                const publicId = 'scm_policies/' + parts[parts.length - 1].split('.')[0];
+                await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
+            } catch (e) { /* Cloudinary алдаа нь DB устгахыг зогсоохгүй */ }
         }
-
-        // 2. Баазаас устгах
         await Policy.findByIdAndDelete(req.params.id);
         res.json({ message: "Файл амжилттай устлаа" });
     } catch (err) {

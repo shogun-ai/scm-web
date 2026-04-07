@@ -596,7 +596,7 @@ const FinancialReportsPage = ({ onBack }) => {
             .then(r => r.json()).then(d => setFiles(d)).catch(() => {}).finally(() => setLoading(false));
     }, []);
 
-    const getFileUrl = (f) => `/policies/${f.fileName}`;
+    const getFileUrl = (f) => f.fileUrl || `${API_URL}/policies/${f.fileName}`;
 
     return (
         <div className="min-h-screen font-sans text-slate-800 pt-20 pb-20 px-4 md:px-6 relative" style={{ backgroundImage: `url(${BACKGROUNDS.detail_page})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
@@ -648,7 +648,7 @@ const PoliciesPage = ({ onBack }) => {
             .then(r => r.json()).then(d => setFiles(d)).catch(() => {}).finally(() => setLoading(false));
     }, []);
 
-    const getFileUrl = (f) => `/policies/${f.fileName}`;
+    const getFileUrl = (f) => f.fileUrl || `${API_URL}/policies/${f.fileName}`;
 
     return (
         <div className="min-h-screen font-sans text-slate-800 pt-20 pb-20 px-4 md:px-6 relative" style={{ backgroundImage: `url(${BACKGROUNDS.detail_page})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>

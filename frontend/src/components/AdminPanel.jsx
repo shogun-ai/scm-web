@@ -516,7 +516,7 @@ const AdminPanel = ({ user, onLogout }) => {
                    <div key={p._id} className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border text-sm">
                      <span className="font-bold text-slate-700">{p.title}</span>
                      <div className="flex gap-2">
-                       <a href={`/policies/${p.fileName}`} target="_blank" rel="noreferrer" className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Eye size={16}/></a>
+                       <a href={p.fileUrl || `/policies/${p.fileName}`} target="_blank" rel="noreferrer" className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Eye size={16}/></a>
                        <button onClick={() => deletePolicy(p._id)} className="p-2 text-red-600 bg-red-50 rounded-lg"><Trash2 size={16}/></button>
                      </div>
                    </div>
@@ -538,7 +538,7 @@ const AdminPanel = ({ user, onLogout }) => {
                    <div key={p._id} className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border text-sm">
                      <span className="font-bold text-slate-700">{p.title}</span>
                      <div className="flex gap-2">
-                       <a href={`/policies/${p.fileName}`} target="_blank" rel="noreferrer" className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Eye size={16}/></a>
+                       <a href={p.fileUrl || `/policies/${p.fileName}`} target="_blank" rel="noreferrer" className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Eye size={16}/></a>
                        <button onClick={() => deletePolicy(p._id)} className="p-2 text-red-600 bg-red-50 rounded-lg"><Trash2 size={16}/></button>
                      </div>
                    </div>
