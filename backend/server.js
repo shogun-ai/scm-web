@@ -157,8 +157,7 @@ const scrapeNews = async () => {
     }
 };
 
-// Функцийг дуудах
-scrapeNews();
+// scrapeNews нь MongoDB connect болсны дараа дуудагдана (доор mongoose.connect-д)
 
 // ============================================================
 // 🤖 МЭДЭЭЛЛИЙН САН БА ТООЦООЛОЛ (DB-с уншдаг cache)
@@ -766,6 +765,8 @@ mongoose.connect(MONGO_URI).then(async () => {
     await seedProductContent();
     await seedFormConfig();
     await seedStats();
+    // Мэдээ татах — MongoDB холбогдсоны дараа, background-д
+    scrapeNews().catch(e => console.error('scrapeNews error:', e));
 }).catch(e => console.error(e));
 
 // ============================================================
