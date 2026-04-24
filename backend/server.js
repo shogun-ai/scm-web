@@ -3309,6 +3309,11 @@ mongoose.connect(MONGO_URI).then(async () => {
     await seedProductContent();
     await seedFormConfig();
     await seedStats();
+    // Force-update financial_date to current period value
+    await SiteConfig.findOneAndUpdate(
+        { key: 'financial_date' },
+        { $set: { value: '2026 оны 3 сарын 31-ний байдлаар' } }
+    );
     // Scrape news in the background after MongoDB connects.
     scrapeNews().catch(e => console.error('scrapeNews error:', e));
 }).catch(e => console.error(e));

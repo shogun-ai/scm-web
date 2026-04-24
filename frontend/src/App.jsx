@@ -64,7 +64,7 @@ const localProd7Bg=prod7Bg, localProd7Header=prod7Header;
 const IS_VERTICAL_HERO_LOGO = true;      
 const USE_GOLD_LOGO = true;              
 const USE_LOCAL_IMAGES = true; 
-const FINANCIAL_DATE = "2025 оны 11 сарын 30-ны байдлаар";
+const FINANCIAL_DATE = "2026 оны 3 сарын 31-ний байдлаар";
 
 const hasBrokenEncoding = (value = '') => /[ÐÑÒÓ]|â|�/.test(String(value));
 
