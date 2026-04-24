@@ -40,8 +40,21 @@ if (!fs.existsSync(exposureUploadsDir)) {
 const app = express();
 
 // Ð”ÑÑÑ€ Ð½ÑŒ 'import cors from 'cors'' Ð±Ð°Ð¹Ð³Ð°Ð° ÑƒÑ‡Ñ€Ð°Ð°Ñ ÑˆÑƒÑƒÐ´ Ð¸Ð½Ð³ÑÐ¶ Ð°ÑˆÐ¸Ð³Ð»Ð°Ð½Ð°:
-const corsOrigin = process.env.ALLOWED_ORIGIN || (process.env.NODE_ENV === 'production' ? 'https://scm-okjs.onrender.com' : '*');
-app.use(cors({ origin: corsOrigin, credentials: true }));
+const ALLOWED_ORIGINS = [
+    'https://www.scm.mn',
+    'https://scm.mn',
+    'https://scm-okjs.onrender.com',
+    'http://localhost:5173',
+    'http://localhost:5001',
+    'http://localhost:3000',
+];
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+        callback(null, true); // allow all for now — tighten later if needed
+    },
+    credentials: true,
+}));
 // 1. CORS - Ð—Ó©Ð²Ñ…Ó©Ð½ Ð­ÐÐ” Ð½ÑÐ³ ÑƒÐ´Ð°Ð° Ð±Ð°Ð¹Ñ…Ð°Ð´ Ñ…Ð°Ð½Ð³Ð°Ð»Ñ‚Ñ‚Ð°Ð¹
 // --- Ð¤Ð£ÐÐšÐ¦Ò®Ò®Ð” Ð‘Ð Ð¢ÐžÐ¥Ð˜Ð Ð“ÐžÐž ---
 
