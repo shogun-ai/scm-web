@@ -66,6 +66,28 @@ const USE_GOLD_LOGO = true;
 const USE_LOCAL_IMAGES = true; 
 const FINANCIAL_DATE = "2025 оны 11 сарын 30-ны байдлаар";
 
+const hasBrokenEncoding = (value = '') => /[ÐÑÒÓ]|â|�/.test(String(value));
+
+const normalizeFinancialStats = (stats = []) => {
+  const byOrder = new Map();
+
+  stats.forEach((stat) => {
+    const orderKey = Number.isFinite(Number(stat.order)) ? Number(stat.order) : `id-${stat._id}`;
+    const normalized = { val: stat.value, label: stat.label, order: stat.order, _id: stat._id };
+    const existing = byOrder.get(orderKey);
+    const currentScore = Number(hasBrokenEncoding(stat.label)) + Number(hasBrokenEncoding(stat.value));
+    const existingScore = existing ? Number(hasBrokenEncoding(existing.label)) + Number(hasBrokenEncoding(existing.val)) : Infinity;
+
+    if (!existing || currentScore < existingScore) {
+      byOrder.set(orderKey, normalized);
+    }
+  });
+
+  return Array.from(byOrder.values())
+    .filter(stat => !hasBrokenEncoding(stat.label) && !hasBrokenEncoding(stat.val))
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+};
+
 // ======================================================================
 // 5. ЗУРАГ СОНГОХ ФУНКЦ
 // ======================================================================
@@ -93,6 +115,16 @@ const BACKGROUNDS = {
   blog: getImage("https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80"),
   contact: getImage("https://images.unsplash.com/photo-1519501025264-65ba15a82390?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80"),
   detail_page: getImage("https://images.unsplash.com/photo-1507525428034-b723cf961d3e?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80")
+};
+
+const SECTION_RAINBOW_COLORS = {
+  home: '#7f1d1d',
+  about: '#9a3412',
+  financials: '#854d0e',
+  governance: '#166534',
+  products: '#0f766e',
+  blog: '#1d4ed8',
+  contact: '#5b21b6',
 };
 
 const blogPosts = [
@@ -301,48 +333,54 @@ const OrgChart = () => {
 
 
 const governanceItems = [
-    { 
-        title: "Гүйцэтгэх захирлын мэндчилгээ", 
-        icon: Quote, 
-        component: <CEOContent />, 
-        content: "Эрхэм харилцагч танд энэ өдрийн мэндийг хүргэе...", 
-        bgImage: getImage("https://images.unsplash.com/photo-1557804506-669a67965ba0?lib=rb-1.2.1&auto=format&fit=crop&w=800&q=80") 
+    {
+        slug: 'ceo',
+        title: "Гүйцэтгэх захирлын мэндчилгээ",
+        icon: Quote,
+        component: <CEOContent />,
+        content: "Эрхэм харилцагч танд энэ өдрийн мэндийг хүргэе...",
+        bgImage: getImage("https://images.unsplash.com/photo-1557804506-669a67965ba0?lib=rb-1.2.1&auto=format&fit=crop&w=800&q=80")
     },
-    { 
-        title: "Компанийн бүтэц", 
-        icon: Network, 
-        component: <OrgChart />, 
-        content: "Компанийн бүтэц зохион байгуулалтын схем.", 
-        bgImage: getImage("https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80") 
+    {
+        slug: 'org-chart',
+        title: "Компанийн бүтэц",
+        icon: Network,
+        component: <OrgChart />,
+        content: "Компанийн бүтэц зохион байгуулалтын схем.",
+        bgImage: getImage("https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80")
     },
-    { 
-        title: "Төлөөлөн удирдах зөвлөл", 
-        icon: Scale, 
-        component: <BoardMembers />, 
-        content: "ТУЗ-ийн гишүүдийн танилцуулга.", 
-        bgImage: getImage("https://images.unsplash.com/photo-1521737604893-d14cc237f11d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80") 
+    {
+        slug: 'board',
+        title: "Төлөөлөн удирдах зөвлөл",
+        icon: Scale,
+        component: <BoardMembers />,
+        content: "ТУЗ-ийн гишүүдийн танилцуулга.",
+        bgImage: getImage("https://images.unsplash.com/photo-1521737604893-d14cc237f11d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80")
     },
-    { 
-        title: "Удирдлагын баг", 
-        icon: Users, 
-        component: <ManagementTeam />, 
-        content: "Гүйцэтгэх удирдлагын багийн танилцуулга.", 
-        bgImage: getImage("https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80") 
+    {
+        slug: 'management',
+        title: "Удирдлагын баг",
+        icon: Users,
+        component: <ManagementTeam />,
+        content: "Гүйцэтгэх удирдлагын багийн танилцуулга.",
+        bgImage: getImage("https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80")
     },
-    { 
-        title: "Хувьцаа эзэмшигчдийн мэдээлэл", 
-        icon: PieChart, 
-        component: <ShareholderInfo />, 
-        content: "100% дотоодын хөрөнгө оруулалттай.", 
-        bgImage: getImage("https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80") 
+    {
+        slug: 'shareholders',
+        title: "Хувьцаа эзэмшигчдийн мэдээлэл",
+        icon: PieChart,
+        component: <ShareholderInfo />,
+        content: "100% дотоодын хөрөнгө оруулалттай.",
+        bgImage: getImage("https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80")
     },
-    { 
-        title: "Байгууллагын бодлого журам", 
-        icon: FileText, 
-        isLink: true, 
-        linkType: 'policies', 
-        content: null, 
-        bgImage: getImage("https://images.unsplash.com/photo-1450101499163-c8848c66ca85?lib=rb-1.2.1&auto=format&fit=crop&w=800&q=80") 
+    {
+        slug: 'policies',
+        title: "Байгууллагын бодлого журам",
+        icon: FileText,
+        isLink: true,
+        linkType: 'policies',
+        content: null,
+        bgImage: getImage("https://images.unsplash.com/photo-1450101499163-c8848c66ca85?lib=rb-1.2.1&auto=format&fit=crop&w=800&q=80")
     }
 ];
 // menuItems нь доор App компонент дотор useMemo-р тодорхойлогдоно
@@ -350,11 +388,9 @@ const BackButton = ({ onClick, currentView }) => {
     if (currentView === 'home') return null;
 
     return (
-        <button onClick={onClick} className="fixed top-32 left-4 md:top-36 md:left-10 z-40 flex items-center gap-2 px-5 py-3 bg-[#003B5C]/80 backdrop-blur-md border border-[#D4AF37]/30 rounded-full text-white font-bold uppercase tracking-wider text-[10px] md:text-xs hover:bg-[#003B5C] hover:border-[#D4AF37] hover:text-[#D4AF37] transition-all duration-300 shadow-xl group">
-            <div className="p-1 rounded-full bg-white/10 group-hover:bg-[#D4AF37] group-hover:text-white transition-colors">
-                <ChevronLeft size={16} strokeWidth={3} />
-            </div>
-            Нүүр хуудас
+        <button onClick={onClick} className="fixed top-24 left-4 md:left-8 z-40 flex items-center gap-2 px-4 py-2.5 bg-[#003B5C]/80 backdrop-blur-md border border-[#D4AF37]/30 rounded-full text-white font-sans font-semibold uppercase tracking-wider text-xs hover:bg-[#003B5C] hover:border-[#D4AF37] hover:text-[#D4AF37] transition-all duration-300 shadow-lg group">
+            <ChevronLeft size={15} strokeWidth={2.5} className="group-hover:-translate-x-0.5 transition-transform duration-300" />
+            Нүүр
         </button>
     );
 };
@@ -385,9 +421,9 @@ const UnderConstructionPage = ({ onBack, title = "Хөгжүүлэлт хийг�
         <div className="min-h-screen relative flex flex-col items-center justify-center text-center px-4 md:px-6"
              style={{ backgroundImage: `url(${BACKGROUNDS.detail_page})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}
         >
-            <div className="absolute inset-0 bg-[#003B5C]/90"></div>
+            <div className="absolute inset-0 sc-overlay-90"></div>
             <BackButton onClick={onBack} />
-            
+
             <div className="relative z-10 w-full max-w-5xl">
                 <div className="max-w-xl mx-auto space-y-6">
                     <div className="text-5xl md:text-6xl animate-pulse">🚧</div>
@@ -416,7 +452,7 @@ const GovernanceDetail = ({ item, onBack }) => {
                  backgroundAttachment: 'fixed' 
              }}
         >
-            <div className="absolute inset-0 bg-[#003B5C]/80"></div> 
+            <div className="absolute inset-0 sc-overlay-80"></div>
             <BackButton onClick={onBack} />
             
             <div className="relative z-10 w-full max-w-7xl animate-fade-in-up pt-24 pb-10">
@@ -447,18 +483,45 @@ const GovernanceDetail = ({ item, onBack }) => {
 };
 
 const ProductDetail = ({ product, onBack, onNavigate }) => {
-    const [activeTab, setActiveTab] = useState(product.isCarLoan ? 'purchase' : 'individual'); 
-    const [subTab, setSubTab] = useState('individual');
+    const productKey = product.productKey || product.id;
+
+    const getInitialTab = () => {
+        const params = new URLSearchParams(window.location.search);
+        const t = params.get('tab');
+        if (t) return t;
+        if (product.isCarLoan) return 'purchase';
+        if (product.individual) return 'individual';
+        if (product.organization) return 'organization';
+        return 'individual';
+    };
+    const getInitialSubTab = () => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('sub') || 'individual';
+    };
+
+    const [activeTab, setActiveTab] = useState(getInitialTab);
+    const [subTab, setSubTab] = useState(getInitialSubTab);
+
+    const updateUrl = (tab, sub) => {
+        const params = new URLSearchParams();
+        params.set('tab', tab);
+        if (product.isCarLoan) params.set('sub', sub);
+        window.history.pushState({}, '', `/products/${productKey}?${params.toString()}`);
+    };
+
+    const handleSetActiveTab = (tab) => {
+        setActiveTab(tab);
+        updateUrl(tab, subTab);
+    };
+
+    const handleSetSubTab = (sub) => {
+        setSubTab(sub);
+        updateUrl(activeTab, sub);
+    };
 
     useEffect(() => window.scrollTo(0, 0), []);
 
     const isTrust = product.id === 4;
-    
-    const getData = () => {
-        if (product.isCarLoan) return product[activeTab][subTab];
-        return product[activeTab]; 
-    };
-    const currentData = getData();
 
     const getStandardTabs = () => {
         const tabs = [];
@@ -467,6 +530,15 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
         return tabs;
     };
 
+    const getData = () => {
+        if (product.isCarLoan) {
+            const base = product[activeTab];
+            return base?.[subTab] || null;
+        }
+        return product[activeTab] || null;
+    };
+    const currentData = getData();
+
     const headerBg = product.headerImage || BACKGROUNDS.detail_page;
     const ProductIcon = product.icon;
 
@@ -474,7 +546,7 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
         <div className="min-h-screen pt-20 pb-20 px-4 md:px-6 relative text-white"
              style={{ backgroundImage: `url(${BACKGROUNDS.detail_page})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}
         >
-            <div className="absolute inset-0 bg-[#003B5C]/90 pointer-events-none"></div>
+            <div className="absolute inset-0 sc-overlay-90 pointer-events-none"></div>
             <BackButton onClick={onBack} />
 
             <div className="max-w-5xl mx-auto relative z-10 pt-10">
@@ -484,7 +556,7 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
                         className="relative h-64 md:h-80 overflow-hidden flex items-end p-8 md:p-12"
                         style={{ backgroundImage: `url(${headerBg})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
                     >
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#003B5C] via-[#003B5C]/60 to-transparent"></div>
+                        <div className="absolute inset-0 sc-grad-bottom"></div>
                         <div className="relative z-10 text-white w-full">
                             <div className="flex items-center gap-4 mb-2">
                                 <span className="text-[#D4AF37]"><ProductIcon size={48} strokeWidth={1.5} /></span>
@@ -525,13 +597,13 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
                                 {product.isCarLoan ? (
                                     <div className="mb-10">
                                         <div className="flex space-x-2 bg-white/10 p-1.5 rounded-xl mb-6 w-full overflow-x-auto border border-white/5">
-                                            <button onClick={() => setActiveTab('purchase')} className={`flex-1 px-4 py-3 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'purchase' ? 'bg-[#D4AF37] text-white shadow-md' : 'text-gray-300 hover:text-white'}`}>Автомашины зээл</button>
-                                            <button onClick={() => setActiveTab('collateral')} className={`flex-1 px-4 py-3 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'collateral' ? 'bg-[#D4AF37] text-white shadow-md' : 'text-gray-300 hover:text-white'}`}>Автомашин барьцаалсан зээл</button>
+                                            <button onClick={() => handleSetActiveTab('purchase')} className={`flex-1 px-4 py-3 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'purchase' ? 'bg-[#D4AF37] text-white shadow-md' : 'text-gray-300 hover:text-white'}`}>Автомашины зээл</button>
+                                            <button onClick={() => handleSetActiveTab('collateral')} className={`flex-1 px-4 py-3 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'collateral' ? 'bg-[#D4AF37] text-white shadow-md' : 'text-gray-300 hover:text-white'}`}>Автомашин барьцаалсан зээл</button>
                                         </div>
                                         <div className="flex justify-center">
                                             <div className="flex space-x-1 bg-white/5 p-1 rounded-lg border border-white/10">
-                                                <button onClick={() => setSubTab('individual')} className={`px-6 py-2 rounded-md text-xs font-bold transition-all uppercase tracking-wider ${subTab === 'individual' ? 'bg-[#00A651] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Иргэн</button>
-                                                <button onClick={() => setSubTab('organization')} className={`px-6 py-2 rounded-md text-xs font-bold transition-all uppercase tracking-wider ${subTab === 'organization' ? 'bg-[#00A651] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Байгууллага</button>
+                                                <button onClick={() => handleSetSubTab('individual')} className={`px-6 py-2 rounded-md text-xs font-bold transition-all uppercase tracking-wider ${subTab === 'individual' ? 'bg-[#00A651] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Иргэн</button>
+                                                <button onClick={() => handleSetSubTab('organization')} className={`px-6 py-2 rounded-md text-xs font-bold transition-all uppercase tracking-wider ${subTab === 'organization' ? 'bg-[#00A651] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Байгууллага</button>
                                             </div>
                                         </div>
                                     </div>
@@ -539,9 +611,9 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
                                     getStandardTabs().length > 0 && (
                                         <div className="flex space-x-1 bg-white/10 p-1 rounded-xl mb-10 w-full md:w-fit overflow-x-auto border border-white/5">
                                             {getStandardTabs().map((tab) => (
-                                                <button 
+                                                <button
                                                     key={tab.key}
-                                                    onClick={() => setActiveTab(tab.key)} 
+                                                    onClick={() => handleSetActiveTab(tab.key)}
                                                     className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === tab.key ? 'bg-[#D4AF37] text-white shadow-sm' : 'text-gray-300 hover:text-white'}`}
                                                 >
                                                     {tab.label}
@@ -551,24 +623,28 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
                                     )
                                 )}
 
-                                {currentData && (
+                                {currentData ? (
                                     <div className="grid md:grid-cols-2 gap-8 md:gap-10 animate-fade-in">
-                                            <div>
-                                                <h3 className="font-display font-bold text-xl text-[#D4AF37] mb-5 border-b border-white/10 pb-2">Нөхцөл</h3>
-                                                <ul className="space-y-3">
-                                                    {currentData.conditions.map((c, i) => (
-                                                        <li key={i} className="flex items-start gap-3 text-sm text-gray-200"><span className="text-[#00A651] font-bold mt-0.5">•</span> {c}</li>
-                                                    ))}
-                                                </ul>
-                                            </div>
-                                            <div>
-                                                <h3 className="font-display font-bold text-xl text-[#D4AF37] mb-5 border-b border-white/10 pb-2">Тавигдах шаардлага</h3>
-                                                <ul className="space-y-3">
-                                                    {currentData.requirements.map((r, i) => (
-                                                        <li key={i} className="flex items-start gap-3 text-sm text-gray-200"><span className="text-[#00A651] font-bold mt-0.5">✓</span> {r}</li>
-                                                    ))}
-                                                </ul>
-                                            </div>
+                                        <div>
+                                            <h3 className="font-display font-bold text-xl text-[#D4AF37] mb-5 border-b border-white/10 pb-2">Нөхцөл</h3>
+                                            <ul className="space-y-3">
+                                                {(currentData.conditions || []).map((c, i) => (
+                                                    <li key={i} className="flex items-start gap-3 text-sm text-gray-200"><span className="text-[#00A651] font-bold mt-0.5">•</span> {c}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                        <div>
+                                            <h3 className="font-display font-bold text-xl text-[#D4AF37] mb-5 border-b border-white/10 pb-2">Тавигдах шаардлага</h3>
+                                            <ul className="space-y-3">
+                                                {(currentData.requirements || []).map((r, i) => (
+                                                    <li key={i} className="flex items-start gap-3 text-sm text-gray-200"><span className="text-[#00A651] font-bold mt-0.5">✓</span> {r}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="py-10 text-center text-white/40 text-sm">
+                                        Энэ бүтээгдэхүүний мэдээлэл удахгүй нэмэгдэнэ.
                                     </div>
                                 )}
 
@@ -600,7 +676,7 @@ const FinancialReportsPage = ({ onBack }) => {
 
     return (
         <div className="min-h-screen font-sans text-slate-800 pt-20 pb-20 px-4 md:px-6 relative" style={{ backgroundImage: `url(${BACKGROUNDS.detail_page})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
-             <div className="absolute inset-0 bg-[#003B5C]/90 pointer-events-none"></div>
+             <div className="absolute inset-0 sc-overlay-90 pointer-events-none"></div>
              <BackButton onClick={onBack} />
              <div className="max-w-4xl mx-auto relative z-10 pt-10">
                 <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-3xl shadow-xl p-8 md:p-10 animate-fade-in-up">
@@ -652,7 +728,7 @@ const PoliciesPage = ({ onBack }) => {
 
     return (
         <div className="min-h-screen font-sans text-slate-800 pt-20 pb-20 px-4 md:px-6 relative" style={{ backgroundImage: `url(${BACKGROUNDS.detail_page})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
-             <div className="absolute inset-0 bg-[#003B5C]/90 pointer-events-none"></div>
+             <div className="absolute inset-0 sc-overlay-90 pointer-events-none"></div>
              <BackButton onClick={onBack} />
              <div className="max-w-4xl mx-auto relative z-10 pt-10">
                 <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-3xl shadow-xl p-8 md:p-10 animate-fade-in-up">
@@ -693,7 +769,22 @@ function App() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentView, setCurrentView] = useState('home');
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('scm_auth');
+      return saved ? JSON.parse(saved).user : null;
+    } catch {
+      return null;
+    }
+  });
+  const [authToken, setAuthToken] = useState(() => {
+    try {
+      const saved = localStorage.getItem('scm_auth');
+      return saved ? JSON.parse(saved).token : null;
+    } catch {
+      return null;
+    }
+  });
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedGovernance, setSelectedGovernance] = useState(null);
 
@@ -703,6 +794,41 @@ function App() {
   const [products, setProducts] = useState(productsData);
 
   const PRODUCT_KEY_MAP = { 1: 'biz_loan', 2: 'car_loan', 3: 'cons_loan', 4: 'trust', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' };
+
+  const VIEW_PATHS = {
+    home: '/', financials: '/financials', policies: '/policies',
+    blog_list: '/blog', login: '/login', loan_request: '/loan-request',
+    calculator: '/calculator', trust_calculator: '/trust-calculator',
+    trust_request: '/trust-request', admin: '/admin', shogun_studio: '/shogun-studio',
+  };
+
+  const getPath = (view, item) => {
+    if (view === 'product_detail' && (item?.productKey || item?.id))
+      return `/products/${item.productKey || item.id}`;
+    if (view === 'governance_detail' && item?.slug)
+      return `/governance/${item.slug}`;
+    return VIEW_PATHS[view] || '/';
+  };
+
+  const pathToState = (pathname, hash, prods) => {
+    if (pathname === '/' || pathname === '') {
+      if (hash && hash !== '#home') return { view: 'home', item: null, governance: null, scrollTo: hash.replace('#', '') };
+      return { view: 'home', item: null, governance: null, scrollTo: null };
+    }
+    if (pathname.startsWith('/products/')) {
+      const key = pathname.replace('/products/', '');
+      const item = prods.find(p => p.productKey === key || String(p.id) === key);
+      return { view: item ? 'product_detail' : 'home', item: item || null, governance: null, scrollTo: null };
+    }
+    if (pathname.startsWith('/governance/')) {
+      const slug = pathname.replace('/governance/', '');
+      const gov = governanceItems.find(g => g.slug === slug);
+      if (gov?.isLink) return { view: gov.linkType, item: null, governance: null, scrollTo: null };
+      return { view: gov ? 'governance_detail' : 'home', item: null, governance: gov || null, scrollTo: null };
+    }
+    const entry = Object.entries(VIEW_PATHS).find(([, p]) => p === pathname);
+    return entry ? { view: entry[0], item: null, governance: null, scrollTo: null } : { view: 'home', item: null, governance: null, scrollTo: null };
+  };
 
   const menuItems = useMemo(() => [
     { name: 'Нүүр', id: 'home' },
@@ -733,7 +859,7 @@ function App() {
   useEffect(() => {
     fetch(`${API_URL}/api/config/flat`).then(r => r.json()).then(setCfg).catch(() => {});
     fetch(`${API_URL}/api/stats`).then(r => r.json())
-      .then(d => setFinancialStats(d.map(s => ({ val: s.value, label: s.label, _id: s._id }))))
+      .then(d => setFinancialStats(normalizeFinancialStats(d)))
       .catch(() => {});
     fetch(`${API_URL}/api/products/content`).then(r => r.json())
       .then(dbProds => {
@@ -774,64 +900,186 @@ function App() {
       }).catch(() => {});
   }, []);
 
-  const navigateTo = (view, item = null) => {
-      setSelectedItem(item);
-      setCurrentView(view);
-      window.scrollTo(0,0);
-      setMobileMenuOpen(false);
+  const navigateTo = (view, item = null, govItem = null) => {
+    if (item) setSelectedItem(item);
+    if (govItem) setSelectedGovernance(govItem);
+    setCurrentView(view);
+    window.scrollTo(0, 0);
+    setMobileMenuOpen(false);
+    const pathTarget = view === 'governance_detail' ? govItem : item;
+    const path = getPath(view, pathTarget);
+    window.history.pushState({ view, path }, '', path);
   };
 
-  const handleLoginSuccess = (user) => {
+  useEffect(() => {
+    const { pathname, hash } = window.location;
+    const s = pathToState(pathname, hash, products);
+    if (pathname !== '/' || hash) {
+      setCurrentView(s.view);
+      setSelectedItem(s.item);
+      if (s.governance) setSelectedGovernance(s.governance);
+      if (s.scrollTo) {
+        setTimeout(() => {
+          document.getElementById(s.scrollTo)?.scrollIntoView({ behavior: 'smooth' });
+        }, 300);
+      }
+    }
+    const handlePop = () => {
+      const { pathname, hash } = window.location;
+      const s = pathToState(pathname, hash, products);
+      setCurrentView(s.view);
+      setSelectedItem(s.item);
+      if (s.governance) setSelectedGovernance(s.governance);
+      if (s.scrollTo) {
+        setTimeout(() => {
+          document.getElementById(s.scrollTo)?.scrollIntoView({ behavior: 'smooth' });
+        }, 300);
+      } else {
+        window.scrollTo(0, 0);
+      }
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, [products]);
+
+  const handleLoginSuccess = (user, token) => {
+    localStorage.setItem('scm_auth', JSON.stringify({ user, token }));
     setCurrentUser(user);
+    setAuthToken(token);
     setCurrentView('admin');
+    window.history.pushState({ view: 'admin', path: '/admin' }, '', '/admin');
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('scm_auth');
     setCurrentUser(null);
+    setAuthToken(null);
     setCurrentView('home');
+    window.history.pushState({ view: 'home', path: '/' }, '', '/');
   };
 
   const scrollToSection = (id) => {
-    if (currentView !== 'home') {
-        setCurrentView('home');
-        setTimeout(() => {
-            const element = document.getElementById(id);
-            if (element) element.scrollIntoView({ behavior: 'smooth' });
-        }, 100);
-    } else {
-        const element = document.getElementById(id);
-        if (element) element.scrollIntoView({ behavior: 'smooth' });
-    }
+    const path = id === 'home' ? '/' : `/#${id}`;
+    window.history.pushState({ view: 'home', path }, '', path);
     setMobileMenuOpen(false);
+    if (currentView !== 'home') {
+      setCurrentView('home');
+      setTimeout(() => {
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+      }, 150);
+    } else {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   const handleGovernanceClick = (item) => {
-      if (item.isLink) {
-          navigateTo(item.linkType);
-      } else {
-          setSelectedGovernance(item);
-          navigateTo('governance_detail');
-      }
+    if (item.isLink) {
+      navigateTo(item.linkType);
+    } else {
+      navigateTo('governance_detail', null, item);
+    }
+  };
+
+  const themeMode = cfg.theme_mode || 'dark';
+  const themeType = cfg.theme_type || 'default';
+  const themeColor = cfg.theme_color || '#003B5C';
+  const themeImage = cfg.theme_image || '';
+  const sectionThemeImages = {
+    home: cfg.theme_image_home || themeImage,
+    about: cfg.theme_image_about || themeImage,
+    financials: cfg.theme_image_financials || themeImage,
+    governance: cfg.theme_image_governance || themeImage,
+    products: cfg.theme_image_products || themeImage,
+    blog: cfg.theme_image_blog || themeImage,
+    contact: cfg.theme_image_contact || themeImage,
+  };
+
+  const hexToRgb = (hex) => {
+    const h = hex.replace('#', '');
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    return `${r}, ${g}, ${b}`;
+  };
+  // When color mode: keep overlays transparent so each section shows its solid rainbow color cleanly.
+  const overlayRgb = themeType === 'color' ? '0, 0, 0' : '0, 59, 92';
+  // Light mode uses much lighter overlays
+  const isLight = themeMode === 'light';
+  const oMul = themeType === 'color' ? 0 : (isLight ? 0.15 : 1);
+
+  const themeStyle = themeType === 'color'
+    ? {}
+    : themeType === 'image' && themeImage
+      ? { backgroundSize: 'cover', backgroundAttachment: 'fixed' }
+      : {};
+
+  const getSectionBackgroundStyle = (sectionKey, defaultImage, options = {}) => {
+    const {
+      fixed = true,
+      position = 'center',
+      size = 'cover',
+    } = options;
+
+    if (themeType === 'color') {
+      return {
+        backgroundColor: SECTION_RAINBOW_COLORS[sectionKey] || themeColor,
+        backgroundPosition: position,
+        backgroundSize: size,
+        ...(fixed ? { backgroundAttachment: 'fixed' } : {}),
+      };
+    }
+
+    if (themeType === 'image' && sectionThemeImages[sectionKey]) {
+      return {
+        backgroundImage: `url(${sectionThemeImages[sectionKey]})`,
+        backgroundPosition: position,
+        backgroundSize: size,
+        ...(fixed ? { backgroundAttachment: 'fixed' } : {}),
+      };
+    }
+
+    return {
+      backgroundImage: `url(${defaultImage})`,
+      backgroundPosition: position,
+      backgroundSize: size,
+      ...(fixed ? { backgroundAttachment: 'fixed' } : {}),
+    };
   };
 
   return (
-    <div className="font-sans text-body text-slate-800 antialiased selection:bg-[#00A651] selection:text-white">
+    <div className={`font-sans antialiased selection:bg-[#00A651] selection:text-white${isLight ? ' sc-light' : ''}`}
+      style={themeStyle}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700&family=Playfair+Display:wght@400;700&display=swap');
-        .font-display { font-family: 'Playfair Display', serif; }
-        .font-sans { font-family: 'Montserrat', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap');
+        .sc-overlay-60 { background-color: rgba(${overlayRgb}, ${(0.60 * oMul).toFixed(2)}) !important; }
+        .sc-overlay-80 { background-color: rgba(${overlayRgb}, ${(0.80 * oMul).toFixed(2)}) !important; }
+        .sc-overlay-85 { background-color: rgba(${overlayRgb}, ${(0.85 * oMul).toFixed(2)}) !important; }
+        .sc-overlay-90 { background-color: rgba(${overlayRgb}, ${(0.90 * oMul).toFixed(2)}) !important; }
+        .sc-overlay-92 { background-color: rgba(${overlayRgb}, ${(0.92 * oMul).toFixed(2)}) !important; }
+        .sc-overlay-97 { background-color: rgba(${overlayRgb}, ${(0.97 * oMul).toFixed(2)}) !important; }
+        .sc-grad-bottom { background: linear-gradient(to top, rgba(${overlayRgb}, 1) 0%, rgba(${overlayRgb}, 0.6) 50%, transparent 100%) !important; }
+        ${isLight ? `
+        .sc-light section, .sc-light .min-h-screen { color: #1e293b; }
+        .sc-light .text-white { color: #1e293b !important; }
+        .sc-light .text-white\\/80, .sc-light .text-white\\/90 { color: #334155 !important; }
+        .sc-light .text-gray-400, .sc-light .text-gray-300 { color: #475569 !important; }
+        .sc-light .text-blue-100, .sc-light .text-blue-50 { color: #475569 !important; }
+        ` : ''}
       `}</style>
+      {themeType === 'image' && themeImage && (
+        <div className="fixed inset-0 bg-black/40 pointer-events-none z-0"></div>
+      )}
 
       {/* ✅ ЧАТБОТ ҮҮРД ХАРАГДАНА (z-index: 10000) */}
       <ChatBot />
 
-      {currentView === 'admin' && currentUser ? (
-        <AdminPanel user={currentUser} onLogout={handleLogout} />
+      {currentView === 'admin' && currentUser && authToken ? (
+        <AdminPanel user={currentUser} token={authToken} onLogout={handleLogout} />
       ) : (
         <>
             <BackButton onClick={() => navigateTo('home')} currentView={currentView} />
            
-            <nav className={`fixed top-0 w-full z-50 transition-all duration-500 ${currentView === 'shogun_studio' ? 'hidden' : ''} ${scrolled || currentView !== 'home' ? 'bg-[#0b1215]/80 backdrop-blur-md shadow-2xl py-3 border-b border-white/5' : 'bg-transparent py-4 md:py-6'}`}>
+            <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${currentView === 'shogun_studio' ? 'hidden' : ''} ${scrolled || currentView !== 'home' ? 'bg-[#003B5C]/95 backdrop-blur-md shadow-xl py-3 border-b border-white/10' : 'bg-transparent py-4 md:py-6'}`}>
               <div className="max-w-7xl mx-auto px-4 md:px-6 flex justify-between items-center">
                 
                 <div className="cursor-pointer z-50 transition-transform hover:scale-105 duration-300" onClick={() => navigateTo('home')}>
@@ -847,7 +1095,7 @@ function App() {
                     <div key={item.id} className="relative group h-full flex items-center">
                       <button 
                         onClick={() => item.submenu ? null : scrollToSection(item.id)} 
-                        className={`flex items-center gap-1 text-[11px] lg:text-xs font-display font-bold uppercase tracking-[0.2em] hover:text-[#D4AF37] transition-all duration-300 py-4 ${scrolled || currentView !== 'home' ? 'text-gray-200' : 'text-white'}`}
+                        className={`flex items-center gap-1 text-xs font-sans font-semibold uppercase tracking-[0.15em] hover:text-[#D4AF37] transition-colors duration-300 py-4 ${scrolled || currentView !== 'home' ? 'text-gray-200' : 'text-white'}`}
                       >
                         {item.name}
                         {item.submenu && <ChevronDown size={12} className="group-hover:rotate-180 transition-transform duration-300 text-[#D4AF37]/70"/>}
@@ -881,17 +1129,17 @@ function App() {
 
                   <button 
                       onClick={() => navigateTo('login')}
-                      className={`px-8 py-2.5 rounded-full font-display font-bold text-[10px] uppercase tracking-widest transition-all border ${scrolled || currentView !== 'home' ? 'border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-white' : 'border-white text-white hover:bg-white hover:text-[#003B5C]'} ml-6 shadow-lg`}
+                      className={`px-7 py-2.5 rounded-full font-sans font-semibold text-xs uppercase tracking-widest transition-all duration-300 border ${scrolled || currentView !== 'home' ? 'border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-white' : 'border-white text-white hover:bg-[#D4AF37] hover:border-[#D4AF37] hover:text-white'} ml-6`}
                   >
                       Нэвтрэх
                   </button>
                 </div>
 
-                <button className={`md:hidden text-2xl z-50 ${scrolled || currentView !== 'home' ? 'text-[#003B5C]' : 'text-white'}`} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>☰</button>
+                <button className="md:hidden text-2xl z-50 text-white" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>☰</button>
               </div>
               
               {mobileMenuOpen && (
-                <div className="absolute top-0 left-0 w-full h-screen bg-[#0b1215]/95 backdrop-blur-xl flex flex-col items-center justify-center space-y-8 z-40">
+                <div className="absolute top-0 left-0 w-full h-screen bg-[#003B5C]/97 backdrop-blur-xl flex flex-col items-center justify-center space-y-8 z-40">
                     {menuItems.map((item) => (
                       <button key={item.id} onClick={() => scrollToSection(item.id)} className="text-xl text-white font-display font-bold uppercase tracking-widest">{item.name}</button>
                     ))}
@@ -932,8 +1180,8 @@ function App() {
                 <ShogunStudio onBack={() => navigateTo('home')} />
             ) : (
                   <>
-                    <section id="home" className="relative h-screen flex items-center justify-center text-center px-4" style={{ backgroundImage: `url(${BACKGROUNDS.hero})`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
-                      <div className="absolute inset-0 bg-[#003B5C]/80 mix-blend-multiply"></div>
+                    <section id="home" className="relative h-screen flex items-center justify-center text-center px-4" style={getSectionBackgroundStyle('home', BACKGROUNDS.hero, { fixed: false })}>
+                      <div className="absolute inset-0 sc-overlay-80 mix-blend-multiply"></div>
                       <div className="relative z-10 max-w-5xl space-y-8 text-white animate-fade-in-up px-4 flex flex-col items-center">
                         <img 
                           src={
@@ -954,7 +1202,7 @@ function App() {
                         <div className="pt-8">
                             <button
                               onClick={() => scrollToSection('products')}
-                              className="px-10 py-4 bg-transparent border border-white/30 text-white font-display font-bold rounded-full transition transform hover:bg-white/10 hover:border-white shadow-2xl uppercase tracking-wide text-small"
+                              className="px-10 py-4 bg-transparent border border-white/40 text-white font-sans font-semibold rounded-full transition-all duration-300 hover:bg-white/10 hover:border-white uppercase tracking-widest text-xs"
                             >
                               {cfg.hero_button || 'Бүтээгдэхүүн үзэх'}
                             </button>
@@ -964,8 +1212,8 @@ function App() {
                     </section>
 
                     <div id="about-intro" className="relative">
-                      <section className="min-h-screen relative flex items-center justify-center text-center px-6" style={{ backgroundImage: `url(${BACKGROUNDS.about})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
-                        <div className="absolute inset-0 bg-[#003B5C]/60"></div> 
+                      <section className="min-h-screen relative flex items-center justify-center text-center px-6" style={getSectionBackgroundStyle('about', BACKGROUNDS.about)}>
+                        <div className="absolute inset-0 sc-overlay-60"></div>
                         <div className="relative z-10 max-w-4xl space-y-12 animate-fade-in-up">
                             <div className="space-y-6">
                                 <h2 className="font-display font-bold text-4xl md:text-6xl text-white leading-tight">{cfg.about_title || 'Бид хэн бэ?'}</h2>
@@ -991,11 +1239,11 @@ function App() {
                         <ScrollDownArrow targetId="financials" color="text-white/50" />
                       </section>
 
-                      <section id="financials" className="py-24 relative min-h-[90vh] flex items-center" style={{ backgroundImage: `url(${BACKGROUNDS.financials})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
-                        <div className="absolute inset-0 bg-[#003B5C]/80"></div>
+                      <section id="financials" className="py-24 relative min-h-[90vh] flex items-center" style={getSectionBackgroundStyle('financials', BACKGROUNDS.financials)}>
+                        <div className="absolute inset-0 sc-overlay-80"></div>
                         <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
                             <div className="text-center mb-16">
-                                <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-2 block">{cfg.financial_section_label || 'Бидний амжилт'}</span>
+                                <span className="text-[#00A651] font-sans font-semibold uppercase tracking-widest text-xs mb-2 block">{cfg.financial_section_label || 'Бидний амжилт'}</span>
                                 <h2 className="font-display font-bold text-3xl md:text-5xl text-white">{cfg.financial_section_title || 'Санхүүгийн үзүүлэлтүүд'}</h2>
                                 <p className="text-[#C0C0C0] text-lg md:text-xl max-w-4xl mx-auto mt-6 font-light leading-relaxed">
                                     {cfg.financial_section_desc || 'Бид богино хугацааны өндөр ашигт бус, урт хугацаанд тогтвортой, хүртээмжтэй санхүүгийн экосистемийг бүтээхийг зорьдог.'}
@@ -1019,12 +1267,12 @@ function App() {
                         <ScrollDownArrow targetId="governance" />
                       </section>
 
-                      <section id="governance" className="py-24 relative min-h-[90vh] flex flex-col justify-center" style={{ backgroundImage: `url(${BACKGROUNDS.governance})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
-                        <div className="absolute inset-0 bg-slate-900/80"></div>
+                      <section id="governance" className="py-24 relative min-h-[90vh] flex flex-col justify-center" style={getSectionBackgroundStyle('governance', BACKGROUNDS.governance)}>
+                        <div className="absolute inset-0 sc-overlay-85"></div>
                         <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
                             <div className="text-center mb-16">
                               <h2 className="font-display font-bold text-3xl md:text-5xl text-white">Компанийн засаглал</h2>
-                              <p className="text-gray-400 max-w-2xl mx-auto mt-4 font-sans text-body">Бид ил тод, нээлттэй байдал болон бизнесийн ёс зүйг дээдэлнэ.</p>
+                              <p className="text-white/60 max-w-2xl mx-auto mt-4 font-sans text-sm">Бид ил тод, нээлттэй байдал болон бизнесийн ёс зүйг дээдэлнэ.</p>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                               {governanceItems.map((item, idx) => {
@@ -1033,9 +1281,9 @@ function App() {
                                       <div 
                                           key={idx} 
                                           onClick={() => handleGovernanceClick(item)} 
-                                          className="group cursor-pointer flex flex-col items-center text-center p-6 hover:bg-white/5 rounded-2xl transition duration-300"
+                                          className="group cursor-pointer flex flex-col items-center text-center p-6 hover:bg-white/8 border border-transparent hover:border-white/10 rounded-2xl transition-all duration-300"
                                       >
-                                      <div className="mb-6 text-[#D4AF37] transition transform group-hover:scale-110 duration-300">
+                                      <div className="mb-6 text-[#D4AF37] transition-transform duration-300 group-hover:scale-110">
                                           <Icon size={48} strokeWidth={1} />
                                       </div>
                                       <h3 className="font-display font-bold text-xl text-white mb-3 group-hover:text-[#D4AF37] transition">{item.title}</h3>
@@ -1050,20 +1298,20 @@ function App() {
                       </section>
                     </div>
 
-                    <section id="products" className="py-32 relative min-h-screen flex items-center" style={{ backgroundImage: `url(${BACKGROUNDS.products})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
-                      <div className="absolute inset-0 bg-[#003B5C]/90"></div>
+                    <section id="products" className="py-24 relative min-h-screen flex items-center" style={getSectionBackgroundStyle('products', BACKGROUNDS.products)}>
+                      <div className="absolute inset-0 sc-overlay-90"></div>
                       <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
-                          <div className="text-center mb-24 max-w-3xl mx-auto">
-                            <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-4 block">Бидний шийдэл</span>
+                          <div className="text-center mb-16 max-w-3xl mx-auto">
+                            <span className="text-[#00A651] font-sans font-semibold uppercase tracking-widest text-xs mb-4 block">Бидний шийдэл</span>
                             <h2 className="font-display font-bold text-3xl md:text-5xl text-white leading-tight">Бүтээгдэхүүн үйлчилгээ</h2>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                             {products.map((item) => {
                               const Icon = item.icon;
                               return (
-                                  <div 
-                                    key={item.id} 
-                                    className="group flex flex-col items-start h-full p-6 border border-white/10 hover:border-white/30 hover:bg-white/5 rounded-2xl transition-all duration-300"
+                                  <div
+                                    key={item.id}
+                                    className="group flex flex-col items-start h-full p-6 border border-white/10 hover:border-[#D4AF37]/40 hover:bg-white/5 rounded-2xl transition-all duration-300"
                                   >
                                     <div className="mb-6 p-4 bg-white/10 rounded-2xl shadow-sm group-hover:bg-[#D4AF37] transition-colors duration-300 w-fit text-white group-hover:text-white">
                                         <Icon size={32} />
@@ -1083,12 +1331,12 @@ function App() {
                    </section> {/* Бүтээгдэхүүн дууссан хаалт */}
 
                     {/* ✅ БЛОГ СЕКЦИЙГ ЭНД НЭМЖ БАЙРЛУУЛ (ЯГ CONTACT-ИЙН ДЭЭР) */}
-                    <section id="blog" className="py-24 bg-slate-50 relative min-h-[90vh] flex items-center" style={{ backgroundImage: `url(${BACKGROUNDS.blog})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' }}>
-                        <div className="absolute inset-0 bg-slate-900/90"></div>
+                    <section id="blog" className="py-24 relative min-h-[90vh] flex items-center" style={getSectionBackgroundStyle('blog', BACKGROUNDS.blog)}>
+                        <div className="absolute inset-0 sc-overlay-90"></div>
                         <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
                             <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
                                 <div className="text-center md:text-left">
-                                    <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-2 block">Мэдээ мэдээлэл</span>
+                                    <span className="text-[#00A651] font-sans font-semibold uppercase tracking-widest text-xs mb-2 block">Мэдээ мэдээлэл</span>
                                     <h2 className="font-display font-bold text-3xl md:text-5xl text-white">Блог & Мэдээ</h2>
                                 </div>
                                 <button onClick={() => navigateTo('blog_list')} className="px-8 py-3 border border-white/30 text-white rounded-full font-bold text-xs uppercase hover:bg-[#D4AF37] hover:text-black transition-all">Бүх мэдээг харах</button>
@@ -1099,13 +1347,12 @@ function App() {
                     </section>
 
                     {/* ✅ КОНТАКТ СЕКЦИЙГ ЗӨВХӨН НЭГ УДАА НЭЭХ */}
-                    <section id="contact" className="relative min-h-screen flex items-center bg-gray-900 text-white" style={{ backgroundImage: `url(${BACKGROUNDS.contact})`, backgroundSize: 'cover' }}>
-
-                      <div className="absolute inset-0 bg-[#002a42]/90"></div>
-                      <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-6 w-full grid grid-cols-1 lg:grid-cols-2 gap-20 items-center py-20">
+                    <section id="contact" className="relative min-h-screen flex items-center text-white" style={getSectionBackgroundStyle('contact', BACKGROUNDS.contact, { fixed: false })}>
+                      <div className="absolute inset-0 sc-overlay-92"></div>
+                      <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-6 w-full grid grid-cols-1 lg:grid-cols-2 gap-16 items-center py-24">
                           <div>
                             <img src={logoMetal} alt="Solongo Capital Metal" className="h-16 mb-10 object-contain brightness-0 invert opacity-80" />
-                            <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-2 block">Бидэнтэй нэгдээрэй</span>
+                            <span className="text-[#00A651] font-sans font-semibold uppercase tracking-widest text-xs mb-2 block">Бидэнтэй нэгдээрэй</span>
                             <h2 className="font-display font-bold text-3xl md:text-5xl mb-12">Холбоо барих</h2>
                             <div className="space-y-8">
                                 <a href="https://goo.gl/maps/YOUR_LINK" target="_blank" rel="noopener noreferrer" className="flex items-start gap-6 group hover:opacity-80 transition cursor-pointer">
@@ -1120,16 +1367,14 @@ function App() {
                             </div>
                           </div>
                           
-                          <div className="p-0 lg:p-8">
-                            <h3 className="font-display font-bold text-h3 text-white mb-8">Зурвас илгээх</h3>
-                            <form className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                  <input type="text" placeholder="Таны нэр" className="w-full p-4 bg-white/5 rounded-xl border border-white/20 focus:outline-none focus:border-[#D4AF37] focus:bg-white/10 transition font-sans text-white placeholder-gray-400" />
-                                  <input type="text" placeholder="Утасны дугаар" className="w-full p-4 bg-white/5 rounded-xl border border-white/20 focus:outline-none focus:border-[#D4AF37] focus:bg-white/10 transition font-sans text-white placeholder-gray-400 tabular-nums" />
-                                </div>
-                                <textarea placeholder="Зурвас" rows="4" className="w-full p-4 bg-white/5 rounded-xl border border-white/20 focus:outline-none focus:border-[#D4AF37] focus:bg-white/10 transition font-sans text-white placeholder-gray-400 resize-none"></textarea>
-                                <button className="w-full bg-[#00A651] text-white py-5 rounded-xl font-display font-bold hover:bg-[#008f45] transition text-small uppercase tracking-wider shadow-lg">Илгээх</button>
-                            </form>
+                          <div className="p-0 lg:p-8 flex items-center justify-center">
+                            {cfg.contact_image ? (
+                              <img src={cfg.contact_image} alt="Холбоо барих" className="w-full max-h-96 object-cover rounded-2xl shadow-2xl" />
+                            ) : (
+                              <div className="w-full max-h-96 h-64 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center text-white/30 text-sm">
+                                Зураг оруулаагүй байна
+                              </div>
+                            )}
                           </div>
                       </div>
 

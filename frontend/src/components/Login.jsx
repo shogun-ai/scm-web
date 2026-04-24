@@ -15,9 +15,9 @@ const Login = ({ onLogin, onBack }) => {
   // (const [loading...] мөрийн дараа, handleSubmit-ийн өмнө)
   // ==========================================
   const isLocal = window.location.hostname === 'localhost';
-  const API_BASE_URL = isLocal 
-    ? 'http://localhost:5000' 
-    : 'https://scm-okjs.onrender.com';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || (isLocal
+    ? 'http://localhost:5000'
+    : 'https://scm-okjs.onrender.com');
   // ==========================================
 
   const handleSubmit = async (e) => {
@@ -45,7 +45,7 @@ const Login = ({ onLogin, onBack }) => {
             return;
         }
 
-        onLogin(response.data.user);
+        onLogin(response.data.user, response.data.token);
     } catch (err) {
         setError(err.response?.data?.message || 'Нэвтрэхэд алдаа гарлаа');
         setLoading(false);

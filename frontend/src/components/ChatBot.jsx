@@ -1,75 +1,96 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+
+const INITIAL_OPTIONS = ['Зээл', 'Итгэлцэл', 'Тооцоолуур', 'Холбоо барих'];
+
+const createInitialMessage = () => ({
+  role: 'ai',
+  text: 'Сайн байна уу? Би Солонго Капитал ББСБ-ийн санхүүгийн зөвлөх чатбот байна. Та доорх сонголтуудаас нэгийг дарж эсвэл асуултаа шууд бичиж болно.',
+  options: INITIAL_OPTIONS
+});
+
+const createSessionId = () => (
+  window.crypto && typeof window.crypto.randomUUID === 'function'
+    ? window.crypto.randomUUID()
+    : `scm_${Date.now()}_${Math.random().toString(16).slice(2)}`
+);
+
+const isLocal = window.location.hostname === 'localhost';
+const API_BASE_URL = isLocal ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com';
+
+const OPTION_COMMANDS = {
+  Зээл: 'loan',
+  Итгэлцэл: 'trust',
+  Тооцоолуур: 'calculator',
+  'Холбоо барих': 'contact',
+  'Үндсэн цэс': 'menu',
+  'Автомашины зээл': 'car_loan',
+  'Хэрэглээний зээл': 'consumer_loan',
+  'Кредит карт': 'credit_card',
+  'Бизнесийн зээл': 'business_loan',
+  'Үл хөдлөх барьцаалсан зээл': 'real_estate_loan',
+  'Шугмын зээл': 'line_loan',
+  'Зээлийн тооцоолуур': 'loan_calc',
+  'Итгэлцлийн тооцоолуур': 'trust_calc',
+  Иргэн: 'individual',
+  Байгууллага: 'company',
+  'Бүрдүүлэх баримт бичиг': 'documents',
+  Тооцоолол: 'calculate',
+  'Тооцоолол хийх': 'calculate',
+  'Онлайн хүсэлт өгөх': 'online_request',
+  Буцах: 'back',
+  Үгүй: 'no'
+};
 
 const ChatBot = () => {
   const [input, setInput] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
-  // ✅ SessionId: state machine-д чухал (component дотор байх ёстой)
+  const [messages, setMessages] = useState([createInitialMessage()]);
   const sessionIdRef = useRef(null);
+  const messagesEndRef = useRef(null);
 
-  useEffect(() => {
-    let sid = localStorage.getItem('scm_chat_session');
+  const ensureSessionId = (forceNew = false) => {
+    let sid = forceNew ? null : localStorage.getItem('scm_chat_session');
 
     if (!sid) {
-      // crypto.randomUUID() fallback
-      sid =
-        (window.crypto && typeof window.crypto.randomUUID === 'function')
-          ? window.crypto.randomUUID()
-          : `scm_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-
+      sid = createSessionId();
       localStorage.setItem('scm_chat_session', sid);
     }
 
     sessionIdRef.current = sid;
-  }, []);
-
-  // ✅ Анхны мэндчилгээ
-  const [messages, setMessages] = useState([
-    {
-      role: 'ai',
-      text: 'Сайн байна уу? Би Солонго Капитал ББСБ-ийн санхүүгийн ухаалаг зөвлөх байна. Танд юугаар туслах вэ?',
-      options: ['Холбоо барих']
-    }
-  ]);
-
-  const messagesEndRef = useRef(null);
-  // ChatBot.jsx доторх API_BASE_URL хэсгийг ингэж засаарай:
-const isLocal = window.location.hostname === 'localhost';
-
-// ⚠️ Render Dashboard дээрх Backend URL-ээ энд яг зөв тавь (жишээ нь: scm.onrender.com)
-const API_BASE_URL = isLocal 
-  ? 'http://localhost:5000' 
-  : 'https://scm-okjs.onrender.com'; // 👈 Энэ хаягийг яг ингээд бичээрэй
-  
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    return sid;
   };
 
   useEffect(() => {
-    if (isOpen) scrollToBottom();
-  }, [messages, isOpen]);
+    ensureSessionId();
+  }, []);
 
-  const handleOptionClick = (option) => {
-    const actions = {
-      'Залгах': () => (window.location.href = 'tel:75991919'),
-      'Имэйл илгээх': () => (window.location.href = 'mailto:info@scm.mn'),
-      'Газрын зураг': () => window.open('https://maps.google.com/?q=Misheel+City+M3+Tower', '_blank'),
-      'Холбоо барих': () => sendMessage('Холбоо барих мэдээлэл өгнө үү', true)
-    };
+  useEffect(() => {
+    if (isOpen) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [isOpen, messages]);
 
-    if (actions[option]) actions[option]();
-    else sendMessage(option, true);
+  const resetChat = () => {
+    ensureSessionId(true);
+    setMessages([createInitialMessage()]);
+    setInput('');
+    setIsLoading(false);
   };
 
-  const sendMessage = async (textToSend, isOption = false) => {
-    const messageText = (textToSend ?? input).trim();
+  const navigateToLoanRequest = () => {
+    const path = '/loan-request';
+    window.history.pushState({ view: 'loan_request', path }, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { view: 'loan_request', path } }));
+    setIsOpen(false);
+  };
+
+  const sendMessage = async (textToSend = input, displayText = textToSend) => {
+    const messageText = String(textToSend || '').trim();
     if (!messageText || isLoading) return;
 
-    const userMsg = { role: 'user', text: messageText };
-
-    // ✅ setMessages асинк учраас яг одоо ашиглах "шинэ" түүхийг энд бэлдэнэ
+    const userMsg = { role: 'user', text: String(displayText || messageText).trim() };
     const nextMessages = [...messages, userMsg];
 
     setMessages(nextMessages);
@@ -77,105 +98,152 @@ const API_BASE_URL = isLocal
     setIsLoading(true);
 
     try {
-      // ✅ Backend рүү явуулах history (сүүлийн 20)
-      const chatHistory = nextMessages.slice(-20).map(m => ({
-        role: m.role === 'ai' ? 'assistant' : 'user',
-        content: m.text
+      const chatHistory = nextMessages.slice(-20).map((message) => ({
+        role: message.role === 'ai' ? 'assistant' : 'user',
+        content: message.text
       }));
 
-      const sid = sessionIdRef.current || localStorage.getItem('scm_chat_session') || '';
-
+      const sid = ensureSessionId();
       const res = await axios.post(
-  `${API_BASE_URL}/api/chat`,
-  {
-    sessionId: sid,
-    message: messageText,
-    history: chatHistory
-  },
-  {
-    headers: {
-      'x-session-id': sid
-    },
-      }
-);
+        `${API_BASE_URL}/api/chat`,
+        {
+          sessionId: sid,
+          message: messageText,
+          history: chatHistory
+        },
+        {
+          headers: {
+            'x-session-id': sid
+          }
+        }
+      );
 
       const aiReply = res.data?.reply ?? '';
-      let cleanText = aiReply;
-      let options = [];
-
       const optionsMatch = aiReply.match(/\[OPTIONS:\s*(.*?)\]/i);
-      if (optionsMatch) {
-        cleanText = aiReply.replace(optionsMatch[0], '').trim();
-        options = optionsMatch[1].split(',').map(o => o.trim()).filter(Boolean);
-      }
+      const actionMatch = aiReply.match(/\[ACTION:\s*(.*?)\]/i);
+      const cleanText = [optionsMatch?.[0], actionMatch?.[0]]
+        .filter(Boolean)
+        .reduce((text, token) => text.replace(token, ''), aiReply)
+        .trim();
+      const options = optionsMatch
+        ? optionsMatch[1].split(',').map((option) => option.trim()).filter(Boolean)
+        : [];
 
-      setMessages(prev => [...prev, { role: 'ai', text: cleanText, options }]);
-    } catch (e) {
-      console.error('AI Error:', e);
-      setMessages(prev => [
+      setMessages((prev) => [...prev, { role: 'ai', text: cleanText, options }]);
+
+      if (actionMatch?.[1]?.trim() === 'loan_request') {
+        setTimeout(navigateToLoanRequest, 300);
+      }
+    } catch (error) {
+      console.error('ChatBot error:', error);
+      setMessages((prev) => [
         ...prev,
-        { role: 'ai', text: 'Уучлаарай, систем түр саатлаа. Та дахин оролдоно уу.' }
+        {
+          role: 'ai',
+          text: 'Уучлаарай, чатбот түр саатлаа. Дахин оролдоно уу эсвэл холбоо барих товчийг ашиглаарай.',
+          options: ['Холбоо барих', 'Үндсэн цэс']
+        }
       ]);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleOptionClick = (option) => {
+    const actions = {
+      Залгах: () => { window.location.href = 'tel:75991919'; },
+      'Имэйл илгээх': () => { window.location.href = 'mailto:info@scm.mn'; },
+      'Газрын зураг': () => window.open('https://maps.google.com/?q=Misheel+City+M3+Tower', '_blank', 'noopener,noreferrer'),
+      'Шинэ чат': () => resetChat(),
+      'Онлайн хүсэлт өгөх': () => navigateToLoanRequest(),
+      'Зээлийн хүсэлт нээх': () => navigateToLoanRequest()
+    };
+
+    if (actions[option]) {
+      actions[option]();
+      return;
+    }
+
+    sendMessage(OPTION_COMMANDS[option] || option, option);
+  };
+
   return (
     <div className="fixed bottom-6 right-6 font-sans" style={{ zIndex: 10000 }}>
       {isOpen && (
-        <div className="bg-white shadow-2xl rounded-[2rem] w-[330px] md:w-[400px] h-[600px] flex flex-col mb-4 border border-gray-100 overflow-hidden animate-in fade-in slide-in-from-bottom-8 duration-300">
-          <div className="p-6 bg-gradient-to-br from-[#003B5C] via-[#003B5C] to-[#00A651] text-white">
-            <div className="flex justify-between items-center">
+        <div className="mb-4 flex h-[600px] w-[330px] flex-col overflow-hidden rounded-[2rem] border border-gray-100 bg-white shadow-2xl duration-300 animate-in fade-in slide-in-from-bottom-8 md:w-[400px]">
+          <div className="bg-gradient-to-br from-[#003B5C] via-[#003B5C] to-[#00A651] p-6 text-white">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-md">
-                    <span className="text-xl">👩‍💼</span>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 backdrop-blur-md">
+                    <span className="text-xl">💼</span>
                   </div>
-                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></div>
+                  <div className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-green-400" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm tracking-tight">FinExpert</h3>
+                  <h3 className="text-sm font-bold tracking-tight">FinExpert</h3>
                   <p className="text-[10px] text-green-200">Онлайн байна</p>
                 </div>
               </div>
 
-              <button onClick={() => setIsOpen(false)} className="text-white/70 hover:text-white transition-colors">
+              <button onClick={() => setIsOpen(false)} className="text-white/70 transition-colors hover:text-white">
                 <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                  <path d="M6 18L18 6M6 6l12 12"></path>
+                  <path d="M6 18L18 6M6 6l12 12" />
                 </svg>
+              </button>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={() => sendMessage('menu', 'Үндсэн цэс')}
+                disabled={isLoading}
+                className="rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/25 disabled:opacity-60"
+              >
+                Үндсэн цэс
+              </button>
+              <button
+                onClick={resetChat}
+                disabled={isLoading}
+                className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-[#003B5C] transition hover:bg-slate-100 disabled:opacity-60"
+              >
+                Шинэ чат
               </button>
             </div>
           </div>
 
-          <div className="flex-1 p-5 overflow-y-auto space-y-6 bg-slate-50/50">
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
-                <div className={`max-w-[85%] ${m.role === 'user' ? 'order-1' : 'order-2'}`}>
-                  <div className={`p-4 rounded-3xl text-[13px] leading-relaxed shadow-sm ${
-                    m.role === 'user'
-                      ? 'bg-[#003B5C] text-white rounded-tr-none'
-                      : 'bg-white text-gray-700 border border-gray-100 rounded-tl-none'
-                  }`}>
-                    {m.text.split('\n').map((line, idx) => (
+          <div className="flex-1 space-y-6 overflow-y-auto bg-slate-50/50 p-5">
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={`flex animate-in slide-in-from-bottom-2 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className={`max-w-[85%] ${message.role === 'user' ? 'order-1' : 'order-2'}`}>
+                  <div
+                    className={`rounded-3xl p-4 text-[13px] leading-relaxed shadow-sm ${
+                      message.role === 'user'
+                        ? 'rounded-tr-none bg-[#003B5C] text-white'
+                        : 'rounded-tl-none border border-gray-100 bg-white text-gray-700'
+                    }`}
+                  >
+                    {message.text.split('\n').map((line, lineIndex) => (
                       <p
-                        key={idx}
-                        className={`${line.includes(':') ? 'font-bold text-[#003B5C] mb-1' : 'mb-1'} ${m.role === 'user' ? 'text-white' : ''}`}
+                        key={lineIndex}
+                        className={`mb-1 ${line.includes(':') && message.role !== 'user' ? 'font-bold text-[#003B5C]' : ''}`}
                       >
                         {line.replace(/\*\*/g, '')}
                       </p>
                     ))}
                   </div>
 
-                  {m.role === 'ai' && m.options && m.options.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-3 ml-1">
-                      {m.options.map((opt, idx) => (
+                  {message.role === 'ai' && message.options?.length > 0 && (
+                    <div className="mt-3 ml-1 flex flex-wrap gap-2">
+                      {message.options.map((option, optionIndex) => (
                         <button
-                          key={idx}
-                          onClick={() => handleOptionClick(opt)}
-                          className="bg-white border border-[#00A651] text-[#00A651] px-4 py-2 rounded-xl text-[11px] font-bold hover:bg-[#00A651] hover:text-white transition-all shadow-sm active:scale-95"
+                          key={optionIndex}
+                          onClick={() => handleOptionClick(option)}
+                          className="rounded-xl border border-[#00A651] bg-white px-4 py-2 text-[11px] font-bold text-[#00A651] shadow-sm transition-all hover:bg-[#00A651] hover:text-white active:scale-95"
                         >
-                          {opt}
+                          {option}
                         </button>
                       ))}
                     </div>
@@ -185,11 +253,11 @@ const API_BASE_URL = isLocal
             ))}
 
             {isLoading && (
-              <div className="flex items-center gap-2 ml-2">
+              <div className="ml-2 flex items-center gap-2">
                 <div className="flex gap-1">
-                  <span className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce"></span>
-                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
-                  <span className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:0.2s]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300 [animation-delay:0.4s]" />
                 </div>
               </div>
             )}
@@ -197,8 +265,8 @@ const API_BASE_URL = isLocal
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="p-4 bg-white border-t border-gray-100">
-            <div className="flex gap-2 items-center bg-gray-100 rounded-2xl px-4 py-1">
+          <div className="border-t border-gray-100 bg-white p-4">
+            <div className="flex items-center gap-2 rounded-2xl bg-gray-100 px-4 py-1">
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -210,11 +278,11 @@ const API_BASE_URL = isLocal
               <button
                 onClick={() => sendMessage()}
                 disabled={isLoading}
-                className="text-[#003B5C] p-2 hover:scale-110 transition-transform disabled:opacity-30"
+                className="p-2 text-[#003B5C] transition-transform hover:scale-110 disabled:opacity-30"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
                 </svg>
               </button>
             </div>
@@ -224,18 +292,18 @@ const API_BASE_URL = isLocal
 
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="bg-gradient-to-tr from-[#003B5C] to-[#00A651] text-white p-5 rounded-full shadow-[0_20px_50px_rgba(0,166,81,0.3)] hover:scale-110 active:scale-90 transition-all border-2 border-white/20 group"
+        className="group rounded-full border-2 border-white/20 bg-gradient-to-tr from-[#003B5C] to-[#00A651] p-5 text-white shadow-[0_20px_50px_rgba(0,166,81,0.3)] transition-all hover:scale-110 active:scale-90"
       >
         {isOpen ? (
           <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
-            <path d="M18 6L6 18M6 6l12 12"></path>
+            <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         ) : (
           <div className="relative">
             <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"></path>
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z" />
             </svg>
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
+            <span className="absolute -top-1 -right-1 h-3 w-3 animate-pulse rounded-full border-2 border-white bg-red-500" />
           </div>
         )}
       </button>
