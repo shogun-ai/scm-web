@@ -502,10 +502,10 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
               <div className="flex items-center gap-3 p-5 bg-emerald-50 border-2 border-emerald-300 rounded-2xl text-emerald-700 font-bold">
                 <CheckCircle2 size={22} /> Зээл амжилттай олгогдсон байна.
               </div>
-            ) : selectedLoan.status !== 'approved' ? (
+            ) : !['approved', 'resolved'].includes(selectedLoan.status) ? (
               <div className="flex items-center gap-3 p-5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-sm">
                 <AlertCircle size={18} />
-                Зээл олгохын өмнө эхлээд <button onClick={() => setActiveStep('approval')} className="underline font-bold">Зөвшөөрөл</button> шатыг дуусгана уу. Одоогийн статус: <StatusBadge status={selectedLoan.status} />
+                Зээл олгохын өмнө эхлээд <button onClick={() => setActiveStep('committee')} className="underline font-bold">Зээлийн хороо</button> шатыг дуусгана уу. Одоогийн статус: <StatusBadge status={selectedLoan.status} />
               </div>
             ) : (
               <div className="bg-white border-2 border-emerald-400 rounded-2xl p-5 space-y-4">
@@ -634,12 +634,13 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
   const autoVerdict = passCount >= 4 ? 'approve' : passCount >= 2 ? 'conditional' : 'reject';
   const verdictStyle = { approve: 'bg-green-50 border-green-300 text-green-700', conditional: 'bg-amber-50 border-amber-300 text-amber-700', reject: 'bg-red-50 border-red-300 text-red-700' }[autoVerdict];
 
-  const isDecided = ['approved', 'rejected', 'resolved'].includes(loan.status);
+  const isDecided = ['approved', 'rejected', 'resolved', 'disbursed'].includes(loan.status);
 
   const decidedMeta = {
-    approved:  { label: 'Зөвшөөрөгдсөн',     cls: 'bg-green-50 border-green-400 text-green-700',  icon: <ThumbsUp size={20} /> },
-    rejected:  { label: 'Татгалзсан',          cls: 'bg-red-50 border-red-400 text-red-700',        icon: <ThumbsDown size={20} /> },
-    resolved:  { label: 'Нөхцөлтэй зөвшөөрөв', cls: 'bg-amber-50 border-amber-400 text-amber-700', icon: <BadgeCheck size={20} /> },
+    approved:  { label: 'Зөвшөөрөгдсөн',      cls: 'bg-green-50 border-green-400 text-green-700',   icon: <ThumbsUp size={20} /> },
+    rejected:  { label: 'Татгалзсан',           cls: 'bg-red-50 border-red-400 text-red-700',         icon: <ThumbsDown size={20} /> },
+    resolved:  { label: 'Нөхцөлтэй зөвшөөрөв', cls: 'bg-amber-50 border-amber-400 text-amber-700',  icon: <BadgeCheck size={20} /> },
+    disbursed: { label: 'Зөвшөөрөгдсөн — Олгогдсон', cls: 'bg-emerald-50 border-emerald-400 text-emerald-700', icon: <ThumbsUp size={20} /> },
   }[loan.status] || null;
 
   const handleRevert = async () => {
@@ -704,8 +705,8 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       ${riskFlags.map(r=>`<span style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px">⚠ ${esc(r)}</span>`).join('')}
     </div>` : '<p style="font-size:11px;color:#94a3b8">Тэмдэглэгдсэн эрсдэл байхгүй</p>';
 
-    const decisionHex = loan.status==='approved'?'#15803d':loan.status==='rejected'?'#dc2626':'#d97706';
-    const decisionLabel = loan.status==='approved'?'ЗӨВШӨӨРӨГДСӨН':loan.status==='rejected'?'ТАТГАЛЗСАН':'НӨХЦӨЛТЭЙ ЗӨВШӨӨРӨВ';
+    const decisionHex = ['approved','disbursed'].includes(loan.status)?'#15803d':loan.status==='rejected'?'#dc2626':'#d97706';
+    const decisionLabel = ['approved','disbursed'].includes(loan.status)?'ЗӨВШӨӨРӨГДСӨН':loan.status==='rejected'?'ТАТГАЛЗСАН':'НӨХЦӨЛТЭЙ ЗӨВШӨӨРӨВ';
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
     <title>Зээлийн хорооны дүгнэлт — ${esc(displayName)}</title>
@@ -720,7 +721,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       table{width:100%;border-collapse:collapse}
       th{background:#f8fafc;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;padding:8px 10px;text-align:left;border-bottom:2px solid #e2e8f0}
       .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:6px}
-      .verdict{display:inline-block;padding:4px 14px;border-radius:99px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;border:2px solid ${decisionHex};color:${decisionHex};background:${loan.status==='approved'?'#f0fdf4':loan.status==='rejected'?'#fff1f2':'#fffbeb'}}
+      .verdict{display:inline-block;padding:4px 14px;border-radius:99px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;border:2px solid ${decisionHex};color:${decisionHex};background:${ ['approved','disbursed'].includes(loan.status)?'#f0fdf4':loan.status==='rejected'?'#fff1f2':'#fffbeb'}}
     </style></head><body><div class="page">
 
     <!-- HEADER -->
@@ -1073,42 +1074,44 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
               </div>
             </div>
 
-            {/* Re-decide */}
-            {!revertMode ? (
-              <button
-                onClick={() => setRevertMode(true)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-300 rounded-xl text-sm font-bold text-slate-600 hover:border-[#003B5C] hover:text-[#003B5C] transition-all"
-              >
-                <RotateCcw size={14} /> Дахин шийдэх
-              </button>
-            ) : (
-              <div className="border-2 border-amber-300 bg-amber-50 rounded-2xl p-4 space-y-3">
-                <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Дахин шийдэх шалтгаан</p>
-                <textarea
-                  rows={3}
-                  value={revertReason}
-                  onChange={e => setRevertReason(e.target.value)}
-                  placeholder="Шийдвэрийг цуцлах шалтгаанаа бичнэ үү..."
-                  className="w-full p-3 border border-amber-300 rounded-xl text-sm bg-white focus:outline-none focus:border-[#003B5C] resize-none"
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleRevert}
-                    disabled={reverting || !revertReason.trim()}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-[#003B5C] text-white rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-[#002d47] transition-all"
-                  >
-                    {reverting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
-                    Цуцлаж, хүсэлт рүү буцаах
-                  </button>
-                  <button
-                    onClick={() => { setRevertMode(false); setRevertReason(''); }}
-                    className="px-4 py-2.5 border rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-50 transition-all"
-                  >
-                    Болих
-                  </button>
+            {/* Re-decide — not available after disbursement */}
+            {loan.status !== 'disbursed' && (
+              revertMode ? (
+                <div className="border-2 border-amber-300 bg-amber-50 rounded-2xl p-4 space-y-3">
+                  <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Дахин шийдэх шалтгаан</p>
+                  <textarea
+                    rows={3}
+                    value={revertReason}
+                    onChange={e => setRevertReason(e.target.value)}
+                    placeholder="Шийдвэрийг цуцлах шалтгаанаа бичнэ үү..."
+                    className="w-full p-3 border border-amber-300 rounded-xl text-sm bg-white focus:outline-none focus:border-[#003B5C] resize-none"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleRevert}
+                      disabled={reverting || !revertReason.trim()}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-[#003B5C] text-white rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-[#002d47] transition-all"
+                    >
+                      {reverting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                      Цуцлаж, хүсэлт рүү буцаах
+                    </button>
+                    <button
+                      onClick={() => { setRevertMode(false); setRevertReason(''); }}
+                      className="px-4 py-2.5 border rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-50 transition-all"
+                    >
+                      Болих
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <button
+                  onClick={() => setRevertMode(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-300 rounded-xl text-sm font-bold text-slate-600 hover:border-[#003B5C] hover:text-[#003B5C] transition-all"
+                >
+                  <RotateCcw size={14} /> Дахин шийдэх
+                </button>
+              )
             )}
           </div>
         ) : (
