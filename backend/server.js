@@ -3155,41 +3155,23 @@ const seedSiteConfig = async () => {
 };
 
 const seedTeamMembers = async () => {
-    await TeamMember.findOneAndUpdate(
-        { name: "Ц.Отгонбилэг", memberType: "management" },
-        { $set: { name: "Ц.Отгонбилэг", role: "Ерөнхий захирал", imagePath: "/board/otgonbileg.jpg", memberType: "management", order: 1 } },
-        { upsert: true }
-    );
-    await TeamMember.findOneAndUpdate(
-        { name: "Б.Золбоо", memberType: "management" },
-        { $set: { name: "Б.Золбоо", role: "Гүйцэтгэх захирал", imagePath: "/board/zolboo.jpg", memberType: "management", order: 2 } },
-        { upsert: true }
-    );
-    await TeamMember.findOneAndUpdate(
-        { name: "Б.Гөлгөөн", memberType: "board" },
-        { $set: { name: "Б.Гөлгөөн", role: "ТУЗ-ын дарга", experience: "Уул уурхай, олборлолтын салбарт 20 гаран жилийн ажлын туршлагатай.", imagePath: "/board/dulguun.jpg", memberType: "board", order: 1 } },
-        { upsert: true }
-    );
-    await TeamMember.findOneAndUpdate(
-        { name: "Б.Золбоо", memberType: "board" },
-        { $set: { name: "Б.Золбоо", role: "ТУЗ-ын гишүүн, Гүйцэтгэх захирал", experience: "Банк санхүүгийн салбарт 18 жилийн ажлын туршлагатай.", imagePath: "/board/zolboo.jpg", memberType: "board", order: 2 } },
-        { upsert: true }
-    );
-    await TeamMember.findOneAndUpdate(
-        { name: "Ц.Отгонбилэг", memberType: "board" },
-        { $set: { name: "Ц.Отгонбилэг", role: "ТУЗ-ын гишүүн, Ерөнхий захирал", experience: "Банк санхүүгийн салбарт 23 жилийн ажлын туршлагатай.", imagePath: "/board/otgonbileg.jpg", memberType: "board", order: 3 } },
-        { upsert: true }
-    );
-    await TeamMember.findOneAndUpdate(
-        { name: "Б.Ганзориг" },
-        { $set: { name: "Б.Ганзориг", role: "ТУЗ-ын хамааралгүй гишүүн", experience: "Банк санхүү, маркетинг, медиа салбарт 22 жилийн туршлагатай.", imagePath: "/board/ganzorig.jpg", memberType: "board", order: 4 } },
-        { upsert: true }
-    );
-    await TeamMember.findOneAndUpdate(
-        { name: "Д.Энхтүвшин" },
-        { $set: { name: "Д.Энхтүвшин", role: "ТУЗ-ын нарийн бичгийн дарга", experience: "Банк санхүү, эм хангалт нийлүүлэлтийн салбарт 18 жилийн туршлагатай.", imagePath: "/board/enkhtuvshin.jpg", memberType: "board", order: 5 } },
-        { upsert: true }
-    );
+    const mgmtCount = await TeamMember.countDocuments({ memberType: 'management' });
+    if (mgmtCount === 0) {
+        await TeamMember.insertMany([
+            { name: 'Ц.Отгонбилэг', role: 'Ерөнхий захирал', imagePath: '/board/otgonbileg.jpg', memberType: 'management', order: 1 },
+            { name: 'Б.Золбоо', role: 'Гүйцэтгэх захирал', imagePath: '/board/zolboo.jpg', memberType: 'management', order: 2 },
+        ]);
+    }
+    const boardCount = await TeamMember.countDocuments({ memberType: 'board' });
+    if (boardCount === 0) {
+        await TeamMember.insertMany([
+            { name: 'Б.Гөлгөөн', role: 'ТУЗ-ын дарга', experience: 'Уул уурхай, олборлолтын салбарт 20 гаран жилийн ажлын туршлагатай.', imagePath: '/board/dulguun.jpg', memberType: 'board', order: 1 },
+            { name: 'Б.Золбоо', role: 'ТУЗ-ын гишүүн, Гүйцэтгэх захирал', experience: 'Банк санхүүгийн салбарт 18 жилийн ажлын туршлагатай.', imagePath: '/board/zolboo.jpg', memberType: 'board', order: 2 },
+            { name: 'Ц.Отгонбилэг', role: 'ТУЗ-ын гишүүн, Ерөнхий захирал', experience: 'Банк санхүүгийн салбарт 23 жилийн ажлын туршлагатай.', imagePath: '/board/otgonbileg.jpg', memberType: 'board', order: 3 },
+            { name: 'Б.Ганзориг', role: 'ТУЗ-ын хамааралгүй гишүүн', experience: 'Банк санхүү, маркетинг, медиа салбарт 22 жилийн туршлагатай.', imagePath: '/board/ganzorig.jpg', memberType: 'board', order: 4 },
+            { name: 'Д.Энхтүвшин', role: 'ТУЗ-ын нарийн бичгийн дарга', experience: 'Банк санхүү, эм хангалт нийлүүлэлтийн салбарт 18 жилийн туршлагатай.', imagePath: '/board/enkhtuvshin.jpg', memberType: 'board', order: 5 },
+        ]);
+    }
     console.log('TeamMember seed done.');
 };
 
@@ -3323,6 +3305,14 @@ mongoose.connect(MONGO_URI).then(async () => {
     console.log('MongoDB connected.');
     await seedAdmin();
     await seedSiteConfig();
+    // One-time cleanup: delete all garbled/duplicate team member records
+    // then reseed fresh. Flag stored in SiteConfig to run only once.
+    const teamCleaned = await SiteConfig.findOne({ key: '_team_reset_v1' });
+    if (!teamCleaned) {
+        await TeamMember.deleteMany({});
+        console.log('Team members reset — reseeding clean.');
+        await SiteConfig.create({ key: '_team_reset_v1', value: 'done', label: 'internal migration', group: 'internal' });
+    }
     await seedTeamMembers();
     await seedProductContent();
     await seedFormConfig();

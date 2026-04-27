@@ -20,16 +20,6 @@ const ManagementTeam = () => {
   return (
     <section className="py-16 w-full relative">
       <div className="max-w-7xl mx-auto px-4 relative z-10">
-        <div className="text-center mb-16">
-          <h2 className="font-display font-bold text-3xl md:text-4xl text-white uppercase tracking-wide drop-shadow-md">
-            Удирдлагын баг
-          </h2>
-          <div className="mt-4 h-1 w-24 bg-[#D4AF37] mx-auto rounded-full"></div>
-          <p className="text-blue-100 text-lg max-w-3xl mx-auto mt-6 font-sans font-light leading-relaxed opacity-90">
-            Мэргэжлийн өндөр ур чадвар, туршлага бүхий манай гүйцэтгэх удирдлагын баг.
-          </p>
-        </div>
-
         <div className="flex flex-wrap justify-center gap-10 md:gap-16">
           {members.map((member, index) => (
             <div key={index} className="group relative w-full max-w-[300px] h-[380px] overflow-hidden rounded-2xl cursor-pointer shadow-2xl transition-all duration-500 hover:-translate-y-2 border border-white/10">
