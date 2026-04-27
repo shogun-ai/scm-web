@@ -3305,15 +3305,14 @@ mongoose.connect(MONGO_URI).then(async () => {
     console.log('MongoDB connected.');
     await seedAdmin();
     await seedSiteConfig();
-    // One-time cleanup: delete all garbled/duplicate team member records
-    // then reseed fresh. Flag stored in SiteConfig to run only once.
-    const teamCleaned = await SiteConfig.findOne({ key: '_team_reset_v1' });
+    // One-time cleanup: delete ALL team members seeded by code.
+    // Team members are managed exclusively through the admin panel.
+    const teamCleaned = await SiteConfig.findOne({ key: '_team_reset_v2' });
     if (!teamCleaned) {
         await TeamMember.deleteMany({});
-        console.log('Team members reset — reseeding clean.');
-        await SiteConfig.create({ key: '_team_reset_v1', value: 'done', label: 'internal migration', group: 'internal' });
+        console.log('All team members cleared — manage via admin panel only.');
+        await SiteConfig.create({ key: '_team_reset_v2', value: 'done', label: 'internal migration', group: 'internal' });
     }
-    await seedTeamMembers();
     await seedProductContent();
     await seedFormConfig();
     await seedStats();
