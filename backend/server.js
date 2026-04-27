@@ -3149,7 +3149,7 @@ const seedSiteConfig = async () => {
         { key: "shareholder_description", value: "Солонго Капитал ББСБ ХХК нь Монгол Улсын иргэний 100% өмчлөлд байдаг, дотоодын хөрөнгө оруулалттай компани юм.", label: "Тайлбар", group: "shareholder" },
     ];
     await Promise.all(defaults.map(d =>
-        SiteConfig.findOneAndUpdate({ key: d.key }, { $set: { value: d.value, label: d.label, group: d.group } }, { upsert: true })
+        SiteConfig.findOneAndUpdate({ key: d.key }, { $setOnInsert: { value: d.value, label: d.label, group: d.group } }, { upsert: true })
     ));
     console.log('SiteConfig seed done.');
 };
