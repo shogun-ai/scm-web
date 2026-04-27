@@ -997,6 +997,21 @@ app.post('/api/auth/2fa/setup', authenticateUser, async (req, res) => {
     } catch (e) { res.status(500).send("Error"); }
 });
 
+app.put('/api/auth/change-password', authenticateUser, async (req, res) => {
+    try {
+        const { oldPassword, newPassword } = req.body;
+        if (!oldPassword || !newPassword) return res.status(400).json({ message: 'Бүх талбарыг бөглөнө үү' });
+        if (newPassword.length < 8) return res.status(400).json({ message: 'Шинэ нууц үг хамгийн багадаа 8 тэмдэгт байх ёстой' });
+        const user = await User.findById(req.user._id);
+        if (!user) return res.status(404).json({ message: 'Хэрэглэгч олдсонгүй' });
+        const match = await bcrypt.compare(oldPassword, user.password);
+        if (!match) return res.status(401).json({ message: 'Одоогийн нууц үг буруу байна' });
+        user.password = await bcrypt.hash(newPassword, 10);
+        await user.save();
+        res.json({ message: 'Нууц үг амжилттай солигдлоо' });
+    } catch (e) { res.status(500).json({ message: 'Алдаа гарлаа' }); }
+});
+
 app.post('/api/auth/2fa/verify', authenticateUser, async (req, res) => {
     try {
         if (req.user._id.toString() !== req.body.userId && req.user.role !== 'admin') {

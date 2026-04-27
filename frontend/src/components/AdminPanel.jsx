@@ -172,6 +172,35 @@ const AdminPanel = ({ user, token, onLogout }) => {
     fetchData();
   }, [activeTab, user, API_URL]);
 
+  // --- 🔑 PASSWORD CHANGE ---
+  const [pwMsg, setPwMsg] = useState({ text: '', ok: false });
+  const [pwLoading, setPwLoading] = useState(false);
+
+  const handleChangePassword = async () => {
+    setPwMsg({ text: '', ok: false });
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      return setPwMsg({ text: 'Бүх талбарыг бөглөнө үү', ok: false });
+    }
+    if (newPassword !== confirmPassword) {
+      return setPwMsg({ text: 'Шинэ нууц үг таарахгүй байна', ok: false });
+    }
+    if (newPassword.length < 8) {
+      return setPwMsg({ text: 'Нууц үг хамгийн багадаа 8 тэмдэгт байх ёстой', ok: false });
+    }
+    setPwLoading(true);
+    try {
+      await axios.put(`${API_URL}/api/auth/change-password`, { oldPassword, newPassword }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setPwMsg({ text: 'Нууц үг амжилттай солигдлоо', ok: true });
+      setOldPassword(''); setNewPassword(''); setConfirmPassword('');
+    } catch (e) {
+      setPwMsg({ text: e.response?.data?.message || 'Алдаа гарлаа', ok: false });
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
   // --- 🔐 2FA FUNCTIONS ---
   const setup2FA = async () => {
     const userId = user?.id || user?._id;
@@ -1836,9 +1865,62 @@ const AdminPanel = ({ user, token, onLogout }) => {
         )}
 
         {activeTab === 'settings' && (
-          <div className="bg-white p-8 rounded-2xl border shadow-sm max-w-2xl space-y-8 animate-fade-in">
-             <h3 className="text-lg font-bold mb-6 text-green-600 uppercase tracking-wider flex items-center gap-2"><QrCode size={22}/> 2FA Тохиргоо</h3>
-             <div className="flex flex-col gap-6">
+          <div className="space-y-6 animate-fade-in max-w-2xl">
+            {/* Нууц үг солих */}
+            <div className="bg-white p-8 rounded-2xl border shadow-sm">
+              <h3 className="text-lg font-bold mb-6 text-[#003B5C] uppercase tracking-wider flex items-center gap-2">
+                <Lock size={22}/> Нууц үг солих
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Одоогийн нууц үг</label>
+                  <input
+                    type="password"
+                    value={oldPassword}
+                    onChange={e => setOldPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003B5C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Шинэ нууц үг</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    placeholder="Хамгийн багадаа 8 тэмдэгт"
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003B5C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Шинэ нууц үг давтах</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003B5C]"
+                  />
+                </div>
+                {pwMsg.text && (
+                  <p className={`text-sm font-semibold px-4 py-2 rounded-lg ${pwMsg.ok ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                    {pwMsg.text}
+                  </p>
+                )}
+                <button
+                  onClick={handleChangePassword}
+                  disabled={pwLoading}
+                  className="w-full bg-[#003B5C] hover:bg-[#002a42] disabled:opacity-50 text-white py-3 rounded-xl font-bold uppercase text-sm tracking-wider transition-colors flex items-center justify-center gap-2"
+                >
+                  <Lock size={16}/> {pwLoading ? 'Хадгалж байна...' : 'Нууц үг солих'}
+                </button>
+              </div>
+            </div>
+
+            {/* 2FA Тохиргоо */}
+            <div className="bg-white p-8 rounded-2xl border shadow-sm">
+              <h3 className="text-lg font-bold mb-6 text-green-600 uppercase tracking-wider flex items-center gap-2"><QrCode size={22}/> 2FA Тохиргоо</h3>
+              <div className="flex flex-col gap-6">
                 {!qrCode ? (
                   <button onClick={setup2FA} className="bg-[#003B5C] text-white px-8 py-4 rounded-2xl font-bold shadow-xl uppercase text-xs">2FA Идэвхжүүлэх</button>
                 ) : (
@@ -1848,7 +1930,8 @@ const AdminPanel = ({ user, token, onLogout }) => {
                     <button onClick={verify2FA} className="w-full bg-[#00A651] text-white py-5 rounded-[24px] font-black shadow-xl uppercase tracking-widest">Баталгаажуулах</button>
                   </div>
                 )}
-             </div>
+              </div>
+            </div>
           </div>
         )}
       </main>
