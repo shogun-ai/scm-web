@@ -8,7 +8,7 @@ export function authHeaders(token) {
 }
 
 export async function loginApi(email, password) {
-  const res = await axios.post(`${API}/api/login`, { email, password });
+  const res = await axios.post(`${API}/api/auth/login`, { email, password });
   return res.data;
 }
 
