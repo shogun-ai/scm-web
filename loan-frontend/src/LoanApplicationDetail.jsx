@@ -145,30 +145,55 @@ const AiReadBtn = ({ loading, onClick, label: lbl = 'AI унших' }) => (
 // хүний зургийг Canvas-аар crop хийнэ.
 // Зөвхөн image/* файлд ажиллана.
 // ─────────────────────────────────────────────
-const extractPhotoFromIdDocument = (file) => {
-  if (!file || !file.type.startsWith('image/')) return Promise.resolve(null);
-  return new Promise((resolve) => {
-    const img = new Image();
-    const objUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      try {
-        // И-17 маягт дахь зургийн ойролцоо байрлал (%)
-        // Баруун доош: x≈2%, y≈18%, w≈22%, h≈33%
-        const cx = Math.floor(img.width * 0.02);
-        const cy = Math.floor(img.height * 0.18);
-        const cw = Math.floor(img.width * 0.22);
-        const ch = Math.floor(img.height * 0.33);
-        const canvas = document.createElement('canvas');
-        canvas.width = cw;
-        canvas.height = ch;
-        canvas.getContext('2d').drawImage(img, cx, cy, cw, ch, 0, 0, cw, ch);
-        URL.revokeObjectURL(objUrl);
-        resolve(canvas.toDataURL('image/jpeg', 0.92));
-      } catch { URL.revokeObjectURL(objUrl); resolve(null); }
-    };
-    img.onerror = () => { URL.revokeObjectURL(objUrl); resolve(null); };
-    img.src = objUrl;
-  });
+const cropPhotoFromCanvas = (canvas) => {
+  // И-17 маягт дахь зургийн байрлал: зүүн дээд булан x≈2%, y≈18%, w≈22%, h≈33%
+  const cx = Math.floor(canvas.width * 0.02);
+  const cy = Math.floor(canvas.height * 0.18);
+  const cw = Math.floor(canvas.width * 0.22);
+  const ch = Math.floor(canvas.height * 0.33);
+  const out = document.createElement('canvas');
+  out.width = cw;
+  out.height = ch;
+  out.getContext('2d').drawImage(canvas, cx, cy, cw, ch, 0, 0, cw, ch);
+  return out.toDataURL('image/jpeg', 0.92);
+};
+
+const extractPhotoFromIdDocument = async (file) => {
+  if (!file) return null;
+  try {
+    if (file.type.startsWith('image/')) {
+      return await new Promise((resolve) => {
+        const img = new Image();
+        const objUrl = URL.createObjectURL(file);
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+            URL.revokeObjectURL(objUrl);
+            resolve(cropPhotoFromCanvas(canvas));
+          } catch { URL.revokeObjectURL(objUrl); resolve(null); }
+        };
+        img.onerror = () => { URL.revokeObjectURL(objUrl); resolve(null); };
+        img.src = objUrl;
+      });
+    }
+    if (file.type === 'application/pdf') {
+      const pdfjsLib = await import('pdfjs-dist');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 2.0 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      return cropPhotoFromCanvas(canvas);
+    }
+  } catch { return null; }
+  return null;
 };
 
 // ─────────────────────────────────────────────
