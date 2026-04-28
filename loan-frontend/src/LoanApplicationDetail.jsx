@@ -10,7 +10,7 @@ import {
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
-const getAuthToken = () => { try { return JSON.parse(localStorage.getItem('scm_auth') || '{}').token || ''; } catch { return ''; } };
+const getAuthToken = () => localStorage.getItem('loan_token') || '';
 const fmtNum = (v) => {
   const n = String(v).replace(/[^0-9]/g, '');
   return n ? Number(n).toLocaleString('mn-MN') : '';

@@ -132,7 +132,7 @@ const applyOverrides = (saved = {}) => {
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
-const getToken = () => { try { return JSON.parse(localStorage.getItem('scm_auth') || '{}').token || ''; } catch { return ''; } };
+const getToken = () => localStorage.getItem('loan_token') || '';
 const authHeaders = () => ({ Authorization: `Bearer ${getToken()}` });
 
 const summarize = (permMap) => {
