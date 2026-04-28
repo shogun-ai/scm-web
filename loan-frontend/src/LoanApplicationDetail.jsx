@@ -178,6 +178,7 @@ const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked 
   const [open, setOpen] = useState(false);
   const [analyzingId, setAnalyzingId] = useState(false);
   const [idFiles, setIdFiles] = useState([]);
+  const [pendingPhoto, setPendingPhoto] = useState(null);
   const disabledInp = inp + (locked ? ' bg-slate-50 text-slate-500 cursor-not-allowed' : '');
   const set = (f, v) => { if (!locked) onChange({ ...data, [f]: v }); };
 
@@ -206,9 +207,9 @@ const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked 
         address: d.address || data.address,
         idIssueDate: d.issueDate || data.idIssueDate,
         idExpiryDate: d.expiryDate || data.idExpiryDate,
-        ...(extractedPhoto ? { profileImageUrl: extractedPhoto } : {}),
       });
-      showToast(extractedPhoto ? 'Иргэний үнэмлэх уншигдлаа. Зураг автоматаар тавигдлаа.' : 'Иргэний үнэмлэх уншигдлаа.');
+      if (extractedPhoto) setPendingPhoto(extractedPhoto);
+      showToast('Иргэний үнэмлэх уншигдлаа.');
     } catch (e) {
       showToast(e.response?.data?.message || 'ID унших алдаа', 'error');
     } finally { setAnalyzingId(false); }
@@ -245,6 +246,20 @@ const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked 
                 aiLoading={analyzingId}
                 aiLabel="ID AI унших"
               />
+            </div>
+          )}
+          {pendingPhoto && (
+            <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+              <img src={pendingPhoto} alt="ID зураг" className="w-12 h-12 rounded-lg object-cover border border-blue-300 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-blue-800">Иргэний үнэмлэхийн зургийг цээж зурагт оруулах уу?</p>
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <button type="button" onClick={() => { set('profileImageUrl', pendingPhoto); setPendingPhoto(null); showToast('Зураг тавигдлаа.'); }}
+                  className="px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700">Тийм</button>
+                <button type="button" onClick={() => setPendingPhoto(null)}
+                  className="px-3 py-1.5 text-xs font-bold border border-slate-300 rounded-lg hover:bg-slate-50">Үгүй</button>
+              </div>
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
@@ -313,6 +328,7 @@ const Section = ({ title, icon: Icon, children, defaultOpen = true }) => {
 const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locked = false }) => {
   const [analyzingId, setAnalyzingId] = useState(false);
   const [idFiles, setIdFiles] = useState([]);
+  const [pendingPhoto, setPendingPhoto] = useState(null);
 
   const set = (field, val) => onChange({ ...data, [field]: val });
 
@@ -341,9 +357,9 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
         address: d.address || data.address,
         idIssueDate: d.issueDate || data.idIssueDate,
         idExpiryDate: d.expiryDate || data.idExpiryDate,
-        ...(extractedPhoto ? { profileImageUrl: extractedPhoto } : {}),
       });
-      showToast(extractedPhoto ? 'Иргэний үнэмлэх уншигдлаа. Зураг автоматаар тавигдлаа.' : 'Иргэний үнэмлэх уншигдлаа.');
+      if (extractedPhoto) setPendingPhoto(extractedPhoto);
+      showToast('Иргэний үнэмлэх уншигдлаа.');
     } catch (e) {
       showToast(e.response?.data?.message || 'ID унших алдаа', 'error');
     } finally { setAnalyzingId(false); }
@@ -387,6 +403,20 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
           </div>
         )}
       </div>
+      {pendingPhoto && (
+        <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+          <img src={pendingPhoto} alt="ID зураг" className="w-12 h-12 rounded-lg object-cover border border-blue-300 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-blue-800">Иргэний үнэмлэхийн зургийг цээж зурагт оруулах уу?</p>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button type="button" onClick={() => { set('profileImageUrl', pendingPhoto); setPendingPhoto(null); showToast('Зураг тавигдлаа.'); }}
+              className="px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700">Тийм</button>
+            <button type="button" onClick={() => setPendingPhoto(null)}
+              className="px-3 py-1.5 text-xs font-bold border border-slate-300 rounded-lg hover:bg-slate-50">Үгүй</button>
+          </div>
+        </div>
+      )}
 
       {/* ID document + AI */}
       {!locked && (
