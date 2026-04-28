@@ -43,8 +43,10 @@ const app = express();
 const ALLOWED_ORIGINS = [
     'https://www.scm.mn',
     'https://scm.mn',
+    'https://loan.scm.mn',
     'https://scm-okjs.onrender.com',
     'http://localhost:5173',
+    'http://localhost:5174',
     'http://localhost:5001',
     'http://localhost:3000',
 ];
@@ -123,7 +125,8 @@ const LoanRequestSchema = new mongoose.Schema({
     purpose: String, repaymentSource: String,
     // Хариуцагч
     assignee: { userId: String, name: String },
-    // Ажилтан үүсгэсэн эсэх
+    // Эх сурвалж: 'web' = вэбээр, 'staff' = ажилтан үүсгэсэн
+    source: { type: String, default: 'web', enum: ['web', 'staff'] },
     createdByStaff: { type: Boolean, default: false },
     createdByUser: { userId: String, name: String },
     selfieUrl: String,

@@ -308,6 +308,8 @@ const LoanRequest = ({ onBack, initialProduct }) => {
       const { files, collateral, vehicle, guarantors, orgCeo, orgOwner, ...scalar } = formData;
       Object.entries(scalar).forEach(([k, v]) => fd.append(k, v));
       fd.set('amount', parseInt((formData.amount || '').replace(/,/g, ''), 10) || 0);
+      fd.set('source', 'web');
+      fd.set('createdByStaff', 'false');
       // nested objects as JSON strings
       fd.append('collateralJSON',  JSON.stringify(collateral));
       fd.append('vehicleJSON',     JSON.stringify(vehicle));
