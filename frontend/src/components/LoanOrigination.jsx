@@ -412,6 +412,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                   setSelectedLoan(targetLoan);
                   setResearchSeed({ ...targetLoan, seedKey: `${targetLoan._id}-${Date.now()}` });
                   setActiveStep('assessment');
+                  setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
                 }}
               />
             </div>

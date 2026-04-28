@@ -61,7 +61,11 @@ const FilePickerWithPreview = ({ files = [], onChange, accept = 'image/*,.pdf', 
 
   const openPreview = (f) => {
     const url = URL.createObjectURL(f);
-    setPreview({ url, name: f.name, isImage: f.type.startsWith('image/') });
+    if (!f.type.startsWith('image/')) {
+      window.open(url, '_blank');
+      return;
+    }
+    setPreview({ url, name: f.name, isImage: true });
   };
 
   return (
@@ -1957,7 +1961,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                 { key: 'loan_info',  label: 'Зээлийн мэдээлэл', icon: Briefcase },
                 { key: 'income',     label: 'Орлогын байдал',   icon: TrendingUp },
                 { key: 'collateral', label: 'Барьцаа хөрөнгө',  icon: Home },
-                { key: 'other',      label: 'Бусад',             icon: FileText },
+                { key: 'other',      label: 'Зээлийн мэдээллийн лавлагаа', icon: FileText },
               ].map(t => {
                 const Icon = t.icon;
                 const isActive = borrowerSubTab === t.key;
@@ -2186,7 +2190,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                       { key: 'loan_info',  label: 'Зээлийн мэдээлэл', icon: CreditCard },
                       { key: 'income',     label: 'Орлогын байдал',   icon: TrendingUp },
                       { key: 'collateral', label: 'Барьцаа хөрөнгө',  icon: Home },
-                      { key: 'other',      label: 'Бусад',             icon: FileText },
+                      { key: 'other',      label: 'Зээлийн мэдээллийн лавлагаа', icon: FileText },
                     ].map(t => {
                       const Icon = t.icon;
                       const isActive = guarantorSubTab === t.key;
