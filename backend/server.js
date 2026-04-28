@@ -61,7 +61,7 @@ app.use(cors({
 // --- Ð¤Ð£ÐÐšÐ¦Ò®Ò®Ð” Ð‘Ð Ð¢ÐžÐ¥Ð˜Ð Ð“ÐžÐž ---
 
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_key_change_this';
+const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
@@ -71,9 +71,9 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Cloudinary Ñ‚Ð¾Ñ…Ð¸Ñ€Ð³Ð¾Ð¾
 cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'dcreily3l',
-    api_key: process.env.CLOUDINARY_API_KEY || '644213573533415',
-    api_secret: process.env.CLOUDINARY_API_SECRET || 'ONABORM8BAwtApxp7UiZLqIiku0'
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
 const storage = new CloudinaryStorage({
