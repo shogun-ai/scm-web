@@ -26,6 +26,9 @@ import {
   XCircle,
 } from 'lucide-react';
 
+const getAuthToken = () => localStorage.getItem('loan_token') || '';
+const authH = () => ({ Authorization: `Bearer ${getAuthToken()}` });
+
 const PRODUCTS = {
   biz_loan: 'Бизнесийн зээл',
   car_purchase_loan: 'Автомашин худалдан авах',
@@ -955,7 +958,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           borrower: borrowerPayload,
           outputs: currentOutputs,
           limit: 5,
-        });
+        }, { headers: authH() });
         setSimilarLoans(res.data?.results || []);
         setSimilarSource(res.data?.source || '');
       } catch {
@@ -1032,7 +1035,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       if (fileUrls.length) payload.append('fileUrls', JSON.stringify(fileUrls));
 
       const res = await axios.post(`${apiUrl}/api/loan-research/analyze-credit-reference`, payload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': 'multipart/form-data', ...authH() },
       });
       const analysis = res.data;
       setCreditRefAnalysis(analysis);
@@ -1074,7 +1077,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   const fetchResearches = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${apiUrl}/api/loan-research`);
+      const res = await axios.get(`${apiUrl}/api/loan-research`, { headers: authH() });
       setResearches(res.data || []);
     } catch (error) {
       console.error('Loan research fetch error', error);
@@ -1242,7 +1245,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     setStatementError('');
     try {
       const res = await axios.post(`${apiUrl}/api/loan-research/analyze-statement`, payload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': 'multipart/form-data', ...authH() },
       });
       const analysis = res.data;
       setStatementAnalysis(analysis);
@@ -1295,7 +1298,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     setStatementError('');
     try {
       const res = await axios.post(`${apiUrl}/api/loan-research/analyze-statement`, payload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': 'multipart/form-data', ...authH() },
       });
       const analysis = res.data;
       const nextItems = [
@@ -1445,7 +1448,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     setSaving(true);
     try {
       const res = await axios.post(`${apiUrl}/api/loan-research`, payload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': 'multipart/form-data', ...authH() },
       });
       await fetchResearches();
       setSelectedId(res.data?._id || null);

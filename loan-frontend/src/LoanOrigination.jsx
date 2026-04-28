@@ -98,7 +98,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
   useEffect(() => {
     if (activeStep === 'committee' && selectedLoan?._id && !latestResearch) {
       setLoadingResearch(true);
-      axios.get(`${apiUrl}/api/loan-research/by-request/${selectedLoan._id}`)
+      axios.get(`${apiUrl}/api/loan-research/by-request/${selectedLoan._id}`, authHeaders())
         .then(res => setLatestResearch(res.data))
         .catch(() => {})
         .finally(() => setLoadingResearch(false));
@@ -106,9 +106,11 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
   }, [activeStep, selectedLoan?._id]);
 
   // ── helpers ──────────────────────────────
+  const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('loan_token') || ''}` } });
+
   const updateStatus = async (loan, status) => {
     try {
-      const res = await axios.put(`${apiUrl}/api/loans/${loan._id}`, { status });
+      const res = await axios.put(`${apiUrl}/api/loans/${loan._id}`, { status }, authHeaders());
       onRequestsChange(requests.map(r => r._id === loan._id ? res.data : r));
       setSelectedLoan(res.data);
       showToast('Статус шинэчлэгдлээ.');
@@ -120,7 +122,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
       const res = await axios.put(`${apiUrl}/api/loans/${loan._id}`, {
         assignee: { userId, name: userName },
         status: loan.status === 'pending' || loan.status === 'created' ? 'assigned' : loan.status,
-      });
+      }, authHeaders());
       onRequestsChange(requests.map(r => r._id === loan._id ? res.data : r));
       if (selectedLoan?._id === loan._id) setSelectedLoan(res.data);
     } catch { showToast('Хариуцагч хуваарилахад алдаа гарлаа.', 'error'); }
@@ -138,7 +140,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
     setSavingDecision(true);
     const status = decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'resolved';
     try {
-      const res = await axios.put(`${apiUrl}/api/loans/${selectedLoan._id}`, { status, approvalNote });
+      const res = await axios.put(`${apiUrl}/api/loans/${selectedLoan._id}`, { status, approvalNote }, authHeaders());
       onRequestsChange(requests.map(r => r._id === res.data._id ? res.data : r));
       setSelectedLoan(res.data);
       const msg = status === 'approved' ? 'Зээл зөвшөөрөгдлөө.' : status === 'rejected' ? 'Зээл татгалзагдлаа.' : 'Нөхцөлтэй шийдвэр хадгалагдлаа.';
@@ -151,7 +153,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
   const revertDecision = async (reason) => {
     if (!selectedLoan) return;
     try {
-      const res = await axios.put(`${apiUrl}/api/loans/${selectedLoan._id}`, { status: 'committee', approvalNote: reason });
+      const res = await axios.put(`${apiUrl}/api/loans/${selectedLoan._id}`, { status: 'committee', approvalNote: reason }, authHeaders());
       onRequestsChange(requests.map(r => r._id === res.data._id ? res.data : r));
       setSelectedLoan(res.data);
       showToast('Шийдвэр цуцлагдлаа. Хүсэлт хороонд буцаалаа.');
