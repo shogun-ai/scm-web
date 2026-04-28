@@ -303,7 +303,8 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                 createMode={true}
                 onCancel={() => setShowNewForm(false)}
                 onCreated={async (newLoan) => {
-                  const res = await axios.get(`${apiUrl}/api/loans`);
+                  const token = localStorage.getItem('loan_token') || '';
+                  const res = await axios.get(`${apiUrl}/api/loans`, { headers: { Authorization: `Bearer ${token}` } });
                   onRequestsChange(res.data || []);
                   setShowNewForm(false);
                   setSelectedLoan(newLoan);

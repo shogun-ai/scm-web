@@ -19,7 +19,7 @@ export default function Dashboard({ token, user, onLogout }) {
 
   async function loadRequests() {
     try {
-      const res = await axios.get(`${API}/api/loan-requests`, authHeaders(token));
+      const res = await axios.get(`${API}/api/loans`, authHeaders(token));
       setRequests(res.data || []);
     } catch {}
   }
