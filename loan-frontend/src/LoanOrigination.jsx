@@ -183,8 +183,6 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
       {/* Header */}
       <div className="flex items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#00A651]">Зээлийн үйл явц</p>
-          <h2 className="text-2xl font-bold text-[#003B5C]">Loan Origination System</h2>
         </div>
         {selectedLoan && (
           <div className="flex items-center gap-2 bg-white border rounded-xl px-4 py-2 text-sm">
