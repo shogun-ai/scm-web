@@ -2,14 +2,12 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { API, authHeaders } from '../api';
 import LoanOrigination from '../LoanOrigination';
-import LoanExposureMonitor from '../LoanExposureMonitor';
 import PermissionMatrix from '../PermissionMatrix';
-import { LayoutDashboard, CreditCard, Shield, LogOut, Activity } from 'lucide-react';
+import { LayoutDashboard, CreditCard, Shield, LogOut } from 'lucide-react';
 
 const TABS = [
-  { key: 'los',      label: 'Зээлийн систем',   icon: CreditCard      },
-  { key: 'exposure', label: 'Эрсдэлийн мониторинг', icon: Activity    },
-  { key: 'roles',    label: 'Эрх удирдлага',    icon: Shield           },
+  { key: 'los',   label: 'Зээлийн систем', icon: CreditCard },
+  { key: 'roles', label: 'Эрх удирдлага',  icon: Shield     },
 ];
 
 export default function Dashboard({ token, user, onLogout }) {
@@ -37,13 +35,14 @@ export default function Dashboard({ token, user, onLogout }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
+    <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #0f2744 100%)' }}>
       {/* Header */}
-      <header className="bg-gray-900 text-white flex items-center justify-between px-6 py-3 shadow">
+      <header className="text-white flex items-center justify-between px-6 py-3 shadow-xl border-b border-white/10" style={{ background: 'rgba(15,23,42,0.95)', backdropFilter: 'blur(8px)' }}>
         <div className="flex items-center gap-3">
-          <LayoutDashboard className="w-5 h-5 text-yellow-400" />
-          <span className="font-bold text-lg tracking-wide">SCM Зээлийн систем</span>
-          <span className="text-xs text-gray-400 ml-2">loan.scm.mn</span>
+          <img src="/favicon.svg" alt="SCM" className="w-7 h-7" />
+          <span className="font-bold text-lg tracking-wide text-white">SCM</span>
+          <span className="text-blue-400 font-semibold text-lg">Зээлийн систем</span>
+          <span className="text-xs text-slate-500 ml-2 border-l border-slate-700 pl-3">loan.scm.mn</span>
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-300">{user?.name}</span>
@@ -55,15 +54,15 @@ export default function Dashboard({ token, user, onLogout }) {
       </header>
 
       {/* Tabs */}
-      <nav className="bg-white border-b flex gap-1 px-6 shadow-sm">
+      <nav className="flex gap-1 px-6 border-b border-white/10" style={{ background: 'rgba(15,23,42,0.8)' }}>
         {TABS.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
+            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition ${
               tab === t.key
-                ? 'border-gray-900 text-gray-900'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
+                ? 'border-blue-400 text-blue-300'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <t.icon className="w-4 h-4" />
@@ -82,9 +81,6 @@ export default function Dashboard({ token, user, onLogout }) {
             onRequestsChange={loadRequests}
             usersList={usersList}
           />
-        )}
-        {tab === 'exposure' && (
-          <LoanExposureMonitor apiUrl={API} token={token} user={user} />
         )}
         {tab === 'roles' && (
           <PermissionMatrix apiUrl={API} token={token} user={user} />

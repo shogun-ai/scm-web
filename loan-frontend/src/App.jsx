@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import './index.css';
+import './App.css';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 
