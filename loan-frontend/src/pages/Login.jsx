@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { loginApi } from '../api';
-import logo from '../assets/hero.png';
+
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState('');
@@ -31,7 +31,7 @@ export default function Login({ onLogin }) {
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8">
         <div className="text-center mb-8">
-          <img src={logo} alt="SCM Logo" className="h-16 mx-auto mb-3 object-contain" />
+          <img src="/logo.jpg" alt="SCM Logo" className="h-16 mx-auto mb-3 object-contain" />
           <div className="text-sm text-gray-500 mt-1">loan.scm.mn</div>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">

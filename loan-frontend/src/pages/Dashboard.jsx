@@ -4,7 +4,7 @@ import { API, authHeaders } from '../api';
 import LoanOrigination from '../LoanOrigination';
 import PermissionMatrix from '../PermissionMatrix';
 import { LayoutDashboard, CreditCard, Shield, LogOut } from 'lucide-react';
-import logo from '../assets/hero.png';
+
 
 const TABS = [
   { key: 'los',   label: 'Зээлийн систем', icon: CreditCard },
@@ -40,7 +40,7 @@ export default function Dashboard({ token, user, onLogout }) {
       {/* Header */}
       <header className="text-white flex items-center justify-between px-6 py-3 shadow-xl border-b border-white/10" style={{ background: 'rgba(15,23,42,0.95)', backdropFilter: 'blur(8px)' }}>
         <div className="flex items-center gap-3">
-          <img src={logo} alt="SCM Logo" className="h-8 object-contain" />
+          <img src="/logo.jpg" alt="SCM Logo" className="h-8 object-contain" />
           <span className="text-xs text-slate-500 ml-2 border-l border-slate-700 pl-3">loan.scm.mn</span>
         </div>
         <div className="flex items-center gap-4">
