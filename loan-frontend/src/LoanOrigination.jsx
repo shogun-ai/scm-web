@@ -198,7 +198,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
       </div>
 
       {/* Step nav */}
-      <div className="bg-white border rounded-2xl overflow-hidden">
+      <div className="bg-white border rounded-2xl overflow-hidden shadow-sm">
         <div className="flex overflow-x-auto">
           {LOS_STEPS.map((step, idx) => {
             const Icon = step.icon;
@@ -208,7 +208,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
               <button
                 key={step.key}
                 onClick={() => setActiveStep(step.key)}
-                className={`flex-1 min-w-[120px] flex flex-col items-center gap-1 py-4 px-2 border-b-2 text-xs font-bold transition-all relative ${
+                className={`flex-1 min-w-[130px] flex flex-col items-center gap-1.5 py-5 px-3 border-b-[3px] text-xs font-bold transition-all relative ${
                   isActive
                     ? 'border-[#003B5C] text-[#003B5C] bg-blue-50'
                     : isDone
@@ -216,14 +216,14 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                       : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${
-                  isActive ? 'bg-[#003B5C] text-white' : isDone ? 'bg-[#00A651] text-white' : 'bg-slate-100 text-slate-500'
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black shadow-sm ${
+                  isActive ? 'bg-[#003B5C] text-white shadow-md' : isDone ? 'bg-[#00A651] text-white' : 'bg-slate-100 text-slate-400'
                 }`}>
-                  {isDone ? <CheckCircle2 size={14} /> : <Icon size={14} />}
+                  {isDone ? <CheckCircle2 size={16} /> : <Icon size={16} />}
                 </div>
-                <span className="leading-tight text-center">{step.label}</span>
+                <span className={`leading-tight text-center ${isActive ? 'text-[13px] font-black' : 'text-[12px]'}`}>{step.label}</span>
                 {idx < LOS_STEPS.length - 1 && (
-                  <ChevronRight size={14} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-300" />
+                  <ChevronRight size={14} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-200" />
                 )}
               </button>
             );
@@ -236,13 +236,13 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
       ══════════════════════════════════════ */}
       {activeStep === 'application' && (
         <div className="space-y-4">
-          <div className="bg-white border rounded-2xl p-2 inline-flex gap-2">
+          <div className="bg-slate-100 border border-slate-200 rounded-2xl p-1.5 inline-flex gap-1 shadow-sm">
             <button
               onClick={() => setApplicationView('requests')}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
                 applicationView === 'requests'
-                  ? 'bg-[#003B5C] text-white'
-                  : 'text-slate-500 hover:bg-slate-50'
+                  ? 'bg-[#003B5C] text-white shadow-md'
+                  : 'text-slate-500 hover:bg-white hover:text-slate-700'
               }`}
             >
               Loan requests
@@ -252,10 +252,10 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                 setApplicationView('exposure');
                 setSelectedLoan(null);
               }}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
                 applicationView === 'exposure'
-                  ? 'bg-[#003B5C] text-white'
-                  : 'text-slate-500 hover:bg-slate-50'
+                  ? 'bg-[#003B5C] text-white shadow-md'
+                  : 'text-slate-500 hover:bg-white hover:text-slate-700'
               }`}
             >
               Exposure monitor
@@ -287,7 +287,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
               ))}
             </div>
             <button onClick={() => setShowNewForm(v => !v)}
-              className="inline-flex items-center gap-2 bg-[#003B5C] text-white px-4 py-2 rounded-lg font-bold text-sm">
+              className="inline-flex items-center gap-2 bg-[#003B5C] hover:bg-[#002d47] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all">
               <Plus size={15} /> Шинэ хүсэлт үүсгэх
             </button>
           </div>
@@ -439,7 +439,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
             <div className="flex items-center justify-between">
               <LoanHeader loan={selectedLoan} />
               <button onClick={() => { updateStatus(selectedLoan, 'committee'); setActiveStep('committee'); }}
-                className="inline-flex items-center gap-2 bg-[#003B5C] text-white px-4 py-2 rounded-lg font-bold text-sm">
+                className="inline-flex items-center gap-2 bg-[#003B5C] hover:bg-[#002d47] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all">
                 <BadgeCheck size={15} /> Зээлийн хороо руу шилжих
               </button>
             </div>
@@ -521,7 +521,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                 <p className="text-sm font-bold text-emerald-700 flex items-center gap-2"><CheckCircle2 size={16} /> Зөвшөөрөгдсөн — олголтод бэлэн</p>
                 <p className="text-xs text-slate-500">Гэрээлэлт болон баримт бэлдсэний дараа зээл олгосон гэж бүртгэнэ.</p>
                 <button onClick={() => updateStatus(selectedLoan, 'disbursed')}
-                  className="inline-flex items-center gap-2 bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold text-sm hover:bg-emerald-700">
+                  className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all">
                   <CreditCard size={16} /> Зээл олгов гэж бүртгэх
                 </button>
               </div>
@@ -865,12 +865,12 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
         <div className="flex items-center gap-2">
           {latestResearch && (
             <button onClick={printCommittee}
-              className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">
+              className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 hover:border-slate-400 shadow-sm transition-all">
               <Printer size={15} /> Хэвлэх
             </button>
           )}
           <button onClick={onGoAssessment}
-            className="text-sm font-bold text-[#003B5C] underline underline-offset-2 hover:text-[#002d47]">
+            className="inline-flex items-center gap-2 px-4 py-2 border border-[#003B5C] text-[#003B5C] rounded-xl text-sm font-bold hover:bg-blue-50 transition-all">
             ← Судалгаа харах
           </button>
         </div>
@@ -1136,7 +1136,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
               <button
                 onClick={() => makeDecision('approve')}
                 disabled={savingDecision}
-                className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white py-3 rounded-xl font-bold text-sm transition-all"
+                className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white py-4 rounded-xl font-black text-sm shadow-md hover:shadow-lg transition-all"
               >
                 {savingDecision ? <Loader2 size={16} className="animate-spin" /> : <ThumbsUp size={16} />}
                 Зөвшөөрөх
@@ -1144,7 +1144,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
               <button
                 onClick={() => makeDecision('conditional')}
                 disabled={savingDecision}
-                className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold text-sm transition-all"
+                className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white py-4 rounded-xl font-black text-sm shadow-md hover:shadow-lg transition-all"
               >
                 {savingDecision ? <Loader2 size={16} className="animate-spin" /> : <AlertCircle size={16} />}
                 Нөхцөлтэй
@@ -1152,7 +1152,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
               <button
                 onClick={() => makeDecision('reject')}
                 disabled={savingDecision}
-                className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white py-3 rounded-xl font-bold text-sm transition-all"
+                className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white py-4 rounded-xl font-black text-sm shadow-md hover:shadow-lg transition-all"
               >
                 {savingDecision ? <Loader2 size={16} className="animate-spin" /> : <ThumbsDown size={16} />}
                 Татгалзах
