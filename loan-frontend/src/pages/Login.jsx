@@ -47,7 +47,7 @@ export default function Login({ onLogin }) {
       {/* ── Left brand panel ── */}
       <div className="lp-left">
         <div className="lp-brand">
-          <img src="/logo.jpg" alt="Солонго Капитал ББСБ" className="lp-logo" />
+          <img src="/logo.jpg" alt="logo" className="lp-logo" />
         </div>
 
         {/* Decorative SVG illustration */}
