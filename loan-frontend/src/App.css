@@ -7,6 +7,249 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ─────────────────────────────────────────
+   Login page
+───────────────────────────────────────── */
+.lp-root {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Left brand panel */
+.lp-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  width: 45%;
+  background: linear-gradient(150deg, #0f172a 0%, #1e293b 60%, #0f2744 100%);
+  padding: 3rem 2.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.lp-left::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 30% 40%, rgba(59,130,246,0.12) 0%, transparent 65%),
+              radial-gradient(ellipse at 80% 80%, rgba(99,102,241,0.08) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.lp-brand {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 2rem;
+}
+
+.lp-logo {
+  width: 220px;
+  height: auto;
+  object-fit: contain;
+  /* invert white logo on dark background */
+  filter: brightness(0) invert(1);
+  opacity: 0.92;
+}
+
+.lp-illustration {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 320px;
+  margin-bottom: 2rem;
+}
+
+.lp-tagline {
+  position: relative;
+  z-index: 1;
+  color: rgba(255,255,255,0.65);
+  font-size: 0.875rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+  margin: 0 0 0.5rem;
+}
+
+.lp-url {
+  position: relative;
+  z-index: 1;
+  color: rgba(255,255,255,0.30);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+/* Right form panel */
+.lp-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  padding: 2rem 1.5rem;
+}
+
+.lp-card {
+  width: 100%;
+  max-width: 380px;
+}
+
+.lp-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 0.25rem;
+  letter-spacing: -0.02em;
+}
+
+.lp-subtitle {
+  font-size: 0.9rem;
+  color: #64748b;
+  margin: 0 0 2rem;
+}
+
+.lp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.lp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.lp-field label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #374151;
+  letter-spacing: 0.01em;
+}
+
+.lp-field input {
+  width: 100%;
+  padding: 0.65rem 0.9rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  color: #0f172a;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.lp-field input::placeholder {
+  color: #c0ccd8;
+}
+
+.lp-field input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+
+.lp-pass-wrap {
+  position: relative;
+}
+
+.lp-pass-wrap input {
+  padding-right: 2.8rem;
+}
+
+.lp-eye {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #94a3b8;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.lp-eye:hover {
+  color: #475569;
+}
+
+.lp-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  font-size: 0.82rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.lp-submit {
+  width: 100%;
+  padding: 0.75rem;
+  background: #0f172a;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  letter-spacing: 0.01em;
+}
+
+.lp-submit:hover:not(:disabled) {
+  background: #1e3a5f;
+}
+
+.lp-submit:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.lp-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.lp-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: lp-spin 0.7s linear infinite;
+}
+
+@keyframes lp-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive: stack on small screens */
+@media (max-width: 700px) {
+  .lp-root {
+    flex-direction: column;
+  }
+  .lp-left {
+    width: 100%;
+    padding: 2.5rem 1.5rem 2rem;
+    min-height: 220px;
+  }
+  .lp-illustration {
+    max-width: 200px;
+    margin-bottom: 1rem;
+  }
+  .lp-logo {
+    width: 160px;
+  }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
