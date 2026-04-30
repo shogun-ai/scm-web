@@ -46,7 +46,8 @@ export default function Login({ onLogin }) {
     <div className="lp-root">
       {/* ── Left brand panel ── */}
       <div className="lp-left">
-        <img src='/logo.png' />
+        <img src="/logo.png" alt="logo" className="lp-bg-img" />
+        <div className="lp-left-overlay" />
       </div>
 
       {/* ── Right form panel ── */}
