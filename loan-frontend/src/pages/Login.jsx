@@ -48,7 +48,7 @@ export default function Login({ onLogin }) {
       <div className="lp-left">
         <div className="lp-left-overlay" />
         <div className="lp-brand">
-          <img src="/logo.png" alt="SCM Logo" className="lp-logo" />
+          <img src="/logo.png" alt="SCM Logo" className="lp-logo" style={{ mixBlendMode: 'multiply' }} />
         </div>
         <div className="lp-brand-info">
           <h2 className="lp-brand-title">SCM Зээлийн систем</h2>
