@@ -48,10 +48,6 @@ export default function Login({ onLogin }) {
       <div className="lp-left">
         <div className="lp-brand">
           <img src="/logo.png" alt="logo" className="lp-logo" style={{ mixBlendMode: 'multiply' }} />
-          <h2 className="lp-company">СОЛОНГО КАПИТАЛ ББСБ</h2>
-          <div className="lp-divider" />
-          <p className="lp-tagline">Зээлийн хүсэлт удирдах систем</p>
-          <p className="lp-url">loan.scm.mn</p>
         </div>
 
         {/* Decorative background shapes */}
