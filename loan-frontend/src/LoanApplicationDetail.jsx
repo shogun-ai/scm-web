@@ -140,6 +140,39 @@ const AiReadBtn = ({ loading, onClick, label: lbl = 'AI унших' }) => (
 );
 
 // ─────────────────────────────────────────────
+// SUB-TAB NAVIGATION (дараагийн / өмнөх хэсэг)
+// ─────────────────────────────────────────────
+const SUB_TABS_LIST = [
+  { key: 'loan_info',  label: 'Зээлийн мэдээлэл' },
+  { key: 'income',     label: 'Орлогын байдал' },
+  { key: 'collateral', label: 'Барьцаа хөрөнгө' },
+  { key: 'other',      label: 'Зээлийн мэдээллийн лавлагаа' },
+];
+
+const SubTabNav = ({ current, setter, completionMap = {} }) => {
+  const idx = SUB_TABS_LIST.findIndex(t => t.key === current);
+  const prev = idx > 0 ? SUB_TABS_LIST[idx - 1] : null;
+  const next = idx < SUB_TABS_LIST.length - 1 ? SUB_TABS_LIST[idx + 1] : null;
+  const isDone = !!completionMap[current];
+  return (
+    <div className="flex items-center justify-between pt-3">
+      {prev ? (
+        <button onClick={() => setter(prev.key)}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold border rounded-xl text-slate-600 hover:bg-slate-50 transition-all">
+          ← {prev.label}
+        </button>
+      ) : <span />}
+      {next ? (
+        <button onClick={() => setter(next.key)}
+          className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${isDone ? 'bg-[#003B5C] text-white hover:bg-[#002d47] shadow-md' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+          {next.label} →
+        </button>
+      ) : <span />}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────
 // ID DOCUMENT PHOTO EXTRACTOR
 // Иргэний үнэмлэхийн лавлагаа (И-17 маягт) дээрх
 // хүний зургийг Canvas-аар crop хийнэ.
@@ -1859,6 +1892,16 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
 
   const set = (field, val) => setAppData(prev => ({ ...prev, [field]: val }));
 
+  // Sub-tab completion indicators
+  const borrowerCompletion = {
+    loan_info: appData.borrowerType === 'individual'
+      ? !!(appData.borrower?.firstName && appData.borrower?.regNo && parseFmtNum(appData.loanRequest?.amount))
+      : !!(appData.org?.orgName && appData.org?.orgRegNo && parseFmtNum(appData.loanRequest?.amount)),
+    income: !!(appData.incomeResearch?.bankStatementAnalyses?.length > 0 || appData.incomeResearch?.socialInsuranceAnalysis),
+    collateral: !!(appData.collaterals?.length > 0),
+    other: !!(appData.otherLoans?.length > 0 || appData.creditBureau?.creditBureauData || appData.creditBureau?.ficoData || appData.otherDocsNotes),
+  };
+
   // ── Emergency contacts helpers ────────────
   const addContact = () => {
     if (appData.emergencyContacts.length >= 3) return;
@@ -2020,11 +2063,14 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
               ].map(t => {
                 const Icon = t.icon;
                 const isActive = borrowerSubTab === t.key;
+                const isDone = borrowerCompletion[t.key];
                 return (
                   <button key={t.key} onClick={() => setBorrowerSubTab(t.key)}
                     className={`flex-shrink-0 flex items-center gap-1.5 px-5 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap
-                      ${isActive ? 'border-[#003B5C] text-[#003B5C] bg-blue-50/30' : 'border-transparent text-slate-500 hover:text-[#003B5C] hover:bg-slate-50'}`}>
-                    <Icon size={13} /> {t.label}
+                      ${isActive ? 'border-[#003B5C] text-[#003B5C] bg-blue-50/30' : isDone ? 'border-transparent text-green-600 hover:bg-slate-50' : 'border-transparent text-slate-500 hover:text-[#003B5C] hover:bg-slate-50'}`}>
+                    <Icon size={13} />
+                    {t.label}
+                    {isDone && !isActive && <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />}
                   </button>
                 );
               })}
@@ -2088,6 +2134,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                   )}
                 </div>
               )}
+              <SubTabNav current={borrowerSubTab} setter={setBorrowerSubTab} completionMap={borrowerCompletion} />
             </div>
           )}
 
