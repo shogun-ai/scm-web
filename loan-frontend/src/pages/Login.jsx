@@ -50,6 +50,10 @@ export default function Login({ onLogin }) {
         <div className="lp-brand">
           <img src="/logo.png" alt="SCM Logo" className="lp-logo" />
         </div>
+        <div className="lp-brand-info">
+          <h2 className="lp-brand-title">SCM Зээлийн систем</h2>
+          <p className="lp-brand-desc">Зээлийн хүсэлт, шийдвэр, хяналтыг нэг дороос удирдана.</p>
+        </div>
       </div>
 
       {/* ── Right form panel ── */}

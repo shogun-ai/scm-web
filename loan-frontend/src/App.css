@@ -37,27 +37,71 @@ body {
   justify-content: center;
   gap: 0;
   width: 45%;
-  padding: 0;
+  padding: 2rem;
   position: relative;
   overflow: hidden;
-  /* Background image — change url() here to swap the background photo */
-  background-image: url('/logo.jpg');
-  background-size: cover;
-  background-position: center 60%;
+  background: linear-gradient(150deg, #001e30 0%, #003B5C 50%, #005580 100%);
 }
 
-/* Subtle dark overlay for visual depth */
+/* Decorative circles */
+.lp-left::before {
+  content: '';
+  position: absolute;
+  width: 480px;
+  height: 480px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 166, 81, 0.18) 0%, transparent 65%);
+  top: -140px;
+  right: -140px;
+  pointer-events: none;
+}
+.lp-left::after {
+  content: '';
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.07) 0%, transparent 65%);
+  bottom: -80px;
+  left: -80px;
+  pointer-events: none;
+}
+
+/* Subtle shimmer overlay */
 .lp-left-overlay {
   position: absolute;
   inset: 0;
   background: linear-gradient(
     160deg,
-    rgba(0, 0, 0, 0.38) 0%,
-    rgba(15, 23, 42, 0.25) 60%,
-    rgba(249, 115, 22, 0.12) 100%
+    rgba(255, 255, 255, 0.04) 0%,
+    transparent 45%,
+    rgba(0, 166, 81, 0.07) 100%
   );
   z-index: 1;
   pointer-events: none;
+}
+
+/* Brand info text block */
+.lp-brand-info {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  margin-top: 1.75rem;
+  padding: 0 1rem;
+}
+.lp-brand-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.01em;
+}
+.lp-brand-desc {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.52);
+  margin: 0;
+  line-height: 1.6;
+  max-width: 260px;
 }
 
 .lp-brand {
@@ -109,13 +153,18 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f8fafc;
+  background: #ffffff;
   padding: 2rem 1.5rem;
 }
 
 .lp-card {
   width: 100%;
   max-width: 380px;
+  background: #fff;
+  border: 1px solid #e8edf3;
+  border-radius: 1.25rem;
+  padding: 2.25rem 2rem;
+  box-shadow: 0 8px 40px rgba(0, 59, 92, 0.09);
 }
 
 .lp-title {
@@ -277,8 +326,8 @@ body {
   }
   .lp-left {
     width: 100%;
-    padding: 0;
-    min-height: 220px;
+    padding: 2rem 1.5rem;
+    min-height: 240px;
   }
   .lp-logo {
     width: 160px;
