@@ -48,35 +48,18 @@ export default function Login({ onLogin }) {
       <div className="lp-left">
         <div className="lp-brand">
           <img src="/logo.jpg" alt="logo" className="lp-logo" />
+          <h2 className="lp-company">СОЛОНГО КАПИТАЛ ББСБ</h2>
+          <div className="lp-divider" />
+          <p className="lp-tagline">Зээлийн хүсэлт удирдах систем</p>
+          <p className="lp-url">loan.scm.mn</p>
         </div>
 
-        {/* Decorative SVG illustration */}
-        <svg className="lp-illustration" viewBox="0 0 420 320" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          {/* Background circles */}
-          <circle cx="210" cy="160" r="140" fill="rgba(255,255,255,0.04)"/>
-          <circle cx="210" cy="160" r="100" fill="rgba(255,255,255,0.04)"/>
-          {/* Document / loan card */}
-          <rect x="120" y="80" width="180" height="140" rx="12" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.20)" strokeWidth="1.5"/>
-          <rect x="138" y="102" width="80" height="8" rx="4" fill="rgba(255,255,255,0.35)"/>
-          <rect x="138" y="118" width="120" height="6" rx="3" fill="rgba(255,255,255,0.18)"/>
-          <rect x="138" y="132" width="100" height="6" rx="3" fill="rgba(255,255,255,0.18)"/>
-          <rect x="138" y="146" width="110" height="6" rx="3" fill="rgba(255,255,255,0.18)"/>
-          {/* Approve checkmark badge */}
-          <circle cx="270" cy="195" r="22" fill="#22c55e" opacity="0.90"/>
-          <polyline points="260,195 267,203 282,186" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-          {/* Coins stack */}
-          <ellipse cx="155" cy="215" rx="22" ry="8" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.25)" strokeWidth="1.2"/>
-          <ellipse cx="155" cy="208" rx="22" ry="8" fill="rgba(255,255,255,0.20)" stroke="rgba(255,255,255,0.30)" strokeWidth="1.2"/>
-          <ellipse cx="155" cy="201" rx="22" ry="8" fill="rgba(255,255,255,0.25)" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2"/>
-          {/* Floating dots */}
-          <circle cx="90" cy="100" r="5" fill="rgba(255,255,255,0.15)"/>
-          <circle cx="330" cy="120" r="4" fill="rgba(255,255,255,0.12)"/>
-          <circle cx="340" cy="240" r="6" fill="rgba(255,255,255,0.10)"/>
-          <circle cx="80" cy="250" r="4" fill="rgba(255,255,255,0.10)"/>
-        </svg>
-
-        <p className="lp-tagline">Зээлийн хүсэлт удирдах систем</p>
-        <p className="lp-url">loan.scm.mn</p>
+        {/* Decorative background shapes */}
+        <div className="lp-deco" aria-hidden="true">
+          <div className="lp-deco-ring lp-deco-ring-1" />
+          <div className="lp-deco-ring lp-deco-ring-2" />
+          <div className="lp-deco-ring lp-deco-ring-3" />
+        </div>
       </div>
 
       {/* ── Right form panel ── */}
