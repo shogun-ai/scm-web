@@ -1,107 +1,101 @@
 import { useState } from 'react';
-import { loginApi } from '../api';
 
-function EyeIcon({ open }) {
-  return open ? (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-      <circle cx="12" cy="12" r="3"/>
-    </svg>
-  ) : (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-      <line x1="1" y1="1" x2="23" y2="23"/>
-    </svg>
-  );
-}
+const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 export default function Login({ onLogin }) {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showPass, setShowPass] = useState(false);
 
-  async function handleSubmit(e) {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const data = await loginApi(email, password);
-      if (data.token) {
-        localStorage.setItem('loan_token', data.token);
-        localStorage.setItem('loan_user', JSON.stringify(data.user));
-        onLogin(data.token, data.user);
+      const res = await fetch(`${API}/api/auth/login/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.detail || data?.non_field_errors?.[0] || 'Нэвтрэх мэдээлэл буруу байна.');
       } else {
-        setError('Нэвтрэх мэдээлэл буруу байна.');
+        const token = data.token || data.access;
+        const user = data.user || { username };
+        localStorage.setItem('loan_token', token);
+        localStorage.setItem('loan_user', JSON.stringify(user));
+        onLogin(token, user);
       }
-    } catch {
-      setError('Нэвтрэх мэдээлэл буруу байна.');
+    } catch (err) {
+      setError('Сервертэй холбогдоход алдаа гарлаа.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }
+  };
 
   return (
-    <div className="lp-root">
-      {/* ── Left brand panel ── */}
-      <div className="lp-left">
-        <div className="lp-left-overlay" />
-        <div className="lp-brand">
-          <img src="/logo.png" alt="SCM Logo" className="lp-logo" style={{ mixBlendMode: 'multiply' }} />
-        </div>
-        <div className="lp-brand-info">
-          <h2 className="lp-brand-title">SCM Зээлийн систем</h2>
-          <p className="lp-brand-desc">Зээлийн хүсэлт, шийдвэр, хяналтыг нэг дороос удирдана.</p>
-        </div>
-      </div>
-
-      {/* ── Right form panel ── */}
-      <div className="lp-right">
-        <div className="lp-card">
-          <h1 className="lp-title">Нэвтрэх</h1>
-          <p className="lp-subtitle">Тавтай морилно уу</p>
-
-          <form onSubmit={handleSubmit} className="lp-form">
-            <div className="lp-field">
-              <label htmlFor="lp-email">И-мэйл хаяг</label>
+    <div className="min-h-screen flex">
+      {/* Left panel */}
+      <div className="flex-1 flex flex-col justify-center items-center bg-white px-8 py-12">
+        <div className="w-full max-w-md">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-[#003B5C] mb-2">Нэвтрэх</h1>
+            <p className="text-slate-500 text-sm">Зээлийн удирдлагын системд тавтай морил</p>
+          </div>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+                Хэрэглэгчийн нэр
+              </label>
               <input
-                id="lp-email"
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="name@example.com"
+                type="text"
+                className="w-full p-2.5 border rounded-lg text-sm bg-white focus:outline-none focus:border-[#003B5C]"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
                 autoComplete="username"
+                disabled={loading}
               />
             </div>
-
-            <div className="lp-field">
-              <label htmlFor="lp-password">Нууц үг</label>
-              <div className="lp-pass-wrap">
-                <input
-                  id="lp-password"
-                  type={showPass ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  autoComplete="current-password"
-                />
-                <button type="button" className="lp-eye" onClick={() => setShowPass(v => !v)} tabIndex={-1}>
-                  <EyeIcon open={showPass} />
-                </button>
-              </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+                Нууц үг
+              </label>
+              <input
+                type="password"
+                className="w-full p-2.5 border rounded-lg text-sm bg-white focus:outline-none focus:border-[#003B5C]"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                disabled={loading}
+              />
             </div>
-
-            {error && <div className="lp-error">{error}</div>}
-
-            <button type="submit" disabled={loading} className="lp-submit">
-              {loading ? (
-                <span className="lp-spinner" />
-              ) : 'Нэвтрэх'}
+            {error && (
+              <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg p-3">
+                {error}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-[#003B5C] hover:bg-[#005A8E] text-white font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+            >
+              {loading ? 'Түр хүлээнэ үү...' : 'Нэвтрэх'}
             </button>
           </form>
+        </div>
+      </div>
+      {/* Right panel */}
+      <div className="hidden lg:flex flex-1 flex-col justify-center items-center bg-gradient-to-br from-[#003B5C] to-[#005A8E] px-8 py-12">
+        <div className="text-center text-white">
+          <div className="text-6xl mb-6">🏦</div>
+          <h2 className="text-3xl font-bold mb-4">Зээлийн удирдлагын систем</h2>
+          <p className="text-blue-200 text-lg max-w-sm">
+            Зээлийн өргөдөл, батлах үйл явц болон эргэн төлөлтийг үр дүнтэй удирдана.
+          </p>
         </div>
       </div>
     </div>
