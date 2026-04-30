@@ -9,25 +9,9 @@ import {
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────
-const LOAN_PRODUCTS = [
-  { id: 'biz_loan',          name: 'Бизнесийн зээл' },
-  { id: 'car_purchase_loan', name: 'Автомашин худалдан авах зээл' },
-  { id: 'car_coll_loan',     name: 'Автомашин барьцаалсан зээл' },
-  { id: 'cons_loan',         name: 'Хэрэглээний зээл' },
-  { id: 'credit_card',       name: 'Кредит карт' },
-  { id: 're_loan',           name: 'Үл хөдлөх барьцаалсан зээл' },
-  { id: 'line_loan',         name: 'Зээлийн шугам' },
-  { id: 'mortgage',          name: 'Орон сууцны зээл' },
-];
+import { LOAN_PRODUCTS, EMPLOYMENT_TYPES, EMPLOYEE_RANGES, REVENUE_RANGES } from '@shared/loanFormConfig';
 
 const PRODUCT_ID_MAP = { 1: 'biz_loan', 2: 'car_purchase_loan', 3: 'cons_loan', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' };
-
-const EMPLOYMENT_TYPES = [
-  'Цалинтай ажилтан', 'Хувиараа хөдөлмөр эрхлэгч', 'Бизнес эрхлэгч',
-  'Тэтгэвэрт гарсан', 'Ажилгүй', 'Оюутан', 'Фриланс',
-];
-const EMPLOYEE_RANGES = ['1-5', '6-20', '21-50', '51-200', '200+'];
-const REVENUE_RANGES = ['<10 сая', '10-50 сая', '50-200 сая', '200-500 сая', '500+ сая'];
 
 const STEPS = [
   { n: 1, label: 'Бүтээгдэхүүн' },

@@ -17,23 +17,15 @@ const fmtNum = (v) => {
 };
 const parseFmtNum = (v) => Number(String(v).replace(/[^0-9]/g, '')) || '';
 
-const EMPLOYMENT_TYPES = [
-  'Цалинтай ажилтан', 'Хувиараа хөдөлмөр эрхлэгч', 'Бизнес эрхлэгч',
-  'Тэтгэвэрт гарсан', 'Ажилгүй', 'Оюутан', 'Фриланс',
-];
-const PRODUCTS = {
-  biz_loan: 'Бизнесийн зээл', car_purchase_loan: 'Автомашин худалдан авах',
-  car_coll_loan: 'Автомашин барьцаалсан', cons_loan: 'Хэрэглээний зээл',
-  credit_card: 'Кредит карт', re_loan: 'Үл хөдлөх барьцаалсан', line_loan: 'Шугмын зээл',
-};
-const REVENUE_RANGES = ['<10 сая', '10-50 сая', '50-200 сая', '200-500 сая', '500+ сая'];
-const EMPLOYEE_RANGES = ['1-5', '6-20', '21-50', '51-200', '200+'];
-const GUARANTOR_TYPES = ['Хамтран зээлдэгч', 'Батлан даагч'];
-const COLLATERAL_TYPES = [
-  { key: 'real_estate', label: 'Үл хөдлөх хөрөнгө', icon: Home },
-  { key: 'vehicle', label: 'Тээврийн хэрэгсэл', icon: Car },
-  { key: 'contract', label: 'Гэрээ / Бусад', icon: FileText },
-];
+import {
+  LOAN_PRODUCTS, PRODUCTS_MAP, EMPLOYMENT_TYPES,
+  REVENUE_RANGES, EMPLOYEE_RANGES, GUARANTOR_TYPES, COLLATERAL_TYPE_KEYS,
+} from '@shared/loanFormConfig';
+const PRODUCTS = PRODUCTS_MAP;
+const COLLATERAL_TYPES = COLLATERAL_TYPE_KEYS.map(ct => ({
+  ...ct,
+  icon: { real_estate: Home, vehicle: Car, contract: FileText }[ct.key] || FileText,
+}));
 
 const inp = 'w-full p-2.5 border rounded-lg text-sm bg-white focus:outline-none focus:border-[#003B5C]';
 const label = 'text-[11px] font-bold uppercase text-slate-500';
