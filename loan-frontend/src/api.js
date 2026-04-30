@@ -7,11 +7,35 @@ export function authHeaders(token) {
   return { headers: { Authorization: `Bearer ${token}` } };
 }
 
+// ─── Centralized axios instance ───────────────────────────────────────────────
+// Auto-attaches token; fires 'auth:expired' on 401 so App.jsx can log out cleanly.
+export const apiClient = axios.create({ baseURL: API });
+
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('loan_token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+apiClient.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('loan_token');
+      localStorage.removeItem('loan_user');
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
+    return Promise.reject(err);
+  }
+);
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 export async function loginApi(email, password) {
   const res = await axios.post(`${API}/api/auth/login`, { email, password });
   return res.data;
 }
 
+// ─── Existing helpers (kept for backward compat) ──────────────────────────────
 export async function getLoanRequests(token) {
   const res = await axios.get(`${API}/api/loan-requests`, authHeaders(token));
   return res.data;

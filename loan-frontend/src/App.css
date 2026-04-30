@@ -1,5 +1,19 @@
 /* SCM Зээлийн систем — Global Styles */
 
+/* ─── Design tokens ──────────────────────────────────────────────────────── */
+:root {
+  --color-brand:       #003B5C;
+  --color-brand-dark:  #002d47;
+  --color-accent:      #00A651;
+  --color-danger:      #dc2626;
+  --color-warning:     #d97706;
+  --color-surface:     #f8fafc;
+  --radius-card:       1rem;
+  --shadow-card:       0 4px 24px rgba(0,0,0,0.08);
+  --transition-fast:   0.15s ease;
+  --transition-base:   0.2s ease;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, 'Helvetica Neue', sans-serif;
   background: #0f172a;
@@ -137,7 +151,7 @@ body {
   color: #0f172a;
   background: #fff;
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
   box-sizing: border-box;
 }
 
@@ -147,7 +161,18 @@ body {
 
 .lp-field input:focus {
   border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.14);
+  background: #fafcff;
+}
+
+.lp-field input.is-error {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 3px rgba(220,38,38,0.10);
+}
+
+.lp-field input.is-valid {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(0,166,81,0.10);
 }
 
 .lp-pass-wrap {
@@ -190,32 +215,37 @@ body {
 .lp-submit {
   width: 100%;
   padding: 0.75rem;
-  background: #0f172a;
+  background: var(--color-brand);
   color: #fff;
   border: none;
   border-radius: 10px;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
+  transition: background var(--transition-fast), transform 0.1s, box-shadow var(--transition-fast);
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
+  min-height: 46px;
   letter-spacing: 0.01em;
+  box-shadow: 0 2px 8px rgba(0,59,92,0.18);
 }
 
 .lp-submit:hover:not(:disabled) {
-  background: #1e3a5f;
+  background: var(--color-brand-dark);
+  box-shadow: 0 4px 16px rgba(0,59,92,0.26);
+  transform: translateY(-1px);
 }
 
 .lp-submit:active:not(:disabled) {
-  transform: scale(0.99);
+  transform: scale(0.985) translateY(0);
+  box-shadow: 0 1px 4px rgba(0,59,92,0.14);
 }
 
 .lp-submit:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .lp-spinner {
@@ -271,3 +301,85 @@ body {
   background: rgba(59, 130, 246, 0.3);
   color: #e2e8f0;
 }
+
+/* ─── Animations ────────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0);     }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
+/* Used by Tailwind utilities in Dashboard / LoanOrigination */
+.animate-fade-in   { animation: fadeIn   0.25s ease both; }
+.animate-slide-up  { animation: slideUp  0.28s ease both; }
+.animate-slide-down{ animation: slideDown 0.22s ease both; }
+.animate-scale-in  { animation: scaleIn  0.22s ease both; }
+.animate-pulse-soft{ animation: pulse-soft 1.6s ease-in-out infinite; }
+
+/* Login card entrance */
+.lp-card { animation: slideUp 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+.lp-left  { animation: fadeIn 0.4s ease both; }
+
+/* ─── Skeleton loader ────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 600px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* ─── Toast entrance ────────────────────────────────────────────────────── */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+.toast-enter { animation: toastIn 0.22s cubic-bezier(0.22,1,0.36,1) both; }
+
+/* ─── Focus ring utility ─────────────────────────────────────────────────── */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* ─── Field required indicator ───────────────────────────────────────────── */
+.lp-field label.required::after {
+  content: ' *';
+  color: var(--color-danger);
+  font-size: 0.75rem;
+}
+
+/* ─── Progress step connector (LOS stepper) ─────────────────────────────── */
+.step-connector {
+  flex: 1;
+  height: 2px;
+  background: #e2e8f0;
+  transition: background var(--transition-base);
+}
+.step-connector.done { background: var(--color-accent); }
+
+/* ─── Badge micro-animation on status change ─────────────────────────────── */
+@keyframes badgePop {
+  0%   { transform: scale(0.8); opacity: 0; }
+  70%  { transform: scale(1.06); }
+  100% { transform: scale(1);   opacity: 1; }
+}
+.badge-pop { animation: badgePop 0.2s ease both; }
