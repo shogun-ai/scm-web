@@ -40,6 +40,7 @@ body {
   padding: 2rem;
   position: relative;
   overflow: hidden;
+  background: linear-gradient(150deg, #001e30 0%, #003B5C 50%, #005580 100%);
   background-image: url('/bg.jpg');
   background-size: cover;
   background-position: center;
