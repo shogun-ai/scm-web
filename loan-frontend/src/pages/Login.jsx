@@ -46,7 +46,6 @@ export default function Login({ onLogin }) {
     <div className="lp-root">
       {/* ── Left brand panel ── */}
       <div className="lp-left">
-        <img src="/logo.jpg" alt="background" className="lp-bg-img" />
         <div className="lp-left-overlay" />
         <div className="lp-brand">
           <img src="/logo.png" alt="SCM Logo" className="lp-logo" />
