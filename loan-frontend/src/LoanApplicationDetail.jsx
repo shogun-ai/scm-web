@@ -140,39 +140,6 @@ const AiReadBtn = ({ loading, onClick, label: lbl = 'AI унших' }) => (
 );
 
 // ─────────────────────────────────────────────
-// SUB-TAB NAVIGATION (дараагийн / өмнөх хэсэг)
-// ─────────────────────────────────────────────
-const SUB_TABS_LIST = [
-  { key: 'loan_info',  label: 'Зээлийн мэдээлэл' },
-  { key: 'income',     label: 'Орлогын байдал' },
-  { key: 'collateral', label: 'Барьцаа хөрөнгө' },
-  { key: 'other',      label: 'Зээлийн мэдээллийн лавлагаа' },
-];
-
-const SubTabNav = ({ current, setter, completionMap = {} }) => {
-  const idx = SUB_TABS_LIST.findIndex(t => t.key === current);
-  const prev = idx > 0 ? SUB_TABS_LIST[idx - 1] : null;
-  const next = idx < SUB_TABS_LIST.length - 1 ? SUB_TABS_LIST[idx + 1] : null;
-  const isDone = !!completionMap[current];
-  return (
-    <div className="flex items-center justify-between pt-3">
-      {prev ? (
-        <button onClick={() => setter(prev.key)}
-          className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold border rounded-xl text-slate-600 hover:bg-slate-50 transition-all">
-          ← {prev.label}
-        </button>
-      ) : <span />}
-      {next ? (
-        <button onClick={() => setter(next.key)}
-          className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${isDone ? 'bg-[#003B5C] text-white hover:bg-[#002d47] shadow-md' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-          {next.label} →
-        </button>
-      ) : <span />}
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────
 // ID DOCUMENT PHOTO EXTRACTOR
 // Иргэний үнэмлэхийн лавлагаа (И-17 маягт) дээрх
 // хүний зургийг Canvas-аар crop хийнэ.
@@ -1892,16 +1859,6 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
 
   const set = (field, val) => setAppData(prev => ({ ...prev, [field]: val }));
 
-  // Sub-tab completion indicators
-  const borrowerCompletion = {
-    loan_info: appData.borrowerType === 'individual'
-      ? !!(appData.borrower?.firstName && appData.borrower?.regNo && parseFmtNum(appData.loanRequest?.amount))
-      : !!(appData.org?.orgName && appData.org?.orgRegNo && parseFmtNum(appData.loanRequest?.amount)),
-    income: !!(appData.incomeResearch?.bankStatementAnalyses?.length > 0 || appData.incomeResearch?.socialInsuranceAnalysis),
-    collateral: !!(appData.collaterals?.length > 0),
-    other: !!(appData.otherLoans?.length > 0 || appData.creditBureau?.creditBureauData || appData.creditBureau?.ficoData || appData.otherDocsNotes),
-  };
-
   // ── Emergency contacts helpers ────────────
   const addContact = () => {
     if (appData.emergencyContacts.length >= 3) return;
@@ -2063,14 +2020,11 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
               ].map(t => {
                 const Icon = t.icon;
                 const isActive = borrowerSubTab === t.key;
-                const isDone = borrowerCompletion[t.key];
                 return (
                   <button key={t.key} onClick={() => setBorrowerSubTab(t.key)}
                     className={`flex-shrink-0 flex items-center gap-1.5 px-5 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap
-                      ${isActive ? 'border-[#003B5C] text-[#003B5C] bg-blue-50/30' : isDone ? 'border-transparent text-green-600 hover:bg-slate-50' : 'border-transparent text-slate-500 hover:text-[#003B5C] hover:bg-slate-50'}`}>
-                    <Icon size={13} />
-                    {t.label}
-                    {isDone && !isActive && <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />}
+                      ${isActive ? 'border-[#003B5C] text-[#003B5C] bg-blue-50/30' : 'border-transparent text-slate-500 hover:text-[#003B5C] hover:bg-slate-50'}`}>
+                    <Icon size={13} /> {t.label}
                   </button>
                 );
               })}
@@ -2134,23 +2088,19 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                   )}
                 </div>
               )}
-              <SubTabNav current={borrowerSubTab} setter={setBorrowerSubTab} completionMap={borrowerCompletion} />
             </div>
           )}
 
           {/* Borrower sub: Орлогын байдал */}
           {borrowerSubTab === 'income' && (
-            <div className="space-y-3">
-              <div className="bg-white border rounded-2xl p-5">
-                <IncomeResearchSection
-                  data={appData.incomeResearch}
-                  onBSAppend={v => setAppData(prev => ({ ...prev, incomeResearch: { ...prev.incomeResearch, bankStatementAnalyses: [...(prev.incomeResearch?.bankStatementAnalyses || []), v] } }))}
-                  onSIChange={v => setAppData(prev => ({ ...prev, incomeResearch: { ...prev.incomeResearch, socialInsuranceAnalysis: v } }))}
-                  onRemoveBS={idx => setAppData(prev => ({ ...prev, incomeResearch: { ...prev.incomeResearch, bankStatementAnalyses: (prev.incomeResearch?.bankStatementAnalyses || []).filter((_, i) => i !== idx) } }))}
-                  apiUrl={apiUrl} showToast={showToast}
-                />
-              </div>
-              <SubTabNav current={borrowerSubTab} setter={setBorrowerSubTab} completionMap={borrowerCompletion} />
+            <div className="bg-white border rounded-2xl p-5">
+              <IncomeResearchSection
+                data={appData.incomeResearch}
+                onBSAppend={v => setAppData(prev => ({ ...prev, incomeResearch: { ...prev.incomeResearch, bankStatementAnalyses: [...(prev.incomeResearch?.bankStatementAnalyses || []), v] } }))}
+                onSIChange={v => setAppData(prev => ({ ...prev, incomeResearch: { ...prev.incomeResearch, socialInsuranceAnalysis: v } }))}
+                onRemoveBS={idx => setAppData(prev => ({ ...prev, incomeResearch: { ...prev.incomeResearch, bankStatementAnalyses: (prev.incomeResearch?.bankStatementAnalyses || []).filter((_, i) => i !== idx) } }))}
+                apiUrl={apiUrl} showToast={showToast}
+              />
             </div>
           )}
 
@@ -2186,7 +2136,6 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                   </div>
                 );
               })()}
-              <SubTabNav current={borrowerSubTab} setter={setBorrowerSubTab} completionMap={borrowerCompletion} />
             </div>
           )}
 
@@ -2216,7 +2165,6 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                 <p className={sectionHdr + ' mb-4'}><FileText size={15} /> Бусад баримт бичгийн тэмдэглэл</p>
                 <textarea value={appData.otherDocsNotes} onChange={e => set('otherDocsNotes', e.target.value)} rows={4} className={inp + ' resize-none'} placeholder="Бусад баримт, тэмдэглэл..." />
               </div>
-              <SubTabNav current={borrowerSubTab} setter={setBorrowerSubTab} completionMap={borrowerCompletion} />
             </div>
           )}
         </div>
@@ -2266,12 +2214,6 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
             const gIdx = Math.min(selectedGuarantorIdx, appData.guarantors.length - 1);
             const g = appData.guarantors[gIdx];
             const updateG = (patch) => set('guarantors', appData.guarantors.map((x, i) => i === gIdx ? { ...x, ...patch } : x));
-            const guarantorCompletion = {
-              loan_info: (g.personType || 'individual') === 'organization' ? !!(g.org?.orgName && g.org?.orgRegNo) : !!(g.person?.firstName && g.person?.regNo),
-              income: (g.personType || 'individual') === 'organization' ? !!(g.org?.monthlyRevenue) : !!(g.person?.monthlyIncome || g.person?.employmentType),
-              collateral: !!(g.collaterals?.length > 0),
-              other: !!(g.notes),
-            };
             return (
               <div className="space-y-3">
                 {/* Type / PersonType selector */}
@@ -2307,14 +2249,11 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                     ].map(t => {
                       const Icon = t.icon;
                       const isActive = guarantorSubTab === t.key;
-                      const isDone = guarantorCompletion[t.key];
                       return (
                         <button key={t.key} onClick={() => setGuarantorSubTab(t.key)}
                           className={`flex-shrink-0 flex items-center gap-1.5 px-5 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap
-                            ${isActive ? 'border-[#003B5C] text-[#003B5C] bg-blue-50/30' : isDone ? 'border-transparent text-green-600 hover:bg-slate-50' : 'border-transparent text-slate-500 hover:text-[#003B5C] hover:bg-slate-50'}`}>
-                          <Icon size={13} />
-                          {t.label}
-                          {isDone && !isActive && <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />}
+                            ${isActive ? 'border-[#003B5C] text-[#003B5C] bg-blue-50/30' : 'border-transparent text-slate-500 hover:text-[#003B5C] hover:bg-slate-50'}`}>
+                          <Icon size={13} /> {t.label}
                         </button>
                       );
                     })}
@@ -2334,57 +2273,47 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                       <p className={sectionHdr}><CreditCard size={15} /> Зээлийн мэдээллийн лавлагаа (Credit Bureau / FICO)</p>
                       <CreditBureauSection data={g.creditBureau || {}} onChange={v => updateG({ creditBureau: v })} apiUrl={apiUrl} showToast={showToast} />
                     </div>
-                    <SubTabNav current={guarantorSubTab} setter={setGuarantorSubTab} completionMap={guarantorCompletion} />
                   </div>
                 )}
 
                 {/* Guarantor sub: Орлогын байдал */}
                 {guarantorSubTab === 'income' && (
-                  <div className="space-y-3">
-                    <div className="bg-white border rounded-2xl p-5 space-y-4">
-                      <p className={sectionHdr}><TrendingUp size={15} /> Орлогын мэдээлэл</p>
-                      {(g.personType || 'individual') === 'individual' ? (
-                        <div className="grid grid-cols-2 gap-3">
-                          <label className="space-y-1"><span className={label}>Сарын орлого ₮</span>
-                            <input value={fmtNum(g.person?.monthlyIncome || '')} onChange={e => updateG({ person: { ...g.person, monthlyIncome: parseFmtNum(e.target.value) } })} className={inp} inputMode="numeric" placeholder="₮" /></label>
-                          <label className="space-y-1"><span className={label}>Ажил эрхлэлтийн хэлбэр</span>
-                            <select value={g.person?.employmentType || ''} onChange={e => updateG({ person: { ...g.person, employmentType: e.target.value } })} className={inp}>
-                              <option value="">— сонгох —</option>
-                              {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                            </select></label>
-                          <label className="space-y-1"><span className={label}>Ажил олгогч</span>
-                            <input value={g.person?.employer || ''} onChange={e => updateG({ person: { ...g.person, employer: e.target.value } })} className={inp} /></label>
-                          <label className="space-y-1"><span className={label}>Ажилд орсон огноо</span>
-                            <input type="date" value={g.person?.employedSince || ''} onChange={e => updateG({ person: { ...g.person, employedSince: e.target.value } })} className={inp} /></label>
-                        </div>
-                      ) : (
-                        <label className="space-y-1 max-w-xs"><span className={label}>Сарын орлого / Эргэлт ₮</span>
-                          <input value={fmtNum(g.org?.monthlyRevenue || '')} onChange={e => updateG({ org: { ...g.org, monthlyRevenue: parseFmtNum(e.target.value) } })} className={inp} inputMode="numeric" placeholder="₮" /></label>
-                      )}
-                    </div>
-                    <SubTabNav current={guarantorSubTab} setter={setGuarantorSubTab} completionMap={guarantorCompletion} />
+                  <div className="bg-white border rounded-2xl p-5 space-y-4">
+                    <p className={sectionHdr}><TrendingUp size={15} /> Орлогын мэдээлэл</p>
+                    {(g.personType || 'individual') === 'individual' ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="space-y-1"><span className={label}>Сарын орлого ₮</span>
+                          <input value={fmtNum(g.person?.monthlyIncome || '')} onChange={e => updateG({ person: { ...g.person, monthlyIncome: parseFmtNum(e.target.value) } })} className={inp} inputMode="numeric" placeholder="₮" /></label>
+                        <label className="space-y-1"><span className={label}>Ажил эрхлэлтийн хэлбэр</span>
+                          <select value={g.person?.employmentType || ''} onChange={e => updateG({ person: { ...g.person, employmentType: e.target.value } })} className={inp}>
+                            <option value="">— сонгох —</option>
+                            {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select></label>
+                        <label className="space-y-1"><span className={label}>Ажил олгогч</span>
+                          <input value={g.person?.employer || ''} onChange={e => updateG({ person: { ...g.person, employer: e.target.value } })} className={inp} /></label>
+                        <label className="space-y-1"><span className={label}>Ажилд орсон огноо</span>
+                          <input type="date" value={g.person?.employedSince || ''} onChange={e => updateG({ person: { ...g.person, employedSince: e.target.value } })} className={inp} /></label>
+                      </div>
+                    ) : (
+                      <label className="space-y-1 max-w-xs"><span className={label}>Сарын орлого / Эргэлт ₮</span>
+                        <input value={fmtNum(g.org?.monthlyRevenue || '')} onChange={e => updateG({ org: { ...g.org, monthlyRevenue: parseFmtNum(e.target.value) } })} className={inp} inputMode="numeric" placeholder="₮" /></label>
+                    )}
                   </div>
                 )}
 
                 {/* Guarantor sub: Барьцаа хөрөнгө */}
                 {guarantorSubTab === 'collateral' && (
-                  <div className="space-y-3">
-                    <div className="bg-white border rounded-2xl p-5 space-y-4">
-                      <p className={sectionHdr}><Home size={15} /> Барьцаа хөрөнгө</p>
-                      <CollateralSection items={g.collaterals || []} onChange={v => updateG({ collaterals: v })} apiUrl={apiUrl} showToast={showToast} />
-                    </div>
-                    <SubTabNav current={guarantorSubTab} setter={setGuarantorSubTab} completionMap={guarantorCompletion} />
+                  <div className="bg-white border rounded-2xl p-5 space-y-4">
+                    <p className={sectionHdr}><Home size={15} /> Барьцаа хөрөнгө</p>
+                    <CollateralSection items={g.collaterals || []} onChange={v => updateG({ collaterals: v })} apiUrl={apiUrl} showToast={showToast} />
                   </div>
                 )}
 
                 {/* Guarantor sub: Бусад */}
                 {guarantorSubTab === 'other' && (
-                  <div className="space-y-3">
-                    <div className="bg-white border rounded-2xl p-5 space-y-4">
-                      <p className={sectionHdr}><FileText size={15} /> Бусад тэмдэглэл</p>
-                      <textarea value={g.notes || ''} onChange={e => updateG({ notes: e.target.value })} rows={4} className={inp + ' resize-none'} placeholder="Нэмэлт тэмдэглэл..." />
-                    </div>
-                    <SubTabNav current={guarantorSubTab} setter={setGuarantorSubTab} completionMap={guarantorCompletion} />
+                  <div className="bg-white border rounded-2xl p-5 space-y-4">
+                    <p className={sectionHdr}><FileText size={15} /> Бусад тэмдэглэл</p>
+                    <textarea value={g.notes || ''} onChange={e => updateG({ notes: e.target.value })} rows={4} className={inp + ' resize-none'} placeholder="Нэмэлт тэмдэглэл..." />
                   </div>
                 )}
               </div>
