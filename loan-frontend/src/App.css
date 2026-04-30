@@ -58,6 +58,7 @@ body {
   height: auto;
   object-fit: contain;
   margin-bottom: 0.25rem;
+  mix-blend-mode: multiply;
 }
 
 .lp-company {
