@@ -25,12 +25,12 @@ export default function Login({ onLogin }) {
         setError(data?.detail || data?.non_field_errors?.[0] || 'Нэвтрэх мэдээлэл буруу байна.');
       } else {
         const token = data.token || data.access;
-        const user = data.user || { username };
+        const user = data.user || { email };
         localStorage.setItem('loan_token', token);
         localStorage.setItem('loan_user', JSON.stringify(user));
         onLogin(token, user);
       }
-    } catch (err) {
+    } catch {
       setError('Сервертэй холбогдоход алдаа гарлаа.');
     } finally {
       setLoading(false);
@@ -38,11 +38,15 @@ export default function Login({ onLogin }) {
   };
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left panel */}
-      <div className="flex-1 flex flex-col justify-center items-center bg-white px-8 py-12">
-        <div className="w-full max-w-md">
-          <div className="mb-8">
+    <div
+      className="min-h-screen flex items-center justify-center px-4 py-8 bg-cover bg-center relative overflow-hidden"
+      style={{ backgroundImage: "linear-gradient(135deg, rgba(0,35,55,0.76), rgba(0,59,92,0.58)), url('/bg.jpg')" }}
+    >
+      <div className="absolute inset-0 bg-slate-950/20" />
+      <div className="relative z-10 w-full max-w-[420px]">
+        <div className="bg-white/95 backdrop-blur-md border border-white/60 rounded-2xl shadow-2xl px-8 py-9">
+          <div className="mb-8 text-center">
+            <img src="/logo.png" alt="SCM" className="h-14 mx-auto mb-5 object-contain" />
             <h1 className="text-3xl font-bold text-[#003B5C] mb-2">Нэвтрэх</h1>
             <p className="text-slate-500 text-sm">Зээлийн удирдлагын системд тавтай морил</p>
           </div>
@@ -88,20 +92,6 @@ export default function Login({ onLogin }) {
               {loading ? 'Түр хүлээнэ үү...' : 'Нэвтрэх'}
             </button>
           </form>
-        </div>
-      </div>
-      {/* Right panel */}
-      <div
-        className="hidden lg:flex flex-1 flex-col justify-center items-center px-8 py-12 bg-cover bg-center relative overflow-hidden"
-        style={{ backgroundImage: "linear-gradient(135deg, rgba(0,59,92,0.72), rgba(0,90,142,0.58)), url('/bg.jpg')" }}
-      >
-        <div className="absolute inset-0 bg-black/10" />
-        <div className="relative z-10 text-center text-white">
-          <div className="text-6xl mb-6">🏦</div>
-          <h2 className="text-3xl font-bold mb-4">Зээлийн удирдлагын систем</h2>
-          <p className="text-blue-200 text-lg max-w-sm">
-            Зээлийн өргөдөл, батлах үйл явц болон эргэн төлөлтийг үр дүнтэй удирдана.
-          </p>
         </div>
       </div>
     </div>
