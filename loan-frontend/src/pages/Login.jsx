@@ -91,8 +91,12 @@ export default function Login({ onLogin }) {
         </div>
       </div>
       {/* Right panel */}
-      <div className="hidden lg:flex flex-1 flex-col justify-center items-center bg-gradient-to-br from-[#003B5C] to-[#005A8E] px-8 py-12">
-        <div className="text-center text-white">
+      <div
+        className="hidden lg:flex flex-1 flex-col justify-center items-center px-8 py-12 bg-cover bg-center relative overflow-hidden"
+        style={{ backgroundImage: "linear-gradient(135deg, rgba(0,59,92,0.72), rgba(0,90,142,0.58)), url('/bg.jpg')" }}
+      >
+        <div className="absolute inset-0 bg-black/10" />
+        <div className="relative z-10 text-center text-white">
           <div className="text-6xl mb-6">🏦</div>
           <h2 className="text-3xl font-bold mb-4">Зээлийн удирдлагын систем</h2>
           <p className="text-blue-200 text-lg max-w-sm">
