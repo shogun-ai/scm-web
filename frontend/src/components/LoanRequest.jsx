@@ -9,7 +9,13 @@ import {
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────
-import { LOAN_PRODUCTS, EMPLOYMENT_TYPES, EMPLOYEE_RANGES, REVENUE_RANGES } from '@shared/loanFormConfig';
+import { LOAN_PRODUCTS } from '@shared/loanFormConfig';
+import {
+  INDIVIDUAL_FIELDS, EMPLOYMENT_FIELDS,
+  ORG_FIELDS, CONTACT_PERSON_FIELDS,
+  COLLATERAL_VEHICLE_FIELDS, COLLATERAL_REALESTATE_FIELDS,
+  GUARANTOR_FIELDS,
+} from '@shared/loanFormSchema';
 
 const PRODUCT_ID_MAP = { 1: 'biz_loan', 2: 'car_purchase_loan', 3: 'cons_loan', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' };
 
@@ -56,7 +62,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   const [formData, setFormData] = useState({
     userType: 'individual',
     // Individual
-    lastname: '', firstname: '', fatherName: '', regNo: '', dob: '', phone: '', email: '', address: '',
+    lastName: '', firstName: '', fatherName: '', regNo: '', dob: '', phone: '', email: '', address: '',
     gender: '', idIssueDate: '', idExpiryDate: '',
     employmentType: '', employer: '', employedSince: '', monthlyIncome: '', incomeSource: '',
     // Organization
@@ -165,8 +171,8 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     analyzeDoc(files, '/api/public/analyze-id', d => {
       setFormData(p => ({
         ...p,
-        lastname:     d.lastName     || p.lastname,
-        firstname:    d.firstName    || p.firstname,
+        lastName:     d.lastName     || p.lastName,
+        firstName:    d.firstName    || p.firstName,
         fatherName:   d.fatherName   || p.fatherName,
         regNo:        d.regNo        || p.regNo,
         dob:          d.dob          || p.dob,
@@ -249,8 +255,8 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     }
     if (step === 3) {
       if (formData.userType === 'individual') {
-        if (!formData.lastname)  e.lastname  = 'Овог оруулна уу';
-        if (!formData.firstname) e.firstname = 'Нэр оруулна уу';
+        if (!formData.lastName)  e.lastName  = 'Овог оруулна уу';
+        if (!formData.firstName) e.firstName = 'Нэр оруулна уу';
         if (!formData.regNo || formData.regNo.length < 10) e.regNo = 'Регистр дутуу';
         if (!formData.phone || formData.phone.length < 8)  e.phone = 'Утас дутуу';
         if (!formData.address)   e.address   = 'Хаяг оруулна уу';
@@ -316,6 +322,72 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   const lbl = 'text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 block';
 
   const Err = ({ msg }) => msg ? <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={11}/>{msg}</p> : null;
+
+  // ── Schema field renderer for formData-level fields ───────────────────────
+  const renderFormField = (f) => {
+    const v = formData[f.key];
+    const colCls = `space-y-1${f.col === 2 ? ' col-span-2' : ''}`;
+    if (f.type === 'choice') return (
+      <div key={f.key} className={colCls}>
+        <span className={lbl}>{f.label}</span>
+        <div className="flex gap-2 flex-wrap">
+          {(f.options || []).map(t => (
+            <button key={t} type="button" onClick={() => set(f.key, t)}
+              className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${v === t ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#003B5C]'}`}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+    if (f.type === 'select') return (
+      <label key={f.key} className={colCls}>
+        <span className={lbl}>{f.label}{f.required ? ' *' : ''}</span>
+        <select name={f.key} value={v || ''} onChange={handleChange} className={`${inp(errors[f.key])} bg-white`}>
+          <option value="">— сонгох —</option>
+          {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <Err msg={errors[f.key]}/>
+      </label>
+    );
+    return (
+      <label key={f.key} className={colCls}>
+        <span className={lbl}>{f.label}{f.required ? ' *' : ''}</span>
+        <input name={f.key} type={['date','tel','email'].includes(f.type) ? f.type : 'text'}
+          value={v || ''} placeholder={f.placeholder || ''}
+          className={`${inp(errors[f.key])}${f.upper ? ' uppercase' : ''}`}
+          inputMode={f.type === 'number' ? 'numeric' : undefined}
+          onChange={handleChange}
+        />
+        <Err msg={errors[f.key]}/>
+      </label>
+    );
+  };
+
+  // ── Schema field renderer for nested objects (vehicle, collateral) ─────────
+  const renderNestedField = (f, obj, setFn, aiFlag) => {
+    const v = obj[f.key];
+    const colCls = `space-y-1${f.col === 2 ? ' col-span-2' : ''}`;
+    if (f.type === 'select') return (
+      <label key={f.key} className={colCls}>
+        <span className={lbl}>{f.label}</span>
+        <select value={v || ''} onChange={e => setFn(f.key, e.target.value)} className={`${inp()} bg-white`}>
+          <option value="">— Сонгоно уу —</option>
+          {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </label>
+    );
+    return (
+      <label key={f.key} className={colCls}>
+        <span className={lbl}>{f.label}</span>
+        <div className="relative">
+          <input value={v || ''} onChange={e => setFn(f.key, e.target.value)}
+            className={`${inp()}${aiFlag && v ? ' pr-7' : ''}`} />
+          {aiFlag && v && <Sparkles size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#00A651]"/>}
+        </div>
+      </label>
+    );
+  };
 
   // File upload zone
   const UploadZone = ({ name, label: zoneLbl, accept = '.pdf,.jpg,.jpeg,.png', onFiles, aiLoading, aiDone, note }) => {
@@ -431,98 +503,16 @@ const LoanRequest = ({ onBack, initialProduct }) => {
           note="Зураг эсвэл PDF оруулна уу — AI талбаруудыг бөглөнө" />
       </div>
 
-      {/* Basic info */}
+      {/* Basic info — schema-driven */}
       <div className="grid grid-cols-2 gap-4">
-        <label className="space-y-1">
-          <span className={lbl}>Овог *</span>
-          <input name="lastname" value={formData.lastname} onChange={handleChange} placeholder="БАТБАЯР" className={inp(errors.lastname)} />
-          <Err msg={errors.lastname}/>
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Нэр *</span>
-          <input name="firstname" value={formData.firstname} onChange={handleChange} placeholder="БОЛД" className={inp(errors.firstname)} />
-          <Err msg={errors.firstname}/>
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Эцэг/эхийн нэр</span>
-          <input name="fatherName" value={formData.fatherName} onChange={handleChange} placeholder="ДОРЖ" className={inp()} />
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Регистрийн дугаар *</span>
-          <input name="regNo" value={formData.regNo} onChange={handleChange} placeholder="УУ80010101" className={`${inp(errors.regNo)} uppercase`} />
-          <Err msg={errors.regNo}/>
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Төрсөн огноо</span>
-          <input type="date" name="dob" value={formData.dob} onChange={handleChange} className={inp()} />
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Хүйс</span>
-          <select name="gender" value={formData.gender} onChange={handleChange} className={`${inp()} bg-white`}>
-            <option value="">— сонгох —</option>
-            <option value="Эрэгтэй">Эрэгтэй</option>
-            <option value="Эмэгтэй">Эмэгтэй</option>
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Иргэний үнэмлэх олгосон огноо</span>
-          <input type="date" name="idIssueDate" value={formData.idIssueDate} onChange={handleChange} className={inp()} />
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Иргэний үнэмлэх дуусах огноо</span>
-          <input type="date" name="idExpiryDate" value={formData.idExpiryDate} onChange={handleChange} className={inp()} />
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Утас *</span>
-          <input name="phone" type="tel" value={formData.phone} onChange={handleChange} placeholder="9900 0000" className={inp(errors.phone)} />
-          <Err msg={errors.phone}/>
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>И-мэйл</span>
-          <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="email@mail.com" className={inp(errors.email)} />
-          <Err msg={errors.email}/>
-        </label>
-        <label className="space-y-1 col-span-2">
-          <span className={lbl}>Бүртгэлийн хаяг *</span>
-          <input name="address" value={formData.address} onChange={handleChange} placeholder="УБ, БЗД, 10-р хороо..." className={inp(errors.address)} />
-          <Err msg={errors.address}/>
-        </label>
+        {INDIVIDUAL_FIELDS.map(renderFormField)}
       </div>
 
-      {/* Employment */}
+      {/* Employment — schema-driven */}
       <div className="border-t border-gray-100 pt-4">
         <p className="text-xs font-bold text-[#003B5C] uppercase mb-3 flex items-center gap-2"><Briefcase size={13}/> Ажил эрхлэлт & Орлого</p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <label className="space-y-1">
-            <span className={lbl}>Ажлын байрны төрөл</span>
-            <select name="employmentType" value={formData.employmentType} onChange={handleChange} className={`${inp()} bg-white`}>
-              <option value="">— сонгох —</option>
-              {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className={lbl}>Ажлын байр / Байгууллага</span>
-            <input name="employer" value={formData.employer} onChange={handleChange} className={inp()} />
-          </label>
-          <label className="space-y-1">
-            <span className={lbl}>Ажилд орсон огноо</span>
-            <input type="date" name="employedSince" value={formData.employedSince} onChange={handleChange} className={inp()} />
-          </label>
-          <label className="space-y-1">
-            <span className={lbl}>Сарын орлого ₮</span>
-            <input name="monthlyIncome" value={formData.monthlyIncome} onChange={handleChange} placeholder="1,000,000" className={inp()} inputMode="numeric" />
-          </label>
-          <div className="space-y-1">
-            <span className={lbl}>Орлогын эх сурвалж</span>
-            <div className="flex gap-2 flex-wrap">
-              {['Цалингийн орлого', 'Бизнесийн орлого'].map(t => (
-                <button key={t} type="button" onClick={() => set('incomeSource', t)}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${formData.incomeSource === t ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#003B5C]'}`}>
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
+          {EMPLOYMENT_FIELDS.map(renderFormField)}
         </div>
       </div>
 
@@ -547,67 +537,16 @@ const LoanRequest = ({ onBack, initialProduct }) => {
           note="Зураг эсвэл PDF — AI талбаруудыг бөглөнө" />
       </div>
 
+      {/* Org fields — schema-driven */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <label className="space-y-1 md:col-span-2">
-          <span className={lbl}>Байгууллагын нэр (бүрэн) *</span>
-          <input name="orgName" value={formData.orgName} onChange={handleChange} className={inp(errors.orgName)} />
-          <Err msg={errors.orgName}/>
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Регистр (7 орон) *</span>
-          <input name="orgRegNo" value={formData.orgRegNo} onChange={handleChange} className={inp(errors.orgRegNo)} />
-          <Err msg={errors.orgRegNo}/>
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Хуулийн хэлбэр (ХХК г.м.)</span>
-          <input name="legalForm" value={formData.legalForm} onChange={handleChange} className={inp()} />
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Байгуулагдсан огноо</span>
-          <input type="date" name="foundedDate" value={formData.foundedDate} onChange={handleChange} className={inp()} />
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Үйл ажиллагааны чиглэл</span>
-          <input name="industry" value={formData.industry} onChange={handleChange} className={inp()} />
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Ажилчдын тоо</span>
-          <select name="employeeCount" value={formData.employeeCount} onChange={handleChange} className={`${inp()} bg-white`}>
-            <option value="">— сонгох —</option>
-            {EMPLOYEE_RANGES.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Жилийн орлого</span>
-          <select name="revenueRange" value={formData.revenueRange} onChange={handleChange} className={`${inp()} bg-white`}>
-            <option value="">— сонгох —</option>
-            {REVENUE_RANGES.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className={lbl}>Байгууллагын хаяг</span>
-          <input name="orgAddress" value={formData.orgAddress} onChange={handleChange} className={inp()} />
-        </label>
+        {ORG_FIELDS.map(renderFormField)}
       </div>
 
-      {/* Contact person */}
+      {/* Contact person — schema-driven */}
       <div className="border-t border-gray-100 pt-4">
         <p className="text-xs font-bold text-[#00A651] uppercase mb-3 flex items-center gap-2"><Briefcase size={13}/> Холбоо барих ажилтан</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <label className="space-y-1">
-            <span className={lbl}>Нэр *</span>
-            <input name="contactName" value={formData.contactName} onChange={handleChange} className={inp(errors.contactName)} />
-            <Err msg={errors.contactName}/>
-          </label>
-          <label className="space-y-1">
-            <span className={lbl}>Албан тушаал</span>
-            <input name="contactPosition" value={formData.contactPosition} onChange={handleChange} className={inp()} />
-          </label>
-          <label className="space-y-1">
-            <span className={lbl}>Утас *</span>
-            <input name="contactPhone" type="tel" value={formData.contactPhone} onChange={handleChange} className={inp(errors.contactPhone)} />
-            <Err msg={errors.contactPhone}/>
-          </label>
+          {CONTACT_PERSON_FIELDS.map(renderFormField)}
         </div>
       </div>
 
@@ -738,34 +677,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
                 note="Техникийн паспортын зураг оруулна уу" />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {[
-                { k: 'plateNumber',   l: 'Улсын дугаар' },
-                { k: 'vehicleType',   l: 'Хэрэгслийн төрөл' },
-                { k: 'make',          l: 'Марк' },
-                { k: 'model',         l: 'Загвар' },
-                { k: 'year',          l: 'Он' },
-                { k: 'color',         l: 'Өнгө' },
-                { k: 'engineNumber',  l: 'Хөдөлгүүрийн дугаар' },
-                { k: 'chassisNumber', l: 'Арлын дугаар' },
-                { k: 'technicalPassportNumber', l: 'Техникийн паспорт №' },
-                { k: 'ownerName',     l: 'Эзэмшигчийн нэр' },
-                { k: 'ownerRegNo',    l: 'Эзэмшигчийн РД' },
-              ].map(({ k, l }) => (
-                <label key={k} className="space-y-1">
-                  <span className={lbl}>{l}</span>
-                  <div className="relative">
-                    <input value={formData.vehicle[k] || ''} onChange={e => setVeh(k, e.target.value)} className={`${inp()} ${aiFilledVehicle && formData.vehicle[k] ? 'pr-7' : ''}`} />
-                    {aiFilledVehicle && formData.vehicle[k] && <Sparkles size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#00A651]"/>}
-                  </div>
-                </label>
-              ))}
-              <label className="space-y-1">
-                <span className={lbl}>Зээлдэгчтэй харилцаа</span>
-                <select value={formData.vehicle.ownerRelation || ''} onChange={e => setVeh('ownerRelation', e.target.value)} className={`${inp()} bg-white`}>
-                  <option value="">— Сонгоно уу —</option>
-                  <option>Өөрөө</option><option>Гэр бүл</option><option>Гуравдагч этгээд</option>
-                </select>
-              </label>
+              {COLLATERAL_VEHICLE_FIELDS.map(f => renderNestedField(f, formData.vehicle, setVeh, aiFilledVehicle))}
             </div>
             {aiFilledVehicle && (
               <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">
@@ -788,62 +700,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
                 note="Гэрчилгээний зураг оруулна уу" />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {[
-                { k: 'certificateNumber', l: 'Гэрчилгээний дугаар' },
-                { k: 'propertyType',      l: 'Хөрөнгийн төрөл' },
-                { k: 'district',          l: 'Дүүрэг' },
-                { k: 'khoroo',            l: 'Хороо' },
-                { k: 'blockNumber',       l: 'Байрны дугаар' },
-                { k: 'apartmentNumber',   l: 'Тасалгааны дугаар' },
-              ].map(({ k, l }) => (
-                <label key={k} className="space-y-1">
-                  <span className={lbl}>{l}</span>
-                  <div className="relative">
-                    <input value={formData.collateral[k] || ''} onChange={e => setColl(k, e.target.value)} className={`${inp()} ${aiFilledProp && formData.collateral[k] ? 'pr-7' : ''}`} />
-                    {aiFilledProp && formData.collateral[k] && <Sparkles size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#00A651]"/>}
-                  </div>
-                </label>
-              ))}
-              <label className="space-y-1 md:col-span-2">
-                <span className={lbl}>Хаяг</span>
-                <div className="relative">
-                  <input value={formData.collateral.address || ''} onChange={e => setColl('address', e.target.value)} className={`${inp()} ${aiFilledProp && formData.collateral.address ? 'pr-7' : ''}`} />
-                  {aiFilledProp && formData.collateral.address && <Sparkles size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#00A651]"/>}
-                </div>
-              </label>
-              {[
-                { k: 'area', l: 'Талбай (м²)' }, { k: 'landArea', l: 'Газрын талбай' },
-                { k: 'buildingYear', l: 'Барилга баригдсан он' },
-              ].map(({ k, l }) => (
-                <label key={k} className="space-y-1">
-                  <span className={lbl}>{l}</span>
-                  <div className="relative">
-                    <input value={formData.collateral[k] || ''} onChange={e => setColl(k, e.target.value)} className={`${inp()} ${aiFilledProp && formData.collateral[k] ? 'pr-7' : ''}`} />
-                    {aiFilledProp && formData.collateral[k] && <Sparkles size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#00A651]"/>}
-                  </div>
-                </label>
-              ))}
-              <label className="space-y-1">
-                <span className={lbl}>Эзэмшигчийн нэр</span>
-                <div className="relative">
-                  <input value={formData.collateral.ownerName || ''} onChange={e => setColl('ownerName', e.target.value)} className={`${inp()} ${aiFilledProp && formData.collateral.ownerName ? 'pr-7' : ''}`} />
-                  {aiFilledProp && formData.collateral.ownerName && <Sparkles size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#00A651]"/>}
-                </div>
-              </label>
-              <label className="space-y-1">
-                <span className={lbl}>Эзэмшигчийн РД</span>
-                <div className="relative">
-                  <input value={formData.collateral.ownerRegNo || ''} onChange={e => setColl('ownerRegNo', e.target.value)} className={`${inp()} ${aiFilledProp && formData.collateral.ownerRegNo ? 'pr-7' : ''}`} />
-                  {aiFilledProp && formData.collateral.ownerRegNo && <Sparkles size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#00A651]"/>}
-                </div>
-              </label>
-              <label className="space-y-1">
-                <span className={lbl}>Зээлдэгчтэй харилцаа</span>
-                <select value={formData.collateral.ownerRelation || ''} onChange={e => setColl('ownerRelation', e.target.value)} className={`${inp()} bg-white`}>
-                  <option value="">— Сонгоно уу —</option>
-                  <option>Өөрөө</option><option>Гэр бүл</option><option>Гуравдагч этгээд</option>
-                </select>
-              </label>
+              {COLLATERAL_REALESTATE_FIELDS.map(f => renderNestedField(f, formData.collateral, setColl, aiFilledProp))}
             </div>
             {aiFilledProp && (
               <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">
@@ -907,10 +764,10 @@ const LoanRequest = ({ onBack, initialProduct }) => {
             <button type="button" onClick={() => removeGuarantor(idx)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={14}/></button>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {[['lastName','Овог'],['firstName','Нэр'],['fatherName','Эцэг/эхийн нэр'],['regNo','Регистр'],['phone','Утас'],['address','Хаяг']].map(([k, l]) => (
-              <label key={k} className="space-y-1">
-                <span className={lbl}>{l}</span>
-                <input value={g[k] || ''} onChange={e => setGua(idx, k, e.target.value)} className={inp()} />
+            {GUARANTOR_FIELDS.map(f => (
+              <label key={f.key} className="space-y-1">
+                <span className={lbl}>{f.label}</span>
+                <input type={f.type === 'tel' ? 'tel' : 'text'} value={g[f.key] || ''} onChange={e => setGua(idx, f.key, e.target.value)} className={inp()} />
               </label>
             ))}
           </div>

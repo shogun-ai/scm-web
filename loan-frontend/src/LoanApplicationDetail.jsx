@@ -21,6 +21,10 @@ import {
   LOAN_PRODUCTS, PRODUCTS_MAP, EMPLOYMENT_TYPES,
   REVENUE_RANGES, EMPLOYEE_RANGES, GUARANTOR_TYPES, COLLATERAL_TYPE_KEYS,
 } from '@shared/loanFormConfig';
+import {
+  INDIVIDUAL_FIELDS, EMPLOYMENT_FIELDS,
+  ORG_FIELDS, CONTACT_PERSON_FIELDS,
+} from '@shared/loanFormSchema';
 const PRODUCTS = PRODUCTS_MAP;
 const COLLATERAL_TYPES = COLLATERAL_TYPE_KEYS.map(ct => ({
   ...ct,
@@ -456,94 +460,71 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
         </div>
       )}
 
-      {/* Personal info */}
+      {/* Personal info — schema-driven (add/remove fields in shared/loanFormSchema.js) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <label className="space-y-1">
-          <span className={label}>Нэр</span>
-          <input value={data.firstName || ''} onChange={e => set('firstName', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Эцэг эхийн нэр</span>
-          <input value={data.fatherName || ''} onChange={e => set('fatherName', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Овог</span>
-          <input value={data.lastName || ''} onChange={e => set('lastName', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>РД</span>
-          <input value={data.regNo || ''} onChange={e => set('regNo', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Утас</span>
-          <input value={data.phone || ''} onChange={e => set('phone', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Төрсөн огноо</span>
-          <input type="date" value={data.dob || ''} onChange={e => set('dob', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Хүйс</span>
-          <select value={data.gender || ''} onChange={e => set('gender', e.target.value)} className={disabledInp} disabled={locked}>
-            <option value="">— сонгох —</option>
-            <option value="Эрэгтэй">Эрэгтэй</option>
-            <option value="Эмэгтэй">Эмэгтэй</option>
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Иргэний үнэмлэх олгосон огноо</span>
-          <input type="date" value={data.idIssueDate || ''} onChange={e => set('idIssueDate', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Иргэний үнэмлэх дуусах огноо</span>
-          <input type="date" value={data.idExpiryDate || ''} onChange={e => set('idExpiryDate', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1 md:col-span-2">
-          <span className={label}>Бүртгэлийн хаяг</span>
-          <input value={data.address || ''} onChange={e => set('address', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1 md:col-span-2">
-          <span className={label}>Имэйл</span>
-          <input type="email" value={data.email || ''} onChange={e => set('email', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
+        {INDIVIDUAL_FIELDS.map(f => {
+          const v = data[f.key] || '';
+          const colCls = `space-y-1${f.col === 2 ? ' md:col-span-2' : ''}`;
+          if (f.type === 'select') return (
+            <label key={f.key} className={colCls}>
+              <span className={label}>{f.label}</span>
+              <select value={v} onChange={e => set(f.key, e.target.value)} className={disabledInp} disabled={locked}>
+                <option value="">— сонгох —</option>
+                {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </label>
+          );
+          return (
+            <label key={f.key} className={colCls}>
+              <span className={label}>{f.label}</span>
+              <input type={['date','tel','email'].includes(f.type) ? f.type : 'text'}
+                value={v} onChange={e => set(f.key, e.target.value)} className={disabledInp} disabled={locked} />
+            </label>
+          );
+        })}
       </div>
 
-      {/* Employment */}
+      {/* Employment — schema-driven */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <label className="space-y-1">
-          <span className={label}>Ажлын байрны төрөл</span>
-          <select value={data.employmentType || ''} onChange={e => set('employmentType', e.target.value)} className={inp}>
-            <option value="">— сонгох —</option>
-            {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Ажлын байр / Байгууллага</span>
-          <input value={data.employer || ''} onChange={e => set('employer', e.target.value)} className={inp} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Ажилд орсон огноо</span>
-          <input type="date" value={data.employedSince || ''} onChange={e => set('employedSince', e.target.value)} className={inp} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Сарын орлого ₮</span>
-          <input
-            value={fmtNum(data.monthlyIncome || '')}
-            onChange={e => set('monthlyIncome', parseFmtNum(e.target.value))}
-            className={inp} inputMode="numeric"
-          />
-        </label>
-        <div className="space-y-1">
-          <span className={label}>Орлогын эх сурвалж</span>
-          <div className="flex gap-2">
-            {['Цалингийн орлого', 'Бизнесийн орлого'].map(t => (
-              <button key={t} type="button" onClick={() => set('incomeSource', t)}
-                className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${data.incomeSource === t ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#003B5C]'}`}>
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
+        {EMPLOYMENT_FIELDS.map(f => {
+          const v = data[f.key];
+          if (f.type === 'choice') return (
+            <div key={f.key} className="space-y-1">
+              <span className={label}>{f.label}</span>
+              <div className="flex gap-2">
+                {(f.options || []).map(t => (
+                  <button key={t} type="button" onClick={() => !locked && set(f.key, t)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${v === t ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#003B5C]'}`}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+          if (f.type === 'select') return (
+            <label key={f.key} className="space-y-1">
+              <span className={label}>{f.label}</span>
+              <select value={v || ''} onChange={e => set(f.key, e.target.value)} className={disabledInp} disabled={locked}>
+                <option value="">— сонгох —</option>
+                {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </label>
+          );
+          if (f.key === 'monthlyIncome') return (
+            <label key={f.key} className="space-y-1">
+              <span className={label}>{f.label}</span>
+              <input value={fmtNum(v || '')} onChange={e => set(f.key, parseFmtNum(e.target.value))}
+                className={inp} inputMode="numeric" disabled={locked} />
+            </label>
+          );
+          return (
+            <label key={f.key} className="space-y-1">
+              <span className={label}>{f.label}</span>
+              <input type={['date','tel','email'].includes(f.type) ? f.type : 'text'}
+                value={v || ''} onChange={e => set(f.key, e.target.value)} className={disabledInp} disabled={locked} />
+            </label>
+          );
+        })}
       </div>
     </div>
   );
@@ -608,46 +589,42 @@ const OrgForm = ({ data = {}, onChange, locked = false, apiUrl, showToast }) => 
           />
         </div>
       )}
+      {/* Org fields — schema-driven (add/remove fields in shared/loanFormSchema.js) */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <label className="space-y-1 md:col-span-2">
-          <span className={label}>Байгууллагын нэр</span>
-          <input value={data.orgName || ''} onChange={e => set('orgName', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Регистрийн дугаар</span>
-          <input value={data.orgRegNo || ''} onChange={e => set('orgRegNo', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Холбоо барих нэр</span>
-          <input value={data.contactName || ''} onChange={e => set('contactName', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Холбоо барих утас</span>
-          <input value={data.contactPhone || ''} onChange={e => set('contactPhone', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Байгуулагдсан огноо</span>
-          <input type="date" value={data.foundedDate || ''} onChange={e => set('foundedDate', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Ажилчдын тоо</span>
-          <select value={data.employeeCount || ''} onChange={e => set('employeeCount', e.target.value)} className={disabledInp} disabled={locked}>
-            <option value="">— сонгох —</option>
-            {EMPLOYEE_RANGES.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Жилийн орлого</span>
-          <select value={data.revenueRange || ''} onChange={e => set('revenueRange', e.target.value)} className={disabledInp} disabled={locked}>
-            <option value="">— сонгох —</option>
-            {REVENUE_RANGES.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className={label}>Үйл ажиллагааны чиглэл</span>
-          <input value={data.industry || ''} onChange={e => set('industry', e.target.value)} className={disabledInp} disabled={locked} />
-        </label>
+        {ORG_FIELDS.map(f => {
+          const v = data[f.key] || '';
+          const colCls = `space-y-1${f.col === 2 ? ' md:col-span-2' : ''}`;
+          if (f.type === 'select') return (
+            <label key={f.key} className={colCls}>
+              <span className={label}>{f.label}</span>
+              <select value={v} onChange={e => set(f.key, e.target.value)} className={disabledInp} disabled={locked}>
+                <option value="">— сонгох —</option>
+                {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </label>
+          );
+          return (
+            <label key={f.key} className={colCls}>
+              <span className={label}>{f.label}</span>
+              <input type={f.type === 'date' ? 'date' : 'text'}
+                value={v} onChange={e => set(f.key, e.target.value)} className={disabledInp} disabled={locked} />
+            </label>
+          );
+        })}
       </div>
+
+      {/* Contact person — schema-driven */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-1">
+        <p className="text-[11px] font-bold uppercase text-slate-500 tracking-wide md:col-span-3">Холбоо барих ажилтан</p>
+        {CONTACT_PERSON_FIELDS.map(f => (
+          <label key={f.key} className="space-y-1">
+            <span className={label}>{f.label}</span>
+            <input type={f.type === 'tel' ? 'tel' : 'text'}
+              value={data[f.key] || ''} onChange={e => set(f.key, e.target.value)} className={disabledInp} disabled={locked} />
+          </label>
+        ))}
+      </div>
+
       {/* Management persons */}
       <div className="space-y-2 pt-1">
         <p className="text-[11px] font-bold uppercase text-slate-500 tracking-wide">Удирдлагын бүртгэл</p>
