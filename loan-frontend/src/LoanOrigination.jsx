@@ -52,9 +52,15 @@ const UI_TEXT = {
     exposureMonitor: 'Эрсдэлийн хяналт',
     stats: {
       total: 'Нийт хүсэлт',
-      new: 'Шинэ / хуваарилах',
-      research: 'Судалгаа дээр',
-      decided: 'Шийдвэрлэсэн',
+      pending: 'Онлайн / шинэ',
+      created: 'Ажилтан үүсгэсэн',
+      assigned: 'Хариуцагчтай',
+      assessment: 'Үнэлгээ / судалгаа',
+      committee: 'Хороонд',
+      approved: 'Зөвшөөрсөн',
+      rejected: 'Татгалзсан',
+      resolved: 'Нөхцөлтэй',
+      disbursed: 'Олгосон',
     },
     view: 'Харах',
     searchPlaceholder: 'Нэр, РД, утас, бүтээгдэхүүн, хариуцагчаар хайх...',
@@ -94,9 +100,15 @@ const UI_TEXT = {
     exposureMonitor: 'Exposure monitor',
     stats: {
       total: 'Total requests',
-      new: 'New / assign',
-      research: 'In review',
-      decided: 'Decided',
+      pending: 'Online / new',
+      created: 'Created by staff',
+      assigned: 'Assigned',
+      assessment: 'Assessment',
+      committee: 'Committee',
+      approved: 'Approved',
+      rejected: 'Rejected',
+      resolved: 'Conditional',
+      disbursed: 'Disbursed',
     },
     view: 'View',
     searchPlaceholder: 'Search by name, register, phone, product, assignee...',
@@ -276,16 +288,40 @@ const LoanOrigination = ({
   // ─────────────────────────────────────────
   // FILTERED REQUESTS
   // ─────────────────────────────────────────
-  const workflowStats = [
-    { label: text.stats.total, value: requests.length, tone: 'bg-slate-50 border-slate-200 text-slate-700', statuses: [] },
-    { label: text.stats.new, value: requests.filter(r => ['pending', 'created'].includes(r.status)).length, tone: 'bg-sky-50 border-sky-200 text-sky-700', statuses: ['pending', 'created'] },
-    { label: text.stats.research, value: requests.filter(r => ['assigned', 'data_collection', 'assessment', 'studying'].includes(r.status)).length, tone: 'bg-amber-50 border-amber-200 text-amber-700', statuses: ['assigned', 'assessment', 'studying'] },
-    { label: text.stats.decided, value: requests.filter(r => ['approved', 'rejected', 'resolved', 'disbursed'].includes(r.status)).length, tone: 'bg-emerald-50 border-emerald-200 text-emerald-700', statuses: ['approved', 'rejected', 'resolved', 'disbursed'] },
+  const statusDashboards = [
+    { key: 'all', label: text.stats.total, statuses: [], accent: 'slate' },
+    { key: 'pending', label: text.stats.pending, statuses: ['pending'], accent: 'sky' },
+    { key: 'created', label: text.stats.created, statuses: ['created'], accent: 'indigo' },
+    { key: 'assigned', label: text.stats.assigned, statuses: ['assigned'], accent: 'violet' },
+    { key: 'assessment', label: text.stats.assessment, statuses: ['data_collection', 'assessment', 'studying'], accent: 'amber' },
+    { key: 'committee', label: text.stats.committee, statuses: ['committee'], accent: 'orange' },
+    { key: 'approved', label: text.stats.approved, statuses: ['approved'], accent: 'emerald' },
+    { key: 'rejected', label: text.stats.rejected, statuses: ['rejected'], accent: 'red' },
+    { key: 'resolved', label: text.stats.resolved, statuses: ['resolved'], accent: 'lime' },
+    { key: 'disbursed', label: text.stats.disbursed, statuses: ['disbursed'], accent: 'green' },
   ];
+  const activeStatusSet = Array.isArray(statusFilter) ? statusFilter : null;
+  const getDashboardValue = (item) => item.statuses.length
+    ? requests.filter(r => item.statuses.includes(r.status)).length
+    : requests.length;
+  const isDashboardActive = (item) => {
+    if (!item.statuses.length) return statusFilter === 'all';
+    return activeStatusSet
+      ? item.statuses.length === activeStatusSet.length && item.statuses.every(s => activeStatusSet.includes(s))
+      : statusFilter === item.statuses[0];
+  };
+  const applyStatusFilter = (statuses) => {
+    setStatusFilter(statuses.length ? statuses : 'all');
+    setSearchQuery('');
+  };
+  const isFilterActive = (value) => (
+    Array.isArray(statusFilter) ? statusFilter.includes(value) : statusFilter === value
+  );
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const filteredRequests = requests.filter(r => {
-    const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
+    const matchesStatus = statusFilter === 'all'
+      || (Array.isArray(statusFilter) ? statusFilter.includes(r.status) : r.status === statusFilter);
     if (!matchesStatus) return false;
     if (!normalizedSearch) return true;
     const searchable = [
@@ -402,23 +438,19 @@ const LoanOrigination = ({
             <LoanExposureMonitor apiUrl={apiUrl} usersList={usersList} />
           ) : (
             <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {workflowStats.map(item => (
-              <div key={item.label} className={`border rounded-2xl p-4 shadow-sm ${item.tone}`}>
-                <p className="text-[11px] font-bold uppercase tracking-wide opacity-70">{item.label}</p>
-                <div className="mt-2 flex items-end justify-between gap-3">
-                  <p className="text-3xl font-black leading-none">{item.value}</p>
-                  {item.statuses.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setStatusFilter(item.statuses[0])}
-                      className="text-[11px] font-bold px-2 py-1 rounded-lg bg-white/70 hover:bg-white transition-all"
-                    >
-                      {text.view}
-                    </button>
-                  )}
-                </div>
-              </div>
+          <div className="loan-metric-grid">
+            {statusDashboards.map(item => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => applyStatusFilter(item.statuses)}
+                className={`loan-metric-card ${isDashboardActive(item) ? 'is-active' : ''}`}
+                data-accent={item.accent}
+              >
+                <span className="loan-metric-label">{item.label}</span>
+                <span className="loan-metric-value">{getDashboardValue(item)}</span>
+                <span className="loan-metric-action">{text.view}</span>
+              </button>
             ))}
           </div>
 
@@ -452,7 +484,7 @@ const LoanOrigination = ({
                 ].map(f => (
                   <button key={f.value} onClick={() => setStatusFilter(f.value)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                      statusFilter === f.value ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#003B5C]'
+                      isFilterActive(f.value) ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#003B5C]'
                     }`}>
                     {f.label}
                   </button>
