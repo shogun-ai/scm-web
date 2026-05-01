@@ -3,8 +3,33 @@
 @tailwind utilities;
 
 @layer components {
+  .loan-light {
+    color: #0f172a;
+    font-weight: 500;
+  }
+
+  .loan-light button,
+  .loan-light input,
+  .loan-light select,
+  .loan-light textarea {
+    font-weight: 700;
+  }
+
+  .loan-light .bg-white {
+    background-color: #ffffff;
+  }
+
+  .loan-light .bg-slate-50 {
+    background-color: #f8fafc;
+  }
+
+  .loan-light .text-slate-500,
+  .loan-light .text-slate-600 {
+    color: #475569;
+  }
+
   .loan-dark .bg-white {
-    background-color: #0b1220;
+    background-color: #0f172a;
   }
 
   .loan-dark .bg-slate-50,
@@ -35,9 +60,10 @@
   .loan-dark input,
   .loan-dark select,
   .loan-dark textarea {
-    background-color: #0f172a;
+    background-color: #111827;
     border-color: rgba(148, 163, 184, 0.28);
     color: #e2e8f0;
+    font-weight: 700;
   }
 
   .loan-dark input::placeholder,
@@ -58,5 +84,102 @@
   .loan-dark .shadow-md,
   .loan-dark .shadow-lg {
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  }
+
+  .loan-request-table {
+    font-weight: 650;
+  }
+
+  .loan-request-table table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .loan-request-table thead {
+    background-color: #f8fafc;
+  }
+
+  .loan-request-table th {
+    color: #334155;
+    font-weight: 900;
+    letter-spacing: 0;
+  }
+
+  .loan-request-table tbody tr {
+    background-color: #ffffff;
+  }
+
+  .loan-request-table tbody td {
+    color: #1e293b;
+    font-weight: 700;
+  }
+
+  .loan-request-table .product-chip {
+    background-color: #eaf2ff;
+    color: #1646a3;
+    border: 1px solid rgba(37, 99, 235, 0.16);
+  }
+
+  .loan-request-table .status-badge {
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  }
+
+  .loan-request-table .assignee-select {
+    min-height: 36px;
+    color: #0f172a;
+    background-color: #ffffff;
+    border-color: #cbd5e1;
+  }
+
+  .loan-request-table .action-icon {
+    min-width: 32px;
+    min-height: 32px;
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  }
+
+  .loan-dark .loan-request-table {
+    background-color: #101827;
+    border-color: rgba(148, 163, 184, 0.28);
+  }
+
+  .loan-dark .loan-request-table thead {
+    background-color: #0b1220;
+  }
+
+  .loan-dark .loan-request-table th {
+    color: #dbeafe;
+  }
+
+  .loan-dark .loan-request-table tbody tr {
+    background-color: #111827;
+  }
+
+  .loan-dark .loan-request-table tbody tr:hover {
+    background-color: #172033;
+  }
+
+  .loan-dark .loan-request-table tbody td {
+    color: #e5edf8;
+  }
+
+  .loan-dark .loan-request-table .product-chip {
+    background-color: rgba(37, 99, 235, 0.18);
+    color: #dbeafe;
+    border-color: rgba(147, 197, 253, 0.36);
+  }
+
+  .loan-dark .loan-request-table .assignee-select {
+    background-color: #0b1220;
+    border-color: rgba(148, 163, 184, 0.42);
+    color: #e2e8f0;
+  }
+
+  .loan-dark .loan-request-table .action-icon {
+    background-color: #192235;
+    color: #e2e8f0;
+  }
+
+  .loan-dark .loan-request-table .action-icon:hover {
+    background-color: #24314a;
   }
 }

@@ -138,7 +138,7 @@ const borrowerName = (r) => r?.userType === 'organization'
 // ─────────────────────────────────────────────
 const StatusBadge = ({ status }) => {
   const m = STATUS_META[status] || { label: status || 'Шинэ', color: 'bg-gray-100 text-gray-600' };
-  return <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${m.color}`}>{m.label}</span>;
+  return <span className={`status-badge px-2.5 py-1 rounded-full text-[11px] font-black ${m.color}`}>{m.label}</span>;
 };
 
 // ─────────────────────────────────────────────
@@ -463,10 +463,10 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
           )}
 
           {/* Table */}
-          <div className="bg-white border rounded-2xl overflow-hidden">
+          <div className="loan-request-table bg-white border rounded-2xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[860px]">
-                <thead className="bg-slate-50 border-b text-[11px] font-bold text-slate-500 uppercase">
+                <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-600 uppercase">
                   <tr>
                     <th className="p-3 text-left">{text.table.date}</th>
                     <th className="p-3 text-left">{text.table.name}</th>
@@ -481,19 +481,19 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                   {filteredRequests.map(req => (
                     <tr key={req._id} className={`hover:bg-slate-50 cursor-pointer ${selectedLoan?._id === req._id ? 'bg-blue-50' : ''}`}
                       onClick={() => setSelectedLoan(req)}>
-                      <td className="p-3 text-slate-500 text-xs">{fmtDate(req.createdAt)}</td>
-                      <td className="p-3 font-semibold text-[#003B5C]">
+                      <td className="p-3 text-slate-600 text-xs font-semibold">{fmtDate(req.createdAt)}</td>
+                      <td className="p-3 font-black text-[#003B5C]">
                         {borrowerName(req)}
                         {req.source === 'web' && !req.createdByStaff && (
                           <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">{text.web}</span>
                         )}
                       </td>
                       <td className="p-3 text-xs">
-                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-bold">
+                        <span className="product-chip bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md font-black">
                           {PRODUCTS[req.selectedProduct] || req.selectedProduct || '-'}
                         </span>
                       </td>
-                      <td className="p-3 text-right font-bold">{fmt(req.amount)}</td>
+                      <td className="p-3 text-right font-black text-slate-800">{fmt(req.amount)}</td>
                       <td className="p-3 text-center"><StatusBadge status={req.status} /></td>
                       <td className="p-3" onClick={e => e.stopPropagation()}>
                         <select
@@ -502,23 +502,23 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                             const u = usersList.find(u => u._id === e.target.value);
                             if (u) assignUser(req, u._id, u.name);
                           }}
-                          className="text-xs border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-[#003B5C] max-w-[140px]"
+                          className="assignee-select text-xs border rounded-lg px-3 py-2 bg-white text-slate-800 font-bold shadow-sm focus:outline-none focus:border-[#003B5C] max-w-[150px]"
                         >
                           <option value="">- {text.select} -</option>
                           {usersList.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
                         </select>
                         {req.assignee?.name && (
-                          <span className="block text-[11px] text-[#003B5C] font-bold mt-0.5">{req.assignee.name}</span>
+                          <span className="block text-[11px] text-[#003B5C] font-black mt-1">{req.assignee.name}</span>
                         )}
                       </td>
                       <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => setViewLoan(req)}
-                            className="p-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200" title="Харилцагчийн дэлгэрэнгүй">
+                            className="action-icon p-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200" title="Харилцагчийн дэлгэрэнгүй">
                             <Eye size={14} />
                           </button>
                           <button onClick={() => selectAndGo(req, 'assessment')}
-                            className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100" title="Зээлийн үнэлгээ">
+                            className="action-icon p-2 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100" title="Зээлийн үнэлгээ">
                             <BarChart2 size={14} />
                           </button>
                         </div>
