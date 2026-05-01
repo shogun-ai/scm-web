@@ -2,25 +2,21 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { API, authHeaders } from '../api';
 import LoanOrigination from '../LoanOrigination';
-import PermissionMatrix from '../PermissionMatrix';
-import { CreditCard, Languages, LogOut, Shield } from 'lucide-react';
+import { CreditCard, Languages, LogOut } from 'lucide-react';
 
 
 const TABS = [
   { key: 'los', labelKey: 'loanSystem', icon: CreditCard },
-  { key: 'roles', labelKey: 'permissions', icon: Shield },
 ];
 
 const UI_TEXT = {
   mn: {
     loanSystem: 'Зээлийн систем',
-    permissions: 'Эрх удирдлага',
     logout: 'Гарах',
     language: 'Хэл',
   },
   en: {
     loanSystem: 'Loan system',
-    permissions: 'Permissions',
     logout: 'Logout',
     language: 'Language',
   },
@@ -119,9 +115,6 @@ export default function Dashboard({ token, user, onLogout }) {
               usersList={usersList}
               language={language}
             />
-          )}
-          {tab === 'roles' && (
-            <PermissionMatrix apiUrl={API} token={token} user={user} />
           )}
         </div>
       </main>
