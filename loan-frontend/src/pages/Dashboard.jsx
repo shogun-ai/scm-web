@@ -72,18 +72,20 @@ export default function Dashboard({ token, user, onLogout }) {
 
       {/* Content */}
       <main className="flex-1 p-4">
-        {tab === 'los' && (
-          <LoanOrigination
-            apiUrl={API}
-            user={user}
-            requests={requests}
-            onRequestsChange={loadRequests}
-            usersList={usersList}
-          />
-        )}
-        {tab === 'roles' && (
-          <PermissionMatrix apiUrl={API} token={token} user={user} />
-        )}
+        <div className="mx-auto w-full max-w-[1440px]">
+          {tab === 'los' && (
+            <LoanOrigination
+              apiUrl={API}
+              user={user}
+              requests={requests}
+              onRequestsChange={loadRequests}
+              usersList={usersList}
+            />
+          )}
+          {tab === 'roles' && (
+            <PermissionMatrix apiUrl={API} token={token} user={user} />
+          )}
+        </div>
       </main>
     </div>
   );
