@@ -31,7 +31,7 @@ const COLLATERAL_TYPES = COLLATERAL_TYPE_KEYS.map(ct => ({
   icon: { real_estate: Home, vehicle: Car, contract: FileText }[ct.key] || FileText,
 }));
 
-const inp = 'w-full p-2.5 border rounded-lg text-sm bg-white focus:outline-none focus:border-[#003B5C]';
+const inp = 'w-full p-2.5 border rounded-lg text-sm font-semibold text-slate-800 placeholder:text-slate-400 bg-white focus:outline-none focus:border-[#003B5C]';
 const label = 'text-[11px] font-bold uppercase text-slate-500';
 const sectionHdr = 'font-bold text-[#003B5C] flex items-center gap-2 text-sm';
 
@@ -200,7 +200,7 @@ const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked 
   const [analyzingId, setAnalyzingId] = useState(false);
   const [idFiles, setIdFiles] = useState([]);
   const [pendingPhoto, setPendingPhoto] = useState(null);
-  const disabledInp = inp + (locked ? ' bg-slate-50 text-slate-500 cursor-not-allowed' : '');
+  const disabledInp = inp + (locked ? ' bg-slate-50 text-slate-700 cursor-not-allowed opacity-100' : '');
   const set = (f, v) => { if (!locked) onChange({ ...data, [f]: v }); };
 
   const displayName = [data.firstName, data.fatherName].filter(Boolean).join(' ') || data.lastName || data.regNo || '—';
@@ -386,7 +386,7 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
     } finally { setAnalyzingId(false); }
   };
 
-  const disabledInp = inp + (locked ? ' bg-slate-50 text-slate-500 cursor-not-allowed' : '');
+  const disabledInp = inp + (locked ? ' bg-slate-50 text-slate-700 cursor-not-allowed opacity-100' : '');
 
   return (
     <div className="space-y-4">
@@ -535,7 +535,7 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
 // ─────────────────────────────────────────────
 const OrgForm = ({ data = {}, onChange, locked = false, apiUrl, showToast }) => {
   const set = (f, v) => { if (!locked) onChange({ ...data, [f]: v }); };
-  const disabledInp = inp + (locked ? ' bg-slate-50 text-slate-500 cursor-not-allowed' : '');
+  const disabledInp = inp + (locked ? ' bg-slate-50 text-slate-700 cursor-not-allowed opacity-100' : '');
   const [analyzingOrg, setAnalyzingOrg] = useState(false);
   const [orgFiles, setOrgFiles] = useState([]);
 
