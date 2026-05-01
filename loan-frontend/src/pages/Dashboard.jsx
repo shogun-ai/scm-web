@@ -3,18 +3,35 @@ import axios from 'axios';
 import { API, authHeaders } from '../api';
 import LoanOrigination from '../LoanOrigination';
 import PermissionMatrix from '../PermissionMatrix';
-import { LayoutDashboard, CreditCard, Shield, LogOut } from 'lucide-react';
+import { CreditCard, Languages, LogOut, Shield } from 'lucide-react';
 
 
 const TABS = [
-  { key: 'los',   label: 'Зээлийн систем', icon: CreditCard },
-  { key: 'roles', label: 'Эрх удирдлага',  icon: Shield     },
+  { key: 'los', labelKey: 'loanSystem', icon: CreditCard },
+  { key: 'roles', labelKey: 'permissions', icon: Shield },
 ];
+
+const UI_TEXT = {
+  mn: {
+    loanSystem: 'Зээлийн систем',
+    permissions: 'Эрх удирдлага',
+    logout: 'Гарах',
+    language: 'Хэл',
+  },
+  en: {
+    loanSystem: 'Loan system',
+    permissions: 'Permissions',
+    logout: 'Logout',
+    language: 'Language',
+  },
+};
 
 export default function Dashboard({ token, user, onLogout }) {
   const [tab, setTab] = useState('los');
+  const [language, setLanguage] = useState(() => localStorage.getItem('loan_language') || 'mn');
   const [requests, setRequests] = useState([]);
   const [usersList, setUsersList] = useState([]);
+  const text = UI_TEXT[language] || UI_TEXT.mn;
 
   async function loadRequests() {
     try {
@@ -35,6 +52,10 @@ export default function Dashboard({ token, user, onLogout }) {
     loadUsers();
   }, []);
 
+  useEffect(() => {
+    localStorage.setItem('loan_language', language);
+  }, [language]);
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #0f2744 100%)' }}>
       {/* Header */}
@@ -44,10 +65,26 @@ export default function Dashboard({ token, user, onLogout }) {
           <span className="text-xs text-slate-500 ml-2 border-l border-slate-700 pl-3">loan.scm.mn</span>
         </div>
         <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+            <Languages className="w-4 h-4 text-slate-400 ml-1" />
+            {['mn', 'en'].map(lang => (
+              <button
+                key={lang}
+                type="button"
+                onClick={() => setLanguage(lang)}
+                className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
+                  language === lang ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white'
+                }`}
+                title={text.language}
+              >
+                {lang.toUpperCase()}
+              </button>
+            ))}
+          </div>
           <span className="text-sm text-gray-300">{user?.name}</span>
           <span className="text-xs bg-yellow-500 text-gray-900 px-2 py-0.5 rounded-full font-semibold">{user?.role}</span>
           <button onClick={onLogout} className="flex items-center gap-1 text-gray-400 hover:text-white text-sm transition">
-            <LogOut className="w-4 h-4" /> Гарах
+            <LogOut className="w-4 h-4" /> {text.logout}
           </button>
         </div>
       </header>
@@ -65,7 +102,7 @@ export default function Dashboard({ token, user, onLogout }) {
             }`}
           >
             <t.icon className="w-4 h-4" />
-            {t.label}
+            {text[t.labelKey]}
           </button>
         ))}
       </nav>
@@ -80,6 +117,7 @@ export default function Dashboard({ token, user, onLogout }) {
               requests={requests}
               onRequestsChange={loadRequests}
               usersList={usersList}
+              language={language}
             />
           )}
           {tab === 'roles' && (

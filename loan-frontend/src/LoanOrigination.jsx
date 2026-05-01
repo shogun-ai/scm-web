@@ -40,6 +40,93 @@ const PRODUCTS = {
   credit_card: 'Кредит карт', re_loan: 'Үл хөдлөх барьцаалсан', line_loan: 'Шугмын зээл',
 };
 
+const UI_TEXT = {
+  mn: {
+    steps: {
+      application: 'Аппликэйшн',
+      assessment: 'Зээлийн үнэлгээ',
+      committee: 'Зээлийн хороо',
+      disbursement: 'Олголт',
+    },
+    loanRequests: 'Зээлийн хүсэлтүүд',
+    exposureMonitor: 'Эрсдэлийн хяналт',
+    stats: {
+      total: 'Нийт хүсэлт',
+      new: 'Шинэ / хуваарилах',
+      research: 'Судалгаа дээр',
+      decided: 'Шийдвэрлэсэн',
+    },
+    view: 'Харах',
+    searchPlaceholder: 'Нэр, РД, утас, бүтээгдэхүүн, хариуцагчаар хайх...',
+    showing: 'харагдаж байна',
+    filters: {
+      all: 'Бүгд',
+      pending: 'Онлайн',
+      created: 'Ажилтан үүсгэсэн',
+      assigned: 'Хариуцагч томилогдсон',
+      approved: 'Зөвшөөрөгдсөн',
+      rejected: 'Татгалзсан',
+      disbursed: 'Олгосон',
+    },
+    createNew: 'Шинэ хүсэлт үүсгэх',
+    newTitle: 'Шинэ зээлийн хүсэлт үүсгэх',
+    table: {
+      date: 'Огноо',
+      name: 'Нэр',
+      product: 'Зээлийн төрөл',
+      amount: 'Дүн',
+      status: 'Статус',
+      assignee: 'Хариуцагч',
+      action: 'Үйлдэл',
+    },
+    select: 'сонгох',
+    web: 'ВЭБ',
+    empty: 'Хүсэлт байхгүй байна.',
+  },
+  en: {
+    steps: {
+      application: 'Application',
+      assessment: 'Assessment',
+      committee: 'Committee',
+      disbursement: 'Disbursement',
+    },
+    loanRequests: 'Loan requests',
+    exposureMonitor: 'Exposure monitor',
+    stats: {
+      total: 'Total requests',
+      new: 'New / assign',
+      research: 'In review',
+      decided: 'Decided',
+    },
+    view: 'View',
+    searchPlaceholder: 'Search by name, register, phone, product, assignee...',
+    showing: 'showing',
+    filters: {
+      all: 'All',
+      pending: 'Online',
+      created: 'Created by staff',
+      assigned: 'Assigned',
+      approved: 'Approved',
+      rejected: 'Rejected',
+      disbursed: 'Disbursed',
+    },
+    createNew: 'Create new request',
+    newTitle: 'Create new loan request',
+    table: {
+      date: 'Date',
+      name: 'Name',
+      product: 'Product',
+      amount: 'Amount',
+      status: 'Status',
+      assignee: 'Assignee',
+      action: 'Action',
+    },
+    select: 'select',
+    web: 'WEB',
+    empty: 'No requests found.',
+  },
+};
+
 
 const fmt = (v) => new Intl.NumberFormat('mn-MN').format(v || 0) + ' ₮';
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('mn-MN') : '-';
@@ -57,10 +144,11 @@ const StatusBadge = ({ status }) => {
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
-const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersList = [] }) => {
+const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersList = [], language = 'mn' }) => {
   const [activeStep, setActiveStep] = useState('application');
   const [selectedLoan, setSelectedLoan] = useState(null);
   const [applicationView, setApplicationView] = useState('requests');
+  const text = UI_TEXT[language] || UI_TEXT.mn;
 
   // Tab 1 state
   const [statusFilter, setStatusFilter] = useState('all');
@@ -165,10 +253,10 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
   // FILTERED REQUESTS
   // ─────────────────────────────────────────
   const workflowStats = [
-    { label: 'Нийт хүсэлт', value: requests.length, tone: 'bg-slate-50 border-slate-200 text-slate-700', statuses: [] },
-    { label: 'Шинэ / хуваарилах', value: requests.filter(r => ['pending', 'created'].includes(r.status)).length, tone: 'bg-sky-50 border-sky-200 text-sky-700', statuses: ['pending', 'created'] },
-    { label: 'Судалгаа дээр', value: requests.filter(r => ['assigned', 'data_collection', 'assessment', 'studying'].includes(r.status)).length, tone: 'bg-amber-50 border-amber-200 text-amber-700', statuses: ['assigned', 'assessment', 'studying'] },
-    { label: 'Шийдвэрлэсэн', value: requests.filter(r => ['approved', 'rejected', 'resolved', 'disbursed'].includes(r.status)).length, tone: 'bg-emerald-50 border-emerald-200 text-emerald-700', statuses: ['approved', 'rejected', 'resolved', 'disbursed'] },
+    { label: text.stats.total, value: requests.length, tone: 'bg-slate-50 border-slate-200 text-slate-700', statuses: [] },
+    { label: text.stats.new, value: requests.filter(r => ['pending', 'created'].includes(r.status)).length, tone: 'bg-sky-50 border-sky-200 text-sky-700', statuses: ['pending', 'created'] },
+    { label: text.stats.research, value: requests.filter(r => ['assigned', 'data_collection', 'assessment', 'studying'].includes(r.status)).length, tone: 'bg-amber-50 border-amber-200 text-amber-700', statuses: ['assigned', 'assessment', 'studying'] },
+    { label: text.stats.decided, value: requests.filter(r => ['approved', 'rejected', 'resolved', 'disbursed'].includes(r.status)).length, tone: 'bg-emerald-50 border-emerald-200 text-emerald-700', statuses: ['approved', 'rejected', 'resolved', 'disbursed'] },
   ];
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -243,7 +331,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                 }`}>
                   {isDone ? <CheckCircle2 size={16} /> : <Icon size={16} />}
                 </div>
-                <span className={`leading-tight text-center ${isActive ? 'text-[13px] font-black' : 'text-[12px]'}`}>{step.label}</span>
+                <span className={`leading-tight text-center ${isActive ? 'text-[13px] font-black' : 'text-[12px]'}`}>{text.steps[step.key] || step.label}</span>
                 {idx < LOS_STEPS.length - 1 && (
                   <ChevronRight size={14} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-200" />
                 )}
@@ -267,7 +355,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                   : 'text-slate-500 hover:bg-white hover:text-slate-700'
               }`}
             >
-              Loan requests
+              {text.loanRequests}
             </button>
             <button
               onClick={() => {
@@ -280,7 +368,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                   : 'text-slate-500 hover:bg-white hover:text-slate-700'
               }`}
             >
-              Exposure monitor
+              {text.exposureMonitor}
             </button>
           </div>
 
@@ -300,7 +388,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                       onClick={() => setStatusFilter(item.statuses[0])}
                       className="text-[11px] font-bold px-2 py-1 rounded-lg bg-white/70 hover:bg-white transition-all"
                     >
-                      Харах
+                      {text.view}
                     </button>
                   )}
                 </div>
@@ -316,25 +404,25 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                 <input
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Нэр, РД, утас, бүтээгдэхүүн, хариуцагчаар хайх..."
+                  placeholder={text.searchPlaceholder}
                   className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:outline-none focus:border-[#003B5C] focus:bg-white"
                 />
               </div>
               <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
                 <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600">{filteredRequests.length} / {requests.length}</span>
-                <span>харагдаж байна</span>
+                <span>{text.showing}</span>
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex gap-2 flex-wrap">
                 {[
-                  { value: 'all', label: 'Бүгд' },
-                  { value: 'pending', label: 'Онлайн' },
-                  { value: 'created', label: 'Ажилтан үүсгэсэн' },
-                  { value: 'assigned', label: 'Хариуцагч томилогдсон' },
-                  { value: 'approved', label: 'Зөвшөөрөгдсөн' },
-                  { value: 'rejected', label: 'Татгалзсан' },
-                  { value: 'disbursed', label: 'Олгосон' },
+                  { value: 'all', label: text.filters.all },
+                  { value: 'pending', label: text.filters.pending },
+                  { value: 'created', label: text.filters.created },
+                  { value: 'assigned', label: text.filters.assigned },
+                  { value: 'approved', label: text.filters.approved },
+                  { value: 'rejected', label: text.filters.rejected },
+                  { value: 'disbursed', label: text.filters.disbursed },
                 ].map(f => (
                   <button key={f.value} onClick={() => setStatusFilter(f.value)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
@@ -346,7 +434,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
               </div>
             <button onClick={() => setShowNewForm(v => !v)}
               className="inline-flex items-center gap-2 bg-[#003B5C] hover:bg-[#002d47] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all">
-              <Plus size={15} /> Шинэ хүсэлт үүсгэх
+              <Plus size={15} /> {text.createNew}
             </button>
             </div>
           </div>
@@ -355,7 +443,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
           {showNewForm && (
             <div className="bg-white border-2 border-[#003B5C] rounded-2xl p-5">
               <div className="flex items-center justify-between mb-4">
-                <h4 className="font-bold text-[#003B5C] text-base">Шинэ зээлийн хүсэлт үүсгэх</h4>
+                <h4 className="font-bold text-[#003B5C] text-base">{text.newTitle}</h4>
                 <button onClick={() => setShowNewForm(false)} className="text-slate-400 hover:text-red-500"><X size={18} /></button>
               </div>
               <LoanApplicationDetail
@@ -380,13 +468,13 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
               <table className="w-full text-sm min-w-[860px]">
                 <thead className="bg-slate-50 border-b text-[11px] font-bold text-slate-500 uppercase">
                   <tr>
-                    <th className="p-3 text-left">Огноо</th>
-                    <th className="p-3 text-left">Нэр</th>
-                    <th className="p-3 text-left">Зээлийн төрөл</th>
-                    <th className="p-3 text-right">Дүн</th>
-                    <th className="p-3 text-center">Статус</th>
-                    <th className="p-3 text-left">Хариуцагч</th>
-                    <th className="p-3 text-center">Үйлдэл</th>
+                    <th className="p-3 text-left">{text.table.date}</th>
+                    <th className="p-3 text-left">{text.table.name}</th>
+                    <th className="p-3 text-left">{text.table.product}</th>
+                    <th className="p-3 text-right">{text.table.amount}</th>
+                    <th className="p-3 text-center">{text.table.status}</th>
+                    <th className="p-3 text-left">{text.table.assignee}</th>
+                    <th className="p-3 text-center">{text.table.action}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -397,7 +485,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                       <td className="p-3 font-semibold text-[#003B5C]">
                         {borrowerName(req)}
                         {req.source === 'web' && !req.createdByStaff && (
-                          <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">ВЭБ</span>
+                          <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">{text.web}</span>
                         )}
                       </td>
                       <td className="p-3 text-xs">
@@ -416,7 +504,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                           }}
                           className="text-xs border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-[#003B5C] max-w-[140px]"
                         >
-                          <option value="">— сонгох —</option>
+                          <option value="">- {text.select} -</option>
                           {usersList.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
                         </select>
                         {req.assignee?.name && (
@@ -438,7 +526,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                     </tr>
                   ))}
                   {!filteredRequests.length && (
-                    <tr><td colSpan={7} className="p-10 text-center text-slate-400">Хүсэлт байхгүй байна.</td></tr>
+                    <tr><td colSpan={7} className="p-10 text-center text-slate-400">{text.empty}</td></tr>
                   )}
                 </tbody>
               </table>
