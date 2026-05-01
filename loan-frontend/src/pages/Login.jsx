@@ -46,7 +46,7 @@ export default function Login({ onLogin }) {
       <div className="relative z-10 w-full max-w-[420px]">
         <div className="px-8 py-9">
           <div className="mb-8 text-center">
-            <img src="/logo.png" alt="SCM" className="h-20 mx-auto mb-5 object-contain" />
+            <img src="/logo.png" alt="SCM" className="h-30 mx-auto mb-5 object-contain" />
             <h1 className="text-3xl font-bold text-white mb-2">Нэвтрэх</h1>
             <p className="text-slate-300 text-sm">Зээлийн удирдлагын системд тавтай морил</p>
           </div>
