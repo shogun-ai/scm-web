@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { API, authHeaders } from '../api';
 import LoanOrigination from '../LoanOrigination';
-import { CreditCard, Languages, LogOut } from 'lucide-react';
+import { CreditCard, Languages, LogOut, Moon, Sun } from 'lucide-react';
 
 
 const TABS = [
@@ -14,20 +14,28 @@ const UI_TEXT = {
     loanSystem: 'Зээлийн систем',
     logout: 'Гарах',
     language: 'Хэл',
+    theme: 'Горим',
+    dark: 'Dark',
+    light: 'Light',
   },
   en: {
     loanSystem: 'Loan system',
     logout: 'Logout',
     language: 'Language',
+    theme: 'Theme',
+    dark: 'Dark',
+    light: 'Light',
   },
 };
 
 export default function Dashboard({ token, user, onLogout }) {
   const [tab, setTab] = useState('los');
   const [language, setLanguage] = useState(() => localStorage.getItem('loan_language') || 'mn');
+  const [theme, setTheme] = useState(() => localStorage.getItem('loan_theme') || 'dark');
   const [requests, setRequests] = useState([]);
   const [usersList, setUsersList] = useState([]);
   const text = UI_TEXT[language] || UI_TEXT.mn;
+  const isDark = theme === 'dark';
 
   async function loadRequests() {
     try {
@@ -52,8 +60,19 @@ export default function Dashboard({ token, user, onLogout }) {
     localStorage.setItem('loan_language', language);
   }, [language]);
 
+  useEffect(() => {
+    localStorage.setItem('loan_theme', theme);
+  }, [theme]);
+
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #0f2744 100%)' }}>
+    <div
+      className={`min-h-screen flex flex-col ${isDark ? 'loan-dark' : 'loan-light'}`}
+      style={{
+        background: isDark
+          ? 'linear-gradient(135deg, #020309 0%, #0f172a 45%, #0f2744 100%)'
+          : 'linear-gradient(135deg, #eef6ff 0%, #f8fafc 42%, #edf7f1 100%)',
+      }}
+    >
       {/* Header */}
       <header className="text-white flex items-center justify-between px-6 py-3 shadow-xl border-b border-white/10" style={{ background: 'rgba(15,23,42,0.95)', backdropFilter: 'blur(8px)' }}>
         <div className="flex items-center gap-3">
@@ -61,6 +80,19 @@ export default function Dashboard({ token, user, onLogout }) {
           <span className="text-xs text-slate-500 ml-2 border-l border-slate-700 pl-3">loan.scm.mn</span>
         </div>
         <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setTheme(isDark ? 'light' : 'dark')}
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+              isDark
+                ? 'border-white/10 bg-white/5 text-slate-300 hover:text-white'
+                : 'border-slate-200 bg-white text-slate-700 hover:border-[#003B5C]'
+            }`}
+            title={text.theme}
+          >
+            {isDark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            {isDark ? text.dark : text.light}
+          </button>
           <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
             <Languages className="w-4 h-4 text-slate-400 ml-1" />
             {['mn', 'en'].map(lang => (
@@ -114,6 +146,7 @@ export default function Dashboard({ token, user, onLogout }) {
               onRequestsChange={loadRequests}
               usersList={usersList}
               language={language}
+              theme={theme}
             />
           )}
         </div>

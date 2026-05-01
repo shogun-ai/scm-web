@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import {
-  AlertCircle, BadgeCheck, BarChart2, CheckCircle2, ChevronRight,
+  Activity, AlertCircle, BadgeCheck, BarChart2, CheckCircle2, ChevronRight,
   ClipboardList, CreditCard, Eye, FileText, Loader2,
-  Plus, Printer, RotateCcw, Search, ThumbsDown, ThumbsUp, User,
+  Plus, Printer, RotateCcw, Search, Sparkles, ThumbsDown, ThumbsUp, User,
   UserCheck, X, XCircle, Home, Users,
 } from 'lucide-react';
 import LoanResearch from './LoanResearch';
@@ -144,7 +144,7 @@ const StatusBadge = ({ status }) => {
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
-const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersList = [], language = 'mn' }) => {
+const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersList = [], language = 'mn', theme = 'dark' }) => {
   const [activeStep, setActiveStep] = useState('application');
   const [selectedLoan, setSelectedLoan] = useState(null);
   const [applicationView, setApplicationView] = useState('requests');
@@ -789,6 +789,34 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
   const passCount = kpis.filter(k => k.pass).length;
   const autoVerdict = passCount >= 4 ? 'approve' : passCount >= 2 ? 'conditional' : 'reject';
   const verdictStyle = { approve: 'bg-green-50 border-green-300 text-green-700', conditional: 'bg-amber-50 border-amber-300 text-amber-700', reject: 'bg-red-50 border-red-300 text-red-700' }[autoVerdict];
+  const confidence = Math.min(96, Math.max(42, Math.round((passCount / kpis.length) * 72 + Math.min(score, 100) * 0.24)));
+  const aiDecisionLabel = autoVerdict === 'approve'
+    ? 'Approve recommended'
+    : autoVerdict === 'conditional'
+      ? 'Conditional approval'
+      : 'Reject recommended';
+  const aiDecisionMn = autoVerdict === 'approve'
+    ? 'Олгох саналтай'
+    : autoVerdict === 'conditional'
+      ? 'Нөхцөлтэй олгох саналтай'
+      : 'Татгалзах саналтай';
+  const decisionTone = {
+    approve: 'text-emerald-300 bg-emerald-400/10 border-emerald-300/30',
+    conditional: 'text-amber-300 bg-amber-400/10 border-amber-300/30',
+    reject: 'text-red-300 bg-red-400/10 border-red-300/30',
+  }[autoVerdict];
+  const factorContributions = [
+    { label: 'Credit score', value: Math.min(100, Math.max(0, score)), positive: score >= 50 },
+    { label: 'DTI', value: Math.min(100, Math.max(0, 100 - (ie.dti || 0))), positive: (ie.dti || 0) <= 55 },
+    { label: 'Cash flow', value: Math.min(100, Math.max(12, (ie.freeCashFlow || 0) > 0 ? 82 : 28)), positive: (ie.freeCashFlow || 0) > 0 },
+    { label: 'Collateral / LTV', value: col.ltvRatio == null ? 52 : Math.min(100, Math.max(0, 100 - col.ltvRatio)), positive: col.ltvRatio == null || col.ltvRatio <= 80 },
+  ];
+  const reasoningSteps = [
+    `${passCount}/${kpis.length} гол шалгуур хангагдсан.`,
+    `Кредит оноо ${score}/100, зэрэглэл ${grade}.`,
+    `DTI ${(ie.dti || 0).toFixed(1)}%, чөлөөт мөнгөн урсгал ${nfmt(ie.freeCashFlow)} ₮.`,
+    col.ltvRatio != null ? `LTV ${col.ltvRatio.toFixed(1)}% байна.` : 'Барьцааны LTV тооцоологдоогүй байна.',
+  ];
 
   const isDecided = ['approved', 'rejected', 'resolved', 'disbursed'].includes(loan.status);
 
@@ -1068,6 +1096,78 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
         {autoVerdict === 'approve' ? <ThumbsUp size={18} /> : autoVerdict === 'conditional' ? <AlertCircle size={18} /> : <ThumbsDown size={18} />}
         Автомат үнэлгээ ({passCount}/{kpis.length} шалгуур хангасан):&nbsp;
         {autoVerdict === 'approve' ? 'Олгоход тохиромжтой' : autoVerdict === 'conditional' ? 'Нөхцөлтэй зөвшөөрөл санал болгож байна' : 'Эрсдэлтэй — татгалзах санал'}
+      </div>
+
+      {/* AI decision engine */}
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-300/20 bg-[#020309] text-white shadow-2xl">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(82,76,202,0.35),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(2,119,55,0.24),_transparent_30%)]" />
+        <div className="relative grid gap-5 p-5 lg:grid-cols-[1.1fr_1fr]">
+          <div className="space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#9BB2C1]">
+                  <Sparkles size={14} className="text-[#524CCA]" /> AI decision engine
+                </p>
+                <h3 className="mt-2 text-2xl font-black tracking-normal text-white">{aiDecisionMn}</h3>
+                <p className="mt-1 text-sm font-semibold text-[#9BB2C1]">{aiDecisionLabel} · explainable assessment preview</p>
+              </div>
+              <div className={`rounded-xl border px-3 py-2 text-right ${decisionTone}`}>
+                <p className="text-[10px] font-black uppercase tracking-wide opacity-80">Confidence</p>
+                <p className="text-2xl font-black leading-none">{confidence}%</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: 'Risk score', value: `${score}/100` },
+                { label: 'Decision factors', value: factorContributions.length },
+                { label: 'Policy checks', value: `${passCount}/${kpis.length}` },
+                { label: 'Processing', value: 'Real-time' },
+              ].map(item => (
+                <div key={item.label} className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                  <p className="text-[10px] font-black uppercase tracking-wide text-[#9BB2C1]">{item.label}</p>
+                  <p className="mt-1 text-lg font-black text-white">{item.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[#9BB2C1]">
+                <Activity size={14} /> Factor contribution
+              </p>
+              <div className="space-y-3">
+                {factorContributions.map(item => (
+                  <div key={item.label}>
+                    <div className="mb-1 flex items-center justify-between text-xs font-bold">
+                      <span className="text-slate-200">{item.label}</span>
+                      <span className={item.positive ? 'text-emerald-300' : 'text-red-300'}>{item.value}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className={`h-full rounded-full ${item.positive ? 'bg-emerald-400' : 'bg-red-400'}`}
+                        style={{ width: `${item.value}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="mb-3 text-xs font-black uppercase tracking-wide text-[#9BB2C1]">Reasoning trail</p>
+              <div className="space-y-2">
+                {reasoningSteps.map((step, idx) => (
+                  <div key={step} className="flex gap-3 text-xs font-semibold text-slate-200">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0C20DF] text-[10px] font-black text-white">{idx + 1}</span>
+                    <span className="leading-5">{step}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Income / Collateral row */}
