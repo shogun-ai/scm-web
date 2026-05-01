@@ -35,14 +35,13 @@ export async function loginApi(email, password) {
   return res.data;
 }
 
-// ─── Existing helpers (kept for backward compat) ──────────────────────────────
 export async function getLoanRequests(token) {
-  const res = await axios.get(`${API}/api/loan-requests`, authHeaders(token));
+  const res = await axios.get(`${API}/api/loans`, authHeaders(token));
   return res.data;
 }
 
 export async function updateLoanStatus(id, data, token) {
-  const res = await axios.put(`${API}/api/loan-requests/${id}`, data, authHeaders(token));
+  const res = await axios.put(`${API}/api/loans/${id}`, data, authHeaders(token));
   return res.data;
 }
 
