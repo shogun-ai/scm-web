@@ -87,7 +87,7 @@ export default function Login({ onLogin }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#003B5C] hover:bg-[#005A8E] text-white font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+              className="w-full bg-gradient-to-b from-slate-100 via-slate-300 to-slate-500 hover:from-white hover:via-slate-200 hover:to-slate-400 text-[#003B5C] font-semibold py-2.5 rounded-lg transition-colors shadow-lg border border-white/70 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
             >
               {loading ? 'Түр хүлээнэ үү...' : 'Нэвтрэх'}
             </button>
