@@ -1,9 +1,11 @@
 import { useState } from 'react';
 
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const API = window.location.hostname === 'localhost'
+  ? 'http://localhost:5000'
+  : 'https://scm-okjs.onrender.com';
 
 export default function Login({ onLogin }) {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,10 +15,10 @@ export default function Login({ onLogin }) {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/login/`, {
+      const res = await fetch(`${API}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -47,15 +49,15 @@ export default function Login({ onLogin }) {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
-                Хэрэглэгчийн нэр
+                И-мэйл
               </label>
               <input
-                type="text"
+                type="email"
                 className="w-full p-2.5 border rounded-lg text-sm bg-white focus:outline-none focus:border-[#003B5C]"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
-                autoComplete="username"
+                autoComplete="email"
                 disabled={loading}
               />
             </div>
