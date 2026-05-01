@@ -144,10 +144,26 @@ const StatusBadge = ({ status }) => {
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
-const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersList = [], language = 'mn', theme = 'dark' }) => {
+const LoanOrigination = ({
+  apiUrl,
+  user,
+  requests = [],
+  onRequestsChange,
+  usersList = [],
+  language = 'mn',
+  theme = 'dark',
+  navigationView,
+  onNavigationViewChange,
+  showApplicationSwitch = true,
+}) => {
   const [activeStep, setActiveStep] = useState('application');
   const [selectedLoan, setSelectedLoan] = useState(null);
-  const [applicationView, setApplicationView] = useState('requests');
+  const [localApplicationView, setLocalApplicationView] = useState('requests');
+  const applicationView = navigationView || localApplicationView;
+  const setApplicationView = (view) => {
+    setLocalApplicationView(view);
+    onNavigationViewChange?.(view);
+  };
   const text = UI_TEXT[language] || UI_TEXT.mn;
 
   // Tab 1 state
@@ -155,6 +171,14 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewForm, setShowNewForm] = useState(false);
   const [viewLoan, setViewLoan] = useState(null); // modal-д харуулах зээл
+
+  useEffect(() => {
+    if (!navigationView) return;
+    setActiveStep('application');
+    if (navigationView === 'exposure') {
+      setSelectedLoan(null);
+    }
+  }, [navigationView]);
 
   // Tab 2 — research seed
   const [researchSeed, setResearchSeed] = useState(null);
@@ -346,31 +370,33 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
       ══════════════════════════════════════ */}
       {activeStep === 'application' && (
         <div className="space-y-4">
-          <div className="bg-slate-100 border border-slate-200 rounded-2xl p-1.5 inline-flex gap-1 shadow-sm">
-            <button
-              onClick={() => setApplicationView('requests')}
-              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                applicationView === 'requests'
-                  ? 'bg-[#003B5C] text-white shadow-md'
-                  : 'text-slate-500 hover:bg-white hover:text-slate-700'
-              }`}
-            >
-              {text.loanRequests}
-            </button>
-            <button
-              onClick={() => {
-                setApplicationView('exposure');
-                setSelectedLoan(null);
-              }}
-              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                applicationView === 'exposure'
-                  ? 'bg-[#003B5C] text-white shadow-md'
-                  : 'text-slate-500 hover:bg-white hover:text-slate-700'
-              }`}
-            >
-              {text.exposureMonitor}
-            </button>
-          </div>
+          {showApplicationSwitch && (
+            <div className="bg-slate-100 border border-slate-200 rounded-2xl p-1.5 inline-flex gap-1 shadow-sm">
+              <button
+                onClick={() => setApplicationView('requests')}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                  applicationView === 'requests'
+                    ? 'bg-[#003B5C] text-white shadow-md'
+                    : 'text-slate-500 hover:bg-white hover:text-slate-700'
+                }`}
+              >
+                {text.loanRequests}
+              </button>
+              <button
+                onClick={() => {
+                  setApplicationView('exposure');
+                  setSelectedLoan(null);
+                }}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                  applicationView === 'exposure'
+                    ? 'bg-[#003B5C] text-white shadow-md'
+                    : 'text-slate-500 hover:bg-white hover:text-slate-700'
+                }`}
+              >
+                {text.exposureMonitor}
+              </button>
+            </div>
+          )}
 
           {applicationView === 'exposure' ? (
             <LoanExposureMonitor apiUrl={apiUrl} usersList={usersList} />

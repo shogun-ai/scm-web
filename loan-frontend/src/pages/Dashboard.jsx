@@ -1,17 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { API, authHeaders } from '../api';
 import LoanOrigination from '../LoanOrigination';
-import { CreditCard, Languages, LogOut, Moon, Sun } from 'lucide-react';
-
-
-const TABS = [
-  { key: 'los', labelKey: 'loanSystem', icon: CreditCard },
-];
+import {
+  BarChart3,
+  CreditCard,
+  Languages,
+  LayoutGrid,
+  LogOut,
+  Moon,
+  Sun,
+} from 'lucide-react';
 
 const UI_TEXT = {
   mn: {
-    loanSystem: 'Зээлийн систем',
+    appName: 'Зээлийн систем',
+    loanRequests: 'Зээлийн хүсэлтүүд',
+    exposureMonitor: 'Эрсдэлийн хяналт',
+    dashboard: 'Хянах самбар',
     logout: 'Гарах',
     language: 'Хэл',
     theme: 'Горим',
@@ -19,7 +25,10 @@ const UI_TEXT = {
     light: 'Light',
   },
   en: {
-    loanSystem: 'Loan system',
+    appName: 'Loan system',
+    loanRequests: 'Loan requests',
+    exposureMonitor: 'Exposure monitor',
+    dashboard: 'Dashboard',
     logout: 'Logout',
     language: 'Language',
     theme: 'Theme',
@@ -29,13 +38,18 @@ const UI_TEXT = {
 };
 
 export default function Dashboard({ token, user, onLogout }) {
-  const [tab, setTab] = useState('los');
   const [language, setLanguage] = useState(() => localStorage.getItem('loan_language') || 'mn');
   const [theme, setTheme] = useState(() => localStorage.getItem('loan_theme') || 'dark');
+  const [navigationView, setNavigationView] = useState('requests');
   const [requests, setRequests] = useState([]);
   const [usersList, setUsersList] = useState([]);
   const text = UI_TEXT[language] || UI_TEXT.mn;
   const isDark = theme === 'dark';
+
+  const sidebarItems = [
+    { key: 'requests', label: text.loanRequests, icon: CreditCard },
+    { key: 'exposure', label: text.exposureMonitor, icon: BarChart3 },
+  ];
 
   async function loadRequests() {
     try {
@@ -65,80 +79,86 @@ export default function Dashboard({ token, user, onLogout }) {
   }, [theme]);
 
   return (
-    <div
-      className={`min-h-screen flex flex-col ${isDark ? 'loan-dark' : 'loan-light'}`}
-      style={{
-        background: isDark
-          ? 'linear-gradient(135deg, #020309 0%, #0f172a 45%, #0f2744 100%)'
-          : 'linear-gradient(135deg, #eef6ff 0%, #f8fafc 42%, #edf7f1 100%)',
-      }}
-    >
-      {/* Header */}
-      <header className="text-white flex items-center justify-between px-6 py-3 shadow-xl border-b border-white/10" style={{ background: 'rgba(15,23,42,0.95)', backdropFilter: 'blur(8px)' }}>
-        <div className="flex items-center gap-3">
-          <img src='/logo.png' alt="SCM Logo" className="h-8 object-contain" style={{ mixBlendMode: 'multiply' }} />
-          <span className="text-xs text-slate-500 ml-2 border-l border-slate-700 pl-3">loan.scm.mn</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => setTheme(isDark ? 'light' : 'dark')}
-            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
-              isDark
-                ? 'border-white/10 bg-white/5 text-slate-300 hover:text-white'
-                : 'border-slate-200 bg-white text-slate-700 hover:border-[#003B5C]'
-            }`}
-            title={text.theme}
-          >
-            {isDark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            {isDark ? text.dark : text.light}
-          </button>
-          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
-            <Languages className="w-4 h-4 text-slate-400 ml-1" />
-            {['mn', 'en'].map(lang => (
-              <button
-                key={lang}
-                type="button"
-                onClick={() => setLanguage(lang)}
-                className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
-                  language === lang ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white'
-                }`}
-                title={text.language}
-              >
-                {lang.toUpperCase()}
-              </button>
-            ))}
+    <div className={`loan-shell min-h-screen ${isDark ? 'loan-dark' : 'loan-light'}`}>
+      <aside className="loan-sidebar">
+        <div className="loan-brand">
+          <img src="/logo.png" alt="SCM Logo" className="h-8 w-8 object-contain" />
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">loan.scm.mn</p>
+            <p className="text-sm font-black text-slate-100">{text.appName}</p>
           </div>
-          <span className="text-sm text-gray-300">{user?.name}</span>
-          <span className="text-xs bg-yellow-500 text-gray-900 px-2 py-0.5 rounded-full font-semibold">{user?.role}</span>
-          <button onClick={onLogout} className="flex items-center gap-1 text-gray-400 hover:text-white text-sm transition">
-            <LogOut className="w-4 h-4" /> {text.logout}
-          </button>
         </div>
-      </header>
 
-      {/* Tabs */}
-      <nav className="flex gap-1 px-6 border-b border-white/10" style={{ background: 'rgba(15,23,42,0.8)' }}>
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition ${
-              tab === t.key
-                ? 'border-blue-400 text-blue-300'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <t.icon className="w-4 h-4" />
-            {text[t.labelKey]}
-          </button>
-        ))}
-      </nav>
+        <nav className="mt-8 space-y-1">
+          <p className="px-3 pb-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{text.dashboard}</p>
+          {sidebarItems.map(item => {
+            const Icon = item.icon;
+            const active = navigationView === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setNavigationView(item.key)}
+                className={`loan-sidebar-item ${active ? 'is-active' : ''}`}
+              >
+                <Icon size={17} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
 
-      {/* Content */}
-      <main className="flex-1 p-4">
-        <div className="mx-auto w-full max-w-[1440px]">
-          {tab === 'los' && (
+      <div className="loan-main">
+        <header className="loan-topbar">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+              <LayoutGrid size={17} />
+            </div>
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{text.appName}</p>
+              <p className="text-sm font-black text-slate-100">
+                {navigationView === 'exposure' ? text.exposureMonitor : text.loanRequests}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setTheme(isDark ? 'light' : 'dark')}
+              className="loan-top-control"
+              title={text.theme}
+            >
+              {isDark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              {isDark ? text.dark : text.light}
+            </button>
+
+            <div className="loan-lang-control">
+              <Languages className="w-4 h-4 text-slate-400" />
+              {['mn', 'en'].map(lang => (
+                <button
+                  key={lang}
+                  type="button"
+                  onClick={() => setLanguage(lang)}
+                  className={language === lang ? 'is-active' : ''}
+                  title={text.language}
+                >
+                  {lang.toUpperCase()}
+                </button>
+              ))}
+            </div>
+
+            <span className="hidden text-sm font-bold text-slate-300 md:inline">{user?.name}</span>
+            <span className="rounded-full bg-yellow-400 px-2.5 py-1 text-xs font-black text-slate-950">{user?.role}</span>
+            <button onClick={onLogout} className="loan-logout">
+              <LogOut className="w-4 h-4" /> {text.logout}
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 p-4 lg:p-5">
+          <div className="mx-auto w-full max-w-[1440px]">
             <LoanOrigination
               apiUrl={API}
               user={user}
@@ -147,10 +167,13 @@ export default function Dashboard({ token, user, onLogout }) {
               usersList={usersList}
               language={language}
               theme={theme}
+              navigationView={navigationView}
+              onNavigationViewChange={setNavigationView}
+              showApplicationSwitch={false}
             />
-          )}
-        </div>
-      </main>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
