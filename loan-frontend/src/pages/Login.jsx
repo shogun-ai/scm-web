@@ -44,15 +44,15 @@ export default function Login({ onLogin }) {
     >
       <div className="absolute inset-0 bg-slate-950/20" />
       <div className="relative z-10 w-full max-w-[420px]">
-        <div className="bg-white/95 backdrop-blur-md border border-white/60 rounded-2xl shadow-2xl px-8 py-9">
+        <div className="px-8 py-9">
           <div className="mb-8 text-center">
             <img src="/logo.png" alt="SCM" className="h-14 mx-auto mb-5 object-contain" />
-            <h1 className="text-3xl font-bold text-[#003B5C] mb-2">Нэвтрэх</h1>
-            <p className="text-slate-500 text-sm">Зээлийн удирдлагын системд тавтай морил</p>
+            <h1 className="text-3xl font-bold text-white mb-2">Нэвтрэх</h1>
+            <p className="text-slate-300 text-sm">Зээлийн удирдлагын системд тавтай морил</p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+              <label className="block text-[11px] font-bold uppercase text-slate-300 mb-1">
                 И-мэйл
               </label>
               <input
@@ -66,7 +66,7 @@ export default function Login({ onLogin }) {
               />
             </div>
             <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+              <label className="block text-[11px] font-bold uppercase text-slate-300 mb-1">
                 Нууц үг
               </label>
               <input
