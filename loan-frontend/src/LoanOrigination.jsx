@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
   AlertCircle, BadgeCheck, BarChart2, CheckCircle2, ChevronRight,
   ClipboardList, CreditCard, Eye, FileText, Loader2,
-  Plus, Printer, RotateCcw, ThumbsDown, ThumbsUp, User,
+  Plus, Printer, RotateCcw, Search, ThumbsDown, ThumbsUp, User,
   UserCheck, X, XCircle, Home, Users,
 } from 'lucide-react';
 import LoanResearch from './LoanResearch';
@@ -64,6 +64,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
 
   // Tab 1 state
   const [statusFilter, setStatusFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showNewForm, setShowNewForm] = useState(false);
   const [viewLoan, setViewLoan] = useState(null); // modal-д харуулах зээл
 
@@ -163,9 +164,32 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
   // ─────────────────────────────────────────
   // FILTERED REQUESTS
   // ─────────────────────────────────────────
-  const filteredRequests = statusFilter === 'all'
-    ? requests
-    : requests.filter(r => r.status === statusFilter);
+  const workflowStats = [
+    { label: 'Нийт хүсэлт', value: requests.length, tone: 'bg-slate-50 border-slate-200 text-slate-700', statuses: [] },
+    { label: 'Шинэ / хуваарилах', value: requests.filter(r => ['pending', 'created'].includes(r.status)).length, tone: 'bg-sky-50 border-sky-200 text-sky-700', statuses: ['pending', 'created'] },
+    { label: 'Судалгаа дээр', value: requests.filter(r => ['assigned', 'data_collection', 'assessment', 'studying'].includes(r.status)).length, tone: 'bg-amber-50 border-amber-200 text-amber-700', statuses: ['assigned', 'assessment', 'studying'] },
+    { label: 'Шийдвэрлэсэн', value: requests.filter(r => ['approved', 'rejected', 'resolved', 'disbursed'].includes(r.status)).length, tone: 'bg-emerald-50 border-emerald-200 text-emerald-700', statuses: ['approved', 'rejected', 'resolved', 'disbursed'] },
+  ];
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const filteredRequests = requests.filter(r => {
+    const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
+    if (!matchesStatus) return false;
+    if (!normalizedSearch) return true;
+    const searchable = [
+      borrowerName(r),
+      r.firstname,
+      r.lastname,
+      r.orgName,
+      r.regNo,
+      r.phone,
+      r.selectedProduct,
+      PRODUCTS[r.selectedProduct],
+      r.assignee?.name,
+      r.status,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return searchable.includes(normalizedSearch);
+  });
 
   // ─────────────────────────────────────────
   // RENDER
@@ -264,30 +288,67 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
             <LoanExposureMonitor apiUrl={apiUrl} usersList={usersList} />
           ) : (
             <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {workflowStats.map(item => (
+              <div key={item.label} className={`border rounded-2xl p-4 shadow-sm ${item.tone}`}>
+                <p className="text-[11px] font-bold uppercase tracking-wide opacity-70">{item.label}</p>
+                <div className="mt-2 flex items-end justify-between gap-3">
+                  <p className="text-3xl font-black leading-none">{item.value}</p>
+                  {item.statuses.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter(item.statuses[0])}
+                      className="text-[11px] font-bold px-2 py-1 rounded-lg bg-white/70 hover:bg-white transition-all"
+                    >
+                      Харах
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
           {/* Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-2 flex-wrap">
-              {[
-                { value: 'all', label: 'Бүгд' },
-                { value: 'pending', label: 'Онлайн' },
-                { value: 'created', label: 'Ажилтан үүсгэсэн' },
-                { value: 'assigned', label: 'Хариуцагч томилогдсон' },
-                { value: 'approved', label: 'Зөвшөөрөгдсөн' },
-                { value: 'rejected', label: 'Татгалзсан' },
-                { value: 'disbursed', label: 'Олгосон' },
-              ].map(f => (
-                <button key={f.value} onClick={() => setStatusFilter(f.value)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                    statusFilter === f.value ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#003B5C]'
-                  }`}>
-                  {f.label}
-                </button>
-              ))}
+          <div className="bg-white border rounded-2xl p-3 shadow-sm space-y-3">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-xl">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Нэр, РД, утас, бүтээгдэхүүн, хариуцагчаар хайх..."
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:outline-none focus:border-[#003B5C] focus:bg-white"
+                />
+              </div>
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600">{filteredRequests.length} / {requests.length}</span>
+                <span>харагдаж байна</span>
+              </div>
             </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex gap-2 flex-wrap">
+                {[
+                  { value: 'all', label: 'Бүгд' },
+                  { value: 'pending', label: 'Онлайн' },
+                  { value: 'created', label: 'Ажилтан үүсгэсэн' },
+                  { value: 'assigned', label: 'Хариуцагч томилогдсон' },
+                  { value: 'approved', label: 'Зөвшөөрөгдсөн' },
+                  { value: 'rejected', label: 'Татгалзсан' },
+                  { value: 'disbursed', label: 'Олгосон' },
+                ].map(f => (
+                  <button key={f.value} onClick={() => setStatusFilter(f.value)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                      statusFilter === f.value ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#003B5C]'
+                    }`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
             <button onClick={() => setShowNewForm(v => !v)}
               className="inline-flex items-center gap-2 bg-[#003B5C] hover:bg-[#002d47] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all">
               <Plus size={15} /> Шинэ хүсэлт үүсгэх
             </button>
+            </div>
           </div>
 
           {/* New loan form — full application detail */}
