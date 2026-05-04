@@ -288,35 +288,65 @@ const LoanOrigination = ({
   // ─────────────────────────────────────────
   // FILTERED REQUESTS
   // ─────────────────────────────────────────
-  const statusDashboards = [
-    { key: 'all', label: text.stats.total, statuses: [], accent: 'slate' },
-    { key: 'pending', label: text.stats.pending, statuses: ['pending'], accent: 'sky' },
-    { key: 'created', label: text.stats.created, statuses: ['created'], accent: 'indigo' },
-    { key: 'assigned', label: text.stats.assigned, statuses: ['assigned'], accent: 'violet' },
-    { key: 'assessment', label: text.stats.assessment, statuses: ['data_collection', 'assessment', 'studying'], accent: 'amber' },
-    { key: 'committee', label: text.stats.committee, statuses: ['committee'], accent: 'orange' },
-    { key: 'approved', label: text.stats.approved, statuses: ['approved'], accent: 'emerald' },
-    { key: 'rejected', label: text.stats.rejected, statuses: ['rejected'], accent: 'red' },
-    { key: 'resolved', label: text.stats.resolved, statuses: ['resolved'], accent: 'lime' },
-    { key: 'disbursed', label: text.stats.disbursed, statuses: ['disbursed'], accent: 'green' },
-  ];
-  const activeStatusSet = Array.isArray(statusFilter) ? statusFilter : null;
-  const getDashboardValue = (item) => item.statuses.length
-    ? requests.filter(r => item.statuses.includes(r.status)).length
-    : requests.length;
-  const isDashboardActive = (item) => {
-    if (!item.statuses.length) return statusFilter === 'all';
-    return activeStatusSet
-      ? item.statuses.length === activeStatusSet.length && item.statuses.every(s => activeStatusSet.includes(s))
-      : statusFilter === item.statuses[0];
-  };
-  const applyStatusFilter = (statuses) => {
-    setStatusFilter(statuses.length ? statuses : 'all');
-    setSearchQuery('');
-  };
   const isFilterActive = (value) => (
     Array.isArray(statusFilter) ? statusFilter.includes(value) : statusFilter === value
   );
+
+  const totalAmount = requests.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const maxCount = (rows) => Math.max(1, ...rows.map(row => row.count));
+  const toRows = (map, total = requests.length) => Object.entries(map)
+    .map(([label, value]) => ({
+      label,
+      count: value.count,
+      amount: value.amount || 0,
+      percent: total ? Math.round((value.count / total) * 100) : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const productRows = toRows(requests.reduce((acc, r) => {
+    const key = PRODUCTS[r.selectedProduct] || r.selectedProduct || 'Тодорхойгүй';
+    acc[key] = acc[key] || { count: 0, amount: 0 };
+    acc[key].count += 1;
+    acc[key].amount += Number(r.amount) || 0;
+    return acc;
+  }, {})).slice(0, 5);
+
+  const amountBuckets = [
+    { label: '≤ 20 сая', test: v => v <= 20000000 },
+    { label: '20-50 сая', test: v => v > 20000000 && v <= 50000000 },
+    { label: '50-100 сая', test: v => v > 50000000 && v <= 100000000 },
+    { label: '100 сая+', test: v => v > 100000000 },
+  ].map(bucket => {
+    const rows = requests.filter(r => bucket.test(Number(r.amount) || 0));
+    return {
+      label: bucket.label,
+      count: rows.length,
+      amount: rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0),
+      percent: requests.length ? Math.round((rows.length / requests.length) * 100) : 0,
+    };
+  });
+
+  const termBuckets = [
+    { label: '≤ 12 сар', test: v => v <= 12 },
+    { label: '13-24 сар', test: v => v > 12 && v <= 24 },
+    { label: '25-36 сар', test: v => v > 24 && v <= 36 },
+    { label: '36+ сар', test: v => v > 36 },
+  ].map(bucket => {
+    const rows = requests.filter(r => bucket.test(Number(r.term || r.termMonths) || 0));
+    return {
+      label: bucket.label,
+      count: rows.length,
+      percent: requests.length ? Math.round((rows.length / requests.length) * 100) : 0,
+    };
+  });
+
+  const borrowerTypeRows = [
+    { label: 'Иргэн', count: requests.filter(r => r.userType !== 'organization').length },
+    { label: 'Байгууллага', count: requests.filter(r => r.userType === 'organization').length },
+  ].map(row => ({
+    ...row,
+    percent: requests.length ? Math.round((row.count / requests.length) * 100) : 0,
+  }));
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const filteredRequests = requests.filter(r => {
@@ -438,20 +468,90 @@ const LoanOrigination = ({
             <LoanExposureMonitor apiUrl={apiUrl} usersList={usersList} />
           ) : (
             <>
-          <div className="loan-metric-grid">
-            {statusDashboards.map(item => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => applyStatusFilter(item.statuses)}
-                className={`loan-metric-card ${isDashboardActive(item) ? 'is-active' : ''}`}
-                data-accent={item.accent}
-              >
-                <span className="loan-metric-label">{item.label}</span>
-                <span className="loan-metric-value">{getDashboardValue(item)}</span>
-                <span className="loan-metric-action">{text.view}</span>
-              </button>
-            ))}
+          <div className="loan-analytics-grid">
+            <div className="loan-chart-card loan-chart-card-wide">
+              <div className="loan-chart-head">
+                <span>Бүтээгдэхүүний төрөл</span>
+                <strong>{requests.length}</strong>
+              </div>
+              <div className="loan-chart-list">
+                {productRows.map(row => (
+                  <div key={row.label} className="loan-chart-row">
+                    <div className="loan-chart-row-top">
+                      <span>{row.label}</span>
+                      <strong>{row.count}</strong>
+                    </div>
+                    <div className="loan-chart-track">
+                      <div style={{ width: `${Math.max(8, (row.count / maxCount(productRows)) * 100)}%` }} />
+                    </div>
+                  </div>
+                ))}
+                {!productRows.length && <p className="loan-chart-empty">Мэдээлэл байхгүй</p>}
+              </div>
+            </div>
+
+            <div className="loan-chart-card">
+              <div className="loan-chart-head">
+                <span>Дүнгийн бүтэц</span>
+                <strong>{fmt(totalAmount)}</strong>
+              </div>
+              <div className="loan-chart-list">
+                {amountBuckets.map(row => (
+                  <div key={row.label} className="loan-chart-row">
+                    <div className="loan-chart-row-top">
+                      <span>{row.label}</span>
+                      <strong>{row.count}</strong>
+                    </div>
+                    <div className="loan-chart-track amber">
+                      <div style={{ width: `${Math.max(6, row.percent)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="loan-chart-card">
+              <div className="loan-chart-head">
+                <span>Хугацаа</span>
+                <strong>{requests.length}</strong>
+              </div>
+              <div className="loan-chart-list">
+                {termBuckets.map(row => (
+                  <div key={row.label} className="loan-chart-row">
+                    <div className="loan-chart-row-top">
+                      <span>{row.label}</span>
+                      <strong>{row.count}</strong>
+                    </div>
+                    <div className="loan-chart-track green">
+                      <div style={{ width: `${Math.max(6, row.percent)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="loan-chart-card">
+              <div className="loan-chart-head">
+                <span>Зээлдэгчийн төрөл</span>
+                <strong>{requests.length}</strong>
+              </div>
+              <div className="loan-donut-wrap">
+                <div
+                  className="loan-donut"
+                  style={{ '--org': `${borrowerTypeRows[1]?.percent || 0}%` }}
+                >
+                  <span>{borrowerTypeRows[0]?.percent || 0}%</span>
+                </div>
+                <div className="loan-donut-legend">
+                  {borrowerTypeRows.map(row => (
+                    <div key={row.label}>
+                      <span>{row.label}</span>
+                      <strong>{row.count}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Toolbar */}
