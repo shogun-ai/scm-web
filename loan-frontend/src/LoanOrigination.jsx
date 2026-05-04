@@ -88,6 +88,49 @@ const UI_TEXT = {
     select: 'сонгох',
     web: 'ВЭБ',
     empty: 'Хүсэлт байхгүй байна.',
+    ai: {
+      startEvaluation: 'AI үнэлгээ эхлүүлэх',
+      queuedToast: (count) => `${count} хүсэлтийн AI дүгнэлт дараалалд орлоо.`,
+      noneQueued: 'Дүгнэлтгүй хуучин хүсэлт олдсонгүй.',
+      queueError: 'AI дүгнэлтүүдийг дараалалд оруулахад алдаа гарлаа.',
+      pendingNote: 'AI дүгнэлт дараалалд орлоо.',
+      statuses: {
+        not_started: 'AI хүлээгдэж байна',
+        pending: 'AI дараалалд',
+        running: 'AI дүгнэж байна',
+        completed: 'AI дүгнэсэн',
+        failed: 'AI алдаа',
+      },
+      cardTitle: 'AI зээлийн ажилтны дүгнэлт',
+      defaultSubtitle: 'Аппликэйшний мэдээлэлд суурилсан урьдчилсан санал',
+      ruleBased: 'Дүрмийн суурьтай',
+      risk: 'Эрсдэл',
+      legal: 'Хууль / баримт',
+      recommendation: 'Олголтын санал',
+      confidence: 'Итгэлцүүр',
+      recLabels: {
+        approve: 'Олгох боломжтой',
+        conditional: 'Нөхцөлтэй судлах',
+        manual_review: 'Гараар нягтлах',
+        reject: 'Олгохгүй санал',
+        empty: 'Дүгнэлт хүлээгдэж байна',
+      },
+      approvalReasons: 'Зөвшөөрөх үндэслэл',
+      conditions: 'Нөхцөл',
+      rejectionRisks: 'Татгалзах эрсдэл',
+      pendingMessage: 'AI дүгнэлт дараалалд орсон байна.',
+      runningMessage: 'AI зээлийн ажилтан дүгнэлт боловсруулж байна.',
+      failedMessage: 'AI дүгнэлт гаргахад алдаа гарсан байна.',
+      emptyMessage: 'Энэ хүсэлт дээр AI дүгнэлт хараахан үүсээгүй байна.',
+      disclaimer: 'AI санал нь урьдчилсан туслах дүгнэлт бөгөөд эцсийн шийдвэрийг хүний ажилтан/хороо гаргана.',
+      decisionEngine: 'AI шийдвэрийн тайлбар',
+      preview: 'тайлбарлагдах үнэлгээний урьдчилсан харагдац',
+      factorContribution: 'Нөлөөлсөн хүчин зүйлс',
+      decisionRationale: 'Шийдвэрийн үндэслэл',
+      decisionFactors: 'Шийдвэрийн хүчин зүйл',
+      processing: 'Боловсруулалт',
+      realTime: 'Шууд',
+    },
   },
   en: {
     steps: {
@@ -136,6 +179,49 @@ const UI_TEXT = {
     select: 'select',
     web: 'WEB',
     empty: 'No requests found.',
+    ai: {
+      startEvaluation: 'Start AI evaluation',
+      queuedToast: (count) => `${count} request(s) queued for AI review.`,
+      noneQueued: 'No existing requests without AI review were found.',
+      queueError: 'Failed to queue AI reviews.',
+      pendingNote: 'AI review queued.',
+      statuses: {
+        not_started: 'AI pending',
+        pending: 'AI queued',
+        running: 'AI reviewing',
+        completed: 'AI reviewed',
+        failed: 'AI error',
+      },
+      cardTitle: 'AI loan officer review',
+      defaultSubtitle: 'Preliminary assessment based on application data',
+      ruleBased: 'Rule-based',
+      risk: 'Risk',
+      legal: 'Legal / documents',
+      recommendation: 'Credit recommendation',
+      confidence: 'Confidence',
+      recLabels: {
+        approve: 'Eligible to approve',
+        conditional: 'Conditional review',
+        manual_review: 'Manual review',
+        reject: 'Reject recommendation',
+        empty: 'Review pending',
+      },
+      approvalReasons: 'Approval reasons',
+      conditions: 'Conditions',
+      rejectionRisks: 'Rejection risks',
+      pendingMessage: 'AI review is queued.',
+      runningMessage: 'AI loan officer is reviewing the application.',
+      failedMessage: 'AI review failed.',
+      emptyMessage: 'No AI review has been generated for this request yet.',
+      disclaimer: 'AI output is a preliminary assistant review; the final decision is made by a human officer/committee.',
+      decisionEngine: 'AI decision engine',
+      preview: 'explainable assessment preview',
+      factorContribution: 'Factor contribution',
+      decisionRationale: 'Decision rationale',
+      decisionFactors: 'Decision factors',
+      processing: 'Processing',
+      realTime: 'Real-time',
+    },
   },
 };
 
@@ -153,14 +239,14 @@ const StatusBadge = ({ status }) => {
   return <span className={`status-badge px-2.5 py-1 rounded-full text-[11px] font-black ${m.color}`}>{m.label}</span>;
 };
 
-const AiLoanOfficerBadge = ({ assessment }) => {
+const AiLoanOfficerBadge = ({ assessment, labels = UI_TEXT.mn.ai }) => {
   const status = assessment?.status || 'not_started';
   const meta = {
-    not_started: { label: 'AI хүлээгдэж байна', cls: 'bg-slate-100 text-slate-600', icon: Sparkles },
-    pending: { label: 'AI дараалалд', cls: 'bg-amber-100 text-amber-700', icon: Clock },
-    running: { label: 'AI дүгнэж байна', cls: 'bg-blue-100 text-blue-700', icon: Loader2, spin: true },
-    completed: { label: 'AI дүгнэсэн', cls: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2 },
-    failed: { label: 'AI алдаа', cls: 'bg-red-100 text-red-700', icon: XCircle },
+    not_started: { label: labels.statuses.not_started, cls: 'bg-slate-100 text-slate-600', icon: Sparkles },
+    pending: { label: labels.statuses.pending, cls: 'bg-amber-100 text-amber-700', icon: Clock },
+    running: { label: labels.statuses.running, cls: 'bg-blue-100 text-blue-700', icon: Loader2, spin: true },
+    completed: { label: labels.statuses.completed, cls: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2 },
+    failed: { label: labels.statuses.failed, cls: 'bg-red-100 text-red-700', icon: XCircle },
   }[status] || { label: status, cls: 'bg-slate-100 text-slate-600', icon: Sparkles };
   const Icon = meta.icon;
   return (
@@ -288,12 +374,12 @@ const LoanOrigination = ({
         const idSet = new Set(ids);
         const queuedAt = new Date().toISOString();
         onRequestsChange(requests.map(r => idSet.has(r._id)
-          ? { ...r, aiLoanOfficer: { status: 'pending', queuedAt, note: 'AI дүгнэлт дараалалд орлоо.' } }
+          ? { ...r, aiLoanOfficer: { status: 'pending', queuedAt, note: text.ai.pendingNote } }
           : r));
       }
-      showToast(ids.length ? `${ids.length} хүсэлтийн AI дүгнэлт дараалалд орлоо.` : 'Дүгнэлтгүй хуучин хүсэлт олдсонгүй.');
+      showToast(ids.length ? text.ai.queuedToast(ids.length) : text.ai.noneQueued);
     } catch (e) {
-      showToast(e.response?.data?.message || 'AI дүгнэлтүүдийг дараалалд оруулахад алдаа гарлаа.', 'error');
+      showToast(e.response?.data?.message || text.ai.queueError, 'error');
     } finally {
       setAiBackfillLoading(false);
     }
@@ -633,7 +719,7 @@ const LoanOrigination = ({
               <button onClick={backfillAiLoanOfficer} disabled={aiBackfillLoading}
                 className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-[#003B5C] border border-[#003B5C]/30 px-4 py-2.5 rounded-xl font-bold text-sm disabled:opacity-60 transition-all">
                 {aiBackfillLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-                AI үнэлгээ эхлүүлэх
+                {text.ai.startEvaluation}
               </button>
               <button onClick={() => setShowNewForm(v => !v)}
                 className="inline-flex items-center gap-2 bg-[#003B5C] hover:bg-[#002d47] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all">
@@ -653,6 +739,7 @@ const LoanOrigination = ({
               <LoanApplicationDetail
                 loan={null}
                 apiUrl={apiUrl}
+                language={language}
                 createMode={true}
                 onCancel={() => setShowNewForm(false)}
                 onCreated={async (newLoan) => {
@@ -760,6 +847,7 @@ const LoanOrigination = ({
               <LoanApplicationDetail
                 loan={viewLoan}
                 apiUrl={apiUrl}
+                language={language}
                 user={user}
                 onSaved={(updated) => {
                   onRequestsChange(requests.map(r => r._id === updated._id ? updated : r));
@@ -822,6 +910,7 @@ const LoanOrigination = ({
             makeDecision={makeDecision}
             revertDecision={revertDecision}
             onGoAssessment={() => setActiveStep('assessment')}
+            labels={text.ai}
           />
         )
       )}
@@ -929,7 +1018,7 @@ const LoanHeader = ({ loan }) => (
   </div>
 );
 
-const AiLoanOfficerCard = ({ loan }) => {
+const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai }) => {
   const assessment = loan?.aiLoanOfficer;
   const decision = assessment?.decision || {};
   const risk = assessment?.risk || {};
@@ -937,16 +1026,16 @@ const AiLoanOfficerCard = ({ loan }) => {
   const credit = assessment?.credit || {};
   const recommendation = decision.recommendation || credit.recommendation;
   const recLabel = {
-    approve: 'Олгох боломжтой',
-    conditional: 'Нөхцөлтэй судлах',
-    manual_review: 'Гараар нягтлах',
-    reject: 'Олгохгүй санал',
-  }[recommendation] || 'Дүгнэлт хүлээгдэж байна';
+    approve: labels.recLabels.approve,
+    conditional: labels.recLabels.conditional,
+    manual_review: labels.recLabels.manual_review,
+    reject: labels.recLabels.reject,
+  }[recommendation] || labels.recLabels.empty;
   const generatedAt = assessment?.generatedAt ? new Date(assessment.generatedAt).toLocaleString('mn-MN') : null;
   const rationaleGroups = [
-    { title: 'Зөвшөөрөх үндэслэл', items: decision.approvalReasons || [], cls: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
-    { title: 'Нөхцөл', items: decision.conditionalReasons || credit.conditions || [], cls: 'border-amber-200 bg-amber-50 text-amber-800' },
-    { title: 'Татгалзах эрсдэл', items: decision.rejectionReasons || [], cls: 'border-red-200 bg-red-50 text-red-800' },
+    { title: labels.approvalReasons, items: decision.approvalReasons || [], cls: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+    { title: labels.conditions, items: decision.conditionalReasons || credit.conditions || [], cls: 'border-amber-200 bg-amber-50 text-amber-800' },
+    { title: labels.rejectionRisks, items: decision.rejectionReasons || [], cls: 'border-red-200 bg-red-50 text-red-800' },
   ].filter(group => Array.isArray(group.items) && group.items.length);
 
   return (
@@ -957,30 +1046,30 @@ const AiLoanOfficerCard = ({ loan }) => {
             <Sparkles size={18} />
           </div>
           <div>
-            <p className="text-sm font-black text-[#003B5C]">AI зээлийн ажилтны дүгнэлт</p>
+            <p className="text-sm font-black text-[#003B5C]">{labels.cardTitle}</p>
             <p className="text-xs font-semibold text-slate-500">
-              {generatedAt ? `${generatedAt} - ${assessment?.source === 'openai' ? 'OpenAI' : 'Дүрмийн суурьтай'}` : assessment?.note || 'Аппликэйшний мэдээлэлд суурилсан урьдчилсан санал'}
+              {generatedAt ? `${generatedAt} - ${assessment?.source === 'openai' ? 'OpenAI' : labels.ruleBased}` : assessment?.note || labels.defaultSubtitle}
             </p>
           </div>
         </div>
-        <AiLoanOfficerBadge assessment={assessment} />
+        <AiLoanOfficerBadge assessment={assessment} labels={labels} />
       </div>
 
       {assessment?.status === 'completed' ? (
         <>
           <div className="grid md:grid-cols-3 gap-3">
             <div className="rounded-xl border border-slate-200 p-3 bg-slate-50">
-              <p className="text-[10px] font-black uppercase text-slate-500">Эрсдэл</p>
+              <p className="text-[10px] font-black uppercase text-slate-500">{labels.risk}</p>
               <p className="mt-1 text-sm font-bold text-slate-800">{risk.summary || '-'}</p>
             </div>
             <div className="rounded-xl border border-slate-200 p-3 bg-slate-50">
-              <p className="text-[10px] font-black uppercase text-slate-500">Хууль / баримт</p>
+              <p className="text-[10px] font-black uppercase text-slate-500">{labels.legal}</p>
               <p className="mt-1 text-sm font-bold text-slate-800">{legal.summary || '-'}</p>
             </div>
             <div className="rounded-xl border border-slate-200 p-3 bg-slate-50">
-              <p className="text-[10px] font-black uppercase text-slate-500">Олголтын санал</p>
+              <p className="text-[10px] font-black uppercase text-slate-500">{labels.recommendation}</p>
               <p className="mt-1 text-sm font-black text-[#003B5C]">{recLabel}</p>
-              {decision.confidence != null && <p className="text-xs font-semibold text-slate-500 mt-1">Confidence {Math.round(Number(decision.confidence) * 100)}%</p>}
+              {decision.confidence != null && <p className="text-xs font-semibold text-slate-500 mt-1">{labels.confidence} {Math.round(Number(decision.confidence) * 100)}%</p>}
             </div>
           </div>
           {rationaleGroups.length > 0 && (
@@ -999,15 +1088,15 @@ const AiLoanOfficerCard = ({ loan }) => {
       ) : (
         <p className="text-sm font-semibold text-slate-600">
           {assessment?.status === 'pending'
-            ? 'AI дүгнэлт дараалалд орсон байна.'
+            ? labels.pendingMessage
             : assessment?.status === 'running'
-              ? 'AI зээлийн ажилтан дүгнэлт боловсруулж байна.'
+              ? labels.runningMessage
               : assessment?.status === 'failed'
-                ? (assessment.note || 'AI дүгнэлт гаргахад алдаа гарсан байна.')
-                : 'Энэ хүсэлт дээр AI дүгнэлт хараахан үүсээгүй байна.'}
+                ? (assessment.note || labels.failedMessage)
+                : labels.emptyMessage}
         </p>
       )}
-      <p className="text-[11px] font-semibold text-slate-500">AI санал нь урьдчилсан туслах дүгнэлт бөгөөд эцсийн шийдвэрийг хүний ажилтан/хороо гаргана.</p>
+      <p className="text-[11px] font-semibold text-slate-500">{labels.disclaimer}</p>
     </div>
   );
 };
@@ -1022,7 +1111,7 @@ const ANALYST_DECISION_LABELS = {
   reject: 'Татгалзах',
 };
 
-const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, setApprovalNote, savingDecision, makeDecision, revertDecision, onGoAssessment }) => {
+const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, setApprovalNote, savingDecision, makeDecision, revertDecision, onGoAssessment, labels = UI_TEXT.mn.ai }) => {
   const nfmt = v => new Intl.NumberFormat('mn-MN').format(Math.round(v || 0));
   const [revertMode, setRevertMode] = useState(false);
   const [revertReason, setRevertReason] = useState('');
@@ -1232,16 +1321,16 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     const aiLegal = ai.legal || {};
     const aiCredit = ai.credit || {};
     const aiStatusLabel = {
-      pending: 'Дараалалд',
-      running: 'Дүгнэж байна',
-      completed: 'Дүгнэсэн',
-      failed: 'Алдаа',
-    }[ai.status] || 'Дүгнэлт үүсээгүй';
+      pending: labels.statuses.pending,
+      running: labels.statuses.running,
+      completed: labels.statuses.completed,
+      failed: labels.statuses.failed,
+    }[ai.status] || labels.statuses.not_started;
     const aiRecLabel = {
-      approve: 'Олгох боломжтой',
-      conditional: 'Нөхцөлтэй судлах',
-      manual_review: 'Гараар нягтлах',
-      reject: 'Олгохгүй санал',
+      approve: labels.recLabels.approve,
+      conditional: labels.recLabels.conditional,
+      manual_review: labels.recLabels.manual_review,
+      reject: labels.recLabels.reject,
     }[aiDecision.recommendation || aiCredit.recommendation] || '-';
     const aiGeneratedAt = ai.generatedAt ? new Date(ai.generatedAt).toLocaleString('mn-MN') : '';
     const aiList = (items = []) => (items || []).length
@@ -1251,45 +1340,45 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     <div class="section" style="border:1px solid #cbd5e1;border-radius:14px;padding:14px 16px;background:#f8fafc">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px">
         <div>
-          <div style="font-size:10px;font-weight:900;color:#003B5C;text-transform:uppercase;letter-spacing:.08em">AI зээлийн ажилтны дүгнэлт</div>
-          <div style="font-size:10px;color:#64748b;margin-top:3px">${esc(aiGeneratedAt || ai.note || 'Аппликэйшний мэдээлэлд суурилсан урьдчилсан санал')}</div>
+          <div style="font-size:10px;font-weight:900;color:#003B5C;text-transform:uppercase;letter-spacing:.08em">${esc(labels.cardTitle)}</div>
+          <div style="font-size:10px;color:#64748b;margin-top:3px">${esc(aiGeneratedAt || ai.note || labels.defaultSubtitle)}</div>
         </div>
         <div style="font-size:10px;font-weight:900;color:#003B5C;background:#e0f2fe;border:1px solid #bae6fd;border-radius:99px;padding:4px 10px">${esc(aiStatusLabel)}</div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
         <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px">
-          <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px">Эрсдэл</div>
+          <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px">${esc(labels.risk)}</div>
           <div style="font-size:11px;font-weight:700;color:#1e293b;line-height:1.45">${esc(aiRisk.summary || '-')}</div>
         </div>
         <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px">
-          <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px">Хууль / баримт</div>
+          <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px">${esc(labels.legal)}</div>
           <div style="font-size:11px;font-weight:700;color:#1e293b;line-height:1.45">${esc(aiLegal.summary || '-')}</div>
         </div>
         <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px">
-          <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px">Олголтын санал</div>
+          <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px">${esc(labels.recommendation)}</div>
           <div style="font-size:12px;font-weight:900;color:#003B5C">${esc(aiRecLabel)}</div>
-          ${aiDecision.confidence != null ? `<div style="font-size:10px;color:#64748b;margin-top:3px">Confidence ${Math.round(Number(aiDecision.confidence) * 100)}%</div>` : ''}
+          ${aiDecision.confidence != null ? `<div style="font-size:10px;color:#64748b;margin-top:3px">${esc(labels.confidence)} ${Math.round(Number(aiDecision.confidence) * 100)}%</div>` : ''}
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
         <div style="border:1px solid #86efac;background:#f0fdf4;border-radius:10px;padding:10px;color:#14532d">
-          <div style="font-size:9px;font-weight:900;text-transform:uppercase;margin-bottom:5px">Зөвшөөрөх үндэслэл</div>
+          <div style="font-size:9px;font-weight:900;text-transform:uppercase;margin-bottom:5px">${esc(labels.approvalReasons)}</div>
           ${aiList(aiDecision.approvalReasons)}
         </div>
         <div style="border:1px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:10px;color:#92400e">
-          <div style="font-size:9px;font-weight:900;text-transform:uppercase;margin-bottom:5px">Нөхцөл</div>
+          <div style="font-size:9px;font-weight:900;text-transform:uppercase;margin-bottom:5px">${esc(labels.conditions)}</div>
           ${aiList(aiDecision.conditionalReasons || aiCredit.conditions)}
         </div>
         <div style="border:1px solid #fca5a5;background:#fff1f2;border-radius:10px;padding:10px;color:#991b1b">
-          <div style="font-size:9px;font-weight:900;text-transform:uppercase;margin-bottom:5px">Татгалзах эрсдэл</div>
+          <div style="font-size:9px;font-weight:900;text-transform:uppercase;margin-bottom:5px">${esc(labels.rejectionRisks)}</div>
           ${aiList(aiDecision.rejectionReasons)}
         </div>
       </div>
-      <div style="font-size:9.5px;color:#64748b;margin-top:10px">AI санал нь урьдчилсан туслах дүгнэлт бөгөөд эцсийн шийдвэрийг хүний ажилтан/хороо гаргана.</div>
+      <div style="font-size:9.5px;color:#64748b;margin-top:10px">${esc(labels.disclaimer)}</div>
     </div>` : `
     <div class="section" style="border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc">
-      <div style="font-size:10px;font-weight:900;color:#003B5C;text-transform:uppercase;letter-spacing:.08em">AI зээлийн ажилтны дүгнэлт</div>
-      <div style="font-size:11px;color:#64748b;margin-top:5px">${esc(ai.note || `AI төлөв: ${aiStatusLabel}`)}</div>
+      <div style="font-size:10px;font-weight:900;color:#003B5C;text-transform:uppercase;letter-spacing:.08em">${esc(labels.cardTitle)}</div>
+      <div style="font-size:11px;color:#64748b;margin-top:5px">${esc(ai.note || aiStatusLabel)}</div>
     </div>`;
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -1454,7 +1543,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       </div>
 
       {/* Hero — grade + score + borrower */}
-      <AiLoanOfficerCard loan={loan} />
+      <AiLoanOfficerCard loan={loan} labels={labels} />
 
       <div className="bg-white border-2 border-[#003B5C] rounded-2xl p-5 flex items-center gap-5">
         <div className={`w-20 h-20 rounded-2xl flex items-center justify-center text-3xl font-black shrink-0 ${gradeColor}`}>
@@ -1510,10 +1599,10 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#9BB2C1]">
-                  <Sparkles size={14} className="text-[#524CCA]" /> AI decision engine
+                  <Sparkles size={14} className="text-[#524CCA]" /> {labels.decisionEngine}
                 </p>
                 <h3 className="mt-2 text-2xl font-black tracking-normal text-white">{aiDecisionMn}</h3>
-                <p className="mt-1 text-sm font-semibold text-[#9BB2C1]">{aiDecisionLabel} · explainable assessment preview</p>
+                <p className="mt-1 text-sm font-semibold text-[#9BB2C1]">{aiDecisionLabel} · {labels.preview}</p>
               </div>
               <div className={`rounded-xl border px-3 py-2 text-right ${decisionTone}`}>
                 <p className="text-[10px] font-black uppercase tracking-wide opacity-80">Confidence</p>
@@ -1524,9 +1613,9 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
             <div className="grid grid-cols-2 gap-3">
               {[
                 { label: 'Risk score', value: `${score}/100` },
-                { label: 'Decision factors', value: factorContributions.length },
+                { label: labels.decisionFactors, value: factorContributions.length },
                 { label: 'Policy checks', value: `${passCount}/${kpis.length}` },
-                { label: 'Processing', value: 'Real-time' },
+                { label: labels.processing, value: labels.realTime },
               ].map(item => (
                 <div key={item.label} className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
                   <p className="text-[10px] font-black uppercase tracking-wide text-[#9BB2C1]">{item.label}</p>
@@ -1536,11 +1625,11 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
             </div>
 
             <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#9BB2C1]">Decision rationale</p>
+              <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#9BB2C1]">{labels.decisionRationale}</p>
               <p className="text-sm font-semibold leading-6 text-slate-200">{decisionSummary}</p>
               {autoVerdict === 'conditional' && (
                 <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3">
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-amber-200">Заавал хангах нөхцөл</p>
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-amber-200">{labels.conditions}</p>
                   <ul className="space-y-1.5 text-xs font-semibold leading-5 text-amber-50">
                     {conditionItems.slice(0, 5).map((item, idx) => <li key={idx}>- {item}</li>)}
                   </ul>
@@ -1548,7 +1637,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
               )}
               {autoVerdict === 'approve' && (
                 <div className="mt-3 rounded-lg border border-emerald-300/20 bg-emerald-300/10 p-3">
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-emerald-200">Яагаад зөвшөөрөх саналтай вэ?</p>
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-emerald-200">{labels.approvalReasons}</p>
                   <ul className="space-y-1.5 text-xs font-semibold leading-5 text-emerald-50">
                     {approvalReasons.slice(0, 5).map((item, idx) => <li key={idx}>- {item}</li>)}
                   </ul>
@@ -1556,7 +1645,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
               )}
               {autoVerdict === 'reject' && (
                 <div className="mt-3 rounded-lg border border-red-300/20 bg-red-300/10 p-3">
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-red-200">Яагаад татгалзах саналтай вэ?</p>
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-red-200">{labels.rejectionRisks}</p>
                   <ul className="space-y-1.5 text-xs font-semibold leading-5 text-red-50">
                     {(rejectionReasons.length ? rejectionReasons : failedKpis.map(k => `${k.label} шалгуур хангагдаагүй.`)).slice(0, 5).map((item, idx) => <li key={idx}>- {item}</li>)}
                   </ul>

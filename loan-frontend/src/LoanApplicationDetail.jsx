@@ -1829,7 +1829,64 @@ const aiRecommendationMeta = {
   reject: { label: 'Олгохгүй санал', cls: 'bg-red-50 text-red-700 border-red-200' },
 };
 
-const AiLoanOfficerPanel = ({ assessment, loading, onRun }) => {
+const AI_PANEL_TEXT = {
+  mn: {
+    title: 'AI зээлийн ажилтны урьдчилсан дүгнэлт',
+    autoAfterSave: 'Аппликэйшн хадгалсны дараа автоматаар гарна',
+    ruleBased: 'Дүрмийн суурьтай',
+    rerun: 'Дахин дүгнэх',
+    running: 'Дүгнэж байна...',
+    risk: 'Эрсдэл',
+    legal: 'Хууль / баримт',
+    recommendation: 'Олголтын санал',
+    riskEmpty: 'Эрсдэлийн товч дүгнэлт алга.',
+    legalEmpty: 'Хуулийн шалгалтын товч дүгнэлт алга.',
+    recEmpty: 'Саналын тайлбар алга.',
+    flags: 'Анхаарах дохио',
+    noFlags: 'Онцгой анхаарах дохио бүртгэгдээгүй.',
+    nextSteps: 'Нөхцөл / дараагийн алхам',
+    approvalReasons: 'Яагаад зөвшөөрөх боломжтой вэ?',
+    conditions: 'Ямар нөхцөл хангах вэ?',
+    rejectionRisks: 'Яагаад татгалзах эрсдэлтэй вэ?',
+    disclaimer: 'Энэ нь урьдчилсан AI санал бөгөөд эцсийн шийдвэрийг хүний ажилтан/хороо гаргана.',
+    pending: 'AI дүгнэлт дараалалд орсон байна.',
+    processing: 'AI зээлийн ажилтан дүгнэлт боловсруулж байна.',
+    failed: 'AI дүгнэлт гаргахад алдаа гарсан байна.',
+    empty: 'Одоогоор AI дүгнэлт үүсээгүй байна. Аппликэйшн хадгалах эсвэл гараар дахин дүгнүүлж болно.',
+    humanReview: 'Хүний баталгаажуулалт шаардлагатай',
+    updated: 'AI зээлийн ажилтны дүгнэлт шинэчлэгдлээ.',
+    updateError: 'AI дүгнэлт гаргахад алдаа гарлаа.',
+  },
+  en: {
+    title: 'Preliminary AI loan officer review',
+    autoAfterSave: 'Generated automatically after the application is saved',
+    ruleBased: 'Rule-based',
+    rerun: 'Run again',
+    running: 'Reviewing...',
+    risk: 'Risk',
+    legal: 'Legal / documents',
+    recommendation: 'Credit recommendation',
+    riskEmpty: 'No risk summary available.',
+    legalEmpty: 'No legal/document summary available.',
+    recEmpty: 'No recommendation summary available.',
+    flags: 'Attention signals',
+    noFlags: 'No major attention signals recorded.',
+    nextSteps: 'Conditions / next steps',
+    approvalReasons: 'Why approval is possible',
+    conditions: 'Required conditions',
+    rejectionRisks: 'Rejection risks',
+    disclaimer: 'This is a preliminary AI recommendation; the final decision is made by a human officer/committee.',
+    pending: 'AI review is queued.',
+    processing: 'AI loan officer is reviewing the application.',
+    failed: 'AI review failed.',
+    empty: 'No AI review has been generated yet. Save the application or run the review manually.',
+    humanReview: 'Human verification required',
+    updated: 'AI loan officer review updated.',
+    updateError: 'Failed to generate AI review.',
+  },
+};
+
+const AiLoanOfficerPanel = ({ assessment, loading, onRun, labels = AI_PANEL_TEXT.mn }) => {
   const risk = assessment?.risk || {};
   const legal = assessment?.legal || {};
   const credit = assessment?.credit || {};
@@ -1841,9 +1898,9 @@ const AiLoanOfficerPanel = ({ assessment, loading, onRun }) => {
   const flags = [...(risk.flags || []), ...(legal.flags || [])].slice(0, 6);
   const nextSteps = [...(credit.conditions || []), ...(assessment?.nextSteps || [])].slice(0, 6);
   const rationaleGroups = [
-    { title: 'Яагаад зөвшөөрөх боломжтой вэ?', items: decision.approvalReasons || [], tone: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-    { title: 'Ямар нөхцөл хангах вэ?', items: decision.conditionalReasons || credit.conditions || [], tone: 'text-amber-700 bg-amber-50 border-amber-200' },
-    { title: 'Яагаад татгалзах эрсдэлтэй вэ?', items: decision.rejectionReasons || [], tone: 'text-red-700 bg-red-50 border-red-200' },
+    { title: labels.approvalReasons, items: decision.approvalReasons || [], tone: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+    { title: labels.conditions, items: decision.conditionalReasons || credit.conditions || [], tone: 'text-amber-700 bg-amber-50 border-amber-200' },
+    { title: labels.rejectionRisks, items: decision.rejectionReasons || [], tone: 'text-red-700 bg-red-50 border-red-200' },
   ].filter(g => Array.isArray(g.items) && g.items.length);
 
   return (
@@ -1854,16 +1911,16 @@ const AiLoanOfficerPanel = ({ assessment, loading, onRun }) => {
             <Sparkles size={18} />
           </div>
           <div>
-            <p className="text-sm font-bold text-slate-900">AI зээлийн ажилтны урьдчилсан дүгнэлт</p>
+            <p className="text-sm font-bold text-slate-900">{labels.title}</p>
             <p className="text-xs font-semibold text-slate-500">
-              {generatedAt ? `${generatedAt} - ${assessment?.source === 'openai' ? 'OpenAI' : 'Дүрмийн суурьтай'} дүгнэлт` : 'Аппликэйшн хадгалсны дараа автоматаар гарна'}
+              {generatedAt ? `${generatedAt} - ${assessment?.source === 'openai' ? 'OpenAI' : labels.ruleBased}` : labels.autoAfterSave}
             </p>
           </div>
         </div>
         <button type="button" onClick={onRun} disabled={loading}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-slate-300 text-slate-700 bg-white hover:border-[#003B5C] hover:text-[#003B5C] disabled:opacity-60">
           {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-          {loading ? 'Дүгнэж байна...' : 'Дахин дүгнэх'}
+          {loading ? labels.running : labels.rerun}
         </button>
       </div>
       {assessment?.status === 'completed' ? (
@@ -1871,35 +1928,35 @@ const AiLoanOfficerPanel = ({ assessment, loading, onRun }) => {
           <div className="grid md:grid-cols-3 gap-3">
             <div className="rounded-xl border border-slate-200 p-4 bg-white">
               <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-1.5"><AlertTriangle size={13} /> Эрсдэл</p>
+                <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-1.5"><AlertTriangle size={13} /> {labels.risk}</p>
                 <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold ${riskMeta.cls}`}>{riskMeta.label}</span>
               </div>
-              <p className="text-sm font-semibold text-slate-800">{risk.summary || 'Эрсдэлийн товч дүгнэлт алга.'}</p>
+              <p className="text-sm font-semibold text-slate-800">{risk.summary || labels.riskEmpty}</p>
             </div>
             <div className="rounded-xl border border-slate-200 p-4 bg-white">
               <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-1.5"><ShieldCheck size={13} /> Хууль / баримт</p>
+                <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-1.5"><ShieldCheck size={13} /> {labels.legal}</p>
                 <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold ${legalMeta.cls}`}>{legalMeta.label}</span>
               </div>
-              <p className="text-sm font-semibold text-slate-800">{legal.summary || 'Хуулийн шалгалтын товч дүгнэлт алга.'}</p>
+              <p className="text-sm font-semibold text-slate-800">{legal.summary || labels.legalEmpty}</p>
             </div>
             <div className="rounded-xl border border-slate-200 p-4 bg-white">
               <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-1.5"><CheckCircle2 size={13} /> Олголтын санал</p>
+                <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-1.5"><CheckCircle2 size={13} /> {labels.recommendation}</p>
                 <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold ${recMeta.cls}`}>{recMeta.label}</span>
               </div>
-              <p className="text-sm font-semibold text-slate-800">{decision.reason || credit.summary || 'Саналын тайлбар алга.'}</p>
+              <p className="text-sm font-semibold text-slate-800">{decision.reason || credit.summary || labels.recEmpty}</p>
             </div>
           </div>
           <div className="grid md:grid-cols-2 gap-4">
             <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
-              <p className="text-xs font-bold uppercase text-slate-500 mb-2">Анхаарах дохио</p>
+              <p className="text-xs font-bold uppercase text-slate-500 mb-2">{labels.flags}</p>
               <ul className="space-y-1.5 text-sm font-semibold text-slate-700">
-                {flags.length ? flags.map((item, idx) => <li key={idx}>- {item}</li>) : <li>Онцгой анхаарах дохио бүртгэгдээгүй.</li>}
+                {flags.length ? flags.map((item, idx) => <li key={idx}>- {item}</li>) : <li>{labels.noFlags}</li>}
               </ul>
             </div>
             <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
-              <p className="text-xs font-bold uppercase text-slate-500 mb-2">Нөхцөл / дараагийн алхам</p>
+              <p className="text-xs font-bold uppercase text-slate-500 mb-2">{labels.nextSteps}</p>
               <ul className="space-y-1.5 text-sm font-semibold text-slate-700">
                 {nextSteps.map((item, idx) => <li key={idx}>- {item}</li>)}
               </ul>
@@ -1918,28 +1975,28 @@ const AiLoanOfficerPanel = ({ assessment, loading, onRun }) => {
             </div>
           )}
           <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
-            <Clock size={12} /> {assessment.disclaimer || 'Энэ нь урьдчилсан AI санал бөгөөд эцсийн шийдвэрийг хүний ажилтан/хороо гаргана.'}
+            <Clock size={12} /> {assessment.disclaimer || labels.disclaimer}
           </p>
         </div>
       ) : (
         <div className="p-5 flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-slate-600">
             {assessment?.status === 'pending'
-              ? 'AI дүгнэлт дараалалд орсон байна.'
+              ? labels.pending
               : assessment?.status === 'running'
-                ? 'AI зээлийн ажилтан дүгнэлт боловсруулж байна.'
+                ? labels.processing
                 : assessment?.status === 'failed'
-                  ? (assessment.note || 'AI дүгнэлт гаргахад алдаа гарсан байна.')
-                  : 'Одоогоор AI дүгнэлт үүсээгүй байна. Аппликэйшн хадгалах эсвэл гараар дахин дүгнүүлж болно.'}
+                  ? (assessment.note || labels.failed)
+                  : labels.empty}
           </p>
-          <span className="text-xs font-bold text-slate-400">Хүний баталгаажуулалт шаардлагатай</span>
+          <span className="text-xs font-bold text-slate-400">{labels.humanReview}</span>
         </div>
       )}
     </div>
   );
 };
 
-const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = false, onCancel, onCreated, user, onGoToResearch }) => {
+const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = false, onCancel, onCreated, user, onGoToResearch, language = 'mn' }) => {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const toastRef = useRef(null);
@@ -1953,6 +2010,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
   const personalLocked = !createMode && !isAdmin && !personalUnlocked;
   const [aiOfficer, setAiOfficer] = useState(loan?.aiLoanOfficer || null);
   const [aiOfficerLoading, setAiOfficerLoading] = useState(false);
+  const aiText = AI_PANEL_TEXT[language] || AI_PANEL_TEXT.mn;
 
   const showToast = useCallback((message, type = 'success') => {
     if (toastRef.current) clearTimeout(toastRef.current);
@@ -2175,10 +2233,10 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
         headers: { 'Authorization': `Bearer ${getAuthToken()}` },
       });
       setAiOfficer(res.data?.aiLoanOfficer || null);
-      showToast('AI зээлийн ажилтны дүгнэлт шинэчлэгдлээ.');
+      showToast(aiText.updated);
       if (onSaved) onSaved(res.data);
     } catch (e) {
-      showToast(e.response?.data?.message || 'AI дүгнэлт гаргахад алдаа гарлаа.', 'error');
+      showToast(e.response?.data?.message || aiText.updateError, 'error');
     } finally {
       setAiOfficerLoading(false);
     }
@@ -2240,6 +2298,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
           assessment={aiOfficer}
           loading={aiOfficerLoading}
           onRun={handleRunAiOfficer}
+          labels={aiText}
         />
       )}
 
