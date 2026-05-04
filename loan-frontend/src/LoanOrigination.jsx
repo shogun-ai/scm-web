@@ -633,7 +633,7 @@ const LoanOrigination = ({
               <button onClick={backfillAiLoanOfficer} disabled={aiBackfillLoading}
                 className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-[#003B5C] border border-[#003B5C]/30 px-4 py-2.5 rounded-xl font-bold text-sm disabled:opacity-60 transition-all">
                 {aiBackfillLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-                AI дүгнэлт нөхөх
+                AI үнэлгээ эхлүүлэх
               </button>
               <button onClick={() => setShowNewForm(v => !v)}
                 className="inline-flex items-center gap-2 bg-[#003B5C] hover:bg-[#002d47] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all">
@@ -669,7 +669,7 @@ const LoanOrigination = ({
           {/* Table */}
           <div className="loan-request-table bg-white border rounded-2xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[960px]">
+              <table className="w-full text-sm min-w-[860px]">
                 <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-600 uppercase">
                   <tr>
                     <th className="p-3 text-left">{text.table.date}</th>
@@ -677,7 +677,6 @@ const LoanOrigination = ({
                     <th className="p-3 text-left">{text.table.product}</th>
                     <th className="p-3 text-right">{text.table.amount}</th>
                     <th className="p-3 text-center">{text.table.status}</th>
-                    <th className="p-3 text-center">AI дүгнэлт</th>
                     <th className="p-3 text-left">{text.table.assignee}</th>
                     <th className="p-3 text-center">{text.table.action}</th>
                   </tr>
@@ -700,7 +699,6 @@ const LoanOrigination = ({
                       </td>
                       <td className="p-3 text-right font-black text-slate-800">{fmt(req.amount)}</td>
                       <td className="p-3 text-center"><StatusBadge status={req.status} /></td>
-                      <td className="p-3 text-center"><AiLoanOfficerBadge assessment={req.aiLoanOfficer} /></td>
                       <td className="p-3" onClick={e => e.stopPropagation()}>
                         <select
                           value={req.assignee?.userId || ''}
@@ -732,7 +730,7 @@ const LoanOrigination = ({
                     </tr>
                   ))}
                   {!filteredRequests.length && (
-                    <tr><td colSpan={8} className="p-10 text-center text-slate-400">{text.empty}</td></tr>
+                    <tr><td colSpan={7} className="p-10 text-center text-slate-400">{text.empty}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -928,9 +926,91 @@ const LoanHeader = ({ loan }) => (
     <span className="text-slate-600">{new Intl.NumberFormat('mn-MN').format(loan.amount || 0)} ₮</span>
     <span className="text-slate-400">·</span>
     <StatusBadge status={loan.status} />
-    <AiLoanOfficerBadge assessment={loan.aiLoanOfficer} />
   </div>
 );
+
+const AiLoanOfficerCard = ({ loan }) => {
+  const assessment = loan?.aiLoanOfficer;
+  const decision = assessment?.decision || {};
+  const risk = assessment?.risk || {};
+  const legal = assessment?.legal || {};
+  const credit = assessment?.credit || {};
+  const recommendation = decision.recommendation || credit.recommendation;
+  const recLabel = {
+    approve: 'Олгох боломжтой',
+    conditional: 'Нөхцөлтэй судлах',
+    manual_review: 'Гараар нягтлах',
+    reject: 'Олгохгүй санал',
+  }[recommendation] || 'Дүгнэлт хүлээгдэж байна';
+  const generatedAt = assessment?.generatedAt ? new Date(assessment.generatedAt).toLocaleString('mn-MN') : null;
+  const rationaleGroups = [
+    { title: 'Зөвшөөрөх үндэслэл', items: decision.approvalReasons || [], cls: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+    { title: 'Нөхцөл', items: decision.conditionalReasons || credit.conditions || [], cls: 'border-amber-200 bg-amber-50 text-amber-800' },
+    { title: 'Татгалзах эрсдэл', items: decision.rejectionReasons || [], cls: 'border-red-200 bg-red-50 text-red-800' },
+  ].filter(group => Array.isArray(group.items) && group.items.length);
+
+  return (
+    <div className="bg-white border rounded-2xl p-5 shadow-sm space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-xl bg-[#003B5C] text-white flex items-center justify-center">
+            <Sparkles size={18} />
+          </div>
+          <div>
+            <p className="text-sm font-black text-[#003B5C]">AI зээлийн ажилтны дүгнэлт</p>
+            <p className="text-xs font-semibold text-slate-500">
+              {generatedAt ? `${generatedAt} - ${assessment?.source === 'openai' ? 'OpenAI' : 'Дүрмийн суурьтай'}` : assessment?.note || 'Аппликэйшний мэдээлэлд суурилсан урьдчилсан санал'}
+            </p>
+          </div>
+        </div>
+        <AiLoanOfficerBadge assessment={assessment} />
+      </div>
+
+      {assessment?.status === 'completed' ? (
+        <>
+          <div className="grid md:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-slate-200 p-3 bg-slate-50">
+              <p className="text-[10px] font-black uppercase text-slate-500">Эрсдэл</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">{risk.summary || '-'}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3 bg-slate-50">
+              <p className="text-[10px] font-black uppercase text-slate-500">Хууль / баримт</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">{legal.summary || '-'}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3 bg-slate-50">
+              <p className="text-[10px] font-black uppercase text-slate-500">Олголтын санал</p>
+              <p className="mt-1 text-sm font-black text-[#003B5C]">{recLabel}</p>
+              {decision.confidence != null && <p className="text-xs font-semibold text-slate-500 mt-1">Confidence {Math.round(Number(decision.confidence) * 100)}%</p>}
+            </div>
+          </div>
+          {rationaleGroups.length > 0 && (
+            <div className="grid md:grid-cols-3 gap-3">
+              {rationaleGroups.map(group => (
+                <div key={group.title} className={`rounded-xl border p-3 ${group.cls}`}>
+                  <p className="text-[10px] font-black uppercase mb-2">{group.title}</p>
+                  <ul className="space-y-1.5 text-xs font-bold leading-5">
+                    {group.items.slice(0, 4).map((item, idx) => <li key={idx}>- {item}</li>)}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="text-sm font-semibold text-slate-600">
+          {assessment?.status === 'pending'
+            ? 'AI дүгнэлт дараалалд орсон байна.'
+            : assessment?.status === 'running'
+              ? 'AI зээлийн ажилтан дүгнэлт боловсруулж байна.'
+              : assessment?.status === 'failed'
+                ? (assessment.note || 'AI дүгнэлт гаргахад алдаа гарсан байна.')
+                : 'Энэ хүсэлт дээр AI дүгнэлт хараахан үүсээгүй байна.'}
+        </p>
+      )}
+      <p className="text-[11px] font-semibold text-slate-500">AI санал нь урьдчилсан туслах дүгнэлт бөгөөд эцсийн шийдвэрийг хүний ажилтан/хороо гаргана.</p>
+    </div>
+  );
+};
 
 
 // ─────────────────────────────────────────────
@@ -1307,6 +1387,8 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       </div>
 
       {/* Hero — grade + score + borrower */}
+      <AiLoanOfficerCard loan={loan} />
+
       <div className="bg-white border-2 border-[#003B5C] rounded-2xl p-5 flex items-center gap-5">
         <div className={`w-20 h-20 rounded-2xl flex items-center justify-center text-3xl font-black shrink-0 ${gradeColor}`}>
           {grade}
