@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import {
-  Activity, AlertCircle, BadgeCheck, BarChart2, CheckCircle2, ChevronRight,
+  Activity, AlertCircle, BadgeCheck, BarChart2, CheckCircle2, ChevronRight, Clock,
   ClipboardList, CreditCard, Eye, FileText, Loader2,
   Plus, Printer, RotateCcw, Search, Sparkles, ThumbsDown, ThumbsUp, User,
   UserCheck, X, XCircle, Home, Users,
@@ -153,6 +153,24 @@ const StatusBadge = ({ status }) => {
   return <span className={`status-badge px-2.5 py-1 rounded-full text-[11px] font-black ${m.color}`}>{m.label}</span>;
 };
 
+const AiLoanOfficerBadge = ({ assessment }) => {
+  const status = assessment?.status || 'not_started';
+  const meta = {
+    not_started: { label: 'AI хүлээгдэж байна', cls: 'bg-slate-100 text-slate-600', icon: Sparkles },
+    pending: { label: 'AI дараалалд', cls: 'bg-amber-100 text-amber-700', icon: Clock },
+    running: { label: 'AI дүгнэж байна', cls: 'bg-blue-100 text-blue-700', icon: Loader2, spin: true },
+    completed: { label: 'AI дүгнэсэн', cls: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2 },
+    failed: { label: 'AI алдаа', cls: 'bg-red-100 text-red-700', icon: XCircle },
+  }[status] || { label: status, cls: 'bg-slate-100 text-slate-600', icon: Sparkles };
+  const Icon = meta.icon;
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black ${meta.cls}`} title={assessment?.note || assessment?.warning || ''}>
+      <Icon size={12} className={meta.spin ? 'animate-spin' : ''} />
+      {meta.label}
+    </span>
+  );
+};
+
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
@@ -183,6 +201,7 @@ const LoanOrigination = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewForm, setShowNewForm] = useState(false);
   const [viewLoan, setViewLoan] = useState(null); // modal-д харуулах зээл
+  const [aiBackfillLoading, setAiBackfillLoading] = useState(false);
 
   useEffect(() => {
     if (!navigationView) return;
@@ -260,6 +279,26 @@ const LoanOrigination = ({
   };
 
   // ── Committee decision ────────────────────
+  const backfillAiLoanOfficer = async () => {
+    setAiBackfillLoading(true);
+    try {
+      const res = await axios.post(`${apiUrl}/api/loans/ai-loan-officer/backfill`, { limit: 100 }, authHeaders());
+      const ids = res.data?.ids || [];
+      if (ids.length) {
+        const idSet = new Set(ids);
+        const queuedAt = new Date().toISOString();
+        onRequestsChange(requests.map(r => idSet.has(r._id)
+          ? { ...r, aiLoanOfficer: { status: 'pending', queuedAt, note: 'AI дүгнэлт дараалалд орлоо.' } }
+          : r));
+      }
+      showToast(ids.length ? `${ids.length} хүсэлтийн AI дүгнэлт дараалалд орлоо.` : 'Дүгнэлтгүй хуучин хүсэлт олдсонгүй.');
+    } catch (e) {
+      showToast(e.response?.data?.message || 'AI дүгнэлтүүдийг дараалалд оруулахад алдаа гарлаа.', 'error');
+    } finally {
+      setAiBackfillLoading(false);
+    }
+  };
+
   const makeDecision = async (decision) => {
     if (!selectedLoan) return;
     setSavingDecision(true);
@@ -590,10 +629,17 @@ const LoanOrigination = ({
                   </button>
                 ))}
               </div>
-            <button onClick={() => setShowNewForm(v => !v)}
-              className="inline-flex items-center gap-2 bg-[#003B5C] hover:bg-[#002d47] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all">
-              <Plus size={15} /> {text.createNew}
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={backfillAiLoanOfficer} disabled={aiBackfillLoading}
+                className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-[#003B5C] border border-[#003B5C]/30 px-4 py-2.5 rounded-xl font-bold text-sm disabled:opacity-60 transition-all">
+                {aiBackfillLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+                AI дүгнэлт нөхөх
+              </button>
+              <button onClick={() => setShowNewForm(v => !v)}
+                className="inline-flex items-center gap-2 bg-[#003B5C] hover:bg-[#002d47] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all">
+                <Plus size={15} /> {text.createNew}
+              </button>
+            </div>
             </div>
           </div>
 
@@ -623,7 +669,7 @@ const LoanOrigination = ({
           {/* Table */}
           <div className="loan-request-table bg-white border rounded-2xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[860px]">
+              <table className="w-full text-sm min-w-[960px]">
                 <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-600 uppercase">
                   <tr>
                     <th className="p-3 text-left">{text.table.date}</th>
@@ -631,6 +677,7 @@ const LoanOrigination = ({
                     <th className="p-3 text-left">{text.table.product}</th>
                     <th className="p-3 text-right">{text.table.amount}</th>
                     <th className="p-3 text-center">{text.table.status}</th>
+                    <th className="p-3 text-center">AI дүгнэлт</th>
                     <th className="p-3 text-left">{text.table.assignee}</th>
                     <th className="p-3 text-center">{text.table.action}</th>
                   </tr>
@@ -653,6 +700,7 @@ const LoanOrigination = ({
                       </td>
                       <td className="p-3 text-right font-black text-slate-800">{fmt(req.amount)}</td>
                       <td className="p-3 text-center"><StatusBadge status={req.status} /></td>
+                      <td className="p-3 text-center"><AiLoanOfficerBadge assessment={req.aiLoanOfficer} /></td>
                       <td className="p-3" onClick={e => e.stopPropagation()}>
                         <select
                           value={req.assignee?.userId || ''}
@@ -684,7 +732,7 @@ const LoanOrigination = ({
                     </tr>
                   ))}
                   {!filteredRequests.length && (
-                    <tr><td colSpan={7} className="p-10 text-center text-slate-400">{text.empty}</td></tr>
+                    <tr><td colSpan={8} className="p-10 text-center text-slate-400">{text.empty}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -880,6 +928,7 @@ const LoanHeader = ({ loan }) => (
     <span className="text-slate-600">{new Intl.NumberFormat('mn-MN').format(loan.amount || 0)} ₮</span>
     <span className="text-slate-400">·</span>
     <StatusBadge status={loan.status} />
+    <AiLoanOfficerBadge assessment={loan.aiLoanOfficer} />
   </div>
 );
 

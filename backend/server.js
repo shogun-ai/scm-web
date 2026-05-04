@@ -178,6 +178,19 @@ const LoanResearch = mongoose.models.LoanResearch || mongoose.model('LoanResearc
 
 const AI_LOAN_OFFICER_VERSION = '2026-05-04';
 
+function buildAiLoanOfficerStatus(status, note = '') {
+    return {
+        status,
+        version: AI_LOAN_OFFICER_VERSION,
+        source: 'system',
+        note,
+        queuedAt: status === 'pending' ? new Date() : undefined,
+        startedAt: status === 'running' ? new Date() : undefined,
+        generatedAt: ['completed', 'failed'].includes(status) ? new Date() : undefined,
+        disclaimer: 'AI дүгнэлт нь урьдчилсан санал бөгөөд эцсийн шийдвэрийг хүний зээлийн ажилтан/хороо гаргана.',
+    };
+}
+
 const toNumber = (value) => Number(String(value ?? '').replace(/[^0-9.-]/g, '')) || 0;
 const compact = (obj) => JSON.parse(JSON.stringify(obj || {}, (_key, value) => {
     if (typeof value === 'string') return value.length > 500 ? `${value.slice(0, 500)}...` : value;
@@ -413,13 +426,23 @@ async function updateLoanOfficerAssessment(loanOrId) {
         : loanOrId;
     if (!loan) return null;
 
-    const assessment = await buildAiLoanOfficerAssessment(loan);
-    const updated = await LoanRequest.findByIdAndUpdate(
-        loan._id,
-        { aiLoanOfficer: assessment },
-        { new: true }
-    );
-    return updated;
+    await LoanRequest.findByIdAndUpdate(loan._id, {
+        aiLoanOfficer: buildAiLoanOfficerStatus('running', 'AI зээлийн ажилтан дүгнэлт боловсруулж байна.'),
+    });
+
+    try {
+        const assessment = await buildAiLoanOfficerAssessment(loan);
+        const updated = await LoanRequest.findByIdAndUpdate(
+            loan._id,
+            { aiLoanOfficer: { ...assessment, status: 'completed' } },
+            { new: true }
+        );
+        return updated;
+    } catch (e) {
+        const failed = buildAiLoanOfficerStatus('failed', e.message || 'AI дүгнэлт гаргахад алдаа гарлаа.');
+        await LoanRequest.findByIdAndUpdate(loan._id, { aiLoanOfficer: failed });
+        throw e;
+    }
 }
 
 function runLoanOfficerAssessmentInBackground(loanId) {
@@ -1413,6 +1436,7 @@ app.post('/api/loans', (req, res) => {
                 vehicle,
                 guarantors: guarantors.map(g => ({ guarantorType: g.guarantorType, lastName: g.lastName, firstName: g.firstName, fatherName: g.fatherName, regNo: g.regNo, phone: g.phone, address: g.address })),
                 applicationData,
+                aiLoanOfficer: buildAiLoanOfficerStatus('pending', 'Шинэ хүсэлт үүссэн тул AI дүгнэлт дараалалд орлоо.'),
             });
             await newLoan.save();
             runLoanOfficerAssessmentInBackground(newLoan._id);
@@ -1452,6 +1476,7 @@ app.post('/api/loans/staff', authenticateUser, async (req, res) => {
             status: 'created',
             createdByStaff: true,
             createdByUser: { userId: String(req.user?._id || ''), name: req.user?.name || '' },
+            aiLoanOfficer: buildAiLoanOfficerStatus('pending', 'Ажилтан үүсгэсэн хүсэлт тул AI дүгнэлт дараалалд орлоо.'),
         }).save();
         const loanWithAiReview = await updateLoanOfficerAssessment(loan);
         await createLog(req.user, 'loan_created_by_staff', `${loan.lastname || loan.orgName} - ${loan.amount}`);
@@ -1467,6 +1492,34 @@ app.post('/api/loans/:id/ai-loan-officer', authenticateUser, async (req, res) =>
     } catch (e) {
         console.error('AI loan officer route error:', e.message);
         res.status(500).json({ message: 'AI дүгнэлт гаргахад алдаа гарлаа' });
+    }
+});
+
+app.post('/api/loans/ai-loan-officer/backfill', authenticateUser, async (req, res) => {
+    try {
+        const limit = Math.min(Number(req.body?.limit) || 50, 200);
+        const force = Boolean(req.body?.force);
+        const query = force ? {} : {
+            $or: [
+                { aiLoanOfficer: null },
+                { aiLoanOfficer: { $exists: false } },
+                { 'aiLoanOfficer.status': { $in: ['failed'] } },
+            ],
+        };
+        const loans = await LoanRequest.find(query).select('_id').sort({ createdAt: -1 }).limit(limit);
+        const ids = loans.map(l => l._id);
+
+        if (!ids.length) return res.json({ queued: 0, ids: [] });
+
+        await LoanRequest.updateMany(
+            { _id: { $in: ids } },
+            { aiLoanOfficer: buildAiLoanOfficerStatus('pending', 'Хуучин хүсэлтийн AI дүгнэлт backfill дараалалд орлоо.') }
+        );
+        ids.forEach(id => runLoanOfficerAssessmentInBackground(id));
+        res.json({ queued: ids.length, ids: ids.map(String) });
+    } catch (e) {
+        console.error('AI loan officer backfill error:', e.message);
+        res.status(500).json({ message: 'AI дүгнэлтүүдийг дараалалд оруулахад алдаа гарлаа' });
     }
 });
 

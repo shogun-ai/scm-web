@@ -1866,7 +1866,7 @@ const AiLoanOfficerPanel = ({ assessment, loading, onRun }) => {
           {loading ? 'Дүгнэж байна...' : 'Дахин дүгнэх'}
         </button>
       </div>
-      {assessment ? (
+      {assessment?.status === 'completed' ? (
         <div className="p-5 space-y-4">
           <div className="grid md:grid-cols-3 gap-3">
             <div className="rounded-xl border border-slate-200 p-4 bg-white">
@@ -1923,7 +1923,15 @@ const AiLoanOfficerPanel = ({ assessment, loading, onRun }) => {
         </div>
       ) : (
         <div className="p-5 flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-slate-600">Одоогоор AI дүгнэлт үүсээгүй байна. Аппликэйшн хадгалах эсвэл гараар дахин дүгнүүлж болно.</p>
+          <p className="text-sm font-semibold text-slate-600">
+            {assessment?.status === 'pending'
+              ? 'AI дүгнэлт дараалалд орсон байна.'
+              : assessment?.status === 'running'
+                ? 'AI зээлийн ажилтан дүгнэлт боловсруулж байна.'
+                : assessment?.status === 'failed'
+                  ? (assessment.note || 'AI дүгнэлт гаргахад алдаа гарсан байна.')
+                  : 'Одоогоор AI дүгнэлт үүсээгүй байна. Аппликэйшн хадгалах эсвэл гараар дахин дүгнүүлж болно.'}
+          </p>
           <span className="text-xs font-bold text-slate-400">Хүний баталгаажуулалт шаардлагатай</span>
         </div>
       )}
