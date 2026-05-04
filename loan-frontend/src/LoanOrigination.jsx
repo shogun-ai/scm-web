@@ -1226,6 +1226,71 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
 
     const decisionHex = ['approved','disbursed'].includes(loan.status)?'#15803d':loan.status==='rejected'?'#dc2626':'#d97706';
     const decisionLabel = ['approved','disbursed'].includes(loan.status)?'ЗӨВШӨӨРӨГДСӨН':loan.status==='rejected'?'ТАТГАЛЗСАН':'НӨХЦӨЛТЭЙ ЗӨВШӨӨРӨВ';
+    const ai = loan.aiLoanOfficer || {};
+    const aiDecision = ai.decision || {};
+    const aiRisk = ai.risk || {};
+    const aiLegal = ai.legal || {};
+    const aiCredit = ai.credit || {};
+    const aiStatusLabel = {
+      pending: 'Дараалалд',
+      running: 'Дүгнэж байна',
+      completed: 'Дүгнэсэн',
+      failed: 'Алдаа',
+    }[ai.status] || 'Дүгнэлт үүсээгүй';
+    const aiRecLabel = {
+      approve: 'Олгох боломжтой',
+      conditional: 'Нөхцөлтэй судлах',
+      manual_review: 'Гараар нягтлах',
+      reject: 'Олгохгүй санал',
+    }[aiDecision.recommendation || aiCredit.recommendation] || '-';
+    const aiGeneratedAt = ai.generatedAt ? new Date(ai.generatedAt).toLocaleString('mn-MN') : '';
+    const aiList = (items = []) => (items || []).length
+      ? `<ul style="margin:0;padding-left:14px;line-height:1.55">${items.slice(0,5).map(item => `<li style="font-size:10.5px;margin-bottom:3px">${esc(item)}</li>`).join('')}</ul>`
+      : '<div style="font-size:10.5px;color:#94a3b8">-</div>';
+    const aiSection = ai.status === 'completed' ? `
+    <div class="section" style="border:1px solid #cbd5e1;border-radius:14px;padding:14px 16px;background:#f8fafc">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px">
+        <div>
+          <div style="font-size:10px;font-weight:900;color:#003B5C;text-transform:uppercase;letter-spacing:.08em">AI зээлийн ажилтны дүгнэлт</div>
+          <div style="font-size:10px;color:#64748b;margin-top:3px">${esc(aiGeneratedAt || ai.note || 'Аппликэйшний мэдээлэлд суурилсан урьдчилсан санал')}</div>
+        </div>
+        <div style="font-size:10px;font-weight:900;color:#003B5C;background:#e0f2fe;border:1px solid #bae6fd;border-radius:99px;padding:4px 10px">${esc(aiStatusLabel)}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px">
+          <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px">Эрсдэл</div>
+          <div style="font-size:11px;font-weight:700;color:#1e293b;line-height:1.45">${esc(aiRisk.summary || '-')}</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px">
+          <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px">Хууль / баримт</div>
+          <div style="font-size:11px;font-weight:700;color:#1e293b;line-height:1.45">${esc(aiLegal.summary || '-')}</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px">
+          <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px">Олголтын санал</div>
+          <div style="font-size:12px;font-weight:900;color:#003B5C">${esc(aiRecLabel)}</div>
+          ${aiDecision.confidence != null ? `<div style="font-size:10px;color:#64748b;margin-top:3px">Confidence ${Math.round(Number(aiDecision.confidence) * 100)}%</div>` : ''}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div style="border:1px solid #86efac;background:#f0fdf4;border-radius:10px;padding:10px;color:#14532d">
+          <div style="font-size:9px;font-weight:900;text-transform:uppercase;margin-bottom:5px">Зөвшөөрөх үндэслэл</div>
+          ${aiList(aiDecision.approvalReasons)}
+        </div>
+        <div style="border:1px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:10px;color:#92400e">
+          <div style="font-size:9px;font-weight:900;text-transform:uppercase;margin-bottom:5px">Нөхцөл</div>
+          ${aiList(aiDecision.conditionalReasons || aiCredit.conditions)}
+        </div>
+        <div style="border:1px solid #fca5a5;background:#fff1f2;border-radius:10px;padding:10px;color:#991b1b">
+          <div style="font-size:9px;font-weight:900;text-transform:uppercase;margin-bottom:5px">Татгалзах эрсдэл</div>
+          ${aiList(aiDecision.rejectionReasons)}
+        </div>
+      </div>
+      <div style="font-size:9.5px;color:#64748b;margin-top:10px">AI санал нь урьдчилсан туслах дүгнэлт бөгөөд эцсийн шийдвэрийг хүний ажилтан/хороо гаргана.</div>
+    </div>` : `
+    <div class="section" style="border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc">
+      <div style="font-size:10px;font-weight:900;color:#003B5C;text-transform:uppercase;letter-spacing:.08em">AI зээлийн ажилтны дүгнэлт</div>
+      <div style="font-size:11px;color:#64748b;margin-top:5px">${esc(ai.note || `AI төлөв: ${aiStatusLabel}`)}</div>
+    </div>`;
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
     <title>Зээлийн хорооны дүгнэлт — ${esc(displayName)}</title>
@@ -1276,6 +1341,8 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
         <div style="font-size:10px;color:#94a3b8">/100</div>
       </div>
     </div>
+
+    ${aiSection}
 
     <!-- KPI -->
     <div class="section">
