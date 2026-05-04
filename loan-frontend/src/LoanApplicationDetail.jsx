@@ -154,42 +154,140 @@ const cropPhotoFromCanvas = (canvas) => {
   return out.toDataURL('image/jpeg', 0.92);
 };
 
+const canvasFromImageFile = (file) => new Promise((resolve) => {
+  const img = new Image();
+  const objUrl = URL.createObjectURL(file);
+  img.onload = () => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(objUrl);
+      resolve(canvas);
+    } catch {
+      URL.revokeObjectURL(objUrl);
+      resolve(null);
+    }
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(objUrl);
+    resolve(null);
+  };
+  img.src = objUrl;
+});
+
+const canvasFromPdfFile = async (file) => {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: 2.0 });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+  return canvas;
+};
+
 const extractPhotoFromIdDocument = async (file) => {
   if (!file) return null;
   try {
     if (file.type.startsWith('image/')) {
-      return await new Promise((resolve) => {
-        const img = new Image();
-        const objUrl = URL.createObjectURL(file);
-        img.onload = () => {
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            canvas.getContext('2d').drawImage(img, 0, 0);
-            URL.revokeObjectURL(objUrl);
-            resolve(cropPhotoFromCanvas(canvas));
-          } catch { URL.revokeObjectURL(objUrl); resolve(null); }
-        };
-        img.onerror = () => { URL.revokeObjectURL(objUrl); resolve(null); };
-        img.src = objUrl;
-      });
+      const canvas = await canvasFromImageFile(file);
+      if (!canvas) return null;
+      return { photo: cropPhotoFromCanvas(canvas), source: canvas.toDataURL('image/jpeg', 0.92) };
     }
     if (file.type === 'application/pdf') {
-      const pdfjsLib = await import('pdfjs-dist');
-      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 2.0 });
-      const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-      return cropPhotoFromCanvas(canvas);
+      const canvas = await canvasFromPdfFile(file);
+      return { photo: cropPhotoFromCanvas(canvas), source: canvas.toDataURL('image/jpeg', 0.92) };
     }
   } catch { return null; }
   return null;
+};
+
+const ManualPhotoCropModal = ({ source, onApply, onClose }) => {
+  const imgRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  const [rect, setRect] = useState({ x: 6, y: 18, w: 22, h: 33 });
+  const dragStartRef = useRef(null);
+
+  const pointToPercent = (e) => {
+    const box = imgRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((e.clientX - box.left) / box.width) * 100));
+    const y = Math.max(0, Math.min(100, ((e.clientY - box.top) / box.height) * 100));
+    return { x, y };
+  };
+
+  const begin = (e) => {
+    e.preventDefault();
+    const p = pointToPercent(e);
+    dragStartRef.current = p;
+    setRect({ x: p.x, y: p.y, w: 1, h: 1 });
+    setDragging(true);
+  };
+
+  const move = (e) => {
+    if (!dragging || !dragStartRef.current) return;
+    const p = pointToPercent(e);
+    const s = dragStartRef.current;
+    setRect({
+      x: Math.min(s.x, p.x),
+      y: Math.min(s.y, p.y),
+      w: Math.max(1, Math.abs(p.x - s.x)),
+      h: Math.max(1, Math.abs(p.y - s.y)),
+    });
+  };
+
+  const apply = () => {
+    const img = imgRef.current;
+    if (!img) return;
+    const sx = Math.round((rect.x / 100) * img.naturalWidth);
+    const sy = Math.round((rect.y / 100) * img.naturalHeight);
+    const sw = Math.round((rect.w / 100) * img.naturalWidth);
+    const sh = Math.round((rect.h / 100) * img.naturalHeight);
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, sw);
+    out.height = Math.max(1, sh);
+    out.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, out.width, out.height);
+    onApply(out.toDataURL('image/jpeg', 0.92));
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
+      <div className="w-full max-w-5xl rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <div>
+            <p className="text-sm font-bold text-[#003B5C]">Зураг crop хийх хэсгээ сонгоно уу</p>
+            <p className="text-xs text-slate-500">Зураг дээр дарж чирээд хүрээгээ сонгоно.</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-red-500"><X size={18} /></button>
+        </div>
+        <div className="p-4">
+          <div className="max-h-[70vh] overflow-auto rounded-xl bg-slate-100 text-center">
+            <div
+              className="relative inline-block select-none"
+              onMouseDown={begin}
+              onMouseMove={move}
+              onMouseUp={() => setDragging(false)}
+              onMouseLeave={() => setDragging(false)}
+            >
+              <img ref={imgRef} src={source} alt="Crop source" className="block max-h-[70vh] max-w-full" draggable={false} />
+              <div
+                className="pointer-events-none absolute border-2 border-blue-500 bg-blue-500/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
+                style={{ left: `${rect.x}%`, top: `${rect.y}%`, width: `${rect.w}%`, height: `${rect.h}%` }}
+              />
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="rounded-lg border px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">Болих</button>
+            <button type="button" onClick={apply} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">Зураг авах</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // ─────────────────────────────────────────────
@@ -200,6 +298,8 @@ const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked 
   const [analyzingId, setAnalyzingId] = useState(false);
   const [idFiles, setIdFiles] = useState([]);
   const [pendingPhoto, setPendingPhoto] = useState(null);
+  const [cropSource, setCropSource] = useState(null);
+  const [cropEditorOpen, setCropEditorOpen] = useState(false);
   const disabledInp = inp + (locked ? ' bg-slate-50 text-slate-700 cursor-not-allowed opacity-100' : '');
   const set = (f, v) => { if (!locked) onChange({ ...data, [f]: v }); };
 
@@ -229,7 +329,11 @@ const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked 
         idIssueDate: d.issueDate || data.idIssueDate,
         idExpiryDate: d.expiryDate || data.idExpiryDate,
       });
-      if (extractedPhoto) setPendingPhoto(extractedPhoto);
+      if (extractedPhoto?.photo) {
+        setPendingPhoto(extractedPhoto.photo);
+        setCropSource(extractedPhoto.source || null);
+        setCropEditorOpen(false);
+      }
       showToast('Иргэний үнэмлэх уншигдлаа.');
     } catch (e) {
       showToast(e.response?.data?.message || 'ID унших алдаа', 'error');
@@ -278,10 +382,21 @@ const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked 
               <div className="flex gap-2 flex-shrink-0">
                 <button type="button" onClick={() => { set('profileImageUrl', pendingPhoto); setPendingPhoto(null); showToast('Зураг тавигдлаа.'); }}
                   className="px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700">Тийм</button>
+                {cropSource && (
+                  <button type="button" onClick={() => setCropEditorOpen(true)}
+                    className="px-3 py-1.5 text-xs font-bold border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50">Crop сонгох</button>
+                )}
                 <button type="button" onClick={() => setPendingPhoto(null)}
                   className="px-3 py-1.5 text-xs font-bold border border-slate-300 rounded-lg hover:bg-slate-50">Үгүй</button>
               </div>
             </div>
+          )}
+          {cropSource && cropEditorOpen && (
+            <ManualPhotoCropModal
+              source={cropSource}
+              onApply={(photo) => { setPendingPhoto(photo); setCropEditorOpen(false); }}
+              onClose={() => setCropEditorOpen(false)}
+            />
           )}
           <div className="grid grid-cols-2 gap-3">
             <label className="space-y-1">
@@ -350,6 +465,8 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
   const [analyzingId, setAnalyzingId] = useState(false);
   const [idFiles, setIdFiles] = useState([]);
   const [pendingPhoto, setPendingPhoto] = useState(null);
+  const [cropSource, setCropSource] = useState(null);
+  const [cropEditorOpen, setCropEditorOpen] = useState(false);
 
   const set = (field, val) => onChange({ ...data, [field]: val });
 
@@ -379,7 +496,11 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
         idIssueDate: d.issueDate || data.idIssueDate,
         idExpiryDate: d.expiryDate || data.idExpiryDate,
       });
-      if (extractedPhoto) setPendingPhoto(extractedPhoto);
+      if (extractedPhoto?.photo) {
+        setPendingPhoto(extractedPhoto.photo);
+        setCropSource(extractedPhoto.source || null);
+        setCropEditorOpen(false);
+      }
       showToast('Иргэний үнэмлэх уншигдлаа.');
     } catch (e) {
       showToast(e.response?.data?.message || 'ID унших алдаа', 'error');
@@ -433,10 +554,21 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
           <div className="flex gap-2 flex-shrink-0">
             <button type="button" onClick={() => { set('profileImageUrl', pendingPhoto); setPendingPhoto(null); showToast('Зураг тавигдлаа.'); }}
               className="px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700">Тийм</button>
+            {cropSource && (
+              <button type="button" onClick={() => setCropEditorOpen(true)}
+                className="px-3 py-1.5 text-xs font-bold border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50">Crop сонгох</button>
+            )}
             <button type="button" onClick={() => setPendingPhoto(null)}
               className="px-3 py-1.5 text-xs font-bold border border-slate-300 rounded-lg hover:bg-slate-50">Үгүй</button>
           </div>
         </div>
+      )}
+      {cropSource && cropEditorOpen && (
+        <ManualPhotoCropModal
+          source={cropSource}
+          onApply={(photo) => { setPendingPhoto(photo); setCropEditorOpen(false); }}
+          onClose={() => setCropEditorOpen(false)}
+        />
       )}
 
       {/* ID document + AI */}
