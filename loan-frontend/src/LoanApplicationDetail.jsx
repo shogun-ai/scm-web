@@ -4,7 +4,7 @@ import {
   Building2, ChevronDown, ChevronUp, FileText, Home, Loader2,
   Plus, Save, Trash2, Upload, User, Users, Car, X, CheckCircle2, XCircle,
   Sparkles, Camera, CreditCard, Briefcase, AlertTriangle, Eye, Pencil, Clock, BadgeDollarSign,
-  TrendingUp, BarChart3, ShieldCheck
+  TrendingUp, BarChart3, ShieldCheck, RefreshCw
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────
@@ -1816,6 +1816,104 @@ const IncomeResearchSection = ({ data = {}, onBSAppend, onSIChange, onRemoveBS, 
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
+const aiLevelMeta = {
+  low: { label: 'Бага', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  medium: { label: 'Дунд', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  high: { label: 'Өндөр', cls: 'bg-red-50 text-red-700 border-red-200' },
+};
+
+const aiRecommendationMeta = {
+  approve: { label: 'Олгох боломжтой', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  conditional: { label: 'Нөхцөлтэй судлах', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  manual_review: { label: 'Гараар нягтлах', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  reject: { label: 'Олгохгүй санал', cls: 'bg-red-50 text-red-700 border-red-200' },
+};
+
+const AiLoanOfficerPanel = ({ assessment, loading, onRun }) => {
+  const risk = assessment?.risk || {};
+  const legal = assessment?.legal || {};
+  const credit = assessment?.credit || {};
+  const decision = assessment?.decision || {};
+  const riskMeta = aiLevelMeta[risk.level] || aiLevelMeta.medium;
+  const legalMeta = aiLevelMeta[legal.level] || aiLevelMeta.medium;
+  const recMeta = aiRecommendationMeta[decision.recommendation || credit.recommendation] || aiRecommendationMeta.manual_review;
+  const generatedAt = assessment?.generatedAt ? new Date(assessment.generatedAt).toLocaleString('mn-MN') : null;
+  const flags = [...(risk.flags || []), ...(legal.flags || [])].slice(0, 6);
+  const nextSteps = [...(credit.conditions || []), ...(assessment?.nextSteps || [])].slice(0, 6);
+
+  return (
+    <div className="border border-slate-200 bg-white rounded-2xl overflow-hidden shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b bg-slate-50/80">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-[#003B5C] text-white flex items-center justify-center">
+            <Sparkles size={18} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-slate-900">AI зээлийн ажилтны урьдчилсан дүгнэлт</p>
+            <p className="text-xs font-semibold text-slate-500">
+              {generatedAt ? `${generatedAt} - ${assessment?.source === 'openai' ? 'OpenAI' : 'Дүрмийн суурьтай'} дүгнэлт` : 'Аппликэйшн хадгалсны дараа автоматаар гарна'}
+            </p>
+          </div>
+        </div>
+        <button type="button" onClick={onRun} disabled={loading}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-slate-300 text-slate-700 bg-white hover:border-[#003B5C] hover:text-[#003B5C] disabled:opacity-60">
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          {loading ? 'Дүгнэж байна...' : 'Дахин дүгнэх'}
+        </button>
+      </div>
+      {assessment ? (
+        <div className="p-5 space-y-4">
+          <div className="grid md:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-slate-200 p-4 bg-white">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-1.5"><AlertTriangle size={13} /> Эрсдэл</p>
+                <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold ${riskMeta.cls}`}>{riskMeta.label}</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-800">{risk.summary || 'Эрсдэлийн товч дүгнэлт алга.'}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-4 bg-white">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-1.5"><ShieldCheck size={13} /> Хууль / баримт</p>
+                <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold ${legalMeta.cls}`}>{legalMeta.label}</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-800">{legal.summary || 'Хуулийн шалгалтын товч дүгнэлт алга.'}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-4 bg-white">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-1.5"><CheckCircle2 size={13} /> Олголтын санал</p>
+                <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold ${recMeta.cls}`}>{recMeta.label}</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-800">{decision.reason || credit.summary || 'Саналын тайлбар алга.'}</p>
+            </div>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+              <p className="text-xs font-bold uppercase text-slate-500 mb-2">Анхаарах дохио</p>
+              <ul className="space-y-1.5 text-sm font-semibold text-slate-700">
+                {flags.length ? flags.map((item, idx) => <li key={idx}>- {item}</li>) : <li>Онцгой анхаарах дохио бүртгэгдээгүй.</li>}
+              </ul>
+            </div>
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+              <p className="text-xs font-bold uppercase text-slate-500 mb-2">Нөхцөл / дараагийн алхам</p>
+              <ul className="space-y-1.5 text-sm font-semibold text-slate-700">
+                {nextSteps.map((item, idx) => <li key={idx}>- {item}</li>)}
+              </ul>
+            </div>
+          </div>
+          <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+            <Clock size={12} /> {assessment.disclaimer || 'Энэ нь урьдчилсан AI санал бөгөөд эцсийн шийдвэрийг хүний ажилтан/хороо гаргана.'}
+          </p>
+        </div>
+      ) : (
+        <div className="p-5 flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-slate-600">Одоогоор AI дүгнэлт үүсээгүй байна. Аппликэйшн хадгалах эсвэл гараар дахин дүгнүүлж болно.</p>
+          <span className="text-xs font-bold text-slate-400">Хүний баталгаажуулалт шаардлагатай</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = false, onCancel, onCreated, user, onGoToResearch }) => {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
@@ -1828,6 +1926,8 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
   // Personal info locked for existing loans unless admin unlocks
   const [personalUnlocked, setPersonalUnlocked] = useState(false);
   const personalLocked = !createMode && !isAdmin && !personalUnlocked;
+  const [aiOfficer, setAiOfficer] = useState(loan?.aiLoanOfficer || null);
+  const [aiOfficerLoading, setAiOfficerLoading] = useState(false);
 
   const showToast = useCallback((message, type = 'success') => {
     if (toastRef.current) clearTimeout(toastRef.current);
@@ -1958,6 +2058,10 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
     }));
   }, [loan?._id]);
 
+  useEffect(() => {
+    setAiOfficer(loan?.aiLoanOfficer || null);
+  }, [loan?._id, loan?.aiLoanOfficer]);
+
   const set = (field, val) => setAppData(prev => ({ ...prev, [field]: val }));
 
   // ── Emergency contacts helpers ────────────
@@ -2012,6 +2116,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
         const res = await axios.post(`${apiUrl}/api/loans/staff`, payload, {
           headers: { 'Authorization': `Bearer ${getAuthToken()}` },
         });
+        setAiOfficer(res.data?.aiLoanOfficer || null);
         showToast('Шинэ хүсэлт амжилттай үүсгэгдлээ.');
         if (onCreated) onCreated(res.data);
       } catch (e) {
@@ -2029,11 +2134,29 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
       const res = await axios.put(`${apiUrl}/api/loans/${loan._id}`, payload, {
         headers: { 'Authorization': `Bearer ${getAuthToken()}` },
       });
+      setAiOfficer(res.data?.aiLoanOfficer || null);
       showToast('Аппликэйшн хадгалагдлаа.');
       if (onSaved) onSaved(res.data);
     } catch (e) {
       showToast(e.response?.data?.message || 'Хадгалахад алдаа гарлаа.', 'error');
     } finally { setSaving(false); }
+  };
+
+  const handleRunAiOfficer = async () => {
+    if (!loan?._id) return;
+    setAiOfficerLoading(true);
+    try {
+      const res = await axios.post(`${apiUrl}/api/loans/${loan._id}/ai-loan-officer`, {}, {
+        headers: { 'Authorization': `Bearer ${getAuthToken()}` },
+      });
+      setAiOfficer(res.data?.aiLoanOfficer || null);
+      showToast('AI зээлийн ажилтны дүгнэлт шинэчлэгдлээ.');
+      if (onSaved) onSaved(res.data);
+    } catch (e) {
+      showToast(e.response?.data?.message || 'AI дүгнэлт гаргахад алдаа гарлаа.', 'error');
+    } finally {
+      setAiOfficerLoading(false);
+    }
   };
 
   return (
@@ -2086,6 +2209,14 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
         )}
         </div>
       </div>
+
+      {!createMode && loan?._id && (
+        <AiLoanOfficerPanel
+          assessment={aiOfficer}
+          loading={aiOfficerLoading}
+          onRun={handleRunAiOfficer}
+        />
+      )}
 
       {/* ── MAIN TABS ── */}
       <div className="bg-white border rounded-2xl overflow-hidden">

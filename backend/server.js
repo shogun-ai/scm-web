@@ -136,6 +136,7 @@ const LoanRequestSchema = new mongoose.Schema({
     }],
     // Дэлгэрэнгүй хүсэлтийн мэдээлэл (Application form data)
     applicationData: { type: mongoose.Schema.Types.Mixed, default: {} },
+    aiLoanOfficer: { type: mongoose.Schema.Types.Mixed, default: null },
     createdAt: { type: Date, default: Date.now }
 });
 const LoanRequest = mongoose.models.LoanRequest || mongoose.model('LoanRequest', LoanRequestSchema);
@@ -174,6 +175,239 @@ const LoanResearchSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 const LoanResearch = mongoose.models.LoanResearch || mongoose.model('LoanResearch', LoanResearchSchema);
+
+const AI_LOAN_OFFICER_VERSION = '2026-05-04';
+
+const toNumber = (value) => Number(String(value ?? '').replace(/[^0-9.-]/g, '')) || 0;
+const compact = (obj) => JSON.parse(JSON.stringify(obj || {}, (_key, value) => {
+    if (typeof value === 'string') return value.length > 500 ? `${value.slice(0, 500)}...` : value;
+    return value;
+}));
+
+function getLoanOfficerInput(loanDoc) {
+    const loan = loanDoc?.toObject ? loanDoc.toObject() : (loanDoc || {});
+    const appData = loan.applicationData || {};
+    const loanRequest = appData.loanRequest || {};
+    const borrower = appData.borrower || {};
+    const org = appData.org || {};
+    const incomeResearch = appData.incomeResearch || {};
+
+    return compact({
+        borrowerType: loan.userType || appData.borrowerType || 'individual',
+        borrower: {
+            lastName: loan.lastname || borrower.lastName,
+            firstName: loan.firstname || borrower.firstName,
+            regNo: loan.regNo || borrower.regNo,
+            phone: loan.phone || borrower.phone,
+            employmentType: borrower.employmentType,
+            employer: borrower.employer,
+            monthlyIncome: borrower.monthlyIncome,
+            incomeSource: borrower.incomeSource,
+        },
+        organization: {
+            orgName: loan.orgName || org.orgName,
+            orgRegNo: loan.orgRegNo || org.orgRegNo,
+            legalForm: org.legalForm,
+            revenueRange: org.revenueRange,
+            employeeCount: org.employeeCount,
+            industry: org.industry,
+            contactName: loan.contactName || org.contactName,
+            contactPhone: loan.contactPhone || org.contactPhone,
+        },
+        loanRequest: {
+            product: loan.selectedProduct || loanRequest.product,
+            amount: toNumber(loan.amount || loanRequest.amount),
+            term: toNumber(loan.term || loanRequest.term),
+            purpose: loan.purpose || loanRequest.purpose,
+            repaymentSource: loan.repaymentSource || loanRequest.repaymentSource,
+            collateralType: loan.collateralType || loanRequest.collateralType,
+        },
+        collaterals: (appData.collaterals || []).map(c => ({
+            type: c.type,
+            hasPlate: c.hasPlate,
+            ownerRelation: c.ownerRelation,
+            officerAmount: toNumber(c.valuation?.officerAmount),
+            coverageRate: toNumber(c.valuation?.coverageRate),
+            hasFiles: Boolean(c.files?.length),
+            fields: compact(c.fields || {}),
+        })),
+        guarantors: (appData.guarantors || loan.guarantors || []).map(g => ({
+            guarantorType: g.guarantorType,
+            personType: g.personType || 'individual',
+            name: g.person?.firstName || g.firstName || g.org?.orgName,
+            regNo: g.person?.regNo || g.regNo || g.org?.orgRegNo,
+            monthlyIncome: g.person?.monthlyIncome || g.org?.monthlyRevenue,
+            hasCollateral: Boolean(g.collaterals?.length),
+        })),
+        creditBureau: compact(appData.creditBureau || {}),
+        incomeResearch: {
+            bankStatementAnalyses: (incomeResearch.bankStatementAnalyses || []).map(a => compact({
+                summary: a.summary,
+                monthlyAverageIncome: a.monthlyAverageIncome,
+                totalIncome: a.totalIncome,
+                totalExpense: a.totalExpense,
+                riskFlags: a.riskFlags,
+            })),
+            socialInsuranceAnalysis: compact(incomeResearch.socialInsuranceAnalysis || null),
+        },
+        fileSummary: {
+            total: (loan.fileDetails || []).length,
+            fields: (loan.fileDetails || []).map(f => f.fieldName).filter(Boolean),
+        },
+        createdAt: loan.createdAt,
+    });
+}
+
+function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules') {
+    const input = getLoanOfficerInput(loanDoc);
+    const amount = input.loanRequest.amount;
+    const term = input.loanRequest.term;
+    const monthlyIncome = toNumber(input.borrower.monthlyIncome);
+    const collateralCovered = (input.collaterals || []).reduce((sum, c) => {
+        return sum + (toNumber(c.officerAmount) * toNumber(c.coverageRate) / 100);
+    }, 0);
+    const coverageRatio = amount > 0 ? collateralCovered / amount : 0;
+    const flags = [];
+    const legalFlags = [];
+    const conditions = [];
+
+    if (!amount) flags.push('Зээлийн дүн бүрэн бөглөгдөөгүй байна.');
+    if (!term) flags.push('Зээлийн хугацаа бүрэн бөглөгдөөгүй байна.');
+    if (!input.loanRequest.purpose) flags.push('Зээлийн зориулалт тодорхойгүй байна.');
+    if (input.borrowerType === 'individual' && !input.borrower.regNo) legalFlags.push('Иргэний регистрийн дугаар дутуу байна.');
+    if (input.borrowerType === 'organization' && !input.organization.orgRegNo) legalFlags.push('Байгууллагын улсын бүртгэлийн дугаар дутуу байна.');
+    if (amount >= 50000000 && coverageRatio < 1) flags.push('Өндөр дүнтэй хүсэлтэд барьцааны хамрах дүн 100%-иас бага байна.');
+    if (!input.collaterals?.length && amount >= 10000000) flags.push('Барьцаа бүртгэгдээгүй өндөр дүнтэй хүсэлт байна.');
+    if (input.collaterals?.some(c => !c.hasFiles)) legalFlags.push('Барьцааны нотлох файл дутуу байж болзошгүй.');
+    if (!input.fileSummary.total) legalFlags.push('Хавсаргасан баримтын бүрдэл шалгах шаардлагатай.');
+    if (monthlyIncome && amount && monthlyIncome * 24 < amount) flags.push('Орлогын түвшин хүссэн дүнтэй харьцуулахад сул байна.');
+
+    if (coverageRatio > 0 && coverageRatio < 1) conditions.push('Барьцааны үнэлгээ, хамрах хувийг нэмж баталгаажуулах.');
+    if (legalFlags.length) conditions.push('Иргэний/байгууллагын болон барьцааны баримтын бүрдлийг ажилтан гараар шалгах.');
+    if (!input.creditBureau || !Object.keys(input.creditBureau).length) conditions.push('Зээлийн мэдээллийн лавлагаа/FICO үр дүнг баталгаажуулах.');
+
+    const riskLevel = flags.length >= 3 ? 'high' : flags.length ? 'medium' : 'low';
+    const legalLevel = legalFlags.length >= 2 ? 'high' : legalFlags.length ? 'medium' : 'low';
+    const recommendation = riskLevel === 'high' || legalLevel === 'high'
+        ? 'manual_review'
+        : (riskLevel === 'medium' || legalLevel === 'medium' ? 'conditional' : 'approve');
+
+    return {
+        status: 'completed',
+        version: AI_LOAN_OFFICER_VERSION,
+        source,
+        model: source === 'openai' ? OPENAI_MODEL : 'rule-baseline',
+        generatedAt: new Date(),
+        disclaimer: 'AI дүгнэлт нь урьдчилсан санал бөгөөд эцсийн шийдвэрийг хүний зээлийн ажилтан/хороо гаргана.',
+        risk: {
+            level: riskLevel,
+            summary: flags.length ? flags[0] : 'Оруулсан мэдээллээр онцгой эрсдэлийн дохио бага байна.',
+            flags,
+        },
+        legal: {
+            level: legalLevel,
+            summary: legalFlags.length ? legalFlags[0] : 'Оруулсан мэдээллээр хууль, баримтын бүрдлийн ноцтой дутуу зүйл илрээгүй.',
+            flags: legalFlags,
+        },
+        credit: {
+            recommendation,
+            summary: recommendation === 'approve'
+                ? 'Одоогийн мэдээллээр олгох боломжтой гэж урьдчилан санал болгож байна.'
+                : recommendation === 'conditional'
+                    ? 'Нэмэлт нөхцөл хангуулсны дараа олгох боломжийг судална.'
+                    : 'Гараар нарийвчилсан судалгаа хийх шаардлагатай.',
+            conditions,
+        },
+        decision: {
+            recommendation,
+            confidence: input.fileSummary.total && amount ? 0.62 : 0.42,
+            amountRecommendation: amount || null,
+            termRecommendation: term || null,
+            reason: flags.concat(legalFlags).slice(0, 3).join(' ') || 'Үндсэн талбарууд бөглөгдсөн байна.',
+        },
+        nextSteps: [
+            'Зээлийн мэдээллийн лавлагаа болон орлогын эх үүсвэрийг баталгаажуулах.',
+            'Барьцааны өмчлөл, үнэлгээ, хамрах хувийг шалгах.',
+            'AI саналыг хүний ажилтан/хорооны шийдвэртэй тулгаж баталгаажуулах.',
+        ],
+    };
+}
+
+function parseLoanOfficerAiJson(content) {
+    const cleaned = String(content || '').trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
+    return JSON.parse(cleaned);
+}
+
+async function buildAiLoanOfficerAssessment(loanDoc) {
+    const fallback = buildRuleBasedLoanOfficerAssessment(loanDoc);
+    if (!openai) return fallback;
+
+    try {
+        const input = getLoanOfficerInput(loanDoc);
+        const completion = await Promise.race([
+            openai.chat.completions.create({
+                model: OPENAI_MODEL,
+                temperature: 0.1,
+                max_tokens: 1200,
+                response_format: { type: 'json_object' },
+                messages: [
+                    {
+                        role: 'system',
+                        content: [
+                            'You are an internal AI loan officer assistant for a Mongolian NBFI.',
+                            'Return Mongolian JSON only.',
+                            'Do not make a final lending decision. Provide preliminary risk, legal/compliance, credit recommendation, conditions, and next steps for human review.',
+                            'Use only the provided application data. If information is missing, mark it as a risk or condition.',
+                            'JSON shape: {risk:{level,summary,flags[]}, legal:{level,summary,flags[]}, credit:{recommendation,summary,conditions[]}, decision:{recommendation,confidence,amountRecommendation,termRecommendation,reason}, nextSteps[]}.',
+                            'Allowed levels: low, medium, high. Allowed recommendations: approve, conditional, manual_review, reject.'
+                        ].join(' ')
+                    },
+                    { role: 'user', content: JSON.stringify(input) }
+                ]
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('AI loan officer timeout')), 12000))
+        ]);
+
+        const parsed = parseLoanOfficerAiJson(completion?.choices?.[0]?.message?.content);
+        return {
+            ...fallback,
+            source: 'openai',
+            model: OPENAI_MODEL,
+            generatedAt: new Date(),
+            risk: parsed.risk || fallback.risk,
+            legal: parsed.legal || fallback.legal,
+            credit: parsed.credit || fallback.credit,
+            decision: parsed.decision || fallback.decision,
+            nextSteps: Array.isArray(parsed.nextSteps) ? parsed.nextSteps : fallback.nextSteps,
+        };
+    } catch (e) {
+        console.error('AI loan officer error:', e.message);
+        return {
+            ...fallback,
+            source: 'rules',
+            warning: 'OpenAI дүгнэлт амжилтгүй болсон тул дүрмийн суурьтай урьдчилсан дүгнэлт хадгаллаа.',
+        };
+    }
+}
+
+async function updateLoanOfficerAssessment(loanOrId) {
+    const loan = typeof loanOrId === 'string' || loanOrId instanceof mongoose.Types.ObjectId
+        ? await LoanRequest.findById(loanOrId)
+        : loanOrId;
+    if (!loan) return null;
+
+    const assessment = await buildAiLoanOfficerAssessment(loan);
+    const updated = await LoanRequest.findByIdAndUpdate(
+        loan._id,
+        { aiLoanOfficer: assessment },
+        { new: true }
+    );
+    return updated;
+}
+
+function runLoanOfficerAssessmentInBackground(loanId) {
+    updateLoanOfficerAssessment(String(loanId)).catch(e => console.error('AI loan officer background error:', e.message));
+}
 
 const TrustRequestSchema = new mongoose.Schema({ 
     lastname: String, firstname: String, phone: String, email: String, amount: String, 
@@ -1164,6 +1398,7 @@ app.post('/api/loans', (req, res) => {
                 applicationData,
             });
             await newLoan.save();
+            runLoanOfficerAssessmentInBackground(newLoan._id);
             res.status(201).json({ message: 'Success' });
         } catch (e) {
             console.error('Loan submit error:', e.message);
@@ -1177,7 +1412,17 @@ app.get('/api/loans', authenticateUser, async (req, res) => { try { res.json(awa
 app.put('/api/loans/:id', authenticateUser, async (req, res) => {
     try {
         const { adminUser, ...updateData } = req.body;
-        const updated = await LoanRequest.findByIdAndUpdate(req.params.id, updateData, { new: true });
+        let updated = await LoanRequest.findByIdAndUpdate(req.params.id, updateData, { new: true });
+        if (updated && (
+            Object.prototype.hasOwnProperty.call(updateData, 'applicationData') ||
+            Object.prototype.hasOwnProperty.call(updateData, 'amount') ||
+            Object.prototype.hasOwnProperty.call(updateData, 'term') ||
+            Object.prototype.hasOwnProperty.call(updateData, 'selectedProduct') ||
+            Object.prototype.hasOwnProperty.call(updateData, 'purpose') ||
+            Object.prototype.hasOwnProperty.call(updateData, 'userType')
+        )) {
+            updated = await updateLoanOfficerAssessment(updated);
+        }
         res.json(updated);
     } catch (e) { res.status(500).send("Error"); }
 });
@@ -1191,9 +1436,21 @@ app.post('/api/loans/staff', authenticateUser, async (req, res) => {
             createdByStaff: true,
             createdByUser: { userId: String(req.user?._id || ''), name: req.user?.name || '' },
         }).save();
+        const loanWithAiReview = await updateLoanOfficerAssessment(loan);
         await createLog(req.user, 'loan_created_by_staff', `${loan.lastname || loan.orgName} - ${loan.amount}`);
-        res.status(201).json(loan);
+        res.status(201).json(loanWithAiReview || loan);
     } catch (e) { res.status(500).json({ message: 'Error' }); }
+});
+
+app.post('/api/loans/:id/ai-loan-officer', authenticateUser, async (req, res) => {
+    try {
+        const updated = await updateLoanOfficerAssessment(req.params.id);
+        if (!updated) return res.status(404).json({ message: 'Loan not found' });
+        res.json(updated);
+    } catch (e) {
+        console.error('AI loan officer route error:', e.message);
+        res.status(500).json({ message: 'AI дүгнэлт гаргахад алдаа гарлаа' });
+    }
 });
 
 // Зээлийн хүсэлтэд нэмэлт файл хавсаргах (Cloudinary-д хуулж URL хадгалах)
@@ -1216,6 +1473,7 @@ app.post('/api/loans/:id/files', authenticateUser, (req, res) => {
                 { new: true }
             );
             if (!loan) return res.status(404).json({ message: 'Not found' });
+            runLoanOfficerAssessmentInBackground(loan._id);
             res.json(loan);
         } catch (e) {
             console.error('File upload error:', e.message);
