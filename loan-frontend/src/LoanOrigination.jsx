@@ -89,6 +89,7 @@ const UI_TEXT = {
     web: 'ВЭБ',
     empty: 'Хүсэлт байхгүй байна.',
     ai: {
+      locale: 'mn',
       startEvaluation: 'AI үнэлгээ эхлүүлэх',
       queuedToast: (count) => `${count} хүсэлтийн AI дүгнэлт дараалалд орлоо.`,
       noneQueued: 'Дүгнэлтгүй хуучин хүсэлт олдсонгүй.',
@@ -134,6 +135,7 @@ const UI_TEXT = {
       rerunning: 'Дүгнэж байна...',
       rerunSuccess: 'AI дүгнэлт шинэчлэгдлээ.',
       rerunError: 'AI дүгнэлт шинэчлэхэд алдаа гарлаа.',
+      englishDetected: 'AI дүгнэлт англиар хадгалагдсан байна. Дахин дүгнэх дарж Монгол хэлээр шинэчилнэ үү.',
     },
   },
   en: {
@@ -184,6 +186,7 @@ const UI_TEXT = {
     web: 'WEB',
     empty: 'No requests found.',
     ai: {
+      locale: 'en',
       startEvaluation: 'Start AI evaluation',
       queuedToast: (count) => `${count} request(s) queued for AI review.`,
       noneQueued: 'No existing requests without AI review were found.',
@@ -229,6 +232,7 @@ const UI_TEXT = {
       rerunning: 'Reviewing...',
       rerunSuccess: 'AI review updated.',
       rerunError: 'Failed to update AI review.',
+      englishDetected: 'The stored AI review language does not match the selected language. Run it again to refresh.',
     },
   },
 };
@@ -238,6 +242,25 @@ const fmt = (v) => new Intl.NumberFormat('mn-MN').format(v || 0) + ' ₮';
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('mn-MN') : '-';
 const borrowerName = (r) => r?.userType === 'organization'
   ? (r.orgName || '-') : [r?.lastname, r?.firstname].filter(Boolean).join(' ') || '-';
+
+const aiNarrativeStrings = (assessment = {}) => [
+  assessment.risk?.summary,
+  ...(assessment.risk?.flags || []),
+  assessment.legal?.summary,
+  ...(assessment.legal?.flags || []),
+  assessment.credit?.summary,
+  ...(assessment.credit?.conditions || []),
+  assessment.decision?.reason,
+  ...(assessment.decision?.approvalReasons || []),
+  ...(assessment.decision?.conditionalReasons || []),
+  ...(assessment.decision?.rejectionReasons || []),
+  ...(assessment.nextSteps || []),
+].filter(v => typeof v === 'string' && v.trim());
+
+const hasEnglishNarrative = (assessment) => aiNarrativeStrings(assessment).some(text => {
+  const allowed = new Set(['ai', 'api', 'dti', 'ltv', 'fico', 'openai', 'sainscore']);
+  return (text.match(/[A-Za-z]{3,}/g) || []).some(word => !allowed.has(word.toLowerCase()));
+});
 
 // ─────────────────────────────────────────────
 // STATUS BADGE
@@ -1065,6 +1088,7 @@ const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai, onRun, loading = fals
     reject: labels.recLabels.reject,
   }[recommendation] || labels.recLabels.empty;
   const generatedAt = assessment?.generatedAt ? new Date(assessment.generatedAt).toLocaleString('mn-MN') : null;
+  const languageMismatch = labels.locale === 'mn' && assessment?.status === 'completed' && hasEnglishNarrative(assessment);
   const rationaleGroups = [
     { title: labels.approvalReasons, items: decision.approvalReasons || [], cls: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
     { title: labels.conditions, items: decision.conditionalReasons || credit.conditions || [], cls: 'border-amber-200 bg-amber-50 text-amber-800' },
@@ -1101,7 +1125,11 @@ const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai, onRun, loading = fals
         </div>
       </div>
 
-      {assessment?.status === 'completed' ? (
+      {languageMismatch ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+          {labels.englishDetected}
+        </div>
+      ) : assessment?.status === 'completed' ? (
         <>
           <div className="grid md:grid-cols-3 gap-3">
             <div className="rounded-xl border border-slate-200 p-3 bg-slate-50">

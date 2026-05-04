@@ -375,6 +375,30 @@ function hasCyrillicText(value) {
     return false;
 }
 
+function getLoanOfficerNarrativeStrings(parsed = {}) {
+    return [
+        parsed.risk?.summary,
+        ...(parsed.risk?.flags || []),
+        parsed.legal?.summary,
+        ...(parsed.legal?.flags || []),
+        parsed.credit?.summary,
+        ...(parsed.credit?.conditions || []),
+        parsed.decision?.reason,
+        ...(parsed.decision?.approvalReasons || []),
+        ...(parsed.decision?.conditionalReasons || []),
+        ...(parsed.decision?.rejectionReasons || []),
+        ...(parsed.nextSteps || []),
+    ].filter(value => typeof value === 'string' && value.trim());
+}
+
+function hasEnglishNarrativeText(parsed = {}) {
+    const allowed = new Set(['ai', 'api', 'dti', 'ltv', 'fico', 'openai', 'sainscore']);
+    return getLoanOfficerNarrativeStrings(parsed).some(text => {
+        const words = text.match(/[A-Za-z]{3,}/g) || [];
+        return words.some(word => !allowed.has(word.toLowerCase()));
+    });
+}
+
 async function buildAiLoanOfficerAssessment(loanDoc) {
     const fallback = buildRuleBasedLoanOfficerAssessment(loanDoc);
     if (!openai) return fallback;
@@ -407,7 +431,9 @@ async function buildAiLoanOfficerAssessment(loanDoc) {
         ]);
 
         const parsed = parseLoanOfficerAiJson(completion?.choices?.[0]?.message?.content);
-        if (!hasCyrillicText(parsed)) throw new Error('AI loan officer returned non-Mongolian text');
+        if (!hasCyrillicText(parsed) || hasEnglishNarrativeText(parsed)) {
+            throw new Error('AI loan officer returned non-Mongolian narrative text');
+        }
         return {
             ...fallback,
             source: 'openai',
