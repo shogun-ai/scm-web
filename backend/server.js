@@ -285,6 +285,19 @@ function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules') {
     if (coverageRatio > 0 && coverageRatio < 1) conditions.push('Барьцааны үнэлгээ, хамрах хувийг нэмж баталгаажуулах.');
     if (legalFlags.length) conditions.push('Иргэний/байгууллагын болон барьцааны баримтын бүрдлийг ажилтан гараар шалгах.');
     if (!input.creditBureau || !Object.keys(input.creditBureau).length) conditions.push('Зээлийн мэдээллийн лавлагаа/FICO үр дүнг баталгаажуулах.');
+    const approvalReasons = [];
+    const rejectionReasons = [];
+
+    if (amount) approvalReasons.push(`Хүссэн зээлийн дүн ${amount.toLocaleString('mn-MN')} ₮ бүртгэгдсэн.`);
+    if (term) approvalReasons.push(`Зээлийн хугацаа ${term} сар гэж тодорхойлогдсон.`);
+    if (input.loanRequest.purpose) approvalReasons.push('Зээлийн зориулалт бүртгэгдсэн.');
+    if (coverageRatio >= 1) approvalReasons.push(`Барьцааны хамрах хувь ${(coverageRatio * 100).toFixed(1)}% буюу хүссэн дүнг бүрэн хамгаалж байна.`);
+    if (monthlyIncome && amount && monthlyIncome * 24 >= amount) approvalReasons.push('Орлогын түвшин хүссэн дүнтэй харьцуулахад боломжийн байна.');
+
+    rejectionReasons.push(...flags, ...legalFlags);
+    if (!rejectionReasons.length && conditions.length) {
+        rejectionReasons.push('Мэдээлэл дутуу тул шууд зөвшөөрөх үндэслэл хангалтгүй байна.');
+    }
 
     const riskLevel = flags.length >= 3 ? 'high' : flags.length ? 'medium' : 'low';
     const legalLevel = legalFlags.length >= 2 ? 'high' : legalFlags.length ? 'medium' : 'low';
@@ -324,6 +337,9 @@ function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules') {
             amountRecommendation: amount || null,
             termRecommendation: term || null,
             reason: flags.concat(legalFlags).slice(0, 3).join(' ') || 'Үндсэн талбарууд бөглөгдсөн байна.',
+            approvalReasons,
+            conditionalReasons: conditions,
+            rejectionReasons,
         },
         nextSteps: [
             'Зээлийн мэдээллийн лавлагаа болон орлогын эх үүсвэрийг баталгаажуулах.',
@@ -358,7 +374,8 @@ async function buildAiLoanOfficerAssessment(loanDoc) {
                             'Return Mongolian JSON only.',
                             'Do not make a final lending decision. Provide preliminary risk, legal/compliance, credit recommendation, conditions, and next steps for human review.',
                             'Use only the provided application data. If information is missing, mark it as a risk or condition.',
-                            'JSON shape: {risk:{level,summary,flags[]}, legal:{level,summary,flags[]}, credit:{recommendation,summary,conditions[]}, decision:{recommendation,confidence,amountRecommendation,termRecommendation,reason}, nextSteps[]}.',
+                            'JSON shape: {risk:{level,summary,flags[]}, legal:{level,summary,flags[]}, credit:{recommendation,summary,conditions[]}, decision:{recommendation,confidence,amountRecommendation,termRecommendation,reason,approvalReasons[],conditionalReasons[],rejectionReasons[]}, nextSteps[]}.',
+                            'Be specific: explain why conditional, which exact conditions must be met, why approve, or why reject. Reference concrete numbers from the application when available.',
                             'Allowed levels: low, medium, high. Allowed recommendations: approve, conditional, manual_review, reject.'
                         ].join(' ')
                     },

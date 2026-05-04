@@ -945,6 +945,8 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     { detail: 'Loan-to-Value', label: 'LTV', display: col.ltvRatio != null ? `${col.ltvRatio.toFixed(1)}%` : '—', pass: col.ltvRatio == null || col.ltvRatio <= 80 },
   ];
   const passCount = kpis.filter(k => k.pass).length;
+  const failedKpis = kpis.filter(k => !k.pass);
+  const passedKpis = kpis.filter(k => k.pass);
   const autoVerdict = passCount >= 4 ? 'approve' : passCount >= 2 ? 'conditional' : 'reject';
   const verdictStyle = { approve: 'bg-green-50 border-green-300 text-green-700', conditional: 'bg-amber-50 border-amber-300 text-amber-700', reject: 'bg-red-50 border-red-300 text-red-700' }[autoVerdict];
   const confidence = Math.min(96, Math.max(42, Math.round((passCount / kpis.length) * 72 + Math.min(score, 100) * 0.24)));
@@ -969,6 +971,52 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     { label: 'Cash flow', value: Math.min(100, Math.max(12, (ie.freeCashFlow || 0) > 0 ? 82 : 28)), positive: (ie.freeCashFlow || 0) > 0 },
     { label: 'Collateral / LTV', value: col.ltvRatio == null ? 52 : Math.min(100, Math.max(0, 100 - col.ltvRatio)), positive: col.ltvRatio == null || col.ltvRatio <= 80 },
   ];
+  const approvalReasons = passedKpis.map(k => {
+    if (k.detail === 'Credit Score') return `Кредит оноо ${score}/100 байгаа нь доод босго 50-аас дээш байна.`;
+    if (k.detail === 'Grade') return `Зээлийн зэрэглэл ${grade}; D/E өндөр эрсдэлийн ангилалд ороогүй.`;
+    if (k.detail === 'Debt-to-Income') return `DTI ${(ie.dti || 0).toFixed(1)}% байгаа нь 55%-ийн дээд босгоос хэтрээгүй.`;
+    if (k.detail === 'Free Cash Flow') return `Шинэ төлбөрийн дараах чөлөөт мөнгөн урсгал ${nfmt(ie.freeCashFlow)} ₮ эерэг байна.`;
+    if (k.detail === 'Loan-to-Value') return col.ltvRatio == null ? 'LTV тооцоолох барьцаа бүртгэгдээгүй тул энэ шалгуур саад болоогүй.' : `LTV ${col.ltvRatio.toFixed(1)}% байгаа нь 80%-ийн босгоос хэтрээгүй.`;
+    return `${k.label} шалгуур хангагдсан.`;
+  });
+  const conditionItems = [];
+  const rejectionReasons = [];
+
+  if (score < 50) {
+    conditionItems.push('Кредит оноог сайжруулах нэмэлт тайлбар, зээлийн түүхийн лавлагаа, муу түүхийн шалтгааныг баталгаажуулах.');
+    rejectionReasons.push(`Кредит оноо ${score}/100 тул доод босго 50-аас доогуур байна.`);
+  }
+  if (['D', 'E'].includes(grade)) {
+    conditionItems.push(`Зээлийн зэрэглэл ${grade} тул батлан даагч, нэмэлт барьцаа эсвэл дүн бууруулах хувилбар шаардана.`);
+    rejectionReasons.push(`Зээлийн зэрэглэл ${grade} нь өндөр эрсдэлийн ангилалд байна.`);
+  }
+  if ((ie.dti || 0) > 55) {
+    conditionItems.push(`DTI ${(ie.dti || 0).toFixed(1)}%-ийг 55%-иас доош буулгах: зээлийн дүн бууруулах, хугацаа сунгах эсвэл бусад өр төлбөр хаах.`);
+    rejectionReasons.push(`DTI ${(ie.dti || 0).toFixed(1)}% тул өрийн ачаалал зөвшөөрөх босгоос давсан.`);
+  }
+  if ((ie.freeCashFlow || 0) <= 0) {
+    conditionItems.push(`Чөлөөт мөнгөн урсгалыг эерэг болгох: баталгаажсан нэмэлт орлого, хамтран зээлдэгч эсвэл сарын төлбөр бууруулах нөхцөл шаардана.`);
+    rejectionReasons.push(`Чөлөөт мөнгөн урсгал ${nfmt(ie.freeCashFlow)} ₮ буюу шинэ төлбөр даах чадвар сул байна.`);
+  }
+  if (col.ltvRatio != null && col.ltvRatio > 80) {
+    conditionItems.push(`LTV ${col.ltvRatio.toFixed(1)}%-ийг 80%-иас доош буулгах: нэмэлт барьцаа авах эсвэл зээлийн дүн бууруулах.`);
+    rejectionReasons.push(`LTV ${col.ltvRatio.toFixed(1)}% тул барьцааны хамгаалалт сул байна.`);
+  }
+  if (col.ltvRatio == null) {
+    conditionItems.push('Барьцааны үнэлгээ/LTV-г албан ёсоор тооцож баталгаажуулах.');
+  }
+  if (riskFlags.length) {
+    conditionItems.push(...riskFlags.slice(0, 3).map(r => `Эрсдэлийн тэмдэглэл баталгаажуулах: ${r}`));
+  }
+  if (!conditionItems.length && autoVerdict === 'conditional') {
+    conditionItems.push('Дутуу баримт, орлого, барьцааны нотолгоог хүний ажилтан давхар шалгаж баталгаажуулах.');
+  }
+
+  const decisionSummary = autoVerdict === 'approve'
+    ? `Гол ${passCount}/${kpis.length} шалгуур хангагдсан тул урьдчилсан байдлаар олгох боломжтой.`
+    : autoVerdict === 'conditional'
+      ? `${failedKpis.length} шалгуур хангагдаагүй тул зөвхөн доорх нөхцөлийг биелүүлсний дараа олгох саналтай.`
+      : `${failedKpis.length} гол шалгуур хангагдаагүй тул одоогийн мэдээллээр татгалзах саналтай.`;
   const reasoningSteps = [
     `${passCount}/${kpis.length} гол шалгуур хангагдсан.`,
     `Кредит оноо ${score}/100, зэрэглэл ${grade}.`,
@@ -1253,7 +1301,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       <div className={`flex items-center gap-3 p-4 rounded-xl border-2 text-sm font-bold ${verdictStyle}`}>
         {autoVerdict === 'approve' ? <ThumbsUp size={18} /> : autoVerdict === 'conditional' ? <AlertCircle size={18} /> : <ThumbsDown size={18} />}
         Автомат үнэлгээ ({passCount}/{kpis.length} шалгуур хангасан):&nbsp;
-        {autoVerdict === 'approve' ? 'Олгоход тохиромжтой' : autoVerdict === 'conditional' ? 'Нөхцөлтэй зөвшөөрөл санал болгож байна' : 'Эрсдэлтэй — татгалзах санал'}
+        {decisionSummary}
       </div>
 
       {/* AI decision engine */}
@@ -1287,6 +1335,35 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
                   <p className="mt-1 text-lg font-black text-white">{item.value}</p>
                 </div>
               ))}
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#9BB2C1]">Decision rationale</p>
+              <p className="text-sm font-semibold leading-6 text-slate-200">{decisionSummary}</p>
+              {autoVerdict === 'conditional' && (
+                <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3">
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-amber-200">Заавал хангах нөхцөл</p>
+                  <ul className="space-y-1.5 text-xs font-semibold leading-5 text-amber-50">
+                    {conditionItems.slice(0, 5).map((item, idx) => <li key={idx}>- {item}</li>)}
+                  </ul>
+                </div>
+              )}
+              {autoVerdict === 'approve' && (
+                <div className="mt-3 rounded-lg border border-emerald-300/20 bg-emerald-300/10 p-3">
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-emerald-200">Яагаад зөвшөөрөх саналтай вэ?</p>
+                  <ul className="space-y-1.5 text-xs font-semibold leading-5 text-emerald-50">
+                    {approvalReasons.slice(0, 5).map((item, idx) => <li key={idx}>- {item}</li>)}
+                  </ul>
+                </div>
+              )}
+              {autoVerdict === 'reject' && (
+                <div className="mt-3 rounded-lg border border-red-300/20 bg-red-300/10 p-3">
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-red-200">Яагаад татгалзах саналтай вэ?</p>
+                  <ul className="space-y-1.5 text-xs font-semibold leading-5 text-red-50">
+                    {(rejectionReasons.length ? rejectionReasons : failedKpis.map(k => `${k.label} шалгуур хангагдаагүй.`)).slice(0, 5).map((item, idx) => <li key={idx}>- {item}</li>)}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
 

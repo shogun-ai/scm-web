@@ -1840,6 +1840,11 @@ const AiLoanOfficerPanel = ({ assessment, loading, onRun }) => {
   const generatedAt = assessment?.generatedAt ? new Date(assessment.generatedAt).toLocaleString('mn-MN') : null;
   const flags = [...(risk.flags || []), ...(legal.flags || [])].slice(0, 6);
   const nextSteps = [...(credit.conditions || []), ...(assessment?.nextSteps || [])].slice(0, 6);
+  const rationaleGroups = [
+    { title: 'Яагаад зөвшөөрөх боломжтой вэ?', items: decision.approvalReasons || [], tone: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+    { title: 'Ямар нөхцөл хангах вэ?', items: decision.conditionalReasons || credit.conditions || [], tone: 'text-amber-700 bg-amber-50 border-amber-200' },
+    { title: 'Яагаад татгалзах эрсдэлтэй вэ?', items: decision.rejectionReasons || [], tone: 'text-red-700 bg-red-50 border-red-200' },
+  ].filter(g => Array.isArray(g.items) && g.items.length);
 
   return (
     <div className="border border-slate-200 bg-white rounded-2xl overflow-hidden shadow-sm">
@@ -1900,6 +1905,18 @@ const AiLoanOfficerPanel = ({ assessment, loading, onRun }) => {
               </ul>
             </div>
           </div>
+          {rationaleGroups.length > 0 && (
+            <div className="grid md:grid-cols-3 gap-3">
+              {rationaleGroups.map(group => (
+                <div key={group.title} className={`rounded-xl border p-4 ${group.tone}`}>
+                  <p className="text-xs font-bold uppercase mb-2">{group.title}</p>
+                  <ul className="space-y-1.5 text-sm font-semibold leading-5">
+                    {group.items.slice(0, 5).map((item, idx) => <li key={idx}>- {item}</li>)}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
           <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
             <Clock size={12} /> {assessment.disclaimer || 'Энэ нь урьдчилсан AI санал бөгөөд эцсийн шийдвэрийг хүний ажилтан/хороо гаргана.'}
           </p>
