@@ -130,6 +130,10 @@ const UI_TEXT = {
       decisionFactors: 'Шийдвэрийн хүчин зүйл',
       processing: 'Боловсруулалт',
       realTime: 'Шууд',
+      rerun: 'Дахин дүгнэх',
+      rerunning: 'Дүгнэж байна...',
+      rerunSuccess: 'AI дүгнэлт шинэчлэгдлээ.',
+      rerunError: 'AI дүгнэлт шинэчлэхэд алдаа гарлаа.',
     },
   },
   en: {
@@ -221,6 +225,10 @@ const UI_TEXT = {
       decisionFactors: 'Decision factors',
       processing: 'Processing',
       realTime: 'Real-time',
+      rerun: 'Run again',
+      rerunning: 'Reviewing...',
+      rerunSuccess: 'AI review updated.',
+      rerunError: 'Failed to update AI review.',
     },
   },
 };
@@ -288,6 +296,7 @@ const LoanOrigination = ({
   const [showNewForm, setShowNewForm] = useState(false);
   const [viewLoan, setViewLoan] = useState(null); // modal-д харуулах зээл
   const [aiBackfillLoading, setAiBackfillLoading] = useState(false);
+  const [aiReviewingId, setAiReviewingId] = useState(null);
 
   useEffect(() => {
     if (!navigationView) return;
@@ -382,6 +391,22 @@ const LoanOrigination = ({
       showToast(e.response?.data?.message || text.ai.queueError, 'error');
     } finally {
       setAiBackfillLoading(false);
+    }
+  };
+
+  const runAiLoanOfficer = async (loan) => {
+    if (!loan?._id) return;
+    setAiReviewingId(loan._id);
+    try {
+      const res = await axios.post(`${apiUrl}/api/loans/${loan._id}/ai-loan-officer`, {}, authHeaders());
+      onRequestsChange(requests.map(r => r._id === res.data._id ? res.data : r));
+      if (selectedLoan?._id === res.data._id) setSelectedLoan(res.data);
+      if (viewLoan?._id === res.data._id) setViewLoan(res.data);
+      showToast(text.ai.rerunSuccess);
+    } catch (e) {
+      showToast(e.response?.data?.message || text.ai.rerunError, 'error');
+    } finally {
+      setAiReviewingId(null);
     }
   };
 
@@ -882,6 +907,12 @@ const LoanOrigination = ({
                 <BadgeCheck size={15} /> Зээлийн хороо руу шилжих
               </button>
             </div>
+            <AiLoanOfficerCard
+              loan={selectedLoan}
+              labels={text.ai}
+              onRun={runAiLoanOfficer}
+              loading={aiReviewingId === selectedLoan._id}
+            />
             <LoanResearch
               apiUrl={apiUrl}
               prefillRequest={researchSeed}
@@ -911,6 +942,8 @@ const LoanOrigination = ({
             revertDecision={revertDecision}
             onGoAssessment={() => setActiveStep('assessment')}
             labels={text.ai}
+            onRunAi={runAiLoanOfficer}
+            aiLoading={aiReviewingId === selectedLoan._id}
           />
         )
       )}
@@ -1018,7 +1051,7 @@ const LoanHeader = ({ loan }) => (
   </div>
 );
 
-const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai }) => {
+const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai, onRun, loading = false }) => {
   const assessment = loan?.aiLoanOfficer;
   const decision = assessment?.decision || {};
   const risk = assessment?.risk || {};
@@ -1052,7 +1085,20 @@ const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai }) => {
             </p>
           </div>
         </div>
-        <AiLoanOfficerBadge assessment={assessment} labels={labels} />
+        <div className="flex items-center gap-2">
+          <AiLoanOfficerBadge assessment={assessment} labels={labels} />
+          {onRun && (
+            <button
+              type="button"
+              onClick={() => onRun(loan)}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-[11px] font-black text-slate-600 hover:border-[#003B5C] hover:text-[#003B5C] disabled:opacity-60"
+            >
+              {loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              {loading ? labels.rerunning : labels.rerun}
+            </button>
+          )}
+        </div>
       </div>
 
       {assessment?.status === 'completed' ? (
@@ -1111,7 +1157,7 @@ const ANALYST_DECISION_LABELS = {
   reject: 'Татгалзах',
 };
 
-const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, setApprovalNote, savingDecision, makeDecision, revertDecision, onGoAssessment, labels = UI_TEXT.mn.ai }) => {
+const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, setApprovalNote, savingDecision, makeDecision, revertDecision, onGoAssessment, labels = UI_TEXT.mn.ai, onRunAi, aiLoading = false }) => {
   const nfmt = v => new Intl.NumberFormat('mn-MN').format(Math.round(v || 0));
   const [revertMode, setRevertMode] = useState(false);
   const [revertReason, setRevertReason] = useState('');
@@ -1543,7 +1589,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       </div>
 
       {/* Hero — grade + score + borrower */}
-      <AiLoanOfficerCard loan={loan} labels={labels} />
+      <AiLoanOfficerCard loan={loan} labels={labels} onRun={onRunAi} loading={aiLoading} />
 
       <div className="bg-white border-2 border-[#003B5C] rounded-2xl p-5 flex items-center gap-5">
         <div className={`w-20 h-20 rounded-2xl flex items-center justify-center text-3xl font-black shrink-0 ${gradeColor}`}>

@@ -367,6 +367,14 @@ function parseLoanOfficerAiJson(content) {
     return JSON.parse(cleaned);
 }
 
+function hasCyrillicText(value) {
+    if (!value) return false;
+    if (typeof value === 'string') return /[\u0400-\u04ff]/.test(value);
+    if (Array.isArray(value)) return value.some(hasCyrillicText);
+    if (typeof value === 'object') return Object.values(value).some(hasCyrillicText);
+    return false;
+}
+
 async function buildAiLoanOfficerAssessment(loanDoc) {
     const fallback = buildRuleBasedLoanOfficerAssessment(loanDoc);
     if (!openai) return fallback;
@@ -384,7 +392,7 @@ async function buildAiLoanOfficerAssessment(loanDoc) {
                         role: 'system',
                         content: [
                             'You are an internal AI loan officer assistant for a Mongolian NBFI.',
-                            'Return Mongolian JSON only.',
+                            'Return JSON only. Every human-readable string value MUST be in Mongolian Cyrillic, not English.',
                             'Do not make a final lending decision. Provide preliminary risk, legal/compliance, credit recommendation, conditions, and next steps for human review.',
                             'Use only the provided application data. If information is missing, mark it as a risk or condition.',
                             'JSON shape: {risk:{level,summary,flags[]}, legal:{level,summary,flags[]}, credit:{recommendation,summary,conditions[]}, decision:{recommendation,confidence,amountRecommendation,termRecommendation,reason,approvalReasons[],conditionalReasons[],rejectionReasons[]}, nextSteps[]}.',
@@ -399,6 +407,7 @@ async function buildAiLoanOfficerAssessment(loanDoc) {
         ]);
 
         const parsed = parseLoanOfficerAiJson(completion?.choices?.[0]?.message?.content);
+        if (!hasCyrillicText(parsed)) throw new Error('AI loan officer returned non-Mongolian text');
         return {
             ...fallback,
             source: 'openai',
