@@ -43,6 +43,8 @@ export default function Dashboard({ token, user, onLogout }) {
   const [navigationView, setNavigationView] = useState('requests');
   const [requests, setRequests] = useState([]);
   const [usersList, setUsersList] = useState([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
+  const [requestsError, setRequestsError] = useState('');
   const text = UI_TEXT[language] || UI_TEXT.mn;
   const isDark = theme === 'dark';
 
@@ -52,15 +54,39 @@ export default function Dashboard({ token, user, onLogout }) {
   ];
 
   async function loadRequests() {
+    const effectiveToken = token || localStorage.getItem('loan_token') || '';
+    if (!effectiveToken) {
+      setRequestsError('Нэвтрэх token олдсонгүй. Дахин нэвтэрнэ үү.');
+      return;
+    }
+    setRequestsLoading(true);
+    setRequestsError('');
     try {
-      const res = await axios.get(`${API}/api/loans`, authHeaders(token));
-      setRequests(res.data || []);
-    } catch {}
+      const res = await axios.get(`${API}/api/loans`, authHeaders(effectiveToken));
+      const nextRequests = Array.isArray(res.data) ? res.data : [];
+      setRequests(nextRequests);
+      if (nextRequests.length > 0) {
+        localStorage.setItem('loan_requests_cache', JSON.stringify(nextRequests));
+      }
+    } catch (error) {
+      const cached = (() => {
+        try { return JSON.parse(localStorage.getItem('loan_requests_cache') || '[]'); } catch { return []; }
+      })();
+      if (Array.isArray(cached) && cached.length > 0) setRequests(cached);
+      const status = error.response?.status;
+      const detail = error.response?.data?.message || error.response?.data || error.message || 'API алдаа';
+      setRequestsError(`Зээлийн хүсэлтүүдийг татаж чадсангүй${status ? ` (${status})` : ''}: ${detail}`);
+      if (status === 401) window.dispatchEvent(new CustomEvent('auth:expired'));
+    } finally {
+      setRequestsLoading(false);
+    }
   }
 
   async function loadUsers() {
+    const effectiveToken = token || localStorage.getItem('loan_token') || '';
+    if (!effectiveToken) return;
     try {
-      const res = await axios.get(`${API}/api/users`, authHeaders(token));
+      const res = await axios.get(`${API}/api/users`, authHeaders(effectiveToken));
       setUsersList(res.data || []);
     } catch {}
   }
@@ -68,7 +94,7 @@ export default function Dashboard({ token, user, onLogout }) {
   useEffect(() => {
     loadRequests();
     loadUsers();
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     localStorage.setItem('loan_language', language);
@@ -159,6 +185,21 @@ export default function Dashboard({ token, user, onLogout }) {
 
         <main className="flex-1 p-4 lg:p-5">
           <div className="mx-auto w-full max-w-[1440px]">
+            {(requestsError || requestsLoading) && (
+              <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-bold ${
+                requestsError ? 'border-red-200 bg-red-50 text-red-700' : 'border-blue-200 bg-blue-50 text-blue-700'
+              }`}>
+                <span>{requestsLoading ? 'Зээлийн хүсэлтүүдийг уншиж байна...' : requestsError}</span>
+                <button
+                  type="button"
+                  onClick={loadRequests}
+                  disabled={requestsLoading}
+                  className="rounded-xl border border-current bg-white/70 px-3 py-1.5 text-xs font-black disabled:opacity-60"
+                >
+                  Дахин ачаалах
+                </button>
+              </div>
+            )}
             <LoanOrigination
               apiUrl={API}
               user={user}
