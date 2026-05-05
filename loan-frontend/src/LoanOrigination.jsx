@@ -1089,6 +1089,8 @@ const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai, onRun, loading = fals
   }[recommendation] || labels.recLabels.empty;
   const generatedAt = assessment?.generatedAt ? new Date(assessment.generatedAt).toLocaleString('mn-MN') : null;
   const languageMismatch = labels.locale === 'mn' && assessment?.status === 'completed' && hasEnglishNarrative(assessment);
+  const confidenceValue = Number(decision.confidence);
+  const confidencePct = Number.isFinite(confidenceValue) ? Math.round(confidenceValue * 100) : null;
   const rationaleGroups = [
     { title: labels.approvalReasons, items: decision.approvalReasons || [], cls: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
     { title: labels.conditions, items: decision.conditionalReasons || credit.conditions || [], cls: 'border-amber-200 bg-amber-50 text-amber-800' },
@@ -1143,7 +1145,7 @@ const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai, onRun, loading = fals
             <div className="rounded-xl border border-slate-200 p-3 bg-slate-50">
               <p className="text-[10px] font-black uppercase text-slate-500">{labels.recommendation}</p>
               <p className="mt-1 text-sm font-black text-[#003B5C]">{recLabel}</p>
-              {decision.confidence != null && <p className="text-xs font-semibold text-slate-500 mt-1">{labels.confidence} {Math.round(Number(decision.confidence) * 100)}%</p>}
+              {confidencePct != null && <p className="text-xs font-semibold text-slate-500 mt-1">{labels.confidence} {confidencePct}%</p>}
             </div>
           </div>
           {rationaleGroups.length > 0 && (
@@ -1387,8 +1389,22 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       ${riskFlags.map(r=>`<span style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px">⚠ ${esc(r)}</span>`).join('')}
     </div>` : '<p style="font-size:11px;color:#94a3b8">Тэмдэглэгдсэн эрсдэл байхгүй</p>';
 
-    const decisionHex = ['approved','disbursed'].includes(loan.status)?'#15803d':loan.status==='rejected'?'#dc2626':'#d97706';
-    const decisionLabel = ['approved','disbursed'].includes(loan.status)?'ЗӨВШӨӨРӨГДСӨН':loan.status==='rejected'?'ТАТГАЛЗСАН':'НӨХЦӨЛТЭЙ ЗӨВШӨӨРӨВ';
+    const committeeDecisionMeta = {
+      approved: { label: 'ЗӨВШӨӨРӨГДСӨН', hex: '#15803d', bg: '#f0fdf4', note: '' },
+      disbursed: { label: 'ЗӨВШӨӨРӨГДСӨН - ОЛГОГДСОН', hex: '#15803d', bg: '#f0fdf4', note: '' },
+      rejected: { label: 'ТАТГАЛЗСАН', hex: '#dc2626', bg: '#fff1f2', note: '' },
+      resolved: { label: 'НӨХЦӨЛТЭЙ ЗӨВШӨӨРӨВ', hex: '#d97706', bg: '#fffbeb', note: '' },
+    };
+    const printDecision = committeeDecisionMeta[loan.status] || {
+      label: 'ШИЙДВЭР ГАРААГҮЙ',
+      hex: '#64748b',
+      bg: '#f8fafc',
+      note: 'Зээлийн хорооны шийдвэр хадгалагдаагүй байна.',
+    };
+    const decisionHex = printDecision.hex;
+    const decisionLabel = printDecision.label;
+    const decisionBg = printDecision.bg;
+    const decisionNote = printDecision.note;
     const ai = loan.aiLoanOfficer || {};
     const aiDecision = ai.decision || {};
     const aiRisk = ai.risk || {};
@@ -1407,6 +1423,8 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       reject: labels.recLabels.reject,
     }[aiDecision.recommendation || aiCredit.recommendation] || '-';
     const aiGeneratedAt = ai.generatedAt ? new Date(ai.generatedAt).toLocaleString('mn-MN') : '';
+    const aiConfidence = Number(aiDecision.confidence);
+    const aiConfidencePct = Number.isFinite(aiConfidence) ? Math.round(aiConfidence * 100) : null;
     const aiList = (items = []) => (items || []).length
       ? `<ul style="margin:0;padding-left:14px;line-height:1.55">${items.slice(0,5).map(item => `<li style="font-size:10.5px;margin-bottom:3px">${esc(item)}</li>`).join('')}</ul>`
       : '<div style="font-size:10.5px;color:#94a3b8">-</div>';
@@ -1431,7 +1449,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
         <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px">
           <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px">${esc(labels.recommendation)}</div>
           <div style="font-size:12px;font-weight:900;color:#003B5C">${esc(aiRecLabel)}</div>
-          ${aiDecision.confidence != null ? `<div style="font-size:10px;color:#64748b;margin-top:3px">${esc(labels.confidence)} ${Math.round(Number(aiDecision.confidence) * 100)}%</div>` : ''}
+          ${aiConfidencePct != null ? `<div style="font-size:10px;color:#64748b;margin-top:3px">${esc(labels.confidence)} ${aiConfidencePct}%</div>` : ''}
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
@@ -1468,7 +1486,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       table{width:100%;border-collapse:collapse}
       th{background:#f8fafc;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;padding:8px 10px;text-align:left;border-bottom:2px solid #e2e8f0}
       .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:6px}
-      .verdict{display:inline-block;padding:4px 14px;border-radius:99px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;border:2px solid ${decisionHex};color:${decisionHex};background:${ ['approved','disbursed'].includes(loan.status)?'#f0fdf4':loan.status==='rejected'?'#fff1f2':'#fffbeb'}}
+      .verdict{display:inline-block;padding:4px 14px;border-radius:99px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;border:2px solid ${decisionHex};color:${decisionHex};background:${decisionBg}}
     </style></head><body><div class="page">
 
     <!-- HEADER -->
@@ -1480,6 +1498,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       </div>
       <div style="text-align:right">
         <div class="verdict">${decisionLabel}</div>
+        ${decisionNote?`<div style="font-size:10px;color:#64748b;margin-top:6px;max-width:200px;text-align:right">${esc(decisionNote)}</div>`:''}
         ${loan.approvalNote?`<div style="font-size:10px;color:#64748b;margin-top:6px;max-width:200px;text-align:right">${esc(loan.approvalNote)}</div>`:''}
       </div>
     </div>
@@ -1574,6 +1593,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
         <div>
           <div style="font-size:22px;font-weight:900;color:${decisionHex}">${decisionLabel}</div>
+          ${decisionNote?`<div style="font-size:12px;color:#64748b;margin-top:6px;line-height:1.6">${esc(decisionNote)}</div>`:''}
           ${loan.approvalNote?`<div style="font-size:12px;color:#475569;margin-top:6px;line-height:1.6">${esc(loan.approvalNote)}</div>`:''}
         </div>
         <div style="font-size:11px;color:#94a3b8">Огноо: ${today}</div>
