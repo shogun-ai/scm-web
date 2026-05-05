@@ -73,11 +73,11 @@ const FilePickerWithPreview = ({ files = [], onChange, accept = 'image/*,.pdf', 
             <div key={idx} className="flex items-center gap-2 bg-slate-50 border rounded-lg px-3 py-2">
               <FileText size={13} className="text-slate-400 flex-shrink-0" />
               <span className="text-xs text-slate-700 flex-1 truncate">{f.name}</span>
-              <button onClick={() => openPreview(f)}
+              <button type="button" onClick={() => openPreview(f)}
                 className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-all" title="Preview">
                 <Eye size={13} />
               </button>
-              <button onClick={() => removeFile(idx)}
+              <button type="button" onClick={() => removeFile(idx)}
                 className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-all" title="Устгах">
                 <X size={13} />
               </button>
@@ -90,12 +90,12 @@ const FilePickerWithPreview = ({ files = [], onChange, accept = 'image/*,.pdf', 
       <div className="flex items-center gap-2">
         <input type="file" accept={accept} multiple={multiple} className="hidden" ref={ref}
           onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
-        <button onClick={() => ref.current?.click()}
+        <button type="button" onClick={() => ref.current?.click()}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-lg hover:bg-slate-50 transition-all">
           <Upload size={12} /> {files.length > 0 ? 'Файл нэмэх' : 'Файл сонгох'}
         </button>
         {onAI && files.length > 0 && (
-          <AiReadBtn loading={aiLoading} onClick={() => onAI(files)} lbl={aiLabel || 'AI унших'} />
+          <AiReadBtn loading={aiLoading} onClick={() => onAI(files)} label={aiLabel || 'AI унших'} />
         )}
       </div>
 
@@ -105,7 +105,7 @@ const FilePickerWithPreview = ({ files = [], onChange, accept = 'image/*,.pdf', 
           <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <span className="text-sm font-bold text-slate-700 truncate">{preview.name}</span>
-              <button onClick={() => setPreview(null)} className="p-1 text-slate-400 hover:text-red-500"><X size={18} /></button>
+              <button type="button" onClick={() => setPreview(null)} className="p-1 text-slate-400 hover:text-red-500"><X size={18} /></button>
             </div>
             <div className="p-4">
               {preview.isImage ? (
@@ -126,6 +126,7 @@ const FilePickerWithPreview = ({ files = [], onChange, accept = 'image/*,.pdf', 
 // ─────────────────────────────────────────────
 const AiReadBtn = ({ loading, onClick, label: lbl = 'AI унших' }) => (
   <button
+    type="button"
     onClick={onClick}
     disabled={loading}
     className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-xs font-bold rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-all"
@@ -199,7 +200,7 @@ const extractPhotoFromIdDocument = async (file) => {
       if (!canvas) return null;
       return { photo: cropPhotoFromCanvas(canvas), source: canvas.toDataURL('image/jpeg', 0.92) };
     }
-    if (file.type === 'application/pdf') {
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')) {
       const canvas = await canvasFromPdfFile(file);
       return { photo: cropPhotoFromCanvas(canvas), source: canvas.toDataURL('image/jpeg', 0.92) };
     }
@@ -311,30 +312,39 @@ const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked 
     try {
       const fd = new FormData();
       files.forEach(f => fd.append('bankStatements', f));
-      const [res, extractedPhoto] = await Promise.all([
+      const [aiResult, photoResult] = await Promise.allSettled([
         axios.post(`${apiUrl}/api/loans/analyze-id-document`, fd, {
           headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
         }),
         extractPhotoFromIdDocument(files[0]),
       ]);
-      const d = res.data;
-      onChange({
-        ...data,
-        lastName: d.lastName || data.lastName,
-        firstName: d.firstName || data.firstName,
-        fatherName: d.fatherName || data.fatherName,
-        regNo: d.regNo || data.regNo,
-        dob: d.dob || data.dob,
-        address: d.address || data.address,
-        idIssueDate: d.issueDate || data.idIssueDate,
-        idExpiryDate: d.expiryDate || data.idExpiryDate,
-      });
+
+      const extractedPhoto = photoResult.status === 'fulfilled' ? photoResult.value : null;
       if (extractedPhoto?.photo) {
         setPendingPhoto(extractedPhoto.photo);
         setCropSource(extractedPhoto.source || null);
         setCropEditorOpen(false);
       }
-      showToast('Иргэний үнэмлэх уншигдлаа.');
+
+      if (aiResult.status === 'fulfilled') {
+        const d = aiResult.value.data;
+        onChange({
+          ...data,
+          lastName: d.lastName || data.lastName,
+          firstName: d.firstName || data.firstName,
+          fatherName: d.fatherName || data.fatherName,
+          regNo: d.regNo || data.regNo,
+          dob: d.dob || data.dob,
+          address: d.address || data.address,
+          idIssueDate: d.issueDate || data.idIssueDate,
+          idExpiryDate: d.expiryDate || data.idExpiryDate,
+        });
+        showToast(extractedPhoto?.photo ? 'Иргэний үнэмлэх уншигдлаа. Зураг crop хийх боломжтой.' : 'Иргэний үнэмлэх уншигдлаа.');
+      } else if (extractedPhoto?.photo) {
+        showToast('AI уншилт амжилтгүй боллоо. Гэхдээ зураг crop хийх боломжтой.', 'warning');
+      } else {
+        throw aiResult.reason;
+      }
     } catch (e) {
       showToast(e.response?.data?.message || 'ID унших алдаа', 'error');
     } finally { setAnalyzingId(false); }
@@ -362,10 +372,7 @@ const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked 
               <span className="text-[11px] font-bold text-slate-500 uppercase">Иргэний үнэмлэх</span>
               <FilePickerWithPreview
                 files={idFiles}
-                onChange={(newFiles) => {
-                  setIdFiles(newFiles);
-                  if (newFiles.length > 0 && !analyzingId) handleIdAI(newFiles);
-                }}
+                onChange={setIdFiles}
                 accept="image/*,.pdf"
                 onAI={handleIdAI}
                 aiLoading={analyzingId}
@@ -476,32 +483,41 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
     try {
       const fd = new FormData();
       files.forEach(f => fd.append('bankStatements', f));
-      const [res, extractedPhoto] = await Promise.all([
+      const [aiResult, photoResult] = await Promise.allSettled([
         axios.post(`${apiUrl}/api/loans/analyze-id-document`, fd, {
           headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
         }),
         extractPhotoFromIdDocument(files[0]),
       ]);
-      const d = res.data;
-      onChange({
-        ...data,
-        lastName: d.lastName || data.lastName,
-        firstName: d.firstName || data.firstName,
-        fatherName: d.fatherName || data.fatherName,
-        regNo: d.regNo || data.regNo,
-        dob: d.dob || data.dob,
-        gender: d.gender || data.gender,
-        citizenship: d.citizenship || data.citizenship,
-        address: d.address || data.address,
-        idIssueDate: d.issueDate || data.idIssueDate,
-        idExpiryDate: d.expiryDate || data.idExpiryDate,
-      });
+
+      const extractedPhoto = photoResult.status === 'fulfilled' ? photoResult.value : null;
       if (extractedPhoto?.photo) {
         setPendingPhoto(extractedPhoto.photo);
         setCropSource(extractedPhoto.source || null);
         setCropEditorOpen(false);
       }
-      showToast('Иргэний үнэмлэх уншигдлаа.');
+
+      if (aiResult.status === 'fulfilled') {
+        const d = aiResult.value.data;
+        onChange({
+          ...data,
+          lastName: d.lastName || data.lastName,
+          firstName: d.firstName || data.firstName,
+          fatherName: d.fatherName || data.fatherName,
+          regNo: d.regNo || data.regNo,
+          dob: d.dob || data.dob,
+          gender: d.gender || data.gender,
+          citizenship: d.citizenship || data.citizenship,
+          address: d.address || data.address,
+          idIssueDate: d.issueDate || data.idIssueDate,
+          idExpiryDate: d.expiryDate || data.idExpiryDate,
+        });
+        showToast(extractedPhoto?.photo ? 'Иргэний үнэмлэх уншигдлаа. Зураг crop хийх боломжтой.' : 'Иргэний үнэмлэх уншигдлаа.');
+      } else if (extractedPhoto?.photo) {
+        showToast('AI уншилт амжилтгүй боллоо. Гэхдээ зураг crop хийх боломжтой.', 'warning');
+      } else {
+        throw aiResult.reason;
+      }
     } catch (e) {
       showToast(e.response?.data?.message || 'ID унших алдаа', 'error');
     } finally { setAnalyzingId(false); }
@@ -580,10 +596,7 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
           </div>
           <FilePickerWithPreview
             files={idFiles}
-            onChange={(newFiles) => {
-              setIdFiles(newFiles);
-              if (newFiles.length > 0 && !analyzingId) handleIdAI(newFiles);
-            }}
+            onChange={setIdFiles}
             accept="image/*,.pdf"
             onAI={handleIdAI}
             aiLoading={analyzingId}
