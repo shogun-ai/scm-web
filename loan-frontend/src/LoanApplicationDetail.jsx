@@ -197,6 +197,25 @@ const AiReadBtn = ({ loading, onClick, label: lbl = 'AI унших' }) => (
   </button>
 );
 
+const ExistingFilesPanel = ({ files = [] }) => {
+  if (!files.length) return null;
+  return (
+    <div className="bg-white border rounded-2xl p-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className={sectionHdr}><FileText size={15} /> Өмнө оруулсан файлууд</p>
+        <span className="text-[11px] font-black text-slate-400">{files.length} файл</span>
+      </div>
+      <FilePickerWithPreview
+        files={[]}
+        existingFiles={files}
+        onChange={() => {}}
+        accept=".pdf,image/*,.xlsx,.docx"
+        allowUpload={false}
+      />
+    </div>
+  );
+};
+
 // ─────────────────────────────────────────────
 // ID DOCUMENT PHOTO EXTRACTOR
 // Иргэний үнэмлэхийн лавлагаа (И-17 маягт) дээрх
@@ -2271,7 +2290,17 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
   }, [loan?._id, loan?.aiLoanOfficer]);
 
   const set = (field, val) => setAppData(prev => ({ ...prev, [field]: val }));
-  const loanFiles = Array.isArray(loan?.fileDetails) ? loan.fileDetails : [];
+  const loanFiles = [
+    ...(Array.isArray(loan?.fileDetails) ? loan.fileDetails : []),
+    ...((Array.isArray(loan?.fileNames) ? loan.fileNames : [])
+      .filter(url => !(loan?.fileDetails || []).some(file => file.fileUrl === url || file.url === url))
+      .map((url, index) => ({
+        fieldName: 'legacy',
+        fileName: fileDisplayName({ fileUrl: url }, `Файл ${index + 1}`),
+        fileUrl: url,
+        mimeType: /\.pdf($|\?)/i.test(String(url)) ? 'application/pdf' : '',
+      }))),
+  ];
   const filesByField = (...fieldNames) => {
     const fields = new Set(fieldNames);
     return loanFiles.filter(file => fields.has(file.fieldName));
@@ -2450,6 +2479,8 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
           labels={aiText}
         />
       )}
+
+      {!createMode && <ExistingFilesPanel files={loanFiles} />}
 
       {/* ── MAIN TABS ── */}
       <div className="bg-white border rounded-2xl overflow-hidden">
