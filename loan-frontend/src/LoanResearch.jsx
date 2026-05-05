@@ -2027,7 +2027,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           {/* Section 1: Study requests */}
           <section className="bg-white border rounded-2xl shadow-sm p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-[#003B5C]">Судлах зээлийн хүсэлтүүд</h3>
+              <h3 className="font-bold text-[#003B5C]">Зээлийн хүсэлтүүд</h3>
               <span className="text-xs text-slate-400">{sortedStudyRequests.length} хүсэлт</span>
             </div>
             {sortedStudyRequests.length > 0 ? (
@@ -2058,7 +2058,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                 })}
               </div>
             ) : (
-              <p className="text-sm text-slate-400 py-6 text-center">Судлах төлөвтэй хүсэлт байхгүй байна.</p>
+              <p className="text-sm text-slate-400 py-6 text-center">Зээлийн хүсэлт байхгүй байна.</p>
             )}
           </section>
 

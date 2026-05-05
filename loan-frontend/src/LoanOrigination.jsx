@@ -939,7 +939,7 @@ const LoanOrigination = ({
             <LoanResearch
               apiUrl={apiUrl}
               prefillRequest={researchSeed}
-              studyRequests={requests.filter(r => ['studying','assessment','assigned'].includes(r.status))}
+              studyRequests={requests}
               onSelectStudyRequest={(req) => { setSelectedLoan(req); setResearchSeed({ ...req, seedKey: `${req._id}-${Date.now()}` }); }}
               embeddedMode={true}
             />
