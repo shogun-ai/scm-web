@@ -17,6 +17,18 @@ const fmtNum = (v) => {
 };
 const parseFmtNum = (v) => Number(String(v).replace(/[^0-9]/g, '')) || '';
 
+const fileDisplayName = (file = {}, fallback = 'Файл') => (
+  file.name || file.fileName || (() => {
+    const clean = String(file.fileUrl || file.url || '').split('?')[0];
+    try { return decodeURIComponent(clean.split('/').pop() || fallback); } catch { return clean.split('/').pop() || fallback; }
+  })()
+);
+
+const filePreviewType = (file = {}) => file.type || file.mimeType || '';
+const filePreviewUrl = (file = {}) => file.fileUrl || file.url || '';
+const isPreviewImageFile = (file = {}) => String(filePreviewType(file)).startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(fileDisplayName(file));
+const isPreviewPdfFile = (file = {}) => filePreviewType(file) === 'application/pdf' || /\.pdf$/i.test(fileDisplayName(file));
+
 import {
   LOAN_PRODUCTS, PRODUCTS_MAP, EMPLOYMENT_TYPES,
   REVENUE_RANGES, EMPLOYEE_RANGES, GUARANTOR_TYPES, COLLATERAL_TYPE_KEYS,
@@ -38,7 +50,7 @@ const sectionHdr = 'font-bold text-[#003B5C] flex items-center gap-2 text-sm';
 // ─────────────────────────────────────────────
 // FILE PICKER WITH PREVIEW
 // ─────────────────────────────────────────────
-const FilePickerWithPreview = ({ files = [], onChange, accept = 'image/*,.pdf', multiple = true, onAI, aiLoading, aiLabel }) => {
+const FilePickerWithPreview = ({ files = [], existingFiles = [], onChange, accept = 'image/*,.pdf', multiple = true, onAI, aiLoading, aiLabel, allowUpload = true }) => {
   const ref = useRef();
   const [preview, setPreview] = useState(null); // { url, name, isImage, isPdf }
 
@@ -50,42 +62,60 @@ const FilePickerWithPreview = ({ files = [], onChange, accept = 'image/*,.pdf', 
     const arr = Array.from(newFiles || []);
     if (!arr.length) return;
     const merged = [...files, ...arr];
-    onChange(merged);
+    onChange?.(merged);
     if (onAI) onAI(merged);
   };
 
   const removeFile = (idx) => {
     const updated = files.filter((_, i) => i !== idx);
-    onChange(updated);
+    onChange?.(updated);
   };
 
-  const openPreview = (f) => {
-    const url = URL.createObjectURL(f);
+  const openPreview = (f, remote = false) => {
+    const url = remote ? filePreviewUrl(f) : URL.createObjectURL(f);
+    if (!url) return;
     setPreview({
       url,
-      name: f.name,
-      type: f.type || '',
-      isImage: f.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name),
-      isPdf: f.type === 'application/pdf' || /\.pdf$/i.test(f.name),
+      name: fileDisplayName(f),
+      type: filePreviewType(f),
+      isImage: isPreviewImageFile(f),
+      isPdf: isPreviewPdfFile(f),
+      remote,
     });
   };
 
   const closePreview = () => {
     setPreview((current) => {
-      if (current?.url) URL.revokeObjectURL(current.url);
+      if (current?.url && !current.remote) URL.revokeObjectURL(current.url);
       return null;
     });
   };
 
   return (
     <div className="space-y-2">
+      {/* Existing remote files */}
+      {existingFiles.length > 0 && (
+        <div className="space-y-1.5">
+          {existingFiles.map((f, idx) => (
+            <div key={`${filePreviewUrl(f)}-${idx}`} className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+              <FileText size={13} className="text-blue-500 flex-shrink-0" />
+              <span className="text-xs text-slate-700 flex-1 truncate">{fileDisplayName(f, `Файл ${idx + 1}`)}</span>
+              <button type="button" onClick={() => openPreview(f, true)}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-blue-700 hover:bg-white rounded transition-all" title="Preview">
+                <Eye size={12} /> Харах
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* File list */}
       {files.length > 0 && (
         <div className="space-y-1.5">
           {files.map((f, idx) => (
             <div key={idx} className="flex items-center gap-2 bg-slate-50 border rounded-lg px-3 py-2">
               <FileText size={13} className="text-slate-400 flex-shrink-0" />
-              <span className="text-xs text-slate-700 flex-1 truncate">{f.name}</span>
+              <span className="text-xs text-slate-700 flex-1 truncate">{fileDisplayName(f)}</span>
               <button type="button" onClick={() => openPreview(f)}
                 className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-all" title="Preview">
                 <Eye size={13} />
@@ -100,17 +130,19 @@ const FilePickerWithPreview = ({ files = [], onChange, accept = 'image/*,.pdf', 
       )}
 
       {/* Action row */}
-      <div className="flex items-center gap-2">
-        <input type="file" accept={accept} multiple={multiple} className="hidden" ref={ref}
-          onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
-        <button type="button" onClick={() => ref.current?.click()}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-lg hover:bg-slate-50 transition-all">
-          <Upload size={12} /> {files.length > 0 ? 'Файл нэмэх' : 'Файл сонгох'}
-        </button>
-        {onAI && files.length > 0 && (
-          <AiReadBtn loading={aiLoading} onClick={() => onAI(files)} label={aiLabel || 'AI унших'} />
-        )}
-      </div>
+      {allowUpload && (
+        <div className="flex items-center gap-2">
+          <input type="file" accept={accept} multiple={multiple} className="hidden" ref={ref}
+            onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+          <button type="button" onClick={() => ref.current?.click()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-lg hover:bg-slate-50 transition-all">
+            <Upload size={12} /> {files.length > 0 || existingFiles.length > 0 ? 'Файл нэмэх' : 'Файл сонгох'}
+          </button>
+          {onAI && files.length > 0 && (
+            <AiReadBtn loading={aiLoading} onClick={() => onAI(files)} label={aiLabel || 'AI унших'} />
+          )}
+        </div>
+      )}
 
       {/* Preview modal */}
       {preview && (
@@ -315,7 +347,7 @@ const ManualPhotoCropModal = ({ source, onApply, onClose }) => {
 // ─────────────────────────────────────────────
 // MINI PERSON FORM (захирал, эзэмшигч, г.м.)
 // ─────────────────────────────────────────────
-const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked = false, prefix = '' }) => {
+const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked = false, prefix = '', existingIdFiles = [] }) => {
   const [open, setOpen] = useState(false);
   const [analyzingId, setAnalyzingId] = useState(false);
   const [idFiles, setIdFiles] = useState([]);
@@ -388,16 +420,18 @@ const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked 
       {open && (
         <div className="p-4 space-y-3 bg-white">
           {/* ID AI */}
-          {!locked && (
+          {(!locked || existingIdFiles.length > 0) && (
             <div className="p-2 bg-slate-50 rounded-xl border space-y-2">
               <span className="text-[11px] font-bold text-slate-500 uppercase">Иргэний үнэмлэх</span>
               <FilePickerWithPreview
                 files={idFiles}
+                existingFiles={existingIdFiles}
                 onChange={setIdFiles}
                 accept="image/*,.pdf"
-                onAI={handleIdAI}
+                onAI={locked ? undefined : handleIdAI}
                 aiLoading={analyzingId}
                 aiLabel="ID AI унших"
+                allowUpload={!locked}
               />
             </div>
           )}
@@ -489,7 +523,7 @@ const Section = ({ title, icon: Icon, children, defaultOpen = true }) => {
 // ─────────────────────────────────────────────
 // PERSON FORM (reusable for borrower + guarantor)
 // ─────────────────────────────────────────────
-const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locked = false }) => {
+const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locked = false, existingIdFiles = [] }) => {
   const [analyzingId, setAnalyzingId] = useState(false);
   const [idFiles, setIdFiles] = useState([]);
   const [pendingPhoto, setPendingPhoto] = useState(null);
@@ -609,7 +643,7 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
       )}
 
       {/* ID document + AI */}
-      {!locked && (
+      {(!locked || existingIdFiles.length > 0) && (
         <div className="p-3 bg-slate-50 rounded-xl border space-y-2">
           <div className="flex items-center gap-2">
             <FileText size={14} className="text-slate-500" />
@@ -617,11 +651,13 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
           </div>
           <FilePickerWithPreview
             files={idFiles}
+            existingFiles={existingIdFiles}
             onChange={setIdFiles}
             accept="image/*,.pdf"
-            onAI={handleIdAI}
+            onAI={locked ? undefined : handleIdAI}
             aiLoading={analyzingId}
             aiLabel="ID AI унших"
+            allowUpload={!locked}
           />
         </div>
       )}
@@ -699,7 +735,7 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
 // ─────────────────────────────────────────────
 // ORG FORM
 // ─────────────────────────────────────────────
-const OrgForm = ({ data = {}, onChange, locked = false, apiUrl, showToast }) => {
+const OrgForm = ({ data = {}, onChange, locked = false, apiUrl, showToast, existingOrgFiles = [], existingIdFiles = [] }) => {
   const set = (f, v) => { if (!locked) onChange({ ...data, [f]: v }); };
   const disabledInp = inp + (locked ? ' bg-slate-50 text-slate-700 cursor-not-allowed opacity-100' : '');
   const [analyzingOrg, setAnalyzingOrg] = useState(false);
@@ -739,7 +775,7 @@ const OrgForm = ({ data = {}, onChange, locked = false, apiUrl, showToast }) => 
         </div>
       )}
       {/* Org certificate AI */}
-      {!locked && (
+      {(!locked || existingOrgFiles.length > 0) && (
         <div className="p-3 bg-slate-50 rounded-xl border space-y-2">
           <div className="flex items-center gap-2">
             <FileText size={14} className="text-slate-500" />
@@ -747,11 +783,13 @@ const OrgForm = ({ data = {}, onChange, locked = false, apiUrl, showToast }) => 
           </div>
           <FilePickerWithPreview
             files={orgFiles}
+            existingFiles={existingOrgFiles}
             onChange={setOrgFiles}
             accept="image/*,.pdf"
-            onAI={handleOrgAI}
+            onAI={locked ? undefined : handleOrgAI}
             aiLoading={analyzingOrg}
             aiLabel="Гэрчилгээ AI унших"
+            allowUpload={!locked}
           />
         </div>
       )}
@@ -800,6 +838,7 @@ const OrgForm = ({ data = {}, onChange, locked = false, apiUrl, showToast }) => 
           onChange={v => set('ceo', v)}
           apiUrl={apiUrl} showToast={showToast} locked={locked}
           prefix="ceo_"
+          existingIdFiles={existingIdFiles}
         />
         <MiniPersonForm
           title="Эзэмшигч / Хувьцаа эзэмшигч"
@@ -807,6 +846,7 @@ const OrgForm = ({ data = {}, onChange, locked = false, apiUrl, showToast }) => 
           onChange={v => set('owner', v)}
           apiUrl={apiUrl} showToast={showToast} locked={locked}
           prefix="owner_"
+          existingIdFiles={existingIdFiles}
         />
         <MiniPersonForm
           title="Холбоотой этгээд"
@@ -814,6 +854,7 @@ const OrgForm = ({ data = {}, onChange, locked = false, apiUrl, showToast }) => 
           onChange={v => set('relatedPerson', v)}
           apiUrl={apiUrl} showToast={showToast} locked={locked}
           prefix="related_"
+          existingIdFiles={existingIdFiles}
         />
       </div>
     </div>
@@ -823,7 +864,7 @@ const OrgForm = ({ data = {}, onChange, locked = false, apiUrl, showToast }) => 
 // ─────────────────────────────────────────────
 // CREDIT BUREAU SECTION
 // ─────────────────────────────────────────────
-const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId }) => {
+const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId, existingCreditFiles = [], existingFicoFiles = [] }) => {
   const [analyzing, setAnalyzing] = useState(false);
   const [cbFiles, setCbFiles] = useState([]);
   const [analyzingFico, setAnalyzingFico] = useState(false);
@@ -881,6 +922,7 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId })
         </div>
         <FilePickerWithPreview
           files={cbFiles}
+          existingFiles={existingCreditFiles}
           onChange={setCbFiles}
           accept=".pdf,image/*"
           onAI={handleAI}
@@ -943,6 +985,7 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId })
         <div className="p-3 bg-slate-50 rounded-xl border space-y-2">
           <FilePickerWithPreview
             files={ficoFiles}
+            existingFiles={existingFicoFiles}
             onChange={setFicoFiles}
             accept=".pdf,image/*"
             onAI={handleFicoAI}
@@ -1069,10 +1112,11 @@ const EditFieldModal = ({ fieldKey, currentValue, onConfirm, onClose }) => {
 // ─────────────────────────────────────────────
 const VALUATION_TYPES = ['real_estate', 'vehicle', 'contract'];
 
-const CollateralSection = ({ items = [], onChange, apiUrl, showToast }) => {
+const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFilesByType = {} }) => {
   const [analyzing, setAnalyzing] = useState('');
   const [editingField, setEditingField] = useState(null); // { idx, key, currentValue }
   const [auditOpen, setAuditOpen] = useState({});
+  const existingCollateralFiles = Object.values(existingFilesByType).flat();
 
   const emptyItem = (type) => ({ type, files: [], aiData: null, fields: {}, auditLog: [], hasPlate: 'yes', plateNumber: '', ownerRelation: '', valuation: { borrowerAmount: '', officerAmount: '', date: '', sourceFiles: [], sourceLink: '', sourceNotes: '', coverageRate: '', notes: '' }, notes: '' });
   const addItem = (type) => onChange([...items, emptyItem(type)]);
@@ -1143,6 +1187,19 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast }) => {
         })}
       </div>
 
+      {existingCollateralFiles.length > 0 && !items.length && (
+        <div className="bg-white rounded-xl border p-3 space-y-2">
+          <span className="text-xs font-bold text-slate-500">Хуучин оруулсан барьцааны файлууд</span>
+          <FilePickerWithPreview
+            files={[]}
+            existingFiles={existingCollateralFiles}
+            onChange={() => {}}
+            accept=".pdf,image/*"
+            allowUpload={false}
+          />
+        </div>
+      )}
+
       {items.map((item, idx) => {
         const meta = COLLATERAL_TYPES.find(c => c.key === item.type) || { label: item.type, icon: FileText };
         const Icon = meta.icon;
@@ -1175,6 +1232,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast }) => {
               <span className="text-xs font-bold text-slate-500">Баримт бичиг</span>
               <FilePickerWithPreview
                 files={item.files || []}
+                existingFiles={existingFilesByType[item.type] || []}
                 onChange={files => updateItem(idx, { files })}
                 accept=".pdf,image/*"
                 onAI={canReadAI(item.type) ? (files) => handleAI(idx, files, item.type) : undefined}
@@ -1565,7 +1623,7 @@ const BankStatementCard = ({ bs, index, onRemove }) => {
 // INCOME RESEARCH SECTION
 // Props: onBSAppend, onSIChange, onRemoveBS — functional updates to avoid stale closure
 // ─────────────────────────────────────────────
-const IncomeResearchSection = ({ data = {}, onBSAppend, onSIChange, onRemoveBS, apiUrl, showToast }) => {
+const IncomeResearchSection = ({ data = {}, onBSAppend, onSIChange, onRemoveBS, apiUrl, showToast, existingBankFiles = [], existingSocialFiles = [] }) => {
   const [analyzingSI, setAnalyzingSI] = useState(false);
   const [siFiles, setSiFiles] = useState([]);
   // Pending bank statement files: each has {id, file, analyzing}
@@ -1628,11 +1686,22 @@ const IncomeResearchSection = ({ data = {}, onBSAppend, onSIChange, onRemoveBS, 
           <p className="text-[10px] text-slate-400">Файл оруулаад файл бүрийн ард "AI унших" товчийг дарж тусдаа уншуулна.</p>
           {/* File picker button */}
           <div>
+            {existingBankFiles.length > 0 && (
+              <div className="mb-2">
+                <FilePickerWithPreview
+                  files={[]}
+                  existingFiles={existingBankFiles}
+                  onChange={() => {}}
+                  accept=".pdf,image/*"
+                />
+              </div>
+            )}
             <input
               type="file" ref={bsFileRef} accept=".pdf,image/*" multiple className="hidden"
               onChange={e => { addBsFiles(e.target.files); e.target.value = ''; }}
             />
             <button
+              type="button"
               onClick={() => bsFileRef.current?.click()}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-lg hover:bg-white transition-all text-slate-600"
             >
@@ -1651,12 +1720,25 @@ const IncomeResearchSection = ({ data = {}, onBSAppend, onSIChange, onRemoveBS, 
                   ) : (
                     <>
                       <button
+                        type="button"
+                        onClick={() => {
+                          const url = URL.createObjectURL(entry.file);
+                          window.open(url, '_blank', 'noopener,noreferrer');
+                          setTimeout(() => URL.revokeObjectURL(url), 60000);
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 transition-all whitespace-nowrap"
+                      >
+                        <Eye size={11} /> Харах
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleAnalyzeSingleFile(entry)}
                         className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold bg-[#003B5C] text-white rounded-lg hover:bg-[#00507a] transition-all whitespace-nowrap"
                       >
                         <Sparkles size={11} /> AI унших
                       </button>
                       <button
+                        type="button"
                         onClick={() => removeBsPending(entry.id)}
                         className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
                       >
@@ -1685,6 +1767,7 @@ const IncomeResearchSection = ({ data = {}, onBSAppend, onSIChange, onRemoveBS, 
         <div className="p-3 bg-slate-50 rounded-xl border space-y-2">
           <FilePickerWithPreview
             files={siFiles}
+            existingFiles={existingSocialFiles}
             onChange={setSiFiles}
             accept=".pdf,image/*"
             onAI={handleSocialInsuranceAI}
@@ -2180,6 +2263,30 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
   }, [loan?._id, loan?.aiLoanOfficer]);
 
   const set = (field, val) => setAppData(prev => ({ ...prev, [field]: val }));
+  const loanFiles = Array.isArray(loan?.fileDetails) ? loan.fileDetails : [];
+  const filesByField = (...fieldNames) => {
+    const fields = new Set(fieldNames);
+    return loanFiles.filter(file => fields.has(file.fieldName));
+  };
+  const filesByText = (...patterns) => loanFiles.filter(file => {
+    const haystack = `${file.fieldName || ''} ${file.fileName || ''} ${file.fileUrl || ''}`.toLowerCase();
+    return patterns.some(pattern => haystack.includes(String(pattern).toLowerCase()));
+  });
+  const existingIdFiles = filesByField('file_id', 'file_address');
+  const existingOrgFiles = filesByField('file_org_cert', 'file_charter', 'file_finance');
+  const existingBankFiles = filesByField('file_bank', 'file_org_bank');
+  const existingSocialFiles = filesByField('file_social');
+  const existingVehicleFiles = filesByField('file_car_cert', 'file_car_photos');
+  const existingPropertyFiles = filesByField('file_prop_cert', 'file_prop_map');
+  const existingCreditFiles = [
+    ...filesByText('credit', 'fico', 'sainscore', 'зээлийн', 'лавлагаа'),
+    ...loanFiles.filter(file => !['file_id','file_address','file_org_cert','file_charter','file_finance','file_bank','file_org_bank','file_social','file_car_cert','file_car_photos','file_prop_cert','file_prop_map','file_selfie'].includes(file.fieldName)),
+  ].filter((file, index, arr) => arr.findIndex(x => (x.fileUrl || x.fileName) === (file.fileUrl || file.fileName)) === index);
+  const collateralExistingFiles = {
+    vehicle: existingVehicleFiles,
+    real_estate: existingPropertyFiles,
+    contract: filesByField('file_contract'),
+  };
 
   // ── Emergency contacts helpers ────────────
   const addContact = () => {
@@ -2386,8 +2493,8 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
             <div className="space-y-4">
               <div className="bg-white border rounded-2xl p-5">
                 {appData.borrowerType === 'individual'
-                  ? <PersonForm data={appData.borrower} onChange={v => set('borrower', v)} apiUrl={apiUrl} showToast={showToast} prefix="borrower_" locked={personalLocked} />
-                  : <OrgForm data={appData.org} onChange={v => set('org', v)} locked={personalLocked} apiUrl={apiUrl} showToast={showToast} />
+                  ? <PersonForm data={appData.borrower} onChange={v => set('borrower', v)} apiUrl={apiUrl} showToast={showToast} prefix="borrower_" locked={personalLocked} existingIdFiles={existingIdFiles} />
+                  : <OrgForm data={appData.org} onChange={v => set('org', v)} locked={personalLocked} apiUrl={apiUrl} showToast={showToast} existingOrgFiles={existingOrgFiles} existingIdFiles={existingIdFiles} />
                 }
               </div>
               <div className="bg-white border rounded-2xl p-5 space-y-4">
@@ -2450,6 +2557,8 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                 onSIChange={v => setAppData(prev => ({ ...prev, incomeResearch: { ...prev.incomeResearch, socialInsuranceAnalysis: v } }))}
                 onRemoveBS={idx => setAppData(prev => ({ ...prev, incomeResearch: { ...prev.incomeResearch, bankStatementAnalyses: (prev.incomeResearch?.bankStatementAnalyses || []).filter((_, i) => i !== idx) } }))}
                 apiUrl={apiUrl} showToast={showToast}
+                existingBankFiles={existingBankFiles}
+                existingSocialFiles={existingSocialFiles}
               />
             </div>
           )}
@@ -2457,7 +2566,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
           {/* Borrower sub: Барьцаа хөрөнгө */}
           {borrowerSubTab === 'collateral' && (
             <div className="bg-white border rounded-2xl p-5 space-y-4">
-              <CollateralSection items={appData.collaterals} onChange={v => set('collaterals', v)} apiUrl={apiUrl} showToast={showToast} />
+              <CollateralSection items={appData.collaterals} onChange={v => set('collaterals', v)} apiUrl={apiUrl} showToast={showToast} existingFilesByType={collateralExistingFiles} />
               {(() => {
                 const loanAmt = parseFmtNum(appData.loanRequest?.amount) || 0;
                 const rows = appData.collaterals.filter(c => ['real_estate','vehicle','contract'].includes(c.type));
@@ -2509,7 +2618,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
               </div>
               <div className="bg-white border rounded-2xl p-5 space-y-4">
                 <p className={sectionHdr}><CreditCard size={15} /> Зээлийн мэдээллийн лавлагаа (Credit Bureau / FICO)</p>
-                <CreditBureauSection data={appData.creditBureau} onChange={v => set('creditBureau', v)} apiUrl={apiUrl} showToast={showToast} loanId={loan?._id} />
+                <CreditBureauSection data={appData.creditBureau} onChange={v => set('creditBureau', v)} apiUrl={apiUrl} showToast={showToast} loanId={loan?._id} existingCreditFiles={existingCreditFiles} existingFicoFiles={existingCreditFiles} />
               </div>
               <div className="bg-white border rounded-2xl p-5">
                 <p className={sectionHdr + ' mb-4'}><FileText size={15} /> Бусад баримт бичгийн тэмдэглэл</p>
@@ -2615,13 +2724,13 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                   <div className="space-y-4">
                     <div className="bg-white border rounded-2xl p-5">
                       {(g.personType || 'individual') === 'individual'
-                        ? <PersonForm data={g.person || {}} onChange={v => updateG({ person: v })} apiUrl={apiUrl} showToast={showToast} prefix={`g${gIdx}_`} locked={personalLocked} />
-                        : <OrgForm data={g.org || {}} onChange={v => updateG({ org: v })} locked={personalLocked} apiUrl={apiUrl} showToast={showToast} />
+                        ? <PersonForm data={g.person || {}} onChange={v => updateG({ person: v })} apiUrl={apiUrl} showToast={showToast} prefix={`g${gIdx}_`} locked={personalLocked} existingIdFiles={[]} />
+                        : <OrgForm data={g.org || {}} onChange={v => updateG({ org: v })} locked={personalLocked} apiUrl={apiUrl} showToast={showToast} existingOrgFiles={[]} existingIdFiles={[]} />
                       }
                     </div>
                     <div className="bg-white border rounded-2xl p-5 space-y-4">
                       <p className={sectionHdr}><CreditCard size={15} /> Зээлийн мэдээллийн лавлагаа (Credit Bureau / FICO)</p>
-                      <CreditBureauSection data={g.creditBureau || {}} onChange={v => updateG({ creditBureau: v })} apiUrl={apiUrl} showToast={showToast} />
+                      <CreditBureauSection data={g.creditBureau || {}} onChange={v => updateG({ creditBureau: v })} apiUrl={apiUrl} showToast={showToast} existingCreditFiles={[]} existingFicoFiles={[]} />
                     </div>
                   </div>
                 )}
@@ -2655,7 +2764,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                 {guarantorSubTab === 'collateral' && (
                   <div className="bg-white border rounded-2xl p-5 space-y-4">
                     <p className={sectionHdr}><Home size={15} /> Барьцаа хөрөнгө</p>
-                    <CollateralSection items={g.collaterals || []} onChange={v => updateG({ collaterals: v })} apiUrl={apiUrl} showToast={showToast} />
+                    <CollateralSection items={g.collaterals || []} onChange={v => updateG({ collaterals: v })} apiUrl={apiUrl} showToast={showToast} existingFilesByType={{}} />
                   </div>
                 )}
 
