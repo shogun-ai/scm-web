@@ -53,21 +53,29 @@ const sectionHdr = 'font-bold text-[#003B5C] flex items-center gap-2 text-sm';
 const FilePickerWithPreview = ({ files = [], existingFiles = [], onChange, accept = 'image/*,.pdf', multiple = true, onAI, aiLoading, aiLabel, allowUpload = true }) => {
   const ref = useRef();
   const [preview, setPreview] = useState(null); // { url, name, isImage, isPdf }
+  const [selectedFiles, setSelectedFiles] = useState(files);
+  const visibleFiles = selectedFiles.length > 0 ? selectedFiles : files;
 
   useEffect(() => () => {
     if (preview?.url) URL.revokeObjectURL(preview.url);
   }, [preview]);
 
+  useEffect(() => {
+    if (files.length > 0) setSelectedFiles(files);
+  }, [files]);
+
   const addFiles = (newFiles) => {
     const arr = Array.from(newFiles || []);
     if (!arr.length) return;
-    const merged = [...files, ...arr];
+    const merged = multiple ? [...visibleFiles, ...arr] : arr.slice(0, 1);
+    setSelectedFiles(merged);
     onChange?.(merged);
     if (onAI) onAI(merged);
   };
 
   const removeFile = (idx) => {
-    const updated = files.filter((_, i) => i !== idx);
+    const updated = visibleFiles.filter((_, i) => i !== idx);
+    setSelectedFiles(updated);
     onChange?.(updated);
   };
 
@@ -110,15 +118,15 @@ const FilePickerWithPreview = ({ files = [], existingFiles = [], onChange, accep
       )}
 
       {/* File list */}
-      {files.length > 0 && (
+      {visibleFiles.length > 0 && (
         <div className="space-y-1.5">
-          {files.map((f, idx) => (
+          {visibleFiles.map((f, idx) => (
             <div key={idx} className="flex items-center gap-2 bg-slate-50 border rounded-lg px-3 py-2">
               <FileText size={13} className="text-slate-400 flex-shrink-0" />
               <span className="text-xs text-slate-700 flex-1 truncate">{fileDisplayName(f)}</span>
               <button type="button" onClick={() => openPreview(f)}
-                className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-all" title="Preview">
-                <Eye size={13} />
+                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-50 rounded transition-all" title="Preview">
+                <Eye size={12} /> Харах
               </button>
               <button type="button" onClick={() => removeFile(idx)}
                 className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-all" title="Устгах">
@@ -136,10 +144,10 @@ const FilePickerWithPreview = ({ files = [], existingFiles = [], onChange, accep
             onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
           <button type="button" onClick={() => ref.current?.click()}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-lg hover:bg-slate-50 transition-all">
-            <Upload size={12} /> {files.length > 0 || existingFiles.length > 0 ? 'Файл нэмэх' : 'Файл сонгох'}
+            <Upload size={12} /> {visibleFiles.length > 0 || existingFiles.length > 0 ? 'Файл нэмэх' : 'Файл сонгох'}
           </button>
-          {onAI && files.length > 0 && (
-            <AiReadBtn loading={aiLoading} onClick={() => onAI(files)} label={aiLabel || 'AI унших'} />
+          {onAI && visibleFiles.length > 0 && (
+            <AiReadBtn loading={aiLoading} onClick={() => onAI(visibleFiles)} label={aiLabel || 'AI унших'} />
           )}
         </div>
       )}
