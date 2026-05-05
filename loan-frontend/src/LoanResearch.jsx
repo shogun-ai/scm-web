@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Eye,
   FileText,
   Home,
   Loader2,
@@ -23,6 +24,7 @@ import {
   TrendingUp,
   Upload,
   Users,
+  X,
   XCircle,
 } from 'lucide-react';
 
@@ -865,6 +867,44 @@ const Field = ({ label, children }) => (
   </label>
 );
 
+const isPreviewImage = (type = '', name = '') => String(type).startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(name);
+const isPreviewPdf = (type = '', name = '') => type === 'application/pdf' || /\.pdf$/i.test(name);
+
+const FilePreviewModal = ({ preview, onClose }) => {
+  if (!preview) return null;
+  const canInline = isPreviewImage(preview.type, preview.name) || isPreviewPdf(preview.type, preview.name);
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black text-[#003B5C]">{preview.name || 'Файл preview'}</p>
+            <p className="text-[11px] font-semibold text-slate-400">{preview.type || 'file'}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-red-500">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto bg-slate-100 p-4">
+          {isPreviewImage(preview.type, preview.name) ? (
+            <img src={preview.url} alt={preview.name} className="mx-auto max-h-[78vh] max-w-full rounded-xl bg-white object-contain shadow-sm" />
+          ) : isPreviewPdf(preview.type, preview.name) ? (
+            <iframe src={preview.url} title={preview.name} className="h-[78vh] w-full rounded-xl border bg-white" />
+          ) : (
+            <div className="mx-auto flex min-h-[260px] max-w-lg flex-col items-center justify-center rounded-xl border bg-white p-8 text-center">
+              <FileText size={32} className="mb-3 text-slate-400" />
+              <p className="text-sm font-bold text-slate-700">Энэ төрлийн файлыг browser дотор preview хийх боломжгүй байна.</p>
+              <a href={preview.url} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#003B5C] px-4 py-2 text-xs font-bold text-white">
+                <Eye size={13} /> Файл нээх
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStudyRequest, embeddedMode = false, onGoToDataCollection }) => {
   const [form, setForm] = useState(initialForm);
   const [bankStatements, setBankStatements] = useState([]);
@@ -901,6 +941,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   const [similarLoans, setSimilarLoans] = useState([]);
   const [similarSource, setSimilarSource] = useState('');
   const similarDebounceRef = useRef(null);
+  const [filePreview, setFilePreview] = useState(null);
 
   const outputs = useMemo(() => buildOutputs(form, {
     hasCreditRef: !!creditRefAnalysis,
@@ -940,6 +981,27 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ message, type });
     toastTimerRef.current = setTimeout(() => setToast(null), 3500);
+  };
+
+  const openFilePreview = ({ file, url, name, type }) => {
+    const previewUrl = file ? URL.createObjectURL(file) : url;
+    if (!previewUrl) {
+      showToast('Preview хийх файл олдсонгүй.', 'error');
+      return;
+    }
+    setFilePreview({
+      url: previewUrl,
+      name: name || file?.name || getFileNameFromUrl(url) || 'Файл',
+      type: type || file?.type || '',
+      localObjectUrl: !!file,
+    });
+  };
+
+  const closeFilePreview = () => {
+    setFilePreview((current) => {
+      if (current?.localObjectUrl) URL.revokeObjectURL(current.url);
+      return null;
+    });
   };
 
   const fetchSimilarLoans = (currentForm, currentOutputs) => {
@@ -1103,6 +1165,10 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     bankStatementPreviews.forEach((preview) => URL.revokeObjectURL(preview.url));
   }, [bankStatementPreviews]);
 
+  useEffect(() => () => {
+    if (filePreview?.localObjectUrl) URL.revokeObjectURL(filePreview.url);
+  }, [filePreview]);
+
   // Ref to track which prefillRequest ID has already had its saved-research overlay applied.
   // Prevents re-applying after user edits or when researches array updates again.
   const overlayAppliedForRef = useRef(null);
@@ -1212,6 +1278,39 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     });
     setStatementError('');
     event.target.value = '';
+  };
+
+  const handleSIUpload = (event) => {
+    const file = event.target.files?.[0] || null;
+    setSelectedId(null);
+    setSocialInsurance(file);
+    event.target.value = '';
+  };
+
+  const analyzeSI = async () => {
+    if (!socialInsurance) {
+      showToast('Эхлээд НД лавлагааны файл сонгоно уу.', 'error');
+      return;
+    }
+    const payload = new FormData();
+    payload.append('bankStatements', socialInsurance);
+    setLoading(true);
+    try {
+      const res = await axios.post(`${apiUrl}/api/loans/analyze-social-insurance`, payload, {
+        headers: { 'Content-Type': 'multipart/form-data', ...authH() },
+      });
+      setSiAnalysis(res.data);
+      setForm((prev) => ({
+        ...prev,
+        averageMonthlyIncome: res.data?.averageSalary ? String(Math.round(res.data.averageSalary)) : prev.averageMonthlyIncome,
+        incomeSource: res.data?.employers?.[0]?.name || prev.incomeSource,
+      }));
+      showToast('НД лавлагаа уншигдлаа.');
+    } catch (error) {
+      showToast(error.response?.data?.message || 'НД лавлагаа унших үед алдаа гарлаа.', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const removeBankStatement = (index) => {
@@ -1916,6 +2015,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           {toast.message}
         </div>
       )}
+      <FilePreviewModal preview={filePreview} onClose={closeFilePreview} />
       {/* ===== LIST VIEW ===== */}
       {viewMode === 'list' && (
         <div className="space-y-6">
@@ -2342,10 +2442,16 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                     </label>
                     <span className="text-xs text-slate-500 truncate flex-1">{creditReference?.name || 'Файл сонгоогүй'}</span>
                     {creditReference && (
-                      <button type="button" onClick={() => analyzeCreditReference({ files: [creditReference] })} disabled={analyzingCreditRef}
-                        className="inline-flex items-center gap-1.5 bg-[#003B5C] text-white px-4 py-2 rounded-lg font-bold text-xs disabled:opacity-50">
-                        {analyzingCreditRef ? 'AI уншиж байна...' : 'AI унших'}
-                      </button>
+                      <>
+                        <button type="button" onClick={() => openFilePreview({ file: creditReference })}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">
+                          <Eye size={13} /> Харах
+                        </button>
+                        <button type="button" onClick={() => analyzeCreditReference({ files: [creditReference] })} disabled={analyzingCreditRef}
+                          className="inline-flex items-center gap-1.5 bg-[#003B5C] text-white px-4 py-2 rounded-lg font-bold text-xs disabled:opacity-50">
+                          {analyzingCreditRef ? 'AI уншиж байна...' : 'AI унших'}
+                        </button>
+                      </>
                     )}
                   </div>
                   {creditReferenceStatus && <span className="block text-xs text-[#00A651] font-semibold">{creditReferenceStatus}</span>}
@@ -2997,6 +3103,10 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                             <div key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 rounded-lg px-2 py-1">
                               <FileText size={12} className="text-blue-500" />
                               <span className="truncate flex-1">{f.name}</span>
+                              <button type="button" onClick={() => openFilePreview({ file: f })}
+                                className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-bold text-[#003B5C] hover:bg-white">
+                                <Eye size={12} /> Харах
+                              </button>
                             </div>
                           ))}
                         </div>
@@ -3009,10 +3119,14 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                         <span className="text-sm text-slate-500">Файл сонгох...</span>
                         <input type="file" accept=".pdf,image/*" onChange={handleSIUpload} className="hidden" />
                       </label>
-                      {siFile && (
+                      {socialInsurance && (
                         <div className="mt-2 flex items-center gap-2 text-xs text-slate-600 bg-slate-50 rounded-lg px-2 py-1">
                           <FileText size={12} className="text-green-500" />
-                          <span className="truncate">{siFile.name}</span>
+                          <span className="truncate flex-1">{socialInsurance.name}</span>
+                          <button type="button" onClick={() => openFilePreview({ file: socialInsurance })}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-bold text-[#003B5C] hover:bg-white">
+                            <Eye size={12} /> Харах
+                          </button>
                         </div>
                       )}
                     </div>
@@ -3025,7 +3139,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                         Хуулга уншуулах
                       </button>
                     )}
-                    {siFile && (
+                    {socialInsurance && (
                       <button type="button" onClick={analyzeSI} disabled={loading}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors">
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
@@ -3051,11 +3165,25 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                           <span className="truncate text-slate-700">{f.name || f.fileName || `Файл ${i + 1}`}</span>
                         </div>
                         <div className="flex gap-2 shrink-0">
-                          <button type="button" onClick={() => analyzeStatementSource('requestFile', i)}
+                          {f.fileUrl && (
+                            <button type="button" onClick={() => openFilePreview({ url: f.fileUrl, name: f.name || f.fileName, type: f.mimeType })}
+                              className="text-xs px-2 py-1 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 flex items-center gap-1">
+                              <Eye size={11} /> Харах
+                            </button>
+                          )}
+                          <button type="button" onClick={() => analyzeStatementSource({
+                            key: `request-file-statement-${f.id || i}`,
+                            label: f.fileName || `Файл ${i + 1}`,
+                            fileUrls: f.fileUrl ? [f.fileUrl] : [],
+                          })}
                             className="text-xs px-2 py-1 rounded-lg bg-[#003B5C] text-white hover:bg-[#005082] flex items-center gap-1">
                             <Sparkles size={11} /> Хуулга
                           </button>
-                          <button type="button" onClick={() => analyzeStatementSource('siFile', i)}
+                          <button type="button" onClick={() => analyzeStatementSource({
+                            key: `request-file-si-${f.id || i}`,
+                            label: f.fileName || `Файл ${i + 1}`,
+                            fileUrls: f.fileUrl ? [f.fileUrl] : [],
+                          })}
                             className="text-xs px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-1">
                             <Sparkles size={11} /> НД
                           </button>
@@ -3074,12 +3202,22 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                     <h4 className="font-bold text-[#003B5C] text-sm">Хуулгын preview</h4>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {bankStatementPreviews.map((url, i) => (
-                      <div key={i} className="border rounded-xl overflow-hidden">
-                        <div className="bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
-                          {bankStatements[i]?.name || `Хуулга ${i + 1}`}
+                    {bankStatementPreviews.map((preview, i) => (
+                      <div key={preview.key || i} className="border rounded-xl overflow-hidden">
+                        <div className="flex items-center justify-between gap-2 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+                          <span className="truncate">{preview.name || bankStatements[i]?.name || `Хуулга ${i + 1}`}</span>
+                          <button type="button" onClick={() => openFilePreview({ file: bankStatements[i] })}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-bold text-[#003B5C] hover:bg-white">
+                            <Eye size={12} /> Томоор
+                          </button>
                         </div>
-                        <iframe src={url} className="w-full h-64" title={`preview-${i}`} />
+                        {preview.isPdf ? (
+                          <iframe src={preview.url} className="w-full h-64" title={`preview-${i}`} />
+                        ) : (
+                          <div className="flex h-64 items-center justify-center bg-slate-50 text-xs font-semibold text-slate-400">
+                            Preview хийхийн тулд "Томоор" дарна уу.
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

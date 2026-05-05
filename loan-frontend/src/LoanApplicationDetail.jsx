@@ -40,7 +40,11 @@ const sectionHdr = 'font-bold text-[#003B5C] flex items-center gap-2 text-sm';
 // ─────────────────────────────────────────────
 const FilePickerWithPreview = ({ files = [], onChange, accept = 'image/*,.pdf', multiple = true, onAI, aiLoading, aiLabel }) => {
   const ref = useRef();
-  const [preview, setPreview] = useState(null); // { url, name, isImage }
+  const [preview, setPreview] = useState(null); // { url, name, isImage, isPdf }
+
+  useEffect(() => () => {
+    if (preview?.url) URL.revokeObjectURL(preview.url);
+  }, [preview]);
 
   const addFiles = (newFiles) => {
     const arr = Array.from(newFiles || []);
@@ -57,11 +61,20 @@ const FilePickerWithPreview = ({ files = [], onChange, accept = 'image/*,.pdf', 
 
   const openPreview = (f) => {
     const url = URL.createObjectURL(f);
-    if (!f.type.startsWith('image/')) {
-      window.open(url, '_blank');
-      return;
-    }
-    setPreview({ url, name: f.name, isImage: true });
+    setPreview({
+      url,
+      name: f.name,
+      type: f.type || '',
+      isImage: f.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name),
+      isPdf: f.type === 'application/pdf' || /\.pdf$/i.test(f.name),
+    });
+  };
+
+  const closePreview = () => {
+    setPreview((current) => {
+      if (current?.url) URL.revokeObjectURL(current.url);
+      return null;
+    });
   };
 
   return (
@@ -101,17 +114,25 @@ const FilePickerWithPreview = ({ files = [], onChange, accept = 'image/*,.pdf', 
 
       {/* Preview modal */}
       {preview && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onClick={() => setPreview(null)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onClick={closePreview}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <span className="text-sm font-bold text-slate-700 truncate">{preview.name}</span>
-              <button type="button" onClick={() => setPreview(null)} className="p-1 text-slate-400 hover:text-red-500"><X size={18} /></button>
+              <button type="button" onClick={closePreview} className="p-1 text-slate-400 hover:text-red-500"><X size={18} /></button>
             </div>
             <div className="p-4">
               {preview.isImage ? (
                 <img src={preview.url} alt={preview.name} className="w-full rounded-xl" />
-              ) : (
+              ) : preview.isPdf ? (
                 <iframe src={preview.url} title={preview.name} className="w-full h-[70vh] rounded-xl border" />
+              ) : (
+                <div className="flex min-h-[240px] flex-col items-center justify-center rounded-xl border bg-slate-50 p-6 text-center">
+                  <FileText size={28} className="mb-3 text-slate-400" />
+                  <p className="text-sm font-bold text-slate-600">Энэ төрлийн файлыг browser дотор preview хийх боломжгүй байна.</p>
+                  <a href={preview.url} target="_blank" rel="noreferrer" className="mt-4 rounded-lg bg-[#003B5C] px-4 py-2 text-xs font-bold text-white">
+                    Файл нээх
+                  </a>
+                </div>
               )}
             </div>
           </div>
