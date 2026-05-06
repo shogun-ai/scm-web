@@ -249,6 +249,7 @@ const COMPLIANCE_TEXT = {
     source: 'Эх сурвалж',
     summary: 'Ерөнхий дүгнэлт',
     checks: 'Шалгалтын задаргаа',
+    policyClause: 'Журмын заалт',
     policyRequirement: 'Журмын шаардлага',
     evidence: 'Хүсэлтийн нотолгоо',
     conflictReason: 'Нийцэл / зөрчлийн үндэслэл',
@@ -281,6 +282,7 @@ const COMPLIANCE_TEXT = {
     source: 'Source',
     summary: 'Summary',
     checks: 'Check details',
+    policyClause: 'Policy clause',
     policyRequirement: 'Policy requirement',
     evidence: 'Request evidence',
     conflictReason: 'Compliance rationale',
@@ -1355,6 +1357,12 @@ const ComplianceReviewCard = ({ loan, labels = COMPLIANCE_TEXT.mn, onRun, loadin
                     <span className="text-[10px] font-black text-slate-500">{item.severity}</span>
                   </div>
                   <p className="mt-2 text-sm font-bold leading-5 text-slate-800">{item.finding}</p>
+                  {item.policyClause && (
+                    <div className="mt-2 rounded-lg border border-slate-200 bg-white p-2">
+                      <p className="text-[9px] font-black uppercase text-slate-500">{labels.policyClause}</p>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-slate-800">{item.policyClause}</p>
+                    </div>
+                  )}
                   {item.policyRequirement && (
                     <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 p-2">
                       <p className="text-[9px] font-black uppercase text-blue-700">{labels.policyRequirement}</p>
