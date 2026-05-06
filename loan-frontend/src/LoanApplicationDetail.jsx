@@ -28,6 +28,55 @@ const filePreviewType = (file = {}) => file.type || file.mimeType || '';
 const filePreviewUrl = (file = {}) => file.fileUrl || file.url || '';
 const isPreviewImageFile = (file = {}) => String(filePreviewType(file)).startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(fileDisplayName(file));
 const isPreviewPdfFile = (file = {}) => filePreviewType(file) === 'application/pdf' || /\.pdf$/i.test(fileDisplayName(file));
+const looksLikeFileUrl = (value = '') => /^https?:\/\//i.test(value)
+  && (/cloudinary|\/uploads\//i.test(value) || /\.(pdf|png|jpe?g|webp|gif|xlsx?|docx?)(\?|$)/i.test(value));
+const inferMimeFromUrl = (url = '') => {
+  if (/\.pdf(\?|$)/i.test(url)) return 'application/pdf';
+  if (/\.(png|jpe?g|webp|gif)(\?|$)/i.test(url)) return 'image/*';
+  return '';
+};
+const collectFileReferences = (loan = {}) => {
+  const files = [];
+  const seen = new Set();
+  const pushFile = (file = {}, fallbackField = 'legacy') => {
+    const url = file.fileUrl || file.url || file.path || (typeof file === 'string' ? file : '');
+    if (!looksLikeFileUrl(url) || seen.has(url)) return;
+    seen.add(url);
+    files.push({
+      fieldName: file.fieldName || fallbackField,
+      fileName: file.fileName || file.name || file.originalname || fileDisplayName({ fileUrl: url }, `Файл ${files.length + 1}`),
+      fileUrl: url,
+      mimeType: file.mimeType || file.type || inferMimeFromUrl(url),
+      size: file.size || 0,
+    });
+  };
+
+  (Array.isArray(loan.fileDetails) ? loan.fileDetails : []).forEach(file => pushFile(file, file.fieldName || 'fileDetails'));
+  (Array.isArray(loan.fileNames) ? loan.fileNames : []).forEach(url => pushFile(url, 'fileNames'));
+  if (loan.selfieUrl) pushFile({ fieldName: 'file_selfie', fileName: 'Цээж зураг', fileUrl: loan.selfieUrl }, 'file_selfie');
+
+  const walk = (value, path = '') => {
+    if (!value) return;
+    if (typeof value === 'string') {
+      pushFile({ fieldName: path || 'legacy', fileUrl: value }, path || 'legacy');
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => walk(item, `${path}[${index}]`));
+      return;
+    }
+    if (typeof value === 'object') {
+      const url = value.fileUrl || value.url || value.path || value.secure_url;
+      if (url) pushFile({ ...value, fileUrl: url, fieldName: value.fieldName || path || 'legacy' }, path || 'legacy');
+      Object.entries(value).forEach(([key, child]) => {
+        if (['buffer', 'data'].includes(key)) return;
+        walk(child, path ? `${path}.${key}` : key);
+      });
+    }
+  };
+  walk(loan);
+  return files;
+};
 
 import {
   LOAN_PRODUCTS, PRODUCTS_MAP, EMPLOYMENT_TYPES,
@@ -2290,17 +2339,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
   }, [loan?._id, loan?.aiLoanOfficer]);
 
   const set = (field, val) => setAppData(prev => ({ ...prev, [field]: val }));
-  const loanFiles = [
-    ...(Array.isArray(loan?.fileDetails) ? loan.fileDetails : []),
-    ...((Array.isArray(loan?.fileNames) ? loan.fileNames : [])
-      .filter(url => !(loan?.fileDetails || []).some(file => file.fileUrl === url || file.url === url))
-      .map((url, index) => ({
-        fieldName: 'legacy',
-        fileName: fileDisplayName({ fileUrl: url }, `Файл ${index + 1}`),
-        fileUrl: url,
-        mimeType: /\.pdf($|\?)/i.test(String(url)) ? 'application/pdf' : '',
-      }))),
-  ];
+  const loanFiles = collectFileReferences(loan || {});
   const filesByField = (...fieldNames) => {
     const fields = new Set(fieldNames);
     return loanFiles.filter(file => fields.has(file.fieldName));
