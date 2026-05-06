@@ -40,6 +40,7 @@ const collectFileReferences = (loan = {}) => {
   const seen = new Set();
   const pushFile = (file = {}, fallbackField = 'legacy') => {
     const url = file.fileUrl || file.url || file.path || (typeof file === 'string' ? file : '');
+    if (/scm_policies|policy|policies/i.test(String(url)) || /policy|compliance/i.test(String(fallbackField))) return;
     if (!looksLikeFileUrl(url) || seen.has(url)) return;
     seen.add(url);
     files.push({
@@ -69,7 +70,7 @@ const collectFileReferences = (loan = {}) => {
       const url = value.fileUrl || value.url || value.path || value.secure_url;
       if (url) pushFile({ ...value, fileUrl: url, fieldName: value.fieldName || path || 'legacy' }, path || 'legacy');
       Object.entries(value).forEach(([key, child]) => {
-        if (['buffer', 'data'].includes(key)) return;
+        if (['buffer', 'data', 'aiLoanOfficer', 'complianceReview', 'policySources'].includes(key)) return;
         walk(child, path ? `${path}.${key}` : key);
       });
     }
