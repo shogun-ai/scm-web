@@ -86,9 +86,13 @@ const initialForm = {
   // Батлан даагч
   guarantors: [],
   // Зээлийн тооцооллын нөхцөл
+  loanStartDate: '',
   repaymentStartDate: '',
+  repaymentPaymentDay: '',
   repaymentType: 'equal',
   graceMonths: '',
+  hasInsurance: false,
+  insuranceAmount: '',
   // Ажилтны шийдвэр
   analystDecision: '',
   analystOpinion: '',
@@ -519,6 +523,11 @@ const normalizeLoanRequest = (request) => {
     termMonths: loanReq.term ? String(loanReq.term) : (request.term ? String(request.term) : ''),
     purpose: loanReq.purpose || request.purpose || '',
     repaymentSource: bsFs.repaymentSource || loanReq.repaymentSource || request.repaymentSource || '',
+    loanStartDate: loanReq.loanStartDate || '',
+    repaymentStartDate: loanReq.repaymentStartDate || '',
+    repaymentPaymentDay: loanReq.repaymentPaymentDay || '',
+    repaymentType: loanReq.repaymentType || 'equal',
+    graceMonths: loanReq.graceMonths || '',
     sourceRequestId: request._id || '',
     sourceProduct: loanReq.product || request.selectedProduct || '',
     profileImageUrl: borrower.profileImageUrl || request.selfieUrl ||
@@ -554,37 +563,99 @@ const calculatePayment = (principal, months, monthlyRatePercent) => {
   return principal * ((rate * Math.pow(1 + rate, months)) / (Math.pow(1 + rate, months) - 1));
 };
 
-const buildAmortizationRows = (principal, months, monthlyRatePercent, startDateStr) => {
+const isValidDate = (date) => date instanceof Date && !Number.isNaN(date.getTime());
+const daysBetween = (start, end) => Math.round((end - start) / (1000 * 60 * 60 * 24));
+const formatScheduleDate = (date) => (
+  isValidDate(date)
+    ? `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`
+    : ''
+);
+const addMonthsClamped = (baseDate, monthsToAdd, paymentDay) => {
+  if (!isValidDate(baseDate)) return null;
+  const target = new Date(baseDate);
+  target.setDate(1);
+  target.setMonth(target.getMonth() + monthsToAdd);
+  const day = Number(paymentDay) || baseDate.getDate();
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(Math.max(1, day), lastDay));
+  return target;
+};
+const shouldChargeInsurance = (rowDate, previousDate, loanStartDate, yearIndex) => {
+  if (!isValidDate(rowDate) || !isValidDate(loanStartDate) || yearIndex < 1) return false;
+  const anniversary = new Date(loanStartDate);
+  anniversary.setFullYear(anniversary.getFullYear() + yearIndex);
+  const afterPrevious = !isValidDate(previousDate) || anniversary > previousDate;
+  return afterPrevious && anniversary <= rowDate;
+};
+
+const buildAmortizationRows = (principal, months, monthlyRatePercent, options = {}) => {
   if (!principal || !months) return [];
+  const startDateStr = typeof options === 'string' ? options : (options.repaymentStartDate || options.loanStartDate);
+  const loanStartDateStr = typeof options === 'object' ? (options.loanStartDate || startDateStr) : '';
+  const paymentDay = typeof options === 'object' ? options.paymentDay : '';
+  const repaymentType = typeof options === 'object' ? (options.repaymentType || 'equal') : 'equal';
+  const graceMonths = typeof options === 'object' ? parseNumber(options.graceMonths) : 0;
+  const hasInsurance = typeof options === 'object' ? Boolean(options.hasInsurance) : false;
+  const insuranceAmount = hasInsurance ? parseNumber(options.insuranceAmount) : 0;
   const rate = monthlyRatePercent / 100;
-  const payment = calculatePayment(principal, months, monthlyRatePercent);
+  const annuityPayment = calculatePayment(principal, months, monthlyRatePercent);
   let balance = principal;
   const startDate = startDateStr ? new Date(startDateStr) : null;
+  const loanStartDate = loanStartDateStr ? new Date(loanStartDateStr) : null;
+  let nextInsuranceYear = 1;
   return Array.from({ length: months }, (_, i) => {
     const interest = balance * rate;
-    const principalPart = Math.max(0, payment - interest);
+    let payment = 0;
+    let principalPart = 0;
+    if (repaymentType === 'interest_only_bullet') {
+      principalPart = i === months - 1 ? balance : 0;
+      payment = interest + principalPart;
+    } else if (repaymentType === 'grace_then_equal') {
+      if (i < graceMonths) {
+        principalPart = 0;
+        payment = interest;
+      } else {
+        const equalTerm = Math.max(1, months - graceMonths);
+        const equalPayment = rate > 0
+          ? principal * rate * Math.pow(1 + rate, equalTerm) / (Math.pow(1 + rate, equalTerm) - 1)
+          : principal / equalTerm;
+        principalPart = Math.max(0, equalPayment - interest);
+        payment = equalPayment;
+      }
+    } else {
+      payment = annuityPayment;
+      principalPart = Math.max(0, payment - interest);
+    }
     const prevBalance = balance;
     balance = Math.max(0, balance - principalPart);
     let dateLabel = '';
     let calendarDays = null;
-    if (startDate && !isNaN(startDate)) {
-      const cur = new Date(startDate);
-      cur.setMonth(cur.getMonth() + i);
-      dateLabel = `${cur.getFullYear()}/${String(cur.getMonth() + 1).padStart(2, '0')}/${String(cur.getDate()).padStart(2, '0')}`;
+    let insurancePayment = 0;
+    if (isValidDate(startDate)) {
+      const cur = addMonthsClamped(startDate, i, paymentDay);
+      const prev = i > 0 ? addMonthsClamped(startDate, i - 1, paymentDay) : null;
+      dateLabel = formatScheduleDate(cur);
       if (i === 0) {
         calendarDays = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
       } else {
-        const prev = new Date(startDate);
-        prev.setMonth(prev.getMonth() + i - 1);
-        calendarDays = Math.round((cur - prev) / (1000 * 60 * 60 * 24));
+        calendarDays = daysBetween(prev, cur);
+      }
+      if (hasInsurance && insuranceAmount > 0) {
+        while (shouldChargeInsurance(cur, prev, loanStartDate, nextInsuranceYear)) {
+          insurancePayment += insuranceAmount;
+          nextInsuranceYear += 1;
+        }
       }
     }
+    const totalPayment = payment + insurancePayment;
     return {
       month: i + 1,
       dateLabel,
       calendarDays,
       openingBalance: prevBalance,
-      payment,
+      payment: totalPayment,
+      loanPayment: payment,
+      insurancePayment,
       interest,
       principal: principalPart,
       closingBalance: balance,
@@ -605,7 +676,20 @@ const buildOutputs = (form, context = {}) => {
   const monthlyDebt = parseNumber(form.monthlyDebtPayment) + otherLoanMonthlyPayment;
   const creditScore = parseNumber(form.creditScore);
   const monthlyRate = parseNumber(form.monthlyRate);
-  const monthlyPayment = calculatePayment(requestedAmount, termMonths, monthlyRate);
+  const amortizationRows = buildAmortizationRows(requestedAmount, termMonths, monthlyRate, {
+    loanStartDate: form.loanStartDate,
+    repaymentStartDate: form.repaymentStartDate,
+    paymentDay: form.repaymentPaymentDay,
+    repaymentType: form.repaymentType || 'equal',
+    graceMonths: form.graceMonths,
+    hasInsurance: form.hasInsurance,
+    insuranceAmount: form.insuranceAmount,
+  });
+  const totalLoanPayment = amortizationRows.reduce((sum, row) => sum + (row.loanPayment || 0), 0);
+  const baseMonthlyPayment = termMonths ? totalLoanPayment / termMonths : calculatePayment(requestedAmount, termMonths, monthlyRate);
+  const totalInsurance = amortizationRows.reduce((sum, row) => sum + (row.insurancePayment || 0), 0);
+  const averageInsuranceMonthly = termMonths ? totalInsurance / termMonths : 0;
+  const monthlyPayment = baseMonthlyPayment + averageInsuranceMonthly;
   const netIncome = income - cost;
   const freeCashFlow = netIncome - monthlyDebt - monthlyPayment;
   const dti = income ? ((monthlyDebt + monthlyPayment) / income) * 100 : 0;
@@ -775,8 +859,6 @@ const buildOutputs = (form, context = {}) => {
   });
 
   // --- Амортизацийн хуваарь (бүх сар, хүү+үндсэн задаргаатай) ---
-  const amortizationRows = buildAmortizationRows(requestedAmount, termMonths, monthlyRate, form.repaymentStartDate);
-
   const behavior = {
     income:
       income <= 0
@@ -807,6 +889,11 @@ const buildOutputs = (form, context = {}) => {
       requestedAmount,
       termMonths,
       monthlyRate,
+      loanStartDate: form.loanStartDate,
+      repaymentStartDate: form.repaymentStartDate,
+      repaymentPaymentDay: form.repaymentPaymentDay,
+      hasInsurance: Boolean(form.hasInsurance),
+      insuranceAmount: parseNumber(form.insuranceAmount),
       classification: classificationLabels[form.classification] || form.classification,
       decision,
     },
@@ -816,6 +903,9 @@ const buildOutputs = (form, context = {}) => {
       netIncome,
       monthlyDebt,
       monthlyPayment,
+      baseMonthlyPayment,
+      totalInsurance,
+      averageInsuranceMonthly,
       freeCashFlow,
       dti,
       otherLoanTotalAmount,
@@ -1242,7 +1332,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     const OVERLAY_FIELDS = ['monthlyRate', 'averageMonthlyIncome', 'averageMonthlyCost',
       'monthlyDebtPayment', 'creditScore', 'classification', 'purpose', 'comment',
       'analystOpinion', 'analystDecision', 'conditions', 'riskFlags',
-      'repaymentType', 'repaymentStartDate', 'graceMonths'];
+      'loanStartDate', 'repaymentType', 'repaymentStartDate', 'repaymentPaymentDay',
+      'graceMonths', 'hasInsurance', 'insuranceAmount'];
     const linked = researches
       .filter(r => r.borrower?.sourceRequestId === prefillRequest._id)
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0];
@@ -1722,7 +1813,11 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
             </tr>
             <tr>
               <td class="label-cell">Зээлийн ангилал</td><td>${esc(classificationLabels[f.classification] || f.classification)}</td>
-              <td class="label-cell">Эхэлж төлөх огноо</td><td>${esc(f.repaymentStartDate) || '—'}</td>
+              <td class="label-cell">Зээл эхлэх огноо</td><td>${esc(f.loanStartDate) || '—'}</td>
+            </tr>
+            <tr>
+              <td class="label-cell">Зээлээ төлж эхлэх хугацаа</td><td>${esc(f.repaymentStartDate) || '—'}</td>
+              <td class="label-cell">Даатгалын дүн</td><td>${f.hasInsurance ? formatMoney(f.insuranceAmount) : 'Даатгалгүй'}</td>
             </tr>
             ${amortRows.length > 0 ? `<tr>
               <td class="label-cell">Нийт хүүгийн зардал</td><td class="negative">${formatMoney(amortRows.reduce((s,r) => s + (r.interest||0), 0))}</td>
@@ -1954,25 +2049,29 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           ${sectionTitle('8', 'Эргэн төлөлтийн хуваарь')}
           <div class="no-break">
           <table><thead><tr>
-            <th>№</th><th>Огноо</th><th style="text-align:right">Эхний үлдэгдэл</th><th style="text-align:right">Сарын төлбөр</th><th style="text-align:right">Хүү</th><th style="text-align:right">Хүү тооцох хоног</th><th style="text-align:right">Үндсэн</th><th style="text-align:right">Эцсийн үлдэгдэл</th>
+            <th>№</th><th>Огноо</th><th style="text-align:right">Эхний үлдэгдэл</th><th style="text-align:right">Зээлийн төлбөр</th><th style="text-align:right">Хүү</th><th style="text-align:right">Хүү тооцох хоног</th><th style="text-align:right">Үндсэн</th><th style="text-align:right">Даатгал</th><th style="text-align:right">Нийт төлбөр</th><th style="text-align:right">Эцсийн үлдэгдэл</th>
           </tr></thead><tbody>
           ${amortRows.map((r, i) => `<tr style="${rowStyle(i)}">
             <td style="color:#94a3b8">${r.month}</td>
             <td>${esc(r.dateLabel || r.month)}</td>
             <td style="text-align:right">${formatMoney(r.openingBalance)}</td>
-            <td style="text-align:right;font-weight:600">${formatMoney(r.payment)}</td>
+            <td style="text-align:right;font-weight:600">${formatMoney(r.loanPayment || 0)}</td>
             <td style="text-align:right" class="negative">${formatMoney(r.interest)}</td>
             <td style="text-align:right;color:#64748b">${r.calendarDays || '—'}</td>
             <td style="text-align:right">${formatMoney(r.principal)}</td>
+            <td style="text-align:right;color:#b45309">${r.insurancePayment ? formatMoney(r.insurancePayment) : '—'}</td>
+            <td style="text-align:right;font-weight:700">${formatMoney(r.payment)}</td>
             <td style="text-align:right;font-weight:600">${formatMoney(r.closingBalance)}</td>
           </tr>`).join('')}
           <tr style="background:#f1f5f9;font-weight:700">
             <td colspan="2" style="text-align:right;font-weight:700">Нийт</td>
             <td></td>
-            <td style="text-align:right">${formatMoney(amortRows.reduce((s,r) => s+(r.payment||0), 0))}</td>
+            <td style="text-align:right">${formatMoney(amortRows.reduce((s,r) => s+(r.loanPayment||0), 0))}</td>
             <td style="text-align:right" class="negative">${formatMoney(amortRows.reduce((s,r) => s+(r.interest||0), 0))}</td>
             <td></td>
             <td style="text-align:right">${formatMoney(amortRows.reduce((s,r) => s+(r.principal||0), 0))}</td>
+            <td style="text-align:right">${formatMoney(amortRows.reduce((s,r) => s+(r.insurancePayment||0), 0))}</td>
+            <td style="text-align:right">${formatMoney(amortRows.reduce((s,r) => s+(r.payment||0), 0))}</td>
             <td></td>
           </tr>
           </tbody></table>
@@ -2688,11 +2787,39 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                       placeholder="%" />
                   </div>
                   <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-slate-600">Эхэлж төлөх огноо</label>
+                    <label className="block text-xs font-semibold text-slate-600">Зээл эхлэх он сар өдөр</label>
+                    <input type="date" value={form.loanStartDate ?? ''}
+                      onChange={e => updateField('loanStartDate', e.target.value)}
+                      className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-600">Зээлээ төлж эхлэх хугацаа</label>
                     <input type="date" value={form.repaymentStartDate ?? ''}
                       onChange={e => updateField('repaymentStartDate', e.target.value)}
                       className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]" />
                   </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-600">Төлөх өдөр</label>
+                    <input type="number" min="1" max="31" value={form.repaymentPaymentDay ?? ''}
+                      onChange={e => updateField('repaymentPaymentDay', e.target.value)}
+                      className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
+                      placeholder="1-31" />
+                  </div>
+                  <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-bold text-slate-700">
+                    <input type="checkbox" checked={Boolean(form.hasInsurance)}
+                      onChange={e => updateField('hasInsurance', e.target.checked)}
+                      className="h-4 w-4 accent-[#003B5C]" />
+                    Даатгалтай эсэх
+                  </label>
+                  {form.hasInsurance && (
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-600">Даатгалын дүн ₮</label>
+                      <input type="text" value={form.insuranceAmount ?? ''}
+                        onChange={e => updateField('insuranceAmount', e.target.value)}
+                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
+                        placeholder="₮" inputMode="numeric" />
+                    </div>
+                  )}
                 </div>
 
                 {/* Төлбөрийн нөхцөл */}
@@ -2730,37 +2857,28 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                 {parseNumber(form.requestedAmount) > 0 && parseNumber(form.termMonths) > 0 && parseNumber(form.monthlyRate) > 0 && (() => {
                   const amt = parseNumber(form.requestedAmount);
                   const term = parseNumber(form.termMonths);
-                  const rate = parseNumber(form.monthlyRate) / 100;
-                  const rType = form.repaymentType || 'equal';
-                  let monthlyPmt = 0;
-                  let totalRepay = 0;
-                  let totalInterest = 0;
-                  if (rType === 'equal') {
-                    monthlyPmt = rate > 0 ? amt * rate * Math.pow(1 + rate, term) / (Math.pow(1 + rate, term) - 1) : amt / term;
-                    totalRepay = monthlyPmt * term;
-                    totalInterest = totalRepay - amt;
-                  } else if (rType === 'interest_only_bullet') {
-                    monthlyPmt = amt * rate;
-                    totalInterest = monthlyPmt * term;
-                    totalRepay = totalInterest + amt;
-                  } else {
-                    const grace = parseNumber(form.graceMonths) || 0;
-                    const equalTerm = term - grace;
-                    const graceMonthlyPmt = amt * rate;
-                    const equalMonthlyPmt = equalTerm > 0 && rate > 0
-                      ? amt * rate * Math.pow(1 + rate, equalTerm) / (Math.pow(1 + rate, equalTerm) - 1)
-                      : amt / (equalTerm || 1);
-                    totalRepay = graceMonthlyPmt * grace + equalMonthlyPmt * equalTerm;
-                    totalInterest = totalRepay - amt;
-                    monthlyPmt = equalMonthlyPmt;
-                  }
+                  const rows = buildAmortizationRows(amt, term, parseNumber(form.monthlyRate), {
+                    loanStartDate: form.loanStartDate,
+                    repaymentStartDate: form.repaymentStartDate,
+                    paymentDay: form.repaymentPaymentDay,
+                    repaymentType: form.repaymentType || 'equal',
+                    graceMonths: form.graceMonths,
+                    hasInsurance: form.hasInsurance,
+                    insuranceAmount: form.insuranceAmount,
+                  });
+                  const totalRepay = rows.reduce((sum, row) => sum + (row.payment || 0), 0);
+                  const totalInterest = rows.reduce((sum, row) => sum + (row.interest || 0), 0);
+                  const totalInsurance = rows.reduce((sum, row) => sum + (row.insurancePayment || 0), 0);
+                  const monthlyPmt = rows.find(row => (row.loanPayment || 0) > 0)?.loanPayment || 0;
                   return (
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
                       {[
                         { label: 'Сарын төлбөр', value: formatMoney(Math.round(monthlyPmt)), color: 'text-[#003B5C]' },
                         { label: 'Нийт төлбөр', value: formatMoney(Math.round(totalRepay)), color: 'text-slate-700' },
                         { label: 'Нийт хүүгийн дүн', value: formatMoney(Math.round(totalInterest)), color: 'text-red-600' },
-                        { label: 'Хүүгийн хувь', value: `${totalRepay > 0 ? ((totalInterest / totalRepay) * 100).toFixed(1) : 0}%`, color: 'text-amber-600' },
+                        form.hasInsurance
+                          ? { label: 'Нийт даатгал', value: formatMoney(Math.round(totalInsurance)), color: 'text-amber-600' }
+                          : { label: 'Хүүгийн хувь', value: `${totalRepay > 0 ? ((totalInterest / totalRepay) * 100).toFixed(1) : 0}%`, color: 'text-amber-600' },
                       ].map((item, i) => (
                         <div key={i} className="bg-slate-50 border rounded-xl p-3 text-center">
                           <p className="text-xs text-slate-500 mb-1">{item.label}</p>
@@ -2780,7 +2898,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                     <h4 className="font-bold text-[#003B5C] text-sm">Эргэн төлөлтийн хуваарь</h4>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-xs border-collapse min-w-[550px]">
+                    <table className="w-full text-xs border-collapse min-w-[650px]">
                       <thead>
                         <tr className="bg-[#003B5C] text-white">
                           <th className="px-2 py-2 text-center">№</th>
@@ -2788,6 +2906,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                           <th className="px-2 py-2 text-center">Хүү тооцох хоног</th>
                           <th className="px-2 py-2 text-right">Үндсэн</th>
                           <th className="px-2 py-2 text-right">Хүү</th>
+                          <th className="px-2 py-2 text-right">Даатгал</th>
                           <th className="px-2 py-2 text-right">Нийт төлбөр</th>
                           <th className="px-2 py-2 text-right">Үлдэгдэл</th>
                         </tr>
@@ -2796,56 +2915,15 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                         {(() => {
                           const amt = parseNumber(form.requestedAmount);
                           const term = parseNumber(form.termMonths);
-                          const rate = parseNumber(form.monthlyRate) / 100;
-                          const rType = form.repaymentType || 'equal';
-                          const grace = parseNumber(form.graceMonths) || 0;
-                          const startDate = form.repaymentStartDate ? new Date(form.repaymentStartDate) : null;
-                          const rows = [];
-                          let balance = amt;
-                          for (let i = 0; i < term; i++) {
-                            const interest = balance * rate;
-                            let principal = 0;
-                            let payment = 0;
-                            if (rType === 'equal') {
-                              const annuity = rate > 0 ? amt * rate * Math.pow(1 + rate, term) / (Math.pow(1 + rate, term) - 1) : amt / term;
-                              principal = annuity - interest;
-                              payment = annuity;
-                            } else if (rType === 'interest_only_bullet') {
-                              principal = i === term - 1 ? balance : 0;
-                              payment = interest + principal;
-                            } else {
-                              if (i < grace) {
-                                principal = 0;
-                                payment = interest;
-                              } else {
-                                const equalTerm = term - grace;
-                                const annuity = equalTerm > 0 && rate > 0
-                                  ? amt * rate * Math.pow(1 + rate, equalTerm) / (Math.pow(1 + rate, equalTerm) - 1)
-                                  : amt / (equalTerm || 1);
-                                principal = annuity - balance * rate;
-                                payment = annuity;
-                              }
-                            }
-                            balance = Math.max(0, balance - principal);
-                            let dateLabel = '';
-                            let calendarDays = null;
-                            if (startDate) {
-                              const cur = new Date(startDate);
-                              cur.setMonth(cur.getMonth() + i);
-                              dateLabel = `${cur.getFullYear()}/${String(cur.getMonth() + 1).padStart(2, '0')}/${String(cur.getDate()).padStart(2, '0')}`;
-                              // Days in this payment period: from previous payment date to current
-                              const prev = new Date(startDate);
-                              prev.setMonth(prev.getMonth() + i - 1);
-                              const periodStart = i === 0 ? new Date(startDate) : prev;
-                              if (i === 0) {
-                                // First period: days in the current month
-                                calendarDays = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
-                              } else {
-                                calendarDays = Math.round((cur - prev) / (1000 * 60 * 60 * 24));
-                              }
-                            }
-                            rows.push({ month: i + 1, dateLabel, calendarDays, principal, interest, payment, balance });
-                          }
+                          const rows = buildAmortizationRows(amt, term, parseNumber(form.monthlyRate), {
+                            loanStartDate: form.loanStartDate,
+                            repaymentStartDate: form.repaymentStartDate,
+                            paymentDay: form.repaymentPaymentDay,
+                            repaymentType: form.repaymentType || 'equal',
+                            graceMonths: form.graceMonths,
+                            hasInsurance: form.hasInsurance,
+                            insuranceAmount: form.insuranceAmount,
+                          });
                           return rows.map((row, i) => (
                             <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                               <td className="border px-2 py-1.5 text-center font-semibold text-slate-600">{row.month}</td>
@@ -2853,8 +2931,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                               <td className="border px-2 py-1.5 text-center text-slate-500">{row.calendarDays != null ? `${row.calendarDays} хоног` : '-'}</td>
                               <td className="border px-2 py-1.5 text-right">{formatMoney(Math.round(row.principal))}</td>
                               <td className="border px-2 py-1.5 text-right text-blue-700">{formatMoney(Math.round(row.interest))}</td>
+                              <td className="border px-2 py-1.5 text-right text-amber-700">{row.insurancePayment ? formatMoney(Math.round(row.insurancePayment)) : '-'}</td>
                               <td className="border px-2 py-1.5 text-right font-bold">{formatMoney(Math.round(row.payment))}</td>
-                              <td className="border px-2 py-1.5 text-right text-slate-500">{formatMoney(Math.round(row.balance))}</td>
+                              <td className="border px-2 py-1.5 text-right text-slate-500">{formatMoney(Math.round(row.closingBalance))}</td>
                             </tr>
                           ));
                         })()}
