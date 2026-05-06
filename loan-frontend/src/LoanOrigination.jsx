@@ -249,6 +249,9 @@ const COMPLIANCE_TEXT = {
     source: 'Эх сурвалж',
     summary: 'Ерөнхий дүгнэлт',
     checks: 'Шалгалтын задаргаа',
+    policyRequirement: 'Журмын шаардлага',
+    evidence: 'Хүсэлтийн нотолгоо',
+    conflictReason: 'Нийцэл / зөрчлийн үндэслэл',
     requiredActions: 'Заавал хийх алхам',
     missingDocuments: 'Дутуу баримт',
     noReview: 'Энэ хүсэлт дээр комплаенс дүгнэлт хараахан үүсээгүй байна.',
@@ -278,6 +281,9 @@ const COMPLIANCE_TEXT = {
     source: 'Source',
     summary: 'Summary',
     checks: 'Check details',
+    policyRequirement: 'Policy requirement',
+    evidence: 'Request evidence',
+    conflictReason: 'Compliance rationale',
     requiredActions: 'Required actions',
     missingDocuments: 'Missing documents',
     noReview: 'No compliance review has been generated for this request yet.',
@@ -1349,6 +1355,24 @@ const ComplianceReviewCard = ({ loan, labels = COMPLIANCE_TEXT.mn, onRun, loadin
                     <span className="text-[10px] font-black text-slate-500">{item.severity}</span>
                   </div>
                   <p className="mt-2 text-sm font-bold leading-5 text-slate-800">{item.finding}</p>
+                  {item.policyRequirement && (
+                    <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 p-2">
+                      <p className="text-[9px] font-black uppercase text-blue-700">{labels.policyRequirement}</p>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-blue-900">{item.policyRequirement}</p>
+                    </div>
+                  )}
+                  {item.evidence && (
+                    <div className="mt-2 rounded-lg border border-slate-200 bg-white p-2">
+                      <p className="text-[9px] font-black uppercase text-slate-500">{labels.evidence}</p>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-slate-700">{item.evidence}</p>
+                    </div>
+                  )}
+                  {item.conflictReason && (
+                    <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 p-2">
+                      <p className="text-[9px] font-black uppercase text-amber-700">{labels.conflictReason}</p>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-amber-900">{item.conflictReason}</p>
+                    </div>
+                  )}
                   <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">{item.recommendation}</p>
                   {item.policyRef && <p className="mt-2 text-[11px] font-bold text-[#003B5C]">{labels.source}: {item.policyRef}</p>}
                 </div>

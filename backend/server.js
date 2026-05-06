@@ -598,6 +598,13 @@ function buildRuleBasedComplianceReview(loanDoc, policySources = [], source = 'r
         status: missingDocuments.some(d => d.includes('үнэмлэх') || d.includes('КYC')) ? 'needs_review' : 'compliant',
         severity: missingDocuments.length ? 'medium' : 'low',
         policyRef: policySources[0]?.title || 'Компанийн бодлого',
+        policyRequirement: 'Харилцагчийг таньж мэдэх, бүртгэлийн болон иргэний/байгууллагын үндсэн баримтыг бүрдүүлсэн байх шаардлагатай.',
+        evidence: missingDocuments.length
+            ? `Хүсэлт дээр дараах баримт/мэдээлэл дутуу байна: ${missingDocuments.slice(0, 4).join(', ')}.`
+            : 'Хүсэлт дээр харилцагчийн үндсэн мэдээлэл болон хавсаргасан баримтын мэдээлэл бүртгэгдсэн байна.',
+        conflictReason: missingDocuments.length
+            ? 'Эх сурвалжийн баримт бүрдүүлэх шаардлагатай харьцуулахад хүсэлтийн бүрдэл дутуу тул нягтлах шаардлагатай.'
+            : 'Одоогийн бүрдэл нь эх сурвалжийн үндсэн шаардлагатай зөрчилдөх шууд шинж илрээгүй.',
         finding: missingDocuments.length ? 'Харилцагчийн баримтын бүрдлийг бүрэн баталгаажуулах шаардлагатай.' : 'Харилцагчийн үндсэн мэдээлэл бүртгэгдсэн байна.',
         recommendation: 'Иргэний/байгууллагын бүртгэлийн мэдээлэл болон хавсаргасан баримтыг эх хувьтай тулган шалгах.',
     });
@@ -606,6 +613,13 @@ function buildRuleBasedComplianceReview(loanDoc, policySources = [], source = 'r
         status: input.aiLoanOfficer?.status === 'completed' ? 'needs_review' : 'insufficient_information',
         severity: 'medium',
         policyRef: policySources[1]?.title || policySources[0]?.title || 'Зээлийн журам',
+        policyRequirement: 'Зээлийн шийдвэрийн өмнө эргэн төлөлтийн чадвар, орлогын эх үүсвэр, зээлийн түүх, барьцааны нөхцөлийг судалж баталгаажуулсан байх шаардлагатай.',
+        evidence: input.aiLoanOfficer?.status === 'completed'
+            ? 'AI зээлийн ажилтны урьдчилсан дүгнэлт бүртгэгдсэн байна.'
+            : 'AI зээлийн ажилтны дүгнэлт эсвэл бүрэн судалгааны баталгаажуулалт хараахан бүрдээгүй байна.',
+        conflictReason: input.aiLoanOfficer?.status === 'completed'
+            ? 'Эх сурвалжид шаардсан судалгааг хүний ажилтан баталгаажуулах ёстой тул AI дүгнэлт дангаараа эцсийн нийцэл болохгүй.'
+            : 'Эх сурвалжид шаардсан зээлийн судалгааны нотолгоо бүрэн харагдахгүй тул мэдээлэл дутуу гэж үзэв.',
         finding: input.aiLoanOfficer?.status === 'completed'
             ? 'AI зээлийн ажилтны урьдчилсан дүгнэлт бүртгэгдсэн тул ажилтан баталгаажуулах шаардлагатай.'
             : 'Зээлийн ажилтны AI/судалгааны дүгнэлт хараахан бүрэн баталгаажаагүй байна.',
@@ -652,12 +666,15 @@ const complianceReviewSchema = {
             items: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['area', 'status', 'severity', 'policyRef', 'finding', 'recommendation'],
+                required: ['area', 'status', 'severity', 'policyRef', 'policyRequirement', 'evidence', 'conflictReason', 'finding', 'recommendation'],
                 properties: {
                     area: { type: 'string' },
                     status: { type: 'string', enum: ['compliant', 'needs_review', 'non_compliant', 'insufficient_information'] },
                     severity: { type: 'string', enum: ['low', 'medium', 'high'] },
                     policyRef: { type: 'string' },
+                    policyRequirement: { type: 'string' },
+                    evidence: { type: 'string' },
+                    conflictReason: { type: 'string' },
                     finding: { type: 'string' },
                     recommendation: { type: 'string' },
                 }
@@ -719,6 +736,10 @@ async function buildComplianceReviewAssessment(loanDoc) {
                     'Зөвхөн хавсаргасан компанийн бодлого, журам болон зээлийн хүсэлтийн өгөгдөлд тулгуурлан дүгнэлт гарга.',
                     'Бүх хүний унших текстийг Монгол кириллээр бич. Англи өгүүлбэр бүү ашигла.',
                     'Эцсийн зээл олгох шийдвэр битгий гарга. Нийцэл, зөрчил, дутуу баримт, заавал хийх алхмыг тодорхой бич.',
+                    'check бүр дээр policyRef, policyRequirement, evidence, conflictReason талбаруудыг заавал бөглө.',
+                    'policyRequirement-д эх сурвалжийн шаардлагыг өөрийн үгээр товч тайлбарла. Урт шууд ишлэл бүү хуул.',
+                    'evidence-д тухайн зээлийн хүсэлт дээр ямар мэдээлэл байгаа/байхгүйг тодорхой бич.',
+                    'conflictReason-д "эх сурвалжид ингэж шаардсан боловч хүсэлт дээр ингэж байна, тиймээс зөрчил/анхаарах зүйл байна" гэсэн логикоор тайлбарла.',
                     'policyRef талбарт ашигласан бодлого/журмын нэрийг товч дурд. Мэдээлэл хангалтгүй бол status-ыг insufficient_information эсвэл needs_review гэж тэмдэглэ.'
                 ].join(' '),
                 input: [{
