@@ -93,6 +93,7 @@ const initialForm = {
   graceMonths: '',
   hasInsurance: false,
   insuranceAmount: '',
+  insurancePaymentMode: 'annual',
   // Ажилтны шийдвэр
   analystDecision: '',
   analystOpinion: '',
@@ -597,6 +598,7 @@ const buildAmortizationRows = (principal, months, monthlyRatePercent, options = 
   const graceMonths = typeof options === 'object' ? parseNumber(options.graceMonths) : 0;
   const hasInsurance = typeof options === 'object' ? Boolean(options.hasInsurance) : false;
   const insuranceAmount = hasInsurance ? parseNumber(options.insuranceAmount) : 0;
+  const insurancePaymentMode = typeof options === 'object' ? (options.insurancePaymentMode || 'annual') : 'annual';
   const rate = monthlyRatePercent / 100;
   const annuityPayment = calculatePayment(principal, months, monthlyRatePercent);
   let balance = principal;
@@ -641,9 +643,16 @@ const buildAmortizationRows = (principal, months, monthlyRatePercent, options = 
         calendarDays = daysBetween(prev, cur);
       }
       if (hasInsurance && insuranceAmount > 0) {
-        while (shouldChargeInsurance(cur, prev, loanStartDate, nextInsuranceYear)) {
-          insurancePayment += insuranceAmount;
-          nextInsuranceYear += 1;
+        if (insurancePaymentMode === 'monthly_after_year') {
+          const firstInsuranceDate = isValidDate(loanStartDate) ? addMonthsClamped(loanStartDate, 12, paymentDay) : null;
+          if (i >= 12 && isValidDate(firstInsuranceDate) && cur >= firstInsuranceDate) {
+            insurancePayment += insuranceAmount / 12;
+          }
+        } else {
+          while (shouldChargeInsurance(cur, prev, loanStartDate, nextInsuranceYear)) {
+            insurancePayment += insuranceAmount;
+            nextInsuranceYear += 1;
+          }
         }
       }
     }
@@ -684,6 +693,7 @@ const buildOutputs = (form, context = {}) => {
     graceMonths: form.graceMonths,
     hasInsurance: form.hasInsurance,
     insuranceAmount: form.insuranceAmount,
+    insurancePaymentMode: form.insurancePaymentMode,
   });
   const totalLoanPayment = amortizationRows.reduce((sum, row) => sum + (row.loanPayment || 0), 0);
   const baseMonthlyPayment = termMonths ? totalLoanPayment / termMonths : calculatePayment(requestedAmount, termMonths, monthlyRate);
@@ -894,6 +904,7 @@ const buildOutputs = (form, context = {}) => {
       repaymentPaymentDay: form.repaymentPaymentDay,
       hasInsurance: Boolean(form.hasInsurance),
       insuranceAmount: parseNumber(form.insuranceAmount),
+      insurancePaymentMode: form.insurancePaymentMode || 'annual',
       classification: classificationLabels[form.classification] || form.classification,
       decision,
     },
@@ -1333,7 +1344,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       'monthlyDebtPayment', 'creditScore', 'classification', 'purpose', 'comment',
       'analystOpinion', 'analystDecision', 'conditions', 'riskFlags',
       'loanStartDate', 'repaymentType', 'repaymentStartDate', 'repaymentPaymentDay',
-      'graceMonths', 'hasInsurance', 'insuranceAmount'];
+      'graceMonths', 'hasInsurance', 'insuranceAmount', 'insurancePaymentMode'];
     const linked = researches
       .filter(r => r.borrower?.sourceRequestId === prefillRequest._id)
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0];
@@ -1817,7 +1828,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
             </tr>
             <tr>
               <td class="label-cell">Зээлээ төлж эхлэх хугацаа</td><td>${esc(f.repaymentStartDate) || '—'}</td>
-              <td class="label-cell">Даатгалын дүн</td><td>${f.hasInsurance ? formatMoney(f.insuranceAmount) : 'Даатгалгүй'}</td>
+              <td class="label-cell">Даатгалын дүн</td><td>${f.hasInsurance ? `${formatMoney(f.insuranceAmount)} · ${(f.insurancePaymentMode || 'annual') === 'monthly_after_year' ? '13 дахь сараас сар бүр' : 'жил бүр нэг удаа'}` : 'Даатгалгүй'}</td>
             </tr>
             ${amortRows.length > 0 ? `<tr>
               <td class="label-cell">Нийт хүүгийн зардал</td><td class="negative">${formatMoney(amortRows.reduce((s,r) => s + (r.interest||0), 0))}</td>
@@ -2812,13 +2823,24 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                     Даатгалтай эсэх
                   </label>
                   {form.hasInsurance && (
-                    <div className="space-y-1">
-                      <label className="block text-xs font-semibold text-slate-600">Даатгалын дүн ₮</label>
-                      <input type="text" value={form.insuranceAmount ?? ''}
-                        onChange={e => updateField('insuranceAmount', e.target.value)}
-                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
-                        placeholder="₮" inputMode="numeric" />
-                    </div>
+                    <>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-slate-600">Даатгалын дүн ₮</label>
+                        <input type="text" value={form.insuranceAmount ?? ''}
+                          onChange={e => updateField('insuranceAmount', e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
+                          placeholder="₮" inputMode="numeric" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-slate-600">Даатгал төлөх хэлбэр</label>
+                        <select value={form.insurancePaymentMode || 'annual'}
+                          onChange={e => updateField('insurancePaymentMode', e.target.value)}
+                          className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]">
+                          <option value="annual">Жил бүр нэг удаа</option>
+                          <option value="monthly_after_year">13 дахь сараас сар бүр хувааж</option>
+                        </select>
+                      </div>
+                    </>
                   )}
                 </div>
 
@@ -2865,6 +2887,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                     graceMonths: form.graceMonths,
                     hasInsurance: form.hasInsurance,
                     insuranceAmount: form.insuranceAmount,
+                    insurancePaymentMode: form.insurancePaymentMode,
                   });
                   const totalRepay = rows.reduce((sum, row) => sum + (row.payment || 0), 0);
                   const totalInterest = rows.reduce((sum, row) => sum + (row.interest || 0), 0);
@@ -2923,6 +2946,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                             graceMonths: form.graceMonths,
                             hasInsurance: form.hasInsurance,
                             insuranceAmount: form.insuranceAmount,
+                            insurancePaymentMode: form.insurancePaymentMode,
                           });
                           return rows.map((row, i) => (
                             <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
