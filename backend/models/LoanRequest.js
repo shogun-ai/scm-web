@@ -109,6 +109,7 @@ const LoanRequestSchema = new mongoose.Schema({
   // Structured application data — read by LoanApplicationDetail
   applicationData: { type: mongoose.Schema.Types.Mixed, default: null },
   aiLoanOfficer: { type: mongoose.Schema.Types.Mixed, default: null },
+  complianceReview: { type: mongoose.Schema.Types.Mixed, default: null },
 }, { strict: false });
 
 export default mongoose.model('LoanRequest', LoanRequestSchema);

@@ -237,6 +237,67 @@ const UI_TEXT = {
   },
 };
 
+const COMPLIANCE_TEXT = {
+  mn: {
+    cardTitle: 'Хууль / комплаенс дүгнэлт',
+    defaultSubtitle: 'Компанийн бодлого, журмын дагуу нийцэл шалгана',
+    run: 'Комплаенс шалгах',
+    rerun: 'Дахин шалгах',
+    running: 'Шалгаж байна...',
+    success: 'Комплаенс дүгнэлт шинэчлэгдлээ.',
+    error: 'Комплаенс дүгнэлт гаргахад алдаа гарлаа.',
+    source: 'Эх сурвалж',
+    summary: 'Ерөнхий дүгнэлт',
+    checks: 'Шалгалтын задаргаа',
+    requiredActions: 'Заавал хийх алхам',
+    missingDocuments: 'Дутуу баримт',
+    noReview: 'Энэ хүсэлт дээр комплаенс дүгнэлт хараахан үүсээгүй байна.',
+    noPolicies: 'Компанийн бодлогын файл олдоогүй байна.',
+    statuses: {
+      not_started: 'Дүгнэлтгүй',
+      running: 'Шалгаж байна',
+      completed: 'Шалгасан',
+      no_policies: 'Журам олдсонгүй',
+      failed: 'Алдаа',
+    },
+    overall: {
+      compliant: 'Нийцэлтэй',
+      needs_review: 'Нягтлах шаардлагатай',
+      non_compliant: 'Нийцэлгүй',
+      insufficient_information: 'Мэдээлэл дутуу',
+    },
+  },
+  en: {
+    cardTitle: 'Legal / compliance review',
+    defaultSubtitle: 'Checks the request against company policies',
+    run: 'Run compliance',
+    rerun: 'Run again',
+    running: 'Checking...',
+    success: 'Compliance review updated.',
+    error: 'Failed to run compliance review.',
+    source: 'Source',
+    summary: 'Summary',
+    checks: 'Check details',
+    requiredActions: 'Required actions',
+    missingDocuments: 'Missing documents',
+    noReview: 'No compliance review has been generated for this request yet.',
+    noPolicies: 'No company policy files were found.',
+    statuses: {
+      not_started: 'No review',
+      running: 'Checking',
+      completed: 'Reviewed',
+      no_policies: 'No policies',
+      failed: 'Error',
+    },
+    overall: {
+      compliant: 'Compliant',
+      needs_review: 'Needs review',
+      non_compliant: 'Non-compliant',
+      insufficient_information: 'Insufficient information',
+    },
+  },
+};
+
 
 const fmt = (v) => new Intl.NumberFormat('mn-MN').format(v || 0) + ' ₮';
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('mn-MN') : '-';
@@ -320,6 +381,7 @@ const LoanOrigination = ({
   const [viewLoan, setViewLoan] = useState(null); // modal-д харуулах зээл
   const [aiBackfillLoading, setAiBackfillLoading] = useState(false);
   const [aiReviewingId, setAiReviewingId] = useState(null);
+  const [complianceReviewingId, setComplianceReviewingId] = useState(null);
 
   useEffect(() => {
     if (!navigationView) return;
@@ -430,6 +492,23 @@ const LoanOrigination = ({
       showToast(e.response?.data?.message || text.ai.rerunError, 'error');
     } finally {
       setAiReviewingId(null);
+    }
+  };
+
+  const runComplianceReview = async (loan) => {
+    if (!loan?._id) return;
+    const labels = COMPLIANCE_TEXT[language] || COMPLIANCE_TEXT.mn;
+    setComplianceReviewingId(loan._id);
+    try {
+      const res = await axios.post(`${apiUrl}/api/loans/${loan._id}/compliance-review`, {}, authHeaders());
+      onRequestsChange(requests.map(r => r._id === res.data._id ? res.data : r));
+      if (selectedLoan?._id === res.data._id) setSelectedLoan(res.data);
+      if (viewLoan?._id === res.data._id) setViewLoan(res.data);
+      showToast(labels.success);
+    } catch (e) {
+      showToast(e.response?.data?.message || labels.error, 'error');
+    } finally {
+      setComplianceReviewingId(null);
     }
   };
 
@@ -936,6 +1015,12 @@ const LoanOrigination = ({
               onRun={runAiLoanOfficer}
               loading={aiReviewingId === selectedLoan._id}
             />
+            <ComplianceReviewCard
+              loan={selectedLoan}
+              labels={COMPLIANCE_TEXT[language] || COMPLIANCE_TEXT.mn}
+              onRun={runComplianceReview}
+              loading={complianceReviewingId === selectedLoan._id}
+            />
             <LoanResearch
               apiUrl={apiUrl}
               prefillRequest={researchSeed}
@@ -965,8 +1050,11 @@ const LoanOrigination = ({
             revertDecision={revertDecision}
             onGoAssessment={() => setActiveStep('assessment')}
             labels={text.ai}
+            complianceLabels={COMPLIANCE_TEXT[language] || COMPLIANCE_TEXT.mn}
             onRunAi={runAiLoanOfficer}
             aiLoading={aiReviewingId === selectedLoan._id}
+            onRunCompliance={runComplianceReview}
+            complianceLoading={complianceReviewingId === selectedLoan._id}
           />
         )
       )}
@@ -1179,6 +1267,126 @@ const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai, onRun, loading = fals
 
 
 // ─────────────────────────────────────────────
+const ComplianceReviewCard = ({ loan, labels = COMPLIANCE_TEXT.mn, onRun, loading = false }) => {
+  const review = loan?.complianceReview;
+  const status = review?.status || 'not_started';
+  const overall = review?.overallStatus || 'insufficient_information';
+  const generatedAt = review?.generatedAt ? new Date(review.generatedAt).toLocaleString('mn-MN') : null;
+  const statusMeta = {
+    not_started: 'bg-slate-100 text-slate-600',
+    running: 'bg-blue-100 text-blue-700',
+    completed: 'bg-emerald-100 text-emerald-700',
+    no_policies: 'bg-amber-100 text-amber-700',
+    failed: 'bg-red-100 text-red-700',
+  }[status] || 'bg-slate-100 text-slate-600';
+  const overallMeta = {
+    compliant: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    needs_review: 'border-amber-200 bg-amber-50 text-amber-800',
+    non_compliant: 'border-red-200 bg-red-50 text-red-800',
+    insufficient_information: 'border-slate-200 bg-slate-50 text-slate-700',
+  }[overall] || 'border-slate-200 bg-slate-50 text-slate-700';
+  const checks = Array.isArray(review?.checks) ? review.checks : [];
+  const requiredActions = Array.isArray(review?.requiredActions) ? review.requiredActions : [];
+  const missingDocuments = Array.isArray(review?.missingDocuments) ? review.missingDocuments : [];
+  const policySources = Array.isArray(review?.policySources) ? review.policySources : [];
+  const hasReview = ['completed', 'no_policies', 'failed'].includes(status);
+
+  return (
+    <div className="bg-white border rounded-2xl p-5 shadow-sm space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-xl bg-[#0f766e] text-white flex items-center justify-center">
+            <BadgeCheck size={18} />
+          </div>
+          <div>
+            <p className="text-sm font-black text-[#003B5C]">{labels.cardTitle}</p>
+            <p className="text-xs font-semibold text-slate-500">
+              {generatedAt ? `${generatedAt} - ${review?.source === 'openai' ? 'OpenAI' : 'Rules'}` : review?.note || labels.defaultSubtitle}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black ${statusMeta}`}>
+            {status === 'running' ? <Loader2 size={12} className="animate-spin" /> : <BadgeCheck size={12} />}
+            {labels.statuses[status] || status}
+          </span>
+          {onRun && (
+            <button
+              type="button"
+              onClick={() => onRun(loan)}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-[11px] font-black text-slate-600 hover:border-[#003B5C] hover:text-[#003B5C] disabled:opacity-60"
+            >
+              {loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              {loading ? labels.running : (hasReview ? labels.rerun : labels.run)}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {status === 'not_started' ? (
+        <p className="text-sm font-semibold text-slate-600">{labels.noReview}</p>
+      ) : status === 'running' ? (
+        <p className="text-sm font-semibold text-slate-600">{review?.note || labels.running}</p>
+      ) : status === 'failed' ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">
+          {review?.note || labels.error}
+        </div>
+      ) : (
+        <>
+          <div className={`rounded-xl border p-4 ${overallMeta}`}>
+            <p className="text-[10px] font-black uppercase opacity-75">{labels.summary}</p>
+            <p className="mt-1 text-sm font-bold leading-6">{review?.summary || labels.noReview}</p>
+            <p className="mt-2 text-xs font-black">{labels.overall[overall] || overall}</p>
+          </div>
+
+          {checks.length > 0 && (
+            <div className="grid lg:grid-cols-3 gap-3">
+              {checks.slice(0, 6).map((item, idx) => (
+                <div key={`${item.area}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-[10px] font-black uppercase text-slate-500">{item.area}</p>
+                    <span className="text-[10px] font-black text-slate-500">{item.severity}</span>
+                  </div>
+                  <p className="mt-2 text-sm font-bold leading-5 text-slate-800">{item.finding}</p>
+                  <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">{item.recommendation}</p>
+                  {item.policyRef && <p className="mt-2 text-[11px] font-bold text-[#003B5C]">{labels.source}: {item.policyRef}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="grid md:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-[10px] font-black uppercase text-slate-500 mb-2">{labels.requiredActions}</p>
+              {requiredActions.length ? (
+                <ul className="space-y-1.5 text-xs font-bold leading-5 text-slate-700">
+                  {requiredActions.slice(0, 5).map((item, idx) => <li key={idx}>- {item}</li>)}
+                </ul>
+              ) : <p className="text-xs font-semibold text-slate-400">-</p>}
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-[10px] font-black uppercase text-slate-500 mb-2">{labels.missingDocuments}</p>
+              {missingDocuments.length ? (
+                <ul className="space-y-1.5 text-xs font-bold leading-5 text-slate-700">
+                  {missingDocuments.slice(0, 5).map((item, idx) => <li key={idx}>- {item}</li>)}
+                </ul>
+              ) : <p className="text-xs font-semibold text-slate-400">-</p>}
+            </div>
+          </div>
+
+          {policySources.length > 0 && (
+            <p className="text-[11px] font-semibold text-slate-500">
+              {labels.source}: {policySources.slice(0, 3).map(p => p.title).join(', ')}{policySources.length > 3 ? ` +${policySources.length - 3}` : ''}
+            </p>
+          )}
+        </>
+      )}
+      <p className="text-[11px] font-semibold text-slate-500">{review?.disclaimer}</p>
+    </div>
+  );
+};
+
 // COMMITTEE PANEL
 // ─────────────────────────────────────────────
 const ANALYST_DECISION_LABELS = {
@@ -1187,7 +1395,7 @@ const ANALYST_DECISION_LABELS = {
   reject: 'Татгалзах',
 };
 
-const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, setApprovalNote, savingDecision, makeDecision, revertDecision, onGoAssessment, labels = UI_TEXT.mn.ai, onRunAi, aiLoading = false }) => {
+const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, setApprovalNote, savingDecision, makeDecision, revertDecision, onGoAssessment, labels = UI_TEXT.mn.ai, complianceLabels = COMPLIANCE_TEXT.mn, onRunAi, aiLoading = false, onRunCompliance, complianceLoading = false }) => {
   const nfmt = v => new Intl.NumberFormat('mn-MN').format(Math.round(v || 0));
   const [revertMode, setRevertMode] = useState(false);
   const [revertReason, setRevertReason] = useState('');
@@ -1638,6 +1846,12 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
 
       {/* Hero — grade + score + borrower */}
       <AiLoanOfficerCard loan={loan} labels={labels} onRun={onRunAi} loading={aiLoading} />
+      <ComplianceReviewCard
+        loan={loan}
+        labels={complianceLabels}
+        onRun={onRunCompliance}
+        loading={complianceLoading}
+      />
 
       <div className="bg-white border-2 border-[#003B5C] rounded-2xl p-5 flex items-center gap-5">
         <div className={`w-20 h-20 rounded-2xl flex items-center justify-center text-3xl font-black shrink-0 ${gradeColor}`}>

@@ -137,6 +137,7 @@ const LoanRequestSchema = new mongoose.Schema({
     // Дэлгэрэнгүй хүсэлтийн мэдээлэл (Application form data)
     applicationData: { type: mongoose.Schema.Types.Mixed, default: {} },
     aiLoanOfficer: { type: mongoose.Schema.Types.Mixed, default: null },
+    complianceReview: { type: mongoose.Schema.Types.Mixed, default: null },
     createdAt: { type: Date, default: Date.now }
 });
 const LoanRequest = mongoose.models.LoanRequest || mongoose.model('LoanRequest', LoanRequestSchema);
@@ -482,6 +483,302 @@ async function updateLoanOfficerAssessment(loanOrId) {
 
 function runLoanOfficerAssessmentInBackground(loanId) {
     updateLoanOfficerAssessment(String(loanId)).catch(e => console.error('AI loan officer background error:', e.message));
+}
+
+const COMPLIANCE_REVIEW_VERSION = '2026-05-06';
+
+function buildComplianceStatus(status, note = '') {
+    return {
+        status,
+        version: COMPLIANCE_REVIEW_VERSION,
+        source: 'system',
+        note,
+        startedAt: status === 'running' ? new Date() : undefined,
+        generatedAt: ['completed', 'failed', 'no_policies'].includes(status) ? new Date() : undefined,
+        disclaimer: 'Комплаенс дүгнэлт нь компанийн бодлого, журмын дагуу урьдчилсан туслах шинжилгээ бөгөөд эцсийн шийдвэрийг эрх бүхий ажилтан/хороо гаргана.',
+    };
+}
+
+const getCompliancePolicySources = async () => {
+    const policies = await Policy.find({ category: 'policy' })
+        .sort({ uploadDate: -1 })
+        .limit(Number(process.env.COMPLIANCE_POLICY_LIMIT || 8));
+    return policies.map(p => ({
+        id: String(p._id),
+        title: p.title || p.fileName || 'Бодлогын баримт',
+        fileName: p.fileName || '',
+        fileUrl: p.fileUrl || '',
+        uploadDate: p.uploadDate,
+    }));
+};
+
+function getComplianceInput(loanDoc) {
+    const loan = loanDoc?.toObject ? loanDoc.toObject() : (loanDoc || {});
+    const appData = loan.applicationData || {};
+    return compact({
+        requestId: String(loan._id || ''),
+        status: loan.status,
+        borrowerType: loan.userType || appData.borrowerType,
+        borrower: {
+            lastName: loan.lastname || appData.borrower?.lastName,
+            firstName: loan.firstname || appData.borrower?.firstName,
+            regNo: loan.regNo || appData.borrower?.regNo,
+            phone: loan.phone || appData.borrower?.phone,
+            employmentType: appData.borrower?.employmentType,
+            employer: appData.borrower?.employer,
+            monthlyIncome: appData.borrower?.monthlyIncome,
+            incomeSource: appData.borrower?.incomeSource,
+        },
+        organization: {
+            orgName: loan.orgName || appData.org?.orgName,
+            orgRegNo: loan.orgRegNo || appData.org?.orgRegNo,
+            legalForm: appData.org?.legalForm,
+            industry: appData.org?.industry,
+            contactName: loan.contactName || appData.org?.contactName,
+            contactPhone: loan.contactPhone || appData.org?.contactPhone,
+        },
+        loanRequest: {
+            product: loan.selectedProduct || appData.loanRequest?.product,
+            amount: toNumber(loan.amount || appData.loanRequest?.amount),
+            term: toNumber(loan.term || appData.loanRequest?.term),
+            purpose: loan.purpose || appData.loanRequest?.purpose,
+            repaymentSource: loan.repaymentSource || appData.loanRequest?.repaymentSource,
+            collateralType: loan.collateralType || appData.loanRequest?.collateralType,
+        },
+        documents: (loan.fileDetails || []).map(f => ({
+            fieldName: f.fieldName,
+            fileName: f.fileName,
+            mimeType: f.mimeType,
+            hasUrl: Boolean(f.fileUrl),
+        })),
+        collaterals: (appData.collaterals || []).map(c => ({
+            type: c.type,
+            ownerRelation: c.ownerRelation,
+            hasFiles: Boolean(c.files?.length),
+            valuation: c.valuation,
+            fields: c.fields,
+        })),
+        guarantors: appData.guarantors || loan.guarantors || [],
+        aiLoanOfficer: loan.aiLoanOfficer || null,
+        createdAt: loan.createdAt,
+    });
+}
+
+function buildRuleBasedComplianceReview(loanDoc, policySources = [], source = 'rules') {
+    const input = getComplianceInput(loanDoc);
+    const missingDocuments = [];
+    const checks = [];
+    const requiredActions = [];
+    const docs = input.documents || [];
+    const hasDoc = (...names) => docs.some(d => names.some(name => String(d.fieldName || '').includes(name)));
+
+    if (input.borrowerType === 'individual' && !input.borrower?.regNo) {
+        missingDocuments.push('Иргэний регистрийн дугаар/КYC мэдээлэл');
+    }
+    if (input.borrowerType === 'organization' && !input.organization?.orgRegNo) {
+        missingDocuments.push('Байгууллагын улсын бүртгэлийн мэдээлэл');
+    }
+    if (!hasDoc('id', 'identity', 'citizen')) missingDocuments.push('Иргэний үнэмлэх эсвэл оршин суугаа газрын лавлагаа');
+    if (!hasDoc('bank', 'statement')) missingDocuments.push('Дансны хуулга');
+    if (!hasDoc('credit')) missingDocuments.push('Зээлийн мэдээллийн лавлагаа');
+    if (input.loanRequest?.amount >= 10000000 && !(input.collaterals || []).length) missingDocuments.push('Барьцааны мэдээлэл');
+
+    checks.push({
+        area: 'KYC ба харилцагч таних ажиллагаа',
+        status: missingDocuments.some(d => d.includes('үнэмлэх') || d.includes('КYC')) ? 'needs_review' : 'compliant',
+        severity: missingDocuments.length ? 'medium' : 'low',
+        policyRef: policySources[0]?.title || 'Компанийн бодлого',
+        finding: missingDocuments.length ? 'Харилцагчийн баримтын бүрдлийг бүрэн баталгаажуулах шаардлагатай.' : 'Харилцагчийн үндсэн мэдээлэл бүртгэгдсэн байна.',
+        recommendation: 'Иргэний/байгууллагын бүртгэлийн мэдээлэл болон хавсаргасан баримтыг эх хувьтай тулган шалгах.',
+    });
+    checks.push({
+        area: 'Зээлийн судалгаа ба эргэн төлөлтийн чадвар',
+        status: input.aiLoanOfficer?.status === 'completed' ? 'needs_review' : 'insufficient_information',
+        severity: 'medium',
+        policyRef: policySources[1]?.title || policySources[0]?.title || 'Зээлийн журам',
+        finding: input.aiLoanOfficer?.status === 'completed'
+            ? 'AI зээлийн ажилтны урьдчилсан дүгнэлт бүртгэгдсэн тул ажилтан баталгаажуулах шаардлагатай.'
+            : 'Зээлийн ажилтны AI/судалгааны дүгнэлт хараахан бүрэн баталгаажаагүй байна.',
+        recommendation: 'Орлого, өрийн ачаалал, барьцаа, зээлийн түүхийг журмын дагуу ажилтан хянана.',
+    });
+    if (missingDocuments.length) requiredActions.push('Дутуу баримтуудыг нөхүүлж, эх сурвалж бүрийг шалгах.');
+    requiredActions.push('Журмын шаардлагатай нийцүүлэн ажилтны тайлбар, хорооны шийдвэрийг тусад нь хадгалах.');
+
+    const overallStatus = missingDocuments.length >= 3
+        ? 'insufficient_information'
+        : missingDocuments.length
+            ? 'needs_review'
+            : 'compliant';
+
+    return {
+        ...buildComplianceStatus('completed'),
+        source,
+        model: source === 'openai' ? OPENAI_MODEL : 'rule-baseline',
+        overallStatus,
+        confidence: source === 'openai' ? 0.7 : 0.42,
+        summary: overallStatus === 'compliant'
+            ? 'Оруулсан мэдээллээр бодлого, журмын эсрэг шууд зөрчил илрээгүй. Гэхдээ ажилтан эх баримтаар баталгаажуулна.'
+            : 'Баримтын бүрдэл болон зээлийн судалгааны нотолгоог нэмж шалгах шаардлагатай.',
+        policySources,
+        checks,
+        requiredActions,
+        missingDocuments,
+        notes: policySources.length
+            ? 'Компанийн бодлого, журмын файлуудыг эх сурвалж болгон ашиглав.'
+            : 'Бодлогын файл олдоогүй тул дүрмийн суурьтай урьдчилсан шалгалт хийв.',
+    };
+}
+
+const complianceReviewSchema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['summary', 'overallStatus', 'confidence', 'checks', 'requiredActions', 'missingDocuments', 'notes'],
+    properties: {
+        summary: { type: 'string' },
+        overallStatus: { type: 'string', enum: ['compliant', 'needs_review', 'non_compliant', 'insufficient_information'] },
+        confidence: { type: 'number' },
+        checks: {
+            type: 'array',
+            items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['area', 'status', 'severity', 'policyRef', 'finding', 'recommendation'],
+                properties: {
+                    area: { type: 'string' },
+                    status: { type: 'string', enum: ['compliant', 'needs_review', 'non_compliant', 'insufficient_information'] },
+                    severity: { type: 'string', enum: ['low', 'medium', 'high'] },
+                    policyRef: { type: 'string' },
+                    finding: { type: 'string' },
+                    recommendation: { type: 'string' },
+                }
+            }
+        },
+        requiredActions: { type: 'array', items: { type: 'string' } },
+        missingDocuments: { type: 'array', items: { type: 'string' } },
+        notes: { type: 'string' },
+    }
+};
+
+async function policyFilesToContentBlocks(policySources = []) {
+    const blocks = [];
+    const uploadedIds = [];
+    for (const [index, policy] of policySources.entries()) {
+        if (!policy.fileUrl) continue;
+        try {
+            const response = await downloadFromUrl(policy.fileUrl);
+            const fileName = policy.fileName || String(policy.fileUrl).split('/').pop()?.split('?')[0] || `policy-${index + 1}.pdf`;
+            const uploaded = await openai.files.create({
+                file: await toFile(Buffer.from(response.data), fileName, { type: response.headers['content-type'] || 'application/octet-stream' }),
+                purpose: 'user_data'
+            });
+            blocks.push({ type: 'input_text', text: `Эх сурвалж ${index + 1}: ${policy.title}` });
+            blocks.push({ type: 'input_file', file_id: uploaded.id });
+            uploadedIds.push(uploaded.id);
+        } catch (e) {
+            console.warn('Compliance policy file skipped:', policy.title, e.message);
+        }
+    }
+    return { blocks, uploadedIds };
+}
+
+async function buildComplianceReviewAssessment(loanDoc) {
+    const policySources = await getCompliancePolicySources();
+    if (!policySources.length) {
+        return {
+            ...buildRuleBasedComplianceReview(loanDoc, [], 'rules'),
+            status: 'no_policies',
+            note: 'Компанийн бодлогын файл олдсонгүй.',
+        };
+    }
+    const fallback = buildRuleBasedComplianceReview(loanDoc, policySources);
+    if (!openai) return fallback;
+
+    let uploadedIds = [];
+    try {
+        const input = getComplianceInput(loanDoc);
+        const { blocks, uploadedIds: ids } = await policyFilesToContentBlocks(policySources);
+        uploadedIds = ids;
+        if (!blocks.length) return fallback;
+
+        const response = await Promise.race([
+            openai.responses.create({
+                model: process.env.OPENAI_COMPLIANCE_MODEL || OPENAI_MODEL,
+                temperature: 0,
+                instructions: [
+                    'Та Монголын ББСБ-ийн дотоод хууль/комплаенс шалгагч AI агент.',
+                    'Зөвхөн хавсаргасан компанийн бодлого, журам болон зээлийн хүсэлтийн өгөгдөлд тулгуурлан дүгнэлт гарга.',
+                    'Бүх хүний унших текстийг Монгол кириллээр бич. Англи өгүүлбэр бүү ашигла.',
+                    'Эцсийн зээл олгох шийдвэр битгий гарга. Нийцэл, зөрчил, дутуу баримт, заавал хийх алхмыг тодорхой бич.',
+                    'policyRef талбарт ашигласан бодлого/журмын нэрийг товч дурд. Мэдээлэл хангалтгүй бол status-ыг insufficient_information эсвэл needs_review гэж тэмдэглэ.'
+                ].join(' '),
+                input: [{
+                    role: 'user',
+                    content: [
+                        { type: 'input_text', text: `Зээлийн хүсэлтийн өгөгдөл:\n${JSON.stringify(input)}\n\nКомпанийн бодлого, журмын хавсаргасан файлуудаар нийцлийн дүгнэлт гарга.` },
+                        ...blocks,
+                    ]
+                }],
+                text: {
+                    format: {
+                        type: 'json_schema',
+                        name: 'loan_compliance_review',
+                        schema: complianceReviewSchema,
+                        strict: true
+                    }
+                }
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Compliance review timeout')), 35000))
+        ]);
+
+        const parsed = parseAiJson(response.output_text);
+        if (!hasCyrillicText(parsed)) throw new Error('Compliance review returned non-Mongolian text');
+        return {
+            ...fallback,
+            source: 'openai',
+            model: process.env.OPENAI_COMPLIANCE_MODEL || OPENAI_MODEL,
+            generatedAt: new Date(),
+            summary: parsed.summary || fallback.summary,
+            overallStatus: parsed.overallStatus || fallback.overallStatus,
+            confidence: Number(parsed.confidence || fallback.confidence),
+            checks: Array.isArray(parsed.checks) ? parsed.checks : fallback.checks,
+            requiredActions: Array.isArray(parsed.requiredActions) ? parsed.requiredActions : fallback.requiredActions,
+            missingDocuments: Array.isArray(parsed.missingDocuments) ? parsed.missingDocuments : fallback.missingDocuments,
+            notes: parsed.notes || fallback.notes,
+        };
+    } catch (e) {
+        console.error('Compliance review error:', e.message);
+        return {
+            ...fallback,
+            source: 'rules',
+            warning: 'OpenAI комплаенс дүгнэлт амжилтгүй болсон тул дүрмийн суурьтай урьдчилсан дүгнэлт хадгаллаа.',
+        };
+    } finally {
+        Promise.allSettled(uploadedIds.map(id => openai.files.delete(id))).catch(() => {});
+    }
+}
+
+async function updateComplianceReview(loanOrId) {
+    const loan = typeof loanOrId === 'string' || loanOrId instanceof mongoose.Types.ObjectId
+        ? await LoanRequest.findById(loanOrId)
+        : loanOrId;
+    if (!loan) return null;
+
+    await LoanRequest.findByIdAndUpdate(loan._id, {
+        complianceReview: buildComplianceStatus('running', 'Хууль/комплаенс агент дүгнэлт боловсруулж байна.'),
+    });
+
+    try {
+        const review = await buildComplianceReviewAssessment(loan);
+        return await LoanRequest.findByIdAndUpdate(
+            loan._id,
+            { complianceReview: { ...review, status: review.status || 'completed' } },
+            { new: true }
+        );
+    } catch (e) {
+        const failed = buildComplianceStatus('failed', e.message || 'Комплаенс дүгнэлт гаргахад алдаа гарлаа.');
+        await LoanRequest.findByIdAndUpdate(loan._id, { complianceReview: failed });
+        throw e;
+    }
 }
 
 const TrustRequestSchema = new mongoose.Schema({ 
@@ -1527,6 +1824,27 @@ app.post('/api/loans/:id/ai-loan-officer', authenticateUser, async (req, res) =>
     } catch (e) {
         console.error('AI loan officer route error:', e.message);
         res.status(500).json({ message: 'AI дүгнэлт гаргахад алдаа гарлаа' });
+    }
+});
+
+app.get('/api/loans/:id/compliance-review', authenticateUser, async (req, res) => {
+    try {
+        const loan = await LoanRequest.findById(req.params.id).select('complianceReview');
+        if (!loan) return res.status(404).json({ message: 'Loan not found' });
+        res.json(loan.complianceReview || buildComplianceStatus('not_started', 'Комплаенс дүгнэлт хараахан үүсээгүй байна.'));
+    } catch (e) {
+        res.status(500).json({ message: 'Комплаенс дүгнэлт уншихад алдаа гарлаа' });
+    }
+});
+
+app.post('/api/loans/:id/compliance-review', authenticateUser, async (req, res) => {
+    try {
+        const updated = await updateComplianceReview(req.params.id);
+        if (!updated) return res.status(404).json({ message: 'Loan not found' });
+        res.json(updated);
+    } catch (e) {
+        console.error('Compliance review route error:', e.message);
+        res.status(500).json({ message: 'Комплаенс дүгнэлт гаргахад алдаа гарлаа' });
     }
 });
 
