@@ -512,9 +512,19 @@ const getCompliancePolicySources = async () => {
     }));
 };
 
+const safeList = (value) => {
+    if (Array.isArray(value)) return value;
+    if (!value) return [];
+    if (typeof value === 'object') return [value];
+    return [];
+};
+
 function getComplianceInput(loanDoc) {
     const loan = loanDoc?.toObject ? loanDoc.toObject() : (loanDoc || {});
-    const appData = loan.applicationData || {};
+    const appData = loan.applicationData && typeof loan.applicationData === 'object' ? loan.applicationData : {};
+    const fileDetails = safeList(loan.fileDetails);
+    const collaterals = safeList(appData.collaterals);
+    const guarantors = safeList(appData.guarantors || loan.guarantors);
     return compact({
         requestId: String(loan._id || ''),
         status: loan.status,
@@ -545,20 +555,20 @@ function getComplianceInput(loanDoc) {
             repaymentSource: loan.repaymentSource || appData.loanRequest?.repaymentSource,
             collateralType: loan.collateralType || appData.loanRequest?.collateralType,
         },
-        documents: (loan.fileDetails || []).map(f => ({
+        documents: fileDetails.map(f => ({
             fieldName: f.fieldName,
             fileName: f.fileName,
             mimeType: f.mimeType,
             hasUrl: Boolean(f.fileUrl),
         })),
-        collaterals: (appData.collaterals || []).map(c => ({
+        collaterals: collaterals.map(c => ({
             type: c.type,
             ownerRelation: c.ownerRelation,
             hasFiles: Boolean(c.files?.length),
             valuation: c.valuation,
             fields: c.fields,
         })),
-        guarantors: appData.guarantors || loan.guarantors || [],
+        guarantors,
         aiLoanOfficer: loan.aiLoanOfficer || null,
         createdAt: loan.createdAt,
     });
