@@ -1560,9 +1560,9 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
                       </label>
                       <label className="space-y-1">
                         <span className="text-xs font-bold text-slate-600">Барьцаанд авах хувь (%)</span>
-                        <input type="number" min="0" max="100" step="1"
-                          value={val.coverageRate || ''}
-                          onChange={e => upd({ coverageRate: e.target.value })}
+                        <input type="text" inputMode="numeric"
+                          value={fmtNum(val.coverageRate || '')}
+                          onChange={e => upd({ coverageRate: parseFmtNum(e.target.value) })}
                           className="w-full p-2.5 border rounded-lg text-sm bg-white focus:outline-none focus:border-[#003B5C]" placeholder="70" />
                       </label>
                     </div>

@@ -188,6 +188,19 @@ const parseNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const formatNumberInput = (value, { decimal = false } = {}) => {
+  const raw = String(value ?? '');
+  if (!raw) return '';
+  const negative = raw.trim().startsWith('-');
+  const cleaned = raw.replace(decimal ? /[^0-9.]/g : /[^0-9]/g, '');
+  if (!cleaned) return negative ? '-' : '';
+  const [wholeRaw, ...decimalParts] = cleaned.split('.');
+  const whole = wholeRaw ? Number(wholeRaw).toLocaleString('mn-MN') : '';
+  const fraction = decimal ? decimalParts.join('') : '';
+  const hasTrailingDot = decimal && cleaned.endsWith('.');
+  return `${negative ? '-' : ''}${whole}${hasTrailingDot ? '.' : fraction ? `.${fraction}` : ''}`;
+};
+
 const formatMoney = (value) => `${Math.round(value || 0).toLocaleString('mn-MN')} ₮`;
 
 const formatPercent = (value) => `${Number(value || 0).toFixed(1)}%`;
@@ -2364,7 +2377,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                   <input value={form.businessSector} onChange={(e) => updateField('businessSector', e.target.value)} className={textInput} />
                 </Field>
                 <Field label="Үйл ажиллагаа явуулсан жил">
-                  <input value={form.operationYears} onChange={(e) => updateField('operationYears', e.target.value)} className={textInput} />
+                  <input value={formatNumberInput(form.operationYears)} onChange={(e) => updateField('operationYears', formatNumberInput(e.target.value))} className={textInput} inputMode="numeric" />
                 </Field>
               </>
             )}
@@ -2375,7 +2388,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
               <input value={form.incomeSource} onChange={(e) => updateField('incomeSource', e.target.value)} className={textInput} />
             </Field>
             <Field label="Зээлийн скор оноо">
-              <input type="number" value={form.creditScore} onChange={(e) => updateField('creditScore', e.target.value)} className={textInput} />
+              <input type="text" value={formatNumberInput(form.creditScore)} onChange={(e) => updateField('creditScore', formatNumberInput(e.target.value))} className={textInput} inputMode="numeric" />
             </Field>
             <Field label="Ангилал">
               <select value={form.classification} onChange={(e) => updateField('classification', e.target.value)} className={textInput}>
@@ -2383,22 +2396,22 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
               </select>
             </Field>
             <Field label="Хүсэж буй зээлийн дүн">
-              <input value={form.requestedAmount} onChange={(e) => updateField('requestedAmount', e.target.value)} className={textInput} />
+              <input value={formatNumberInput(form.requestedAmount)} onChange={(e) => updateField('requestedAmount', formatNumberInput(e.target.value))} className={textInput} inputMode="numeric" />
             </Field>
             <Field label="Хугацаа / сар">
-              <input type="number" value={form.termMonths} onChange={(e) => updateField('termMonths', e.target.value)} className={textInput} />
+              <input type="text" value={formatNumberInput(form.termMonths)} onChange={(e) => updateField('termMonths', formatNumberInput(e.target.value))} className={textInput} inputMode="numeric" />
             </Field>
             <Field label="Сарын хүү / %">
-              <input type="number" step="0.1" value={form.monthlyRate} onChange={(e) => updateField('monthlyRate', e.target.value)} className={textInput} />
+              <input type="text" value={formatNumberInput(form.monthlyRate, { decimal: true })} onChange={(e) => updateField('monthlyRate', formatNumberInput(e.target.value, { decimal: true }))} className={textInput} inputMode="decimal" />
             </Field>
             <Field label="Сарын орлого">
-              <input value={form.averageMonthlyIncome} onChange={(e) => updateField('averageMonthlyIncome', e.target.value)} className={textInput} />
+              <input value={formatNumberInput(form.averageMonthlyIncome)} onChange={(e) => updateField('averageMonthlyIncome', formatNumberInput(e.target.value))} className={textInput} inputMode="numeric" />
             </Field>
             <Field label="Сарын зарлага">
-              <input value={form.averageMonthlyCost} onChange={(e) => updateField('averageMonthlyCost', e.target.value)} className={textInput} />
+              <input value={formatNumberInput(form.averageMonthlyCost)} onChange={(e) => updateField('averageMonthlyCost', formatNumberInput(e.target.value))} className={textInput} inputMode="numeric" />
             </Field>
                 <Field label="Одоо төлж буй сарын зээл">
-                  <input value={form.monthlyDebtPayment} disabled className={`${textInput} opacity-60 cursor-not-allowed bg-slate-50`} />
+                  <input value={formatNumberInput(form.monthlyDebtPayment)} disabled className={`${textInput} opacity-60 cursor-not-allowed bg-slate-50`} />
                 </Field>
                 </div>
 
@@ -2657,9 +2670,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                     <div key={index} className="grid grid-cols-1 md:grid-cols-6 gap-3 bg-slate-50 border rounded-xl p-3">
                       <input value={loan.lender} onChange={(e) => updateOtherLoan(index, 'lender', e.target.value)} placeholder="Банк/ББСБ" className={textInput} />
                       <input value={loan.product} onChange={(e) => updateOtherLoan(index, 'product', e.target.value)} placeholder="Зээлийн төрөл" className={textInput} />
-                      <input value={loan.amount} onChange={(e) => updateOtherLoan(index, 'amount', e.target.value)} placeholder="Анхны дүн" className={textInput} />
-                      <input value={loan.balance} onChange={(e) => updateOtherLoan(index, 'balance', e.target.value)} placeholder="Үлдэгдэл" className={textInput} />
-                      <input value={loan.monthlyPayment} onChange={(e) => updateOtherLoan(index, 'monthlyPayment', e.target.value)} placeholder="Сарын төлөлт" className={textInput} />
+                      <input value={formatNumberInput(loan.amount)} onChange={(e) => updateOtherLoan(index, 'amount', formatNumberInput(e.target.value))} placeholder="Анхны дүн" className={textInput} inputMode="numeric" />
+                      <input value={formatNumberInput(loan.balance)} onChange={(e) => updateOtherLoan(index, 'balance', formatNumberInput(e.target.value))} placeholder="Үлдэгдэл" className={textInput} inputMode="numeric" />
+                      <input value={formatNumberInput(loan.monthlyPayment)} onChange={(e) => updateOtherLoan(index, 'monthlyPayment', formatNumberInput(e.target.value))} placeholder="Сарын төлөлт" className={textInput} inputMode="numeric" />
                       <div className="flex gap-2">
                         <select value={loan.classification} onChange={(e) => updateOtherLoan(index, 'classification', e.target.value)} className={textInput}>
                           {Object.entries(classificationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -2800,24 +2813,24 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="space-y-1">
                     <label className="block text-xs font-semibold text-slate-600">Зээлийн дүн ₮</label>
-                    <input type="text" value={form.requestedAmount ?? ''}
-                      onChange={e => updateField('requestedAmount', e.target.value)}
+                    <input type="text" value={formatNumberInput(form.requestedAmount)}
+                      onChange={e => updateField('requestedAmount', formatNumberInput(e.target.value))}
                       className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
                       placeholder="₮" inputMode="numeric" />
                   </div>
                   <div className="space-y-1">
                     <label className="block text-xs font-semibold text-slate-600">Хугацаа (сар)</label>
-                    <input type="number" value={form.termMonths ?? ''}
-                      onChange={e => updateField('termMonths', e.target.value)}
+                    <input type="text" value={formatNumberInput(form.termMonths)}
+                      onChange={e => updateField('termMonths', formatNumberInput(e.target.value))}
                       className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
-                      placeholder="сар" min="1" />
+                      placeholder="сар" inputMode="numeric" />
                   </div>
                   <div className="space-y-1">
                     <label className="block text-xs font-semibold text-slate-600">Сарын хүү (%)</label>
-                    <input type="number" step="0.01" value={form.monthlyRate ?? ''}
-                      onChange={e => updateField('monthlyRate', e.target.value)}
+                    <input type="text" value={formatNumberInput(form.monthlyRate, { decimal: true })}
+                      onChange={e => updateField('monthlyRate', formatNumberInput(e.target.value, { decimal: true }))}
                       className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
-                      placeholder="%" />
+                      placeholder="%" inputMode="decimal" />
                   </div>
                   <div className="space-y-1">
                     <label className="block text-xs font-semibold text-slate-600">Зээл эхлэх он сар өдөр</label>
@@ -2841,8 +2854,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                     <>
                       <div className="space-y-1">
                         <label className="block text-xs font-semibold text-slate-600">Даатгалын дүн ₮</label>
-                        <input type="text" value={form.insuranceAmount ?? ''}
-                          onChange={e => updateField('insuranceAmount', e.target.value)}
+                        <input type="text" value={formatNumberInput(form.insuranceAmount)}
+                          onChange={e => updateField('insuranceAmount', formatNumberInput(e.target.value))}
                           className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
                           placeholder="₮" inputMode="numeric" />
                       </div>
@@ -2892,10 +2905,10 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                   {(form.repaymentType || 'equal') === 'grace_then_equal' && (
                     <div className="mt-2 flex items-center gap-3">
                       <label className="text-xs font-semibold text-slate-600 shrink-0">Хүү төлөх хугацаа (сар):</label>
-                      <input type="number" min="1" value={form.graceMonths ?? ''}
-                        onChange={e => updateField('graceMonths', e.target.value)}
+                      <input type="text" value={formatNumberInput(form.graceMonths)}
+                        onChange={e => updateField('graceMonths', formatNumberInput(e.target.value))}
                         className="w-24 border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
-                        placeholder="сар" />
+                        placeholder="сар" inputMode="numeric" />
                     </div>
                   )}
                 </div>
@@ -3099,7 +3112,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                           </Field>
                         )}
                         <Field label="Үнэлгээний дүн ₮">
-                          <input value={col.estimatedValue} onChange={(e) => updateCollateral(index, 'estimatedValue', e.target.value)} placeholder="0" className={textInput} />
+                          <input value={formatNumberInput(col.estimatedValue)} onChange={(e) => updateCollateral(index, 'estimatedValue', formatNumberInput(e.target.value))} placeholder="0" className={textInput} inputMode="numeric" />
                         </Field>
                         <Field label="Эзэмшигчийн нэр">
                           <input value={col.ownerName} onChange={(e) => updateCollateral(index, 'ownerName', e.target.value)} className={textInput} />
@@ -3667,22 +3680,22 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                   </div>
                   <div className="space-y-2">
                     <Field label="Сарын дундаж орлого">
-                      <input type="text" value={form.averageMonthlyIncome ?? ''}
-                        onChange={e => updateField('averageMonthlyIncome', e.target.value)}
+                      <input type="text" value={formatNumberInput(form.averageMonthlyIncome)}
+                        onChange={e => updateField('averageMonthlyIncome', formatNumberInput(e.target.value))}
                         className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
-                        placeholder="₮" />
+                        placeholder="₮" inputMode="numeric" />
                     </Field>
                     <Field label="Сарын дундаж зарлага">
-                      <input type="text" value={form.averageMonthlyCost ?? ''}
-                        onChange={e => updateField('averageMonthlyCost', e.target.value)}
+                      <input type="text" value={formatNumberInput(form.averageMonthlyCost)}
+                        onChange={e => updateField('averageMonthlyCost', formatNumberInput(e.target.value))}
                         className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
-                        placeholder="₮" />
+                        placeholder="₮" inputMode="numeric" />
                     </Field>
                     <Field label="Зээлийн сарын төлбөр">
-                      <input type="text" value={form.monthlyDebtPayment ?? ''}
-                        onChange={e => updateField('monthlyDebtPayment', e.target.value)}
+                      <input type="text" value={formatNumberInput(form.monthlyDebtPayment)}
+                        onChange={e => updateField('monthlyDebtPayment', formatNumberInput(e.target.value))}
                         className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
-                        placeholder="₮" />
+                        placeholder="₮" inputMode="numeric" />
                     </Field>
                   </div>
                   {displayedOutputs.incomeExpense && (
