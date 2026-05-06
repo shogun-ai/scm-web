@@ -272,7 +272,7 @@ function getLoanOfficerInput(loanDoc) {
     });
 }
 
-function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules') {
+function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules', policySources = []) {
     const input = getLoanOfficerInput(loanDoc);
     const amount = input.loanRequest.amount;
     const term = input.loanRequest.term;
@@ -318,6 +318,37 @@ function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules') {
     const recommendation = riskLevel === 'high' || legalLevel === 'high'
         ? 'manual_review'
         : (riskLevel === 'medium' || legalLevel === 'medium' ? 'conditional' : 'approve');
+    const primaryPolicy = policySources[0]?.title || 'Зээлийн үйл ажиллагааны журам';
+    const policyChecks = [
+        {
+            area: 'Зээлийн хүсэлтийн бүрдэл',
+            status: legalFlags.length ? 'needs_review' : 'compliant',
+            policyRef: primaryPolicy,
+            policyClause: 'Зээлийн хүсэлтийн бүрдэл / баримтын шалгалт',
+            evidence: legalFlags.length
+                ? `Дараах бүрдлийг нягтлах шаардлагатай: ${legalFlags.slice(0, 3).join(', ')}.`
+                : 'Хүсэлтийн үндсэн баримт, бүртгэлийн мэдээлэл бүртгэгдсэн байна.',
+            finding: legalFlags.length
+                ? 'Зээлийн хүсэлтийн бүрдэл / баримтын шалгалтын шаардлагатай бүрэн нийцсэн эсэх нь баталгаажаагүй байна.'
+                : 'Зээлийн хүсэлтийн бүрдэл / баримтын шалгалтын шаардлагатай урьдчилсан байдлаар нийцэж байна.',
+            recommendation: legalFlags.length
+                ? 'Дутуу эсвэл эргэлзээтэй баримтыг нөхүүлж, журмын тухайн заалтын дагуу дахин шалгах.'
+                : 'Эх баримтыг ажилтан баталгаажуулж, судалгааны тэмдэглэлд хадгалах.',
+        },
+        {
+            area: 'Зээлийн судалгаа ба эргэн төлөлтийн чадвар',
+            status: flags.length ? 'needs_review' : 'compliant',
+            policyRef: primaryPolicy,
+            policyClause: 'Зээлийн судалгаа / эргэн төлөлтийн чадварын үнэлгээ',
+            evidence: flags.length
+                ? `Дараах эрсдэл/мэдээлэл илэрсэн: ${flags.slice(0, 3).join(', ')}.`
+                : 'Дүн, хугацаа, зориулалт болон орлогын үндсэн мэдээлэл бүртгэгдсэн байна.',
+            finding: flags.length
+                ? 'Зээлийн судалгаа / эргэн төлөлтийн чадварын шаардлагатай бүрэн нийцсэн эсэхийг ажилтан нэмж баталгаажуулах шаардлагатай.'
+                : 'Одоогийн мэдээллээр зээлийн судалгаа / эргэн төлөлтийн чадварын шаардлагатай урьдчилсан байдлаар нийцэж байна.',
+            recommendation: 'Орлого, өрийн ачаалал, зээлийн түүх, барьцааны хамрах хувийг журмын тухайн заалтын дагуу баталгаажуулах.',
+        },
+    ];
 
     return {
         status: 'completed',
@@ -344,6 +375,12 @@ function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules') {
                     ? 'Нэмэлт нөхцөл хангуулсны дараа олгох боломжийг судална.'
                     : 'Гараар нарийвчилсан судалгаа хийх шаардлагатай.',
             conditions,
+        },
+        policyCompliance: {
+            summary: policyChecks.some(check => check.status !== 'compliant')
+                ? 'Зээлийн судалгаа журмын шаардлагатай бүрэн нийцсэн эсэхийг нэмж баталгаажуулах шаардлагатай.'
+                : 'Одоогийн мэдээллээр зээлийн судалгаа журмын үндсэн шаардлагатай урьдчилсан байдлаар нийцэж байна.',
+            checks: policyChecks,
         },
         decision: {
             recommendation,
@@ -384,6 +421,14 @@ function getLoanOfficerNarrativeStrings(parsed = {}) {
         ...(parsed.legal?.flags || []),
         parsed.credit?.summary,
         ...(parsed.credit?.conditions || []),
+        parsed.policyCompliance?.summary,
+        ...((parsed.policyCompliance?.checks || []).flatMap(check => [
+            check.area,
+            check.policyClause,
+            check.evidence,
+            check.finding,
+            check.recommendation,
+        ])),
         parsed.decision?.reason,
         ...(parsed.decision?.approvalReasons || []),
         ...(parsed.decision?.conditionalReasons || []),
@@ -400,40 +445,132 @@ function hasEnglishNarrativeText(parsed = {}) {
     });
 }
 
+const loanOfficerAssessmentSchema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['risk', 'legal', 'credit', 'policyCompliance', 'decision', 'nextSteps'],
+    properties: {
+        risk: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['level', 'summary', 'flags'],
+            properties: {
+                level: { type: 'string', enum: ['low', 'medium', 'high'] },
+                summary: { type: 'string' },
+                flags: { type: 'array', items: { type: 'string' } },
+            },
+        },
+        legal: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['level', 'summary', 'flags'],
+            properties: {
+                level: { type: 'string', enum: ['low', 'medium', 'high'] },
+                summary: { type: 'string' },
+                flags: { type: 'array', items: { type: 'string' } },
+            },
+        },
+        credit: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['recommendation', 'summary', 'conditions'],
+            properties: {
+                recommendation: { type: 'string', enum: ['approve', 'conditional', 'manual_review', 'reject'] },
+                summary: { type: 'string' },
+                conditions: { type: 'array', items: { type: 'string' } },
+            },
+        },
+        policyCompliance: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['summary', 'checks'],
+            properties: {
+                summary: { type: 'string' },
+                checks: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        required: ['area', 'status', 'policyRef', 'policyClause', 'evidence', 'finding', 'recommendation'],
+                        properties: {
+                            area: { type: 'string' },
+                            status: { type: 'string', enum: ['compliant', 'needs_review', 'non_compliant', 'insufficient_information'] },
+                            policyRef: { type: 'string' },
+                            policyClause: { type: 'string' },
+                            evidence: { type: 'string' },
+                            finding: { type: 'string' },
+                            recommendation: { type: 'string' },
+                        },
+                    },
+                },
+            },
+        },
+        decision: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['recommendation', 'confidence', 'amountRecommendation', 'termRecommendation', 'reason', 'approvalReasons', 'conditionalReasons', 'rejectionReasons'],
+            properties: {
+                recommendation: { type: 'string', enum: ['approve', 'conditional', 'manual_review', 'reject'] },
+                confidence: { type: 'number' },
+                amountRecommendation: { type: ['number', 'null'] },
+                termRecommendation: { type: ['number', 'null'] },
+                reason: { type: 'string' },
+                approvalReasons: { type: 'array', items: { type: 'string' } },
+                conditionalReasons: { type: 'array', items: { type: 'string' } },
+                rejectionReasons: { type: 'array', items: { type: 'string' } },
+            },
+        },
+        nextSteps: { type: 'array', items: { type: 'string' } },
+    },
+};
+
 async function buildAiLoanOfficerAssessment(loanDoc) {
-    const fallback = buildRuleBasedLoanOfficerAssessment(loanDoc);
+    const policySources = await getLoanAgentPolicySources();
+    const fallback = buildRuleBasedLoanOfficerAssessment(loanDoc, 'rules', policySources);
     if (!openai) return fallback;
 
+    let uploadedIds = [];
     try {
         const input = getLoanOfficerInput(loanDoc);
-        input.policySources = await getLoanAgentPolicySources();
-        const completion = await Promise.race([
-            openai.chat.completions.create({
+        input.policySources = policySources.map(({ fileUrl, ...policy }) => policy);
+        const { blocks, uploadedIds: ids } = await policyFilesToContentBlocks(policySources);
+        uploadedIds = ids;
+        const response = await Promise.race([
+            openai.responses.create({
                 model: OPENAI_MODEL,
-                temperature: 0.1,
-                max_tokens: 1200,
-                response_format: { type: 'json_object' },
-                messages: [
-                    {
-                        role: 'system',
-                        content: [
-                            'You are an internal AI loan officer assistant for a Mongolian NBFI.',
-                            'Return JSON only. Every human-readable string value MUST be in Mongolian Cyrillic, not English.',
-                            'Do not make a final lending decision. Provide preliminary risk, legal/compliance, credit recommendation, conditions, and next steps for human review.',
-                            'Use only the provided application data and policySources metadata. If information is missing, mark it as a risk or condition.',
-                            'If policySources are provided, consider their titles as applicable internal policy references, but do not invent policy text that is not provided.',
-                            'JSON shape: {risk:{level,summary,flags[]}, legal:{level,summary,flags[]}, credit:{recommendation,summary,conditions[]}, decision:{recommendation,confidence,amountRecommendation,termRecommendation,reason,approvalReasons[],conditionalReasons[],rejectionReasons[]}, nextSteps[]}.',
-                            'Be specific: explain why conditional, which exact conditions must be met, why approve, or why reject. Reference concrete numbers from the application when available.',
-                            'Allowed levels: low, medium, high. Allowed recommendations: approve, conditional, manual_review, reject.'
-                        ].join(' ')
+                temperature: 0,
+                instructions: [
+                    'Та Монголын ББСБ-ийн дотоод AI зээлийн ажилтан.',
+                    'JSON only буцаа. Хүний унших бүх текст Монгол кириллээр байна. Англи өгүүлбэр бүү ашигла.',
+                    'Эцсийн зээл олгох шийдвэр битгий гарга. Урьдчилсан эрсдэл, баримт, зээлийн санал, нөхцөл, дараагийн алхмыг хүний ажилтан/хороонд зориулж гарга.',
+                    'Хүсэлтийн өгөгдөл болон хавсаргасан зээлийн агент ашиглах бодлого/журмын файлуудад тулгуурла.',
+                    'policyCompliance хэсэгт зээлийн хүсэлт, зээлийн судалгаа, баримтын бүрдэл нь журмын дагуу хийгдсэн эсэхийг тусад нь шалга.',
+                    'policyCompliance.checks бүр дээр policyRef, policyClause, evidence, finding, recommendation бөглө.',
+                    'policyClause-д боломжтой бол журмын заалтын дугаар, бүлэг, хэсэг, гарчиг эсвэл хамгийн ойролцоо хэсгийн нэрийг бич.',
+                    'finding-д тухайн заалттай нийцэж байна, нийцэхгүй байна, эсвэл мэдээлэл дутуу тул бүрэн тогтоох боломжгүй гэж шууд илэрхийл.',
+                    'Нөхцөлтэй санал бол яг ямар нөхцөл хангах ёстойг тодорхой бич. Зөвшөөрөх/татгалзах үндэслэлийг тоо болон баримтаар тайлбарла.',
+                    'Allowed levels: low, medium, high. Allowed recommendations: approve, conditional, manual_review, reject.'
+                ].join(' '),
+                input: [{
+                    role: 'user',
+                    content: [
+                        { type: 'input_text', text: `Зээлийн хүсэлтийн өгөгдөл:\n${JSON.stringify(input)}\n\nХавсаргасан журмын файлуудтай харьцуулж AI зээлийн ажилтны дүгнэлт гарга.` },
+                        ...blocks,
+                    ],
+                }],
+                text: {
+                    format: {
+                        type: 'json_schema',
+                        name: 'loan_officer_review',
+                        schema: loanOfficerAssessmentSchema,
+                        strict: true,
                     },
-                    { role: 'user', content: JSON.stringify(input) }
-                ]
+                },
             }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('AI loan officer timeout')), 12000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error('AI loan officer timeout')), 35000))
         ]);
 
-        const parsed = parseLoanOfficerAiJson(completion?.choices?.[0]?.message?.content);
+        const parsed = parseLoanOfficerAiJson(response.output_text);
         if (!hasCyrillicText(parsed) || hasEnglishNarrativeText(parsed)) {
             throw new Error('AI loan officer returned non-Mongolian narrative text');
         }
@@ -445,6 +582,7 @@ async function buildAiLoanOfficerAssessment(loanDoc) {
             risk: parsed.risk || fallback.risk,
             legal: parsed.legal || fallback.legal,
             credit: parsed.credit || fallback.credit,
+            policyCompliance: parsed.policyCompliance || fallback.policyCompliance,
             decision: parsed.decision || fallback.decision,
             nextSteps: Array.isArray(parsed.nextSteps) ? parsed.nextSteps : fallback.nextSteps,
         };
@@ -455,6 +593,10 @@ async function buildAiLoanOfficerAssessment(loanDoc) {
             source: 'rules',
             warning: 'OpenAI дүгнэлт амжилтгүй болсон тул дүрмийн суурьтай урьдчилсан дүгнэлт хадгаллаа.',
         };
+    } finally {
+        for (const fileId of uploadedIds) {
+            openai.files.delete(fileId).catch(() => null);
+        }
     }
 }
 
@@ -522,6 +664,7 @@ const getLoanAgentPolicySources = async () => {
         id: String(p._id),
         title: p.title || p.fileName || 'Бодлогын баримт',
         fileName: p.fileName || '',
+        fileUrl: p.fileUrl || '',
         uploadDate: p.uploadDate,
     }));
 };

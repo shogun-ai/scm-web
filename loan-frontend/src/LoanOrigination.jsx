@@ -108,6 +108,10 @@ const UI_TEXT = {
       risk: 'Эрсдэл',
       legal: 'Хууль / баримт',
       recommendation: 'Олголтын санал',
+      policyCompliance: 'Журмын нийцэл',
+      policyClause: 'Журмын заалт',
+      policySource: 'Эх сурвалж',
+      policyEvidence: 'Хүсэлтийн нотолгоо',
       confidence: 'Итгэлцүүр',
       recLabels: {
         approve: 'Олгох боломжтой',
@@ -205,6 +209,10 @@ const UI_TEXT = {
       risk: 'Risk',
       legal: 'Legal / documents',
       recommendation: 'Credit recommendation',
+      policyCompliance: 'Policy compliance',
+      policyClause: 'Policy clause',
+      policySource: 'Source',
+      policyEvidence: 'Request evidence',
       confidence: 'Confidence',
       recLabels: {
         approve: 'Eligible to approve',
@@ -319,6 +327,14 @@ const aiNarrativeStrings = (assessment = {}) => [
   ...(assessment.legal?.flags || []),
   assessment.credit?.summary,
   ...(assessment.credit?.conditions || []),
+  assessment.policyCompliance?.summary,
+  ...((assessment.policyCompliance?.checks || []).flatMap(check => [
+    check.area,
+    check.policyClause,
+    check.evidence,
+    check.finding,
+    check.recommendation,
+  ])),
   assessment.decision?.reason,
   ...(assessment.decision?.approvalReasons || []),
   ...(assessment.decision?.conditionalReasons || []),
@@ -1176,6 +1192,8 @@ const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai, onRun, loading = fals
   const risk = assessment?.risk || {};
   const legal = assessment?.legal || {};
   const credit = assessment?.credit || {};
+  const policyCompliance = assessment?.policyCompliance || {};
+  const policyChecks = Array.isArray(policyCompliance.checks) ? policyCompliance.checks : [];
   const recommendation = decision.recommendation || credit.recommendation;
   const recLabel = {
     approve: labels.recLabels.approve,
@@ -1254,6 +1272,43 @@ const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai, onRun, loading = fals
                   </ul>
                 </div>
               ))}
+            </div>
+          )}
+          {(policyCompliance.summary || policyChecks.length > 0) && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+              <div>
+                <p className="text-[10px] font-black uppercase text-slate-500">{labels.policyCompliance}</p>
+                {policyCompliance.summary && (
+                  <p className="mt-1 text-sm font-bold leading-6 text-slate-800">{policyCompliance.summary}</p>
+                )}
+              </div>
+              {policyChecks.length > 0 && (
+                <div className="grid md:grid-cols-2 gap-3">
+                  {policyChecks.slice(0, 4).map((item, idx) => (
+                    <div key={`${item.area}-${idx}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-[10px] font-black uppercase text-slate-500">{item.area}</p>
+                        <span className="text-[10px] font-black text-[#003B5C]">{item.status}</span>
+                      </div>
+                      {item.policyClause && (
+                        <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 p-2">
+                          <p className="text-[9px] font-black uppercase text-blue-700">{labels.policyClause}</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-blue-900">{item.policyClause}</p>
+                        </div>
+                      )}
+                      {item.evidence && (
+                        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                          <p className="text-[9px] font-black uppercase text-slate-500">{labels.policyEvidence}</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-slate-700">{item.evidence}</p>
+                        </div>
+                      )}
+                      <p className="mt-2 text-xs font-bold leading-5 text-slate-800">{item.finding}</p>
+                      {item.recommendation && <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">{item.recommendation}</p>}
+                      {item.policyRef && <p className="mt-2 text-[11px] font-bold text-[#003B5C]">{labels.policySource}: {item.policyRef}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </>
