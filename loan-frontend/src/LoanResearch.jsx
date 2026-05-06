@@ -88,7 +88,6 @@ const initialForm = {
   // Зээлийн тооцооллын нөхцөл
   loanStartDate: '',
   repaymentStartDate: '',
-  repaymentPaymentDay: '',
   repaymentType: 'equal',
   graceMonths: '',
   hasInsurance: false,
@@ -538,7 +537,6 @@ const normalizeLoanRequest = (request) => {
     repaymentSource: bsFs.repaymentSource || loanReq.repaymentSource || request.repaymentSource || '',
     loanStartDate: loanReq.loanStartDate || '',
     repaymentStartDate: loanReq.repaymentStartDate || '',
-    repaymentPaymentDay: loanReq.repaymentPaymentDay || '',
     repaymentType: loanReq.repaymentType || 'equal',
     graceMonths: loanReq.graceMonths || '',
     sourceRequestId: request._id || '',
@@ -611,7 +609,6 @@ const buildAmortizationRows = (principal, months, monthlyRatePercent, options = 
   if (!principal || !months) return [];
   const startDateStr = typeof options === 'string' ? options : (options.repaymentStartDate || options.loanStartDate);
   const loanStartDateStr = typeof options === 'object' ? (options.loanStartDate || startDateStr) : '';
-  const paymentDay = typeof options === 'object' ? options.paymentDay : '';
   const repaymentType = typeof options === 'object' ? (options.repaymentType || 'equal') : 'equal';
   const graceMonths = typeof options === 'object' ? parseNumber(options.graceMonths) : 0;
   const hasInsurance = typeof options === 'object' ? Boolean(options.hasInsurance) : false;
@@ -623,9 +620,26 @@ const buildAmortizationRows = (principal, months, monthlyRatePercent, options = 
   let balance = principal;
   const startDate = startDateStr ? new Date(startDateStr) : null;
   const loanStartDate = loanStartDateStr ? new Date(loanStartDateStr) : null;
+  const paymentDay = isValidDate(startDate) ? startDate.getDate() : '';
   let nextInsuranceYear = 1;
   return Array.from({ length: months }, (_, i) => {
-    const interest = balance * rate;
+    let dateLabel = '';
+    let calendarDays = null;
+    let insurancePayment = 0;
+    let cur = null;
+    let prev = null;
+    if (isValidDate(startDate)) {
+      cur = addMonthsClamped(startDate, i, paymentDay);
+      prev = i > 0 ? addMonthsClamped(startDate, i - 1, paymentDay) : null;
+      dateLabel = formatScheduleDate(cur);
+      if (i === 0) {
+        calendarDays = isValidDate(loanStartDate) ? Math.max(0, daysBetween(loanStartDate, cur)) : null;
+      } else {
+        calendarDays = daysBetween(prev, cur);
+      }
+    }
+    const effectivePeriodRate = calendarDays != null ? rate * (calendarDays / 30) : rate;
+    const interest = balance * effectivePeriodRate;
     let payment = 0;
     let principalPart = 0;
     if (repaymentType === 'interest_only_bullet') {
@@ -649,31 +663,18 @@ const buildAmortizationRows = (principal, months, monthlyRatePercent, options = 
     }
     const prevBalance = balance;
     balance = Math.max(0, balance - principalPart);
-    let dateLabel = '';
-    let calendarDays = null;
-    let insurancePayment = 0;
-    if (isValidDate(startDate)) {
-      const cur = addMonthsClamped(startDate, i, paymentDay);
-      const prev = i > 0 ? addMonthsClamped(startDate, i - 1, paymentDay) : null;
-      dateLabel = formatScheduleDate(cur);
-      if (i === 0) {
-        calendarDays = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
+    if (isValidDate(cur) && hasInsurance && insuranceAmount > 0) {
+      if (insurancePaymentMode === 'monthly_after_year') {
+        if (shouldStartInsuranceMonthly(i, cur, loanStartDate, paymentDay, insuranceStartMode)) {
+          insurancePayment += insuranceAmount / 12;
+        }
       } else {
-        calendarDays = daysBetween(prev, cur);
-      }
-      if (hasInsurance && insuranceAmount > 0) {
-        if (insurancePaymentMode === 'monthly_after_year') {
-          if (shouldStartInsuranceMonthly(i, cur, loanStartDate, paymentDay, insuranceStartMode)) {
-            insurancePayment += insuranceAmount / 12;
-          }
-        } else {
-          if ((insuranceStartMode === 'schedule_start' || insuranceStartMode === 'loan_start') && i === 0) {
-            insurancePayment += insuranceAmount;
-          }
-          while (shouldChargeInsurance(cur, prev, loanStartDate, nextInsuranceYear)) {
-            insurancePayment += insuranceAmount;
-            nextInsuranceYear += 1;
-          }
+        if ((insuranceStartMode === 'schedule_start' || insuranceStartMode === 'loan_start') && i === 0) {
+          insurancePayment += insuranceAmount;
+        }
+        while (shouldChargeInsurance(cur, prev, loanStartDate, nextInsuranceYear)) {
+          insurancePayment += insuranceAmount;
+          nextInsuranceYear += 1;
         }
       }
     }
@@ -709,7 +710,6 @@ const buildOutputs = (form, context = {}) => {
   const amortizationRows = buildAmortizationRows(requestedAmount, termMonths, monthlyRate, {
     loanStartDate: form.loanStartDate,
     repaymentStartDate: form.repaymentStartDate,
-    paymentDay: form.repaymentPaymentDay,
     repaymentType: form.repaymentType || 'equal',
     graceMonths: form.graceMonths,
     hasInsurance: form.hasInsurance,
@@ -923,7 +923,6 @@ const buildOutputs = (form, context = {}) => {
       monthlyRate,
       loanStartDate: form.loanStartDate,
       repaymentStartDate: form.repaymentStartDate,
-      repaymentPaymentDay: form.repaymentPaymentDay,
       hasInsurance: Boolean(form.hasInsurance),
       insuranceAmount: parseNumber(form.insuranceAmount),
       insurancePaymentMode: form.insurancePaymentMode || 'annual',
@@ -1366,7 +1365,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     const OVERLAY_FIELDS = ['monthlyRate', 'averageMonthlyIncome', 'averageMonthlyCost',
       'monthlyDebtPayment', 'creditScore', 'classification', 'purpose', 'comment',
       'analystOpinion', 'analystDecision', 'conditions', 'riskFlags',
-      'loanStartDate', 'repaymentType', 'repaymentStartDate', 'repaymentPaymentDay',
+      'loanStartDate', 'repaymentType', 'repaymentStartDate',
       'graceMonths', 'hasInsurance', 'insuranceAmount', 'insurancePaymentMode', 'insuranceStartMode'];
     const linked = researches
       .filter(r => r.borrower?.sourceRequestId === prefillRequest._id)
@@ -2832,13 +2831,6 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                       onChange={e => updateField('repaymentStartDate', e.target.value)}
                       className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]" />
                   </div>
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-slate-600">Төлөх өдөр</label>
-                    <input type="number" min="1" max="31" value={form.repaymentPaymentDay ?? ''}
-                      onChange={e => updateField('repaymentPaymentDay', e.target.value)}
-                      className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#003B5C]/30 focus:border-[#003B5C]"
-                      placeholder="1-31" />
-                  </div>
                   <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-bold text-slate-700">
                     <input type="checkbox" checked={Boolean(form.hasInsurance)}
                       onChange={e => updateField('hasInsurance', e.target.checked)}
@@ -2915,7 +2907,6 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                   const rows = buildAmortizationRows(amt, term, parseNumber(form.monthlyRate), {
                     loanStartDate: form.loanStartDate,
                     repaymentStartDate: form.repaymentStartDate,
-                    paymentDay: form.repaymentPaymentDay,
                     repaymentType: form.repaymentType || 'equal',
                     graceMonths: form.graceMonths,
                     hasInsurance: form.hasInsurance,
@@ -2975,7 +2966,6 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                           const rows = buildAmortizationRows(amt, term, parseNumber(form.monthlyRate), {
                             loanStartDate: form.loanStartDate,
                             repaymentStartDate: form.repaymentStartDate,
-                            paymentDay: form.repaymentPaymentDay,
                             repaymentType: form.repaymentType || 'equal',
                             graceMonths: form.graceMonths,
                             hasInsurance: form.hasInsurance,

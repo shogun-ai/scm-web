@@ -2285,7 +2285,6 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
         term: loan?.term ? String(loan.term) : '',
         purpose: loan?.purpose || '',
         repaymentStartDate: '',
-        repaymentPaymentDay: '',
         repaymentType: 'equal',
         graceMonths: '',
       },
@@ -2333,7 +2332,6 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
         term: loan.term ? String(loan.term) : prev.loanRequest?.term || '',
         purpose: loan.purpose || prev.loanRequest?.purpose || '',
         repaymentStartDate: prev.loanRequest?.repaymentStartDate || '',
-        repaymentPaymentDay: prev.loanRequest?.repaymentPaymentDay || '',
         repaymentType: prev.loanRequest?.repaymentType || 'equal',
         graceMonths: prev.loanRequest?.graceMonths || '',
       },
@@ -2599,8 +2597,8 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                     <input value={fmtNum(appData.loanRequest.term)} onChange={e => set('loanRequest', { ...appData.loanRequest, term: parseFmtNum(e.target.value) })} className={inp} inputMode="numeric" />
                   </label>
                   <label className="space-y-1">
-                    <span className={label}>Зээлээ төлөх өдөр</span>
-                    <input type="number" min="1" max="31" value={appData.loanRequest.repaymentPaymentDay || ''} onChange={e => set('loanRequest', { ...appData.loanRequest, repaymentPaymentDay: e.target.value })} className={inp} placeholder="1-31" />
+                    <span className={label}>Зээлээ төлж эхлэх хугацаа</span>
+                    <input type="date" value={appData.loanRequest.repaymentStartDate || ''} onChange={e => set('loanRequest', { ...appData.loanRequest, repaymentStartDate: e.target.value })} className={inp} />
                   </label>
                   <label className="space-y-1 col-span-2 md:col-span-4">
                     <span className={label}>Зориулалт / Зорилго</span>
