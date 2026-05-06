@@ -102,7 +102,7 @@ const UI_TEXT = {
         completed: 'AI дүгнэсэн',
         failed: 'AI алдаа',
       },
-      cardTitle: 'AI зээлийн ажилтны дүгнэлт',
+      cardTitle: 'Зээлийн агентын дүгнэлт',
       defaultSubtitle: 'Аппликэйшний мэдээлэлд суурилсан урьдчилсан санал',
       ruleBased: 'Дүрмийн суурьтай',
       risk: 'Эрсдэл',
@@ -124,7 +124,7 @@ const UI_TEXT = {
       conditions: 'Нөхцөл',
       rejectionRisks: 'Татгалзах эрсдэл',
       pendingMessage: 'AI дүгнэлт дараалалд орсон байна.',
-      runningMessage: 'AI зээлийн ажилтан дүгнэлт боловсруулж байна.',
+      runningMessage: 'Зээлийн агент дүгнэлт боловсруулж байна.',
       failedMessage: 'AI дүгнэлт гаргахад алдаа гарсан байна.',
       emptyMessage: 'Энэ хүсэлт дээр AI дүгнэлт хараахан үүсээгүй байна.',
       disclaimer: 'AI санал нь урьдчилсан туслах дүгнэлт бөгөөд эцсийн шийдвэрийг хүний ажилтан/хороо гаргана.',
@@ -203,7 +203,7 @@ const UI_TEXT = {
         completed: 'AI reviewed',
         failed: 'AI error',
       },
-      cardTitle: 'AI loan officer review',
+      cardTitle: 'Loan agent review',
       defaultSubtitle: 'Preliminary assessment based on application data',
       ruleBased: 'Rule-based',
       risk: 'Risk',
@@ -225,7 +225,7 @@ const UI_TEXT = {
       conditions: 'Conditions',
       rejectionRisks: 'Rejection risks',
       pendingMessage: 'AI review is queued.',
-      runningMessage: 'AI loan officer is reviewing the application.',
+      runningMessage: 'Loan agent is reviewing the application.',
       failedMessage: 'AI review failed.',
       emptyMessage: 'No AI review has been generated for this request yet.',
       disclaimer: 'AI output is a preliminary assistant review; the final decision is made by a human officer/committee.',
@@ -247,7 +247,7 @@ const UI_TEXT = {
 
 const COMPLIANCE_TEXT = {
   mn: {
-    cardTitle: 'Хууль / комплаенс дүгнэлт',
+    cardTitle: 'Комплианс, хуулийн агентын дүгнэлт',
     defaultSubtitle: 'Компанийн бодлого, журмын дагуу нийцэл шалгана',
     run: 'Комплаенс шалгах',
     rerun: 'Дахин шалгах',
@@ -280,7 +280,7 @@ const COMPLIANCE_TEXT = {
     },
   },
   en: {
-    cardTitle: 'Legal / compliance review',
+    cardTitle: 'Compliance and legal agent review',
     defaultSubtitle: 'Checks the request against company policies',
     run: 'Run compliance',
     rerun: 'Run again',

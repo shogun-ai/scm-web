@@ -2025,7 +2025,7 @@ const aiRecommendationMeta = {
 
 const AI_PANEL_TEXT = {
   mn: {
-    title: 'AI зээлийн ажилтны урьдчилсан дүгнэлт',
+    title: 'Зээлийн агентын урьдчилсан дүгнэлт',
     autoAfterSave: 'Аппликэйшн хадгалсны дараа автоматаар гарна',
     ruleBased: 'Дүрмийн суурьтай',
     rerun: 'Дахин дүгнэх',
@@ -2044,15 +2044,15 @@ const AI_PANEL_TEXT = {
     rejectionRisks: 'Яагаад татгалзах эрсдэлтэй вэ?',
     disclaimer: 'Энэ нь урьдчилсан AI санал бөгөөд эцсийн шийдвэрийг хүний ажилтан/хороо гаргана.',
     pending: 'AI дүгнэлт дараалалд орсон байна.',
-    processing: 'AI зээлийн ажилтан дүгнэлт боловсруулж байна.',
+    processing: 'Зээлийн агент дүгнэлт боловсруулж байна.',
     failed: 'AI дүгнэлт гаргахад алдаа гарсан байна.',
     empty: 'Одоогоор AI дүгнэлт үүсээгүй байна. Аппликэйшн хадгалах эсвэл гараар дахин дүгнүүлж болно.',
     humanReview: 'Хүний баталгаажуулалт шаардлагатай',
-    updated: 'AI зээлийн ажилтны дүгнэлт шинэчлэгдлээ.',
+    updated: 'Зээлийн агентын дүгнэлт шинэчлэгдлээ.',
     updateError: 'AI дүгнэлт гаргахад алдаа гарлаа.',
   },
   en: {
-    title: 'Preliminary AI loan officer review',
+    title: 'Preliminary loan agent review',
     autoAfterSave: 'Generated automatically after the application is saved',
     ruleBased: 'Rule-based',
     rerun: 'Run again',
@@ -2071,11 +2071,11 @@ const AI_PANEL_TEXT = {
     rejectionRisks: 'Rejection risks',
     disclaimer: 'This is a preliminary AI recommendation; the final decision is made by a human officer/committee.',
     pending: 'AI review is queued.',
-    processing: 'AI loan officer is reviewing the application.',
+    processing: 'Loan agent is reviewing the application.',
     failed: 'AI review failed.',
     empty: 'No AI review has been generated yet. Save the application or run the review manually.',
     humanReview: 'Human verification required',
-    updated: 'AI loan officer review updated.',
+    updated: 'Loan agent review updated.',
     updateError: 'Failed to generate AI review.',
   },
 };
