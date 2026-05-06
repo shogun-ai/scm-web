@@ -668,7 +668,7 @@ const FinancialReportsPage = ({ onBack }) => {
 
     useEffect(() => {
         window.scrollTo(0, 0);
-        fetch(`${API_URL}/api/policies?category=report`)
+        fetch(`${API_URL}/api/policies?category=report&displayOnWeb=true`)
             .then(r => r.json()).then(d => setFiles(d)).catch(() => {}).finally(() => setLoading(false));
     }, []);
 
@@ -720,7 +720,7 @@ const PoliciesPage = ({ onBack }) => {
 
     useEffect(() => {
         window.scrollTo(0, 0);
-        fetch(`${API_URL}/api/policies?category=policy`)
+        fetch(`${API_URL}/api/policies?category=policy&displayOnWeb=true`)
             .then(r => r.json()).then(d => setFiles(d)).catch(() => {}).finally(() => setLoading(false));
     }, []);
 

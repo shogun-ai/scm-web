@@ -5,6 +5,9 @@ const policySchema = new mongoose.Schema({
   fileName: String,
   fileUrl: String,   // Cloudinary URL
   category: { type: String, enum: ['policy', 'report'] },
+  displayOnWeb: { type: Boolean, default: true },
+  useInComplianceAgent: { type: Boolean, default: true },
+  useInLoanAgent: { type: Boolean, default: true },
   uploadDate: { type: Date, default: Date.now }
 });
 

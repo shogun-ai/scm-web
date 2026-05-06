@@ -406,6 +406,7 @@ async function buildAiLoanOfficerAssessment(loanDoc) {
 
     try {
         const input = getLoanOfficerInput(loanDoc);
+        input.policySources = await getLoanAgentPolicySources();
         const completion = await Promise.race([
             openai.chat.completions.create({
                 model: OPENAI_MODEL,
@@ -419,7 +420,8 @@ async function buildAiLoanOfficerAssessment(loanDoc) {
                             'You are an internal AI loan officer assistant for a Mongolian NBFI.',
                             'Return JSON only. Every human-readable string value MUST be in Mongolian Cyrillic, not English.',
                             'Do not make a final lending decision. Provide preliminary risk, legal/compliance, credit recommendation, conditions, and next steps for human review.',
-                            'Use only the provided application data. If information is missing, mark it as a risk or condition.',
+                            'Use only the provided application data and policySources metadata. If information is missing, mark it as a risk or condition.',
+                            'If policySources are provided, consider their titles as applicable internal policy references, but do not invent policy text that is not provided.',
                             'JSON shape: {risk:{level,summary,flags[]}, legal:{level,summary,flags[]}, credit:{recommendation,summary,conditions[]}, decision:{recommendation,confidence,amountRecommendation,termRecommendation,reason,approvalReasons[],conditionalReasons[],rejectionReasons[]}, nextSteps[]}.',
                             'Be specific: explain why conditional, which exact conditions must be met, why approve, or why reject. Reference concrete numbers from the application when available.',
                             'Allowed levels: low, medium, high. Allowed recommendations: approve, conditional, manual_review, reject.'
@@ -500,7 +502,7 @@ function buildComplianceStatus(status, note = '') {
 }
 
 const getCompliancePolicySources = async () => {
-    const policies = await Policy.find({ category: 'policy' })
+    const policies = await Policy.find({ category: 'policy', useInComplianceAgent: { $ne: false } })
         .sort({ uploadDate: -1 })
         .limit(Number(process.env.COMPLIANCE_POLICY_LIMIT || 8));
     return policies.map(p => ({
@@ -508,6 +510,18 @@ const getCompliancePolicySources = async () => {
         title: p.title || p.fileName || 'Бодлогын баримт',
         fileName: p.fileName || '',
         fileUrl: p.fileUrl || '',
+        uploadDate: p.uploadDate,
+    }));
+};
+
+const getLoanAgentPolicySources = async () => {
+    const policies = await Policy.find({ category: 'policy', useInLoanAgent: { $ne: false } })
+        .sort({ uploadDate: -1 })
+        .limit(Number(process.env.LOAN_AGENT_POLICY_LIMIT || 8));
+    return policies.map(p => ({
+        id: String(p._id),
+        title: p.title || p.fileName || 'Бодлогын баримт',
+        fileName: p.fileName || '',
         uploadDate: p.uploadDate,
     }));
 };
@@ -3769,6 +3783,15 @@ app.put('/api/stats/:id', authenticateUser, requireAdmin, async (req, res) => {
 app.get('/api/policies', async (req, res) => {
     try {
         const filter = req.query.category ? { category: req.query.category } : {};
+        if (String(req.query.displayOnWeb || '').toLowerCase() === 'true') {
+            filter.displayOnWeb = { $ne: false };
+        }
+        if (String(req.query.useInComplianceAgent || '').toLowerCase() === 'true') {
+            filter.useInComplianceAgent = { $ne: false };
+        }
+        if (String(req.query.useInLoanAgent || '').toLowerCase() === 'true') {
+            filter.useInLoanAgent = { $ne: false };
+        }
         const policies = await Policy.find(filter).sort({ uploadDate: -1 });
         res.json(policies);
     } catch (err) {
@@ -3795,9 +3818,27 @@ app.post('/api/policies', authenticateUser, requireAdmin, uploadPolicy.single('f
             category: req.body.category,
             fileName: req.file.originalname,
             fileUrl: req.file.path,   // Cloudinary URL
+            displayOnWeb: req.body.displayOnWeb !== 'false',
+            useInComplianceAgent: req.body.useInComplianceAgent !== 'false',
+            useInLoanAgent: req.body.useInLoanAgent !== 'false',
         });
         await newPolicy.save();
         res.json(newPolicy);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.patch('/api/policies/:id', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+        const allowed = ['title', 'displayOnWeb', 'useInComplianceAgent', 'useInLoanAgent'];
+        const updates = {};
+        allowed.forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(req.body || {}, key)) updates[key] = req.body[key];
+        });
+        const policy = await Policy.findByIdAndUpdate(req.params.id, updates, { new: true });
+        if (!policy) return res.status(404).json({ message: "Файл олдсонгүй" });
+        res.json(policy);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

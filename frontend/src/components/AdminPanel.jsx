@@ -92,7 +92,8 @@ const AdminPanel = ({ user, token, onLogout }) => {
   const [twoFACode, setTwoFACode] = useState('');
   const [stats, setStats] = useState([]);
   const [policies, setPolicies] = useState([]);
-  const [newPolicy, setNewPolicy] = useState({ title: '', category: 'policy', file: null });
+  const defaultPolicyFlags = { displayOnWeb: true, useInComplianceAgent: true, useInLoanAgent: true };
+  const [newPolicy, setNewPolicy] = useState({ title: '', category: 'policy', file: null, ...defaultPolicyFlags });
 
   // 🗄️ CMS STATES
   const [cmsSubTab, setCmsSubTab] = useState('hero');
@@ -258,12 +259,22 @@ const AdminPanel = ({ user, token, onLogout }) => {
     formData.append('title', newPolicy.title);
     formData.append('category', forcedCategory || newPolicy.category);
     formData.append('file', newPolicy.file);
+    formData.append('displayOnWeb', String(newPolicy.displayOnWeb !== false));
+    formData.append('useInComplianceAgent', String(newPolicy.useInComplianceAgent !== false));
+    formData.append('useInLoanAgent', String(newPolicy.useInLoanAgent !== false));
     try {
         await axios.post(`${API_URL}/api/policies`, formData);
         const policyRes = await axios.get(`${API_URL}/api/policies`);
         setPolicies(policyRes.data);
-        setNewPolicy({ title: '', category: 'policy', file: null });
+        setNewPolicy({ title: '', category: 'policy', file: null, ...defaultPolicyFlags });
         alert("Файл амжилттай хуулагдлаа!");
+    } catch (err) { alert("Алдаа!"); }
+  };
+
+  const updatePolicyFlag = async (id, key, value) => {
+    try {
+      const res = await axios.patch(`${API_URL}/api/policies/${id}`, { [key]: value });
+      setPolicies(prev => prev.map(p => p._id === id ? res.data : p));
     } catch (err) { alert("Алдаа!"); }
   };
 
@@ -275,6 +286,44 @@ const AdminPanel = ({ user, token, onLogout }) => {
       setPolicies(policyRes.data);
     } catch (err) { alert("Алдаа!"); }
   };
+
+  const policyFlagLabels = [
+    { key: 'displayOnWeb', label: 'Вэб дээр харуулах' },
+    { key: 'useInComplianceAgent', label: 'Хууль/комплаенс агент' },
+    { key: 'useInLoanAgent', label: 'Зээлийн агент' },
+  ];
+
+  const renderPolicyFlagInputs = (value, onChange) => (
+    <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+      {policyFlagLabels.map(flag => (
+        <label key={flag.key} className="flex items-center gap-2 rounded-xl border bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+          <input
+            type="checkbox"
+            checked={value?.[flag.key] !== false}
+            onChange={e => onChange(flag.key, e.target.checked)}
+            className="h-4 w-4 accent-[#003B5C]"
+          />
+          {flag.label}
+        </label>
+      ))}
+    </div>
+  );
+
+  const renderPolicyRowFlags = (policy) => (
+    <div className="flex flex-wrap gap-2">
+      {policyFlagLabels.map(flag => (
+        <label key={flag.key} className="flex items-center gap-1 rounded-lg bg-white border px-2 py-1 text-[11px] font-bold text-slate-600">
+          <input
+            type="checkbox"
+            checked={policy?.[flag.key] !== false}
+            onChange={e => updatePolicyFlag(policy._id, flag.key, e.target.checked)}
+            className="h-3.5 w-3.5 accent-[#003B5C]"
+          />
+          {flag.label}
+        </label>
+      ))}
+    </div>
+  );
 
   const deleteUser = async (id) => {
     if(!window.confirm("Хэрэглэгчийг устгах уу?")) return;
@@ -822,14 +871,18 @@ const AdminPanel = ({ user, token, onLogout }) => {
              <section className="bg-white p-8 rounded-2xl border shadow-sm">
                <h3 className="text-xl font-bold mb-6 text-[#003B5C]">📈 Санхүүгийн тайлан</h3>
                <form onSubmit={e => { e.preventDefault(); handlePolicyUpload(e, 'report'); }} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                 <input placeholder="Тайлангийн гарчиг" value={newPolicy.category === 'report' ? newPolicy.title : ''} onChange={e => setNewPolicy({ title: e.target.value, category: 'report', file: newPolicy.file })} className="p-3 bg-slate-50 border rounded-xl text-sm" required />
+                 <input placeholder="Тайлангийн гарчиг" value={newPolicy.category === 'report' ? newPolicy.title : ''} onChange={e => setNewPolicy(p => ({ ...p, title: e.target.value, category: 'report' }))} className="p-3 bg-slate-50 border rounded-xl text-sm" required />
                  <input type="file" accept=".pdf" onChange={e => setNewPolicy(p => ({ ...p, file: e.target.files[0], category: 'report' }))} className="py-2 text-xs" required />
                  <button type="submit" className="bg-[#003B5C] text-white font-bold rounded-xl text-sm px-4">Тайлан нэмэх</button>
+                 {renderPolicyFlagInputs(newPolicy, (key, value) => setNewPolicy(p => ({ ...p, [key]: value, category: 'report' })))}
                </form>
                <div className="space-y-3 border-t pt-6">
                  {policies.filter(p => p.category === 'report').map(p => (
-                   <div key={p._id} className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border text-sm">
-                     <span className="font-bold text-slate-700">{p.title}</span>
+                    <div key={p._id} className="flex flex-col md:flex-row justify-between gap-3 md:items-center bg-slate-50 p-4 rounded-xl border text-sm">
+                      <div className="space-y-2">
+                        <span className="font-bold text-slate-700">{p.title}</span>
+                        {renderPolicyRowFlags(p)}
+                      </div>
                      <div className="flex gap-2">
                        <a href={p.fileUrl || `/policies/${p.fileName}`} target="_blank" rel="noreferrer" className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Eye size={16}/></a>
                        <button onClick={() => deletePolicy(p._id)} className="p-2 text-red-600 bg-red-50 rounded-lg"><Trash2 size={16}/></button>
@@ -843,15 +896,19 @@ const AdminPanel = ({ user, token, onLogout }) => {
              {/* Бодлого журам (policy) */}
              <section className="bg-white p-8 rounded-2xl border shadow-sm">
                <h3 className="text-xl font-bold mb-6 text-[#00A651]">📁 Байгууллагын бодлого журам</h3>
-               <form onSubmit={e => { e.preventDefault(); handlePolicyUpload(e, 'policy'); }} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                 <input placeholder="Журамын гарчиг" value={newPolicy.category === 'policy' ? newPolicy.title : ''} onChange={e => setNewPolicy({ title: e.target.value, category: 'policy', file: newPolicy.file })} className="p-3 bg-slate-50 border rounded-xl text-sm" required />
-                 <input type="file" accept=".pdf" onChange={e => setNewPolicy(p => ({ ...p, file: e.target.files[0], category: 'policy' }))} className="py-2 text-xs" required />
-                 <button type="submit" className="bg-[#00A651] text-white font-bold rounded-xl text-sm px-4">Журам нэмэх</button>
-               </form>
+                <form onSubmit={e => { e.preventDefault(); handlePolicyUpload(e, 'policy'); }} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <input placeholder="Журамын гарчиг" value={newPolicy.category === 'policy' ? newPolicy.title : ''} onChange={e => setNewPolicy(p => ({ ...p, title: e.target.value, category: 'policy' }))} className="p-3 bg-slate-50 border rounded-xl text-sm" required />
+                  <input type="file" accept=".pdf" onChange={e => setNewPolicy(p => ({ ...p, file: e.target.files[0], category: 'policy' }))} className="py-2 text-xs" required />
+                  <button type="submit" className="bg-[#00A651] text-white font-bold rounded-xl text-sm px-4">Журам нэмэх</button>
+                  {renderPolicyFlagInputs(newPolicy, (key, value) => setNewPolicy(p => ({ ...p, [key]: value, category: 'policy' })))}
+                </form>
                <div className="space-y-3 border-t pt-6">
                  {policies.filter(p => p.category === 'policy').map(p => (
-                   <div key={p._id} className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border text-sm">
-                     <span className="font-bold text-slate-700">{p.title}</span>
+                    <div key={p._id} className="flex flex-col md:flex-row justify-between gap-3 md:items-center bg-slate-50 p-4 rounded-xl border text-sm">
+                      <div className="space-y-2">
+                        <span className="font-bold text-slate-700">{p.title}</span>
+                        {renderPolicyRowFlags(p)}
+                      </div>
                      <div className="flex gap-2">
                        <a href={p.fileUrl || `/policies/${p.fileName}`} target="_blank" rel="noreferrer" className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Eye size={16}/></a>
                        <button onClick={() => deletePolicy(p._id)} className="p-2 text-red-600 bg-red-50 rounded-lg"><Trash2 size={16}/></button>
