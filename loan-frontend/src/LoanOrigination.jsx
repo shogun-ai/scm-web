@@ -1705,6 +1705,8 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     const aiRisk = ai.risk || {};
     const aiLegal = ai.legal || {};
     const aiCredit = ai.credit || {};
+    const aiPolicyCompliance = ai.policyCompliance || {};
+    const aiPolicyChecks = Array.isArray(aiPolicyCompliance.checks) ? aiPolicyCompliance.checks : [];
     const aiStatusLabel = {
       pending: labels.statuses.pending,
       running: labels.statuses.running,
@@ -1723,6 +1725,25 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     const aiList = (items = []) => (items || []).length
       ? `<ul style="margin:0;padding-left:14px;line-height:1.55">${items.slice(0,5).map(item => `<li style="font-size:10.5px;margin-bottom:3px">${esc(item)}</li>`).join('')}</ul>`
       : '<div style="font-size:10.5px;color:#94a3b8">-</div>';
+    const aiPolicyHtml = (aiPolicyCompliance.summary || aiPolicyChecks.length) ? `
+      <div style="margin-top:10px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;padding:10px">
+        <div style="font-size:9px;font-weight:900;color:#64748b;text-transform:uppercase;margin-bottom:5px">${esc(labels.policyCompliance)}</div>
+        ${aiPolicyCompliance.summary ? `<div style="font-size:11px;font-weight:700;color:#1e293b;line-height:1.5;margin-bottom:8px">${esc(aiPolicyCompliance.summary)}</div>` : ''}
+        ${aiPolicyChecks.length ? `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+          ${aiPolicyChecks.slice(0,4).map(check => `
+            <div style="border:1px solid #e2e8f0;border-radius:9px;padding:8px;background:#f8fafc">
+              <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:5px">
+                <div style="font-size:9px;font-weight:900;color:#475569;text-transform:uppercase">${esc(check.area || '-')}</div>
+                <div style="font-size:9px;font-weight:900;color:#003B5C">${esc(check.status || '')}</div>
+              </div>
+              ${check.policyClause ? `<div style="font-size:9px;font-weight:800;color:#1d4ed8;margin-bottom:4px">${esc(labels.policyClause)}: ${esc(check.policyClause)}</div>` : ''}
+              ${check.evidence ? `<div style="font-size:10px;color:#475569;line-height:1.45;margin-bottom:4px">${esc(labels.policyEvidence)}: ${esc(check.evidence)}</div>` : ''}
+              ${check.finding ? `<div style="font-size:10.5px;font-weight:700;color:#1e293b;line-height:1.45">${esc(check.finding)}</div>` : ''}
+              ${check.recommendation ? `<div style="font-size:10px;color:#64748b;line-height:1.45;margin-top:3px">${esc(check.recommendation)}</div>` : ''}
+              ${check.policyRef ? `<div style="font-size:9.5px;font-weight:800;color:#003B5C;margin-top:5px">${esc(labels.policySource)}: ${esc(check.policyRef)}</div>` : ''}
+            </div>`).join('')}
+        </div>` : ''}
+      </div>` : '';
     const aiSection = ai.status === 'completed' ? `
     <div class="section" style="border:1px solid #cbd5e1;border-radius:14px;padding:14px 16px;background:#f8fafc">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px">
@@ -1761,6 +1782,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
           ${aiList(aiDecision.rejectionReasons)}
         </div>
       </div>
+      ${aiPolicyHtml}
       <div style="font-size:9.5px;color:#64748b;margin-top:10px">${esc(labels.disclaimer)}</div>
     </div>` : `
     <div class="section" style="border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc">

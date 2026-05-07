@@ -2033,6 +2033,10 @@ const AI_PANEL_TEXT = {
     risk: 'Эрсдэл',
     legal: 'Хууль / баримт',
     recommendation: 'Олголтын санал',
+    policyCompliance: 'Журмын нийцэл',
+    policyClause: 'Журмын заалт',
+    policySource: 'Эх сурвалж',
+    policyEvidence: 'Хүсэлтийн нотолгоо',
     riskEmpty: 'Эрсдэлийн товч дүгнэлт алга.',
     legalEmpty: 'Хуулийн шалгалтын товч дүгнэлт алга.',
     recEmpty: 'Саналын тайлбар алга.',
@@ -2060,6 +2064,10 @@ const AI_PANEL_TEXT = {
     risk: 'Risk',
     legal: 'Legal / documents',
     recommendation: 'Credit recommendation',
+    policyCompliance: 'Policy compliance',
+    policyClause: 'Policy clause',
+    policySource: 'Source',
+    policyEvidence: 'Request evidence',
     riskEmpty: 'No risk summary available.',
     legalEmpty: 'No legal/document summary available.',
     recEmpty: 'No recommendation summary available.',
@@ -2085,6 +2093,8 @@ const AiLoanOfficerPanel = ({ assessment, loading, onRun, labels = AI_PANEL_TEXT
   const legal = assessment?.legal || {};
   const credit = assessment?.credit || {};
   const decision = assessment?.decision || {};
+  const policyCompliance = assessment?.policyCompliance || {};
+  const policyChecks = Array.isArray(policyCompliance.checks) ? policyCompliance.checks : [];
   const riskMeta = aiLevelMeta[risk.level] || aiLevelMeta.medium;
   const legalMeta = aiLevelMeta[legal.level] || aiLevelMeta.medium;
   const recMeta = aiRecommendationMeta[decision.recommendation || credit.recommendation] || aiRecommendationMeta.manual_review;
@@ -2166,6 +2176,41 @@ const AiLoanOfficerPanel = ({ assessment, loading, onRun, labels = AI_PANEL_TEXT
                   </ul>
                 </div>
               ))}
+            </div>
+          )}
+          {(policyCompliance.summary || policyChecks.length > 0) && (
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-3">
+              <div>
+                <p className="text-xs font-bold uppercase text-slate-500">{labels.policyCompliance}</p>
+                {policyCompliance.summary && <p className="mt-1 text-sm font-semibold text-slate-800">{policyCompliance.summary}</p>}
+              </div>
+              {policyChecks.length > 0 && (
+                <div className="grid md:grid-cols-2 gap-3">
+                  {policyChecks.slice(0, 4).map((item, idx) => (
+                    <div key={`${item.area}-${idx}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-[10px] font-black uppercase text-slate-500">{item.area}</p>
+                        <span className="text-[10px] font-black text-[#003B5C]">{item.status}</span>
+                      </div>
+                      {item.policyClause && (
+                        <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 p-2">
+                          <p className="text-[9px] font-black uppercase text-blue-700">{labels.policyClause}</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-blue-900">{item.policyClause}</p>
+                        </div>
+                      )}
+                      {item.evidence && (
+                        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                          <p className="text-[9px] font-black uppercase text-slate-500">{labels.policyEvidence}</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-slate-700">{item.evidence}</p>
+                        </div>
+                      )}
+                      <p className="mt-2 text-xs font-bold leading-5 text-slate-800">{item.finding}</p>
+                      {item.recommendation && <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">{item.recommendation}</p>}
+                      {item.policyRef && <p className="mt-2 text-[11px] font-bold text-[#003B5C]">{labels.policySource}: {item.policyRef}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           <p className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
