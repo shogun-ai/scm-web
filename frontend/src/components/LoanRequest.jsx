@@ -334,7 +334,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
 
   // Step progress
   const StepBar = () => (
-    <div className="flex items-center gap-0 mb-8 overflow-x-auto pb-1">
+    <div className="flex items-center gap-0 mb-8 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
       {STEPS.map((s, i) => (
         <React.Fragment key={s.n}>
           <div className="flex flex-col items-center gap-1 flex-shrink-0">
@@ -342,9 +342,9 @@ const LoanRequest = ({ onBack, initialProduct }) => {
               ${step > s.n ? 'bg-[#00A651] text-white' : step === s.n ? 'bg-[#003B5C] text-white ring-4 ring-[#003B5C]/20' : 'bg-slate-200 text-slate-400'}`}>
               {step > s.n ? <CheckCircle size={14}/> : s.n}
             </div>
-            <span className={`text-[9px] font-bold uppercase tracking-wide whitespace-nowrap hidden md:block ${step === s.n ? 'text-[#003B5C]' : 'text-slate-400'}`}>{s.label}</span>
+            <span className={`text-[9px] font-black uppercase tracking-wide whitespace-nowrap hidden md:block ${step === s.n ? 'text-[#003B5C]' : 'text-slate-500'}`}>{s.label}</span>
           </div>
-          {i < STEPS.length - 1 && <div className={`flex-1 h-0.5 mx-1 min-w-[12px] transition-all ${step > s.n ? 'bg-[#00A651]' : 'bg-slate-200'}`}/>}
+          {i < STEPS.length - 1 && <div className={`flex-1 h-0.5 mx-2 min-w-[12px] transition-all ${step > s.n ? 'bg-[#00A651]' : 'bg-slate-300'}`}/>}
         </React.Fragment>
       ))}
     </div>
@@ -362,11 +362,11 @@ const LoanRequest = ({ onBack, initialProduct }) => {
       <p className={lbl}>Зээлийн бүтээгдэхүүн *</p>
       <div className="grid grid-cols-1 gap-3">
         {LOAN_PRODUCTS.map(p => (
-          <label key={p.id} className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all
-            ${formData.selectedProduct === p.id ? 'border-[#003B5C] bg-[#003B5C]/5' : 'border-gray-200 hover:border-gray-300'}`}>
+          <label key={p.id} className={`flex items-center gap-3 p-4 rounded-2xl border cursor-pointer transition-all shadow-sm
+            ${formData.selectedProduct === p.id ? 'border-[#003B5C] bg-blue-50 ring-4 ring-[#003B5C]/10' : 'border-slate-200 bg-white hover:border-[#003B5C]/50 hover:bg-slate-50'}`}>
             <input type="radio" name="selectedProduct" value={p.id} checked={formData.selectedProduct === p.id}
               onChange={() => set('selectedProduct', p.id)} className="accent-[#003B5C] w-4 h-4" />
-            <span className={`font-semibold text-sm ${formData.selectedProduct === p.id ? 'text-[#003B5C]' : 'text-slate-600'}`}>{p.name}</span>
+            <span className={`font-black text-sm ${formData.selectedProduct === p.id ? 'text-[#003B5C]' : 'text-slate-700'}`}>{p.name}</span>
           </label>
         ))}
       </div>
@@ -384,8 +384,8 @@ const LoanRequest = ({ onBack, initialProduct }) => {
           { val: 'organization', Icon: Building2, title: 'Байгууллага', sub: 'Бизнес, эргэлтийн хөрөнгө' },
         ].map(({ val, Icon, title, sub }) => (
           <div key={val} onClick={() => set('userType', val)}
-            className={`cursor-pointer p-6 rounded-2xl border-2 flex flex-col items-center gap-3 transition-all hover:scale-105
-              ${formData.userType === val ? 'border-[#D4AF37] bg-[#D4AF37]/5' : 'border-gray-200'}`}>
+            className={`cursor-pointer p-6 rounded-2xl border flex flex-col items-center gap-3 transition-all shadow-sm
+              ${formData.userType === val ? 'border-[#003B5C] bg-blue-50 ring-4 ring-[#003B5C]/10' : 'border-slate-200 bg-white hover:border-[#003B5C]/50 hover:bg-slate-50'}`}>
             <div className={`w-16 h-16 rounded-full flex items-center justify-center ${formData.userType === val ? 'bg-[#003B5C] text-white' : 'bg-slate-100 text-[#003B5C]'}`}><Icon size={32}/></div>
             <p className="font-bold text-[#003B5C] text-lg">{title}</p>
             <p className="text-xs text-slate-500 text-center">{sub}</p>
@@ -548,7 +548,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
             {[{ val: 'real_estate', Icon: Home, title: 'Үл хөдлөх хөрөнгө' }, { val: 'vehicle', Icon: Car, title: 'Тээврийн хэрэгсэл' }].map(({ val, Icon, title }) => (
               <div key={val} onClick={() => set('collateralType', val)}
                 className={`cursor-pointer p-4 rounded-xl border-2 flex items-center gap-3 transition-all
-                  ${formData.collateralType === val ? 'border-[#003B5C] bg-[#003B5C]/5' : 'border-gray-200 hover:border-gray-300'}`}>
+                  ${formData.collateralType === val ? 'border-[#003B5C] bg-blue-50 ring-4 ring-[#003B5C]/10' : 'border-slate-200 bg-white hover:border-[#003B5C]/50 hover:bg-slate-50'}`}>
                 <Icon size={20} className={formData.collateralType === val ? 'text-[#003B5C]' : 'text-slate-400'} />
                 <span className={`font-semibold text-sm ${formData.collateralType === val ? 'text-[#003B5C]' : 'text-slate-500'}`}>{title}</span>
               </div>
@@ -787,10 +787,10 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   // RENDER
   // ─────────────────────────────────────────────
   return (
-    <div className="min-h-screen relative font-sans text-slate-800 pb-20">
-      <div className="absolute inset-0 z-0">
+    <div className="min-h-screen relative font-sans text-slate-800 pb-20 bg-slate-100">
+      <div className="fixed inset-0 z-0">
         <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?ixlib=rb-1.2.1&auto=format&fit=crop&w=1920&q=80" alt="" className="w-full h-full object-cover"/>
-        <div className="absolute inset-0 bg-[#003B5C]/90 backdrop-blur-sm"/>
+        <div className="absolute inset-0 bg-[#003B5C]/80"/>
       </div>
 
       <div className="relative z-10 pt-28 pb-6 px-6 max-w-5xl mx-auto text-center">
@@ -798,8 +798,8 @@ const LoanRequest = ({ onBack, initialProduct }) => {
         <p className="text-blue-100 max-w-xl mx-auto text-sm">Мэдээллээ оруулаад файлаа хавсаргана уу. Манай ажилтан 24 цагийн дотор холбогдоно.</p>
       </div>
 
-      <div className="relative z-10 max-w-3xl mx-auto px-4 md:px-6">
-        <div className="bg-white/97 backdrop-blur rounded-3xl shadow-2xl p-6 md:p-10 border border-white/20">
+      <div className="relative z-10 max-w-4xl mx-auto px-4 md:px-6">
+        <div className="bg-white rounded-3xl shadow-[0_28px_80px_rgba(0,0,0,0.35)] p-5 md:p-9 border border-slate-200">
           <StepBar/>
           <form onSubmit={handleSubmit}>
             {step === 1 && <Step1/>}
