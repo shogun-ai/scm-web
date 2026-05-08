@@ -802,14 +802,14 @@ const LoanRequest = ({ onBack, initialProduct }) => {
         <div className="bg-white rounded-3xl shadow-[0_28px_80px_rgba(0,0,0,0.35)] p-5 md:p-9 border border-slate-200">
           <StepBar/>
           <form onSubmit={handleSubmit}>
-            {step === 1 && <Step1/>}
-            {step === 2 && <Step2/>}
-            {step === 3 && <Step3/>}
-            {step === 4 && <Step4/>}
-            {step === 5 && <Step5/>}
-            {step === 6 && <Step6/>}
-            {step === 7 && <Step7/>}
-            {step === 8 && <Step8/>}
+            {step === 1 && Step1()}
+            {step === 2 && Step2()}
+            {step === 3 && Step3()}
+            {step === 4 && Step4()}
+            {step === 5 && Step5()}
+            {step === 6 && Step6()}
+            {step === 7 && Step7()}
+            {step === 8 && Step8()}
 
             <div className="pt-8 mt-6 flex justify-between gap-4 border-t border-gray-100">
               {step > 1 ? (
