@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import axios from 'axios';
 import imageCompression from 'browser-image-compression';
 import {
@@ -41,6 +41,8 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const inputRefs = useRef({});
+  const activeFieldRef = useRef(null);
 
   // Org sub-person toggles
   const [showCeo,   setShowCeo]   = useState(false);
@@ -48,6 +50,26 @@ const LoanRequest = ({ onBack, initialProduct }) => {
 
   const isLocal = window.location.hostname === 'localhost';
   const API = isLocal ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com';
+
+  const focusProps = (key) => ({
+    ref: (node) => {
+      if (node) inputRefs.current[key] = node;
+    },
+    onFocus: () => {
+      activeFieldRef.current = key;
+    },
+  });
+
+  useLayoutEffect(() => {
+    const key = activeFieldRef.current;
+    const el = key ? inputRefs.current[key] : null;
+    if (!el || document.activeElement === el || !document.body.contains(el)) return;
+    el.focus({ preventScroll: true });
+    if (typeof el.selectionStart === 'number' && typeof el.setSelectionRange === 'function') {
+      const pos = String(el.value || '').length;
+      el.setSelectionRange(pos, pos);
+    }
+  });
 
   const [formData, setFormData] = useState({
     userType: 'individual',
@@ -75,9 +97,11 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   useEffect(() => {
     if (!initialProduct) return;
     const code = PRODUCT_ID_MAP[initialProduct.id] || initialProduct.id;
-    setFormData(p => ({ ...p, selectedProduct: code }));
-    if (code === 'cons_loan') setFormData(p => ({ ...p, userType: 'individual' }));
-    if (code === 'line_loan') setFormData(p => ({ ...p, userType: 'organization' }));
+    setFormData(p => ({
+      ...p,
+      selectedProduct: code,
+      userType: code === 'cons_loan' ? 'individual' : code === 'line_loan' ? 'organization' : p.userType,
+    }));
   }, [initialProduct]);
 
   useEffect(() => {
@@ -243,7 +267,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     if (f.type === 'select') return (
       <label key={f.key} className={colCls}>
         <span className={lbl}>{f.label}{f.required ? ' *' : ''}</span>
-        <select name={f.key} value={v || ''} onChange={handleChange} className={`${inp(errors[f.key])} bg-white`}>
+        <select name={f.key} value={v || ''} onChange={handleChange} className={`${inp(errors[f.key])} bg-white`} {...focusProps(f.key)}>
           <option value="">— сонгох —</option>
           {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
         </select>
@@ -258,6 +282,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
           className={`${inp(errors[f.key])}${f.upper ? ' uppercase' : ''}`}
           inputMode={f.type === 'number' ? 'numeric' : undefined}
           onChange={handleChange}
+          {...focusProps(f.key)}
         />
         <Err msg={errors[f.key]}/>
       </label>
@@ -265,13 +290,13 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   };
 
   // ── Schema field renderer for nested objects (vehicle, collateral) ─────────
-  const renderNestedField = (f, obj, setFn) => {
+  const renderNestedField = (f, obj, setFn, scope) => {
     const v = obj[f.key];
     const colCls = `space-y-1${f.col === 2 ? ' col-span-2' : ''}`;
     if (f.type === 'select') return (
       <label key={f.key} className={colCls}>
         <span className={lbl}>{f.label}</span>
-        <select value={v || ''} onChange={e => setFn(f.key, e.target.value)} className={`${inp()} bg-white`}>
+        <select value={v || ''} onChange={e => setFn(f.key, e.target.value)} className={`${inp()} bg-white`} {...focusProps(`${scope}.${f.key}`)}>
           <option value="">— Сонгоно уу —</option>
           {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
         </select>
@@ -280,7 +305,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     return (
       <label key={f.key} className={colCls}>
         <span className={lbl}>{f.label}</span>
-        <input value={v || ''} onChange={e => setFn(f.key, e.target.value)} className={inp()} />
+        <input value={v || ''} onChange={e => setFn(f.key, e.target.value)} className={inp()} {...focusProps(`${scope}.${f.key}`)} />
       </label>
     );
   };
@@ -333,7 +358,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   };
 
   // Step progress
-  const StepBar = () => (
+  const renderStepBar = () => (
     <div className="flex items-center gap-0 mb-8 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
       {STEPS.map((s, i) => (
         <React.Fragment key={s.n}>
@@ -357,7 +382,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   // ─────────────────────────────────────────────
 
   // STEP 1 — Product selection
-  const Step1 = () => (
+  const renderStep1 = () => (
     <div className="space-y-4 animate-fade-in">
       <p className={lbl}>Зээлийн бүтээгдэхүүн *</p>
       <div className="grid grid-cols-1 gap-3">
@@ -375,7 +400,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   );
 
   // STEP 2 — Borrower type
-  const Step2 = () => (
+  const renderStep2 = () => (
     <div className="space-y-4 animate-fade-in">
       <p className={lbl}>Зээлдэгчийн төрөл *</p>
       <div className="grid grid-cols-2 gap-5">
@@ -397,7 +422,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   );
 
   // STEP 3 — Borrower info
-  const Step3Individual = () => (
+  const renderStep3Individual = () => (
     <div className="space-y-5 animate-fade-in">
       <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
         <div className="flex items-center gap-2">
@@ -424,7 +449,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     </div>
   );
 
-  const Step3Org = () => (
+  const renderStep3Org = () => (
     <div className="space-y-5 animate-fade-in">
       <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
         <div className="flex items-center gap-2">
@@ -463,7 +488,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
             {[['firstName','Нэр'],['lastName','Овог'],['fatherName','Эцэг/эхийн нэр'],['regNo','Регистр'],['phone','Утас']].map(([k, l]) => (
               <label key={k} className="space-y-1">
                 <span className={lbl}>{l}</span>
-                <input value={formData.orgCeo[k] || ''} onChange={e => setCeo(k, e.target.value)} className={inp()} />
+                <input value={formData.orgCeo[k] || ''} onChange={e => setCeo(k, e.target.value)} className={inp()} {...focusProps(`orgCeo.${k}`)} />
               </label>
             ))}
           </div>
@@ -485,7 +510,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
             {[['firstName','Нэр'],['lastName','Овог'],['fatherName','Эцэг/эхийн нэр'],['regNo','Регистр'],['phone','Утас']].map(([k, l]) => (
               <label key={k} className="space-y-1">
                 <span className={lbl}>{l}</span>
-                <input value={formData.orgOwner[k] || ''} onChange={e => setOwner(k, e.target.value)} className={inp()} />
+                <input value={formData.orgOwner[k] || ''} onChange={e => setOwner(k, e.target.value)} className={inp()} {...focusProps(`orgOwner.${k}`)} />
               </label>
             ))}
           </div>
@@ -495,25 +520,25 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     </div>
   );
 
-  const Step3 = () => formData.userType === 'individual' ? <Step3Individual/> : <Step3Org/>;
+  const renderStep3 = () => formData.userType === 'individual' ? renderStep3Individual() : renderStep3Org();
 
   // STEP 4 — Loan terms
-  const Step4 = () => (
+  const renderStep4 = () => (
     <div className="space-y-5 animate-fade-in">
       <div className="grid grid-cols-2 gap-4">
         <label className="space-y-1">
           <span className={lbl}>Зээлийн дүн (₮) *</span>
-          <input type="text" name="amount" value={formData.amount} onChange={handleChange} placeholder="20,000,000" className={inp(errors.amount)} />
+          <input type="text" name="amount" value={formData.amount} onChange={handleChange} placeholder="20,000,000" className={inp(errors.amount)} {...focusProps('amount')} />
           <Err msg={errors.amount}/>
         </label>
         <label className="space-y-1">
           <span className={lbl}>Хугацаа (сар) *</span>
-          <input name="term" type="text" value={formData.term} onChange={handleChange} placeholder="36" className={inp(errors.term)} />
+          <input name="term" type="text" value={formData.term} onChange={handleChange} placeholder="36" className={inp(errors.term)} {...focusProps('term')} />
           <Err msg={errors.term}/>
         </label>
         <label className="space-y-1">
           <span className={lbl}>Зээлээ төлж эхлэх хугацаа</span>
-          <input name="repaymentStartDate" type="date" value={formData.repaymentStartDate} onChange={handleChange} className={inp(errors.repaymentStartDate)} />
+          <input name="repaymentStartDate" type="date" value={formData.repaymentStartDate} onChange={handleChange} className={inp(errors.repaymentStartDate)} {...focusProps('repaymentStartDate')} />
           <p className="text-[10px] font-medium text-slate-400">Жишээ: цалин буух өдөртэйгээ уялдуулж сонгоно.</p>
         </label>
       </div>
@@ -531,14 +556,14 @@ const LoanRequest = ({ onBack, initialProduct }) => {
       <label className="space-y-1 block">
         <span className={lbl}>Зориулалт *</span>
         <textarea name="purpose" rows="2" value={formData.purpose} onChange={handleChange}
-          placeholder="Жишээ: Ажлын машин авах, эргэлтийн хөрөнгө нэмэх..." className={`${inp(errors.purpose)} resize-none`} />
+          placeholder="Жишээ: Ажлын машин авах, эргэлтийн хөрөнгө нэмэх..." className={`${inp(errors.purpose)} resize-none`} {...focusProps('purpose')} />
         <Err msg={errors.purpose}/>
       </label>
 
       <label className="space-y-1 block">
         <span className={lbl}>Эргэн төлөх эх үүсвэр</span>
         <textarea name="repaymentSource" rows="2" value={formData.repaymentSource} onChange={handleChange}
-          placeholder="Жишээ: Цалингийн орлого, борлуулалтын орлого..." className={`${inp()} resize-none`} />
+          placeholder="Жишээ: Цалингийн орлого, борлуулалтын орлого..." className={`${inp()} resize-none`} {...focusProps('repaymentSource')} />
       </label>
 
       {!isCarLoan && (
@@ -560,7 +585,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   );
 
   // STEP 5 — Collateral details
-  const Step5 = () => {
+  const renderStep5 = () => {
     const isVehicle = formData.collateralType === 'vehicle';
     return (
       <div className="space-y-5 animate-fade-in">
@@ -575,7 +600,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
                 note="Техникийн паспортын зураг оруулна уу" />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {COLLATERAL_VEHICLE_FIELDS.map(f => renderNestedField(f, formData.vehicle, setVeh))}
+              {COLLATERAL_VEHICLE_FIELDS.map(f => renderNestedField(f, formData.vehicle, setVeh, 'vehicle'))}
             </div>
             <div className="border-t border-gray-100 pt-3">
               <p className={lbl}>Тээврийн хэрэгслийн зураг</p>
@@ -593,7 +618,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
                 note="Гэрчилгээний зураг оруулна уу" />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {COLLATERAL_REALESTATE_FIELDS.map(f => renderNestedField(f, formData.collateral, setColl))}
+              {COLLATERAL_REALESTATE_FIELDS.map(f => renderNestedField(f, formData.collateral, setColl, 'collateral'))}
             </div>
             <div className="border-t border-gray-100 pt-3">
               <p className={lbl}>Кадастрын зураг / Нэмэлт баримт</p>
@@ -615,7 +640,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     const gs = [...p.guarantors]; gs[idx] = { ...gs[idx], [field]: value }; return { ...p, guarantors: gs };
   });
 
-  const Step6 = () => (
+  const renderStep6 = () => (
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
@@ -655,7 +680,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
             {GUARANTOR_FIELDS.map(f => (
               <label key={f.key} className="space-y-1">
                 <span className={lbl}>{f.label}</span>
-                <input type={f.type === 'tel' ? 'tel' : 'text'} value={g[f.key] || ''} onChange={e => setGua(idx, f.key, e.target.value)} className={inp()} />
+                <input type={f.type === 'tel' ? 'tel' : 'text'} value={g[f.key] || ''} onChange={e => setGua(idx, f.key, e.target.value)} className={inp()} {...focusProps(`guarantors.${idx}.${f.key}`)} />
               </label>
             ))}
           </div>
@@ -665,7 +690,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   );
 
   // STEP 7 — Documents
-  const Step7 = () => (
+  const renderStep7 = () => (
     <div className="space-y-5 animate-fade-in">
       <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 space-y-2">
         <div className="flex items-center gap-2"><Camera size={16} className="text-amber-700"/>
@@ -714,7 +739,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     </div>
   );
 
-  const Step8 = () => (
+  const renderStep8 = () => (
     <div className="space-y-4 animate-fade-in">
       <div className="text-center mb-4">
         <div className="w-14 h-14 bg-[#00A651]/10 text-[#00A651] rounded-full flex items-center justify-center mx-auto mb-2"><Send size={28}/></div>
@@ -800,16 +825,16 @@ const LoanRequest = ({ onBack, initialProduct }) => {
 
       <div className="relative z-10 max-w-4xl mx-auto px-4 md:px-6">
         <div className="bg-white rounded-3xl shadow-[0_28px_80px_rgba(0,0,0,0.35)] p-5 md:p-9 border border-slate-200">
-          <StepBar/>
+          {renderStepBar()}
           <form onSubmit={handleSubmit}>
-            {step === 1 && Step1()}
-            {step === 2 && Step2()}
-            {step === 3 && Step3()}
-            {step === 4 && Step4()}
-            {step === 5 && Step5()}
-            {step === 6 && Step6()}
-            {step === 7 && Step7()}
-            {step === 8 && Step8()}
+            {step === 1 && renderStep1()}
+            {step === 2 && renderStep2()}
+            {step === 3 && renderStep3()}
+            {step === 4 && renderStep4()}
+            {step === 5 && renderStep5()}
+            {step === 6 && renderStep6()}
+            {step === 7 && renderStep7()}
+            {step === 8 && renderStep8()}
 
             <div className="pt-8 mt-6 flex justify-between gap-4 border-t border-gray-100">
               {step > 1 ? (
