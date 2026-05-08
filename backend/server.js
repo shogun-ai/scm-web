@@ -1859,8 +1859,8 @@ app.post('/api/loans', (req, res) => {
             const applicationData = {
                 borrowerType: body.userType || 'individual',
                 borrower: {
-                    lastName:   body.lastname   || '',
-                    firstName:  body.firstname  || '',
+                    lastName:   body.lastName   || body.lastname   || '',
+                    firstName:  body.firstName  || body.firstname  || '',
                     fatherName: body.fatherName || '',
                     regNo:      body.regNo      || '',
                     dob:        body.dob        || '',
@@ -1902,7 +1902,7 @@ app.post('/api/loans', (req, res) => {
                     term:          body.term   ? String(body.term) : '',
                     purpose:       body.purpose        || '',
                     repaymentSource: body.repaymentSource || '',
-                    repaymentStartDate: '',
+                    repaymentStartDate: body.repaymentStartDate || '',
                     repaymentType: 'equal',
                     graceMonths:   '',
                     collateralType: body.collateralType || 'real_estate',
@@ -1955,6 +1955,8 @@ app.post('/api/loans', (req, res) => {
 
             const newLoan = new LoanRequest({
                 ...body,
+                lastname: body.lastName || body.lastname || '',
+                firstname: body.firstName || body.firstname || '',
                 amount: parseInt(body.amount) || 0,
                 selfieUrl: selfie?.path || '',
                 fileNames: files.map(f => f.path),

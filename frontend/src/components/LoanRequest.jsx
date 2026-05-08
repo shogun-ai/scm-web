@@ -5,7 +5,7 @@ import {
   ArrowLeft, Send, CheckCircle, User, Phone, FileText, Wallet,
   Car, Home, Building2, X, UploadCloud, Users, Briefcase,
   ChevronRight, ChevronLeft, AlertCircle, Loader2, Camera,
-  Sparkles, Shield, Plus, Trash2, BadgeCheck, ChevronDown, ChevronUp,
+  Shield, Plus, Trash2, BadgeCheck, ChevronDown, ChevronUp, Eye,
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────
@@ -42,16 +42,6 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
 
-  // AI states
-  const [analyzingId,       setAnalyzingId]       = useState(false);
-  const [analyzingOrg,      setAnalyzingOrg]       = useState(false);
-  const [analyzingVehicle,  setAnalyzingVehicle]  = useState(false);
-  const [analyzingProperty, setAnalyzingProperty] = useState(false);
-  const [aiFilledId,       setAiFilledId]       = useState(false);
-  const [aiFilledOrg,      setAiFilledOrg]       = useState(false);
-  const [aiFilledVehicle,  setAiFilledVehicle]  = useState(false);
-  const [aiFilledProp,     setAiFilledProp]     = useState(false);
-
   // Org sub-person toggles
   const [showCeo,   setShowCeo]   = useState(false);
   const [showOwner, setShowOwner] = useState(false);
@@ -71,7 +61,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     orgCeo:   { ...EMPTY_PERSON },
     orgOwner: { ...EMPTY_PERSON },
     // Loan
-    selectedProduct: '', amount: '', term: '', purpose: '', repaymentSource: '', collateralType: 'real_estate',
+    selectedProduct: '', amount: '', term: '', repaymentStartDate: '', purpose: '', repaymentSource: '', collateralType: 'real_estate',
     // Collateral
     collateral: { ...EMPTY_COLLATERAL },
     vehicle: { ...EMPTY_VEHICLE },
@@ -152,100 +142,10 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   const handleFileDrop = (e, name) => { e.preventDefault(); processFiles(Array.from(e.dataTransfer.files || []), name); };
   const removeFiles = name => setFormData(p => ({ ...p, files: { ...p.files, [name]: [] } }));
 
-  // ─── AI analyze ──────────────────────────────────────────────────────────
-  const analyzeDoc = async (files, endpoint, onResult, setAnalyzing, setAiFilled) => {
-    if (!files?.length) return;
-    setAnalyzing(true);
-    try {
-      const fd = new FormData();
-      files.forEach(f => fd.append('files', f));
-      const res = await axios.post(`${API}${endpoint}`, fd, { timeout: 30000 });
-      onResult(res.data);
-      setAiFilled(true);
-    } catch { /* silently ignore */ }
-    setAnalyzing(false);
-  };
-
-  const onIdFiles = files => {
-    processFiles(files, 'file_id');
-    analyzeDoc(files, '/api/public/analyze-id', d => {
-      setFormData(p => ({
-        ...p,
-        lastName:     d.lastName     || p.lastName,
-        firstName:    d.firstName    || p.firstName,
-        fatherName:   d.fatherName   || p.fatherName,
-        regNo:        d.regNo        || p.regNo,
-        dob:          d.dob          || p.dob,
-        gender:       d.gender       || p.gender,
-        idIssueDate:  d.issueDate    || p.idIssueDate,
-        idExpiryDate: d.expiryDate   || p.idExpiryDate,
-        address:      d.address      || p.address,
-      }));
-    }, setAnalyzingId, setAiFilledId);
-  };
-
-  const onOrgFiles = files => {
-    processFiles(files, 'file_org_cert');
-    analyzeDoc(files, '/api/public/analyze-org', d => {
-      setFormData(p => ({
-        ...p,
-        orgName:    d.orgName    || p.orgName,
-        orgRegNo:   d.orgRegNo   || p.orgRegNo,
-        legalForm:  d.legalForm  || p.legalForm,
-        foundedDate: d.foundedDate || p.foundedDate,
-        industry:   d.industry   || p.industry,
-        orgCeo:   d.ceoName   ? { ...p.orgCeo,   firstName: d.ceoName }   : p.orgCeo,
-        orgOwner: d.ownerName ? { ...p.orgOwner, firstName: d.ownerName } : p.orgOwner,
-      }));
-    }, setAnalyzingOrg, setAiFilledOrg);
-  };
-
-  const onPropertyFiles = files => {
-    processFiles(files, 'file_prop_cert');
-    analyzeDoc(files, '/api/public/analyze-property', d => {
-      setFormData(p => ({
-        ...p,
-        collateral: {
-          ...p.collateral,
-          certificateNumber: d.certificateNumber || p.collateral.certificateNumber,
-          propertyType:      d.propertyType      || p.collateral.propertyType,
-          address:           d.address           || p.collateral.address,
-          area:              d.area              || p.collateral.area,
-          district:          d.district          || p.collateral.district,
-          khoroo:            d.khoroo            || p.collateral.khoroo,
-          blockNumber:       d.blockNumber       || p.collateral.blockNumber,
-          apartmentNumber:   d.apartmentNumber   || p.collateral.apartmentNumber,
-          landArea:          d.landArea          || p.collateral.landArea,
-          buildingYear:      d.buildingYear      || p.collateral.buildingYear,
-          ownerName:         d.ownerName         || p.collateral.ownerName,
-          ownerRegNo:        d.ownerRegNo        || p.collateral.ownerRegNo,
-        },
-      }));
-    }, setAnalyzingProperty, setAiFilledProp);
-  };
-
-  const onVehicleFiles = files => {
-    processFiles(files, 'file_car_cert');
-    analyzeDoc(files, '/api/public/analyze-vehicle', d => {
-      setFormData(p => ({
-        ...p,
-        vehicle: {
-          ...p.vehicle,
-          plateNumber:           d.plateNumber           || p.vehicle.plateNumber,
-          vehicleType:           d.vehicleType           || p.vehicle.vehicleType,
-          make:                  d.make                  || p.vehicle.make,
-          model:                 d.model                 || p.vehicle.model,
-          year:                  d.year                  || p.vehicle.year,
-          color:                 d.color                 || p.vehicle.color,
-          engineNumber:          d.engineNumber          || p.vehicle.engineNumber,
-          chassisNumber:         d.chassisNumber         || p.vehicle.chassisNumber,
-          technicalPassportNumber: d.technicalPassportNumber || p.vehicle.technicalPassportNumber,
-          ownerName:             d.ownerName             || p.vehicle.ownerName,
-          ownerRegNo:            d.ownerRegNo            || p.vehicle.ownerRegNo,
-        },
-      }));
-    }, setAnalyzingVehicle, setAiFilledVehicle);
-  };
+  const onIdFiles = files => processFiles(files, 'file_id');
+  const onOrgFiles = files => processFiles(files, 'file_org_cert');
+  const onPropertyFiles = files => processFiles(files, 'file_prop_cert');
+  const onVehicleFiles = files => processFiles(files, 'file_car_cert');
 
   // ─── Validation ──────────────────────────────────────────────────────────
   const validate = () => {
@@ -318,7 +218,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   // ─────────────────────────────────────────────
   // UI HELPERS
   // ─────────────────────────────────────────────
-  const inp = (err) => `w-full p-3 bg-slate-50 border rounded-xl font-medium text-[#003B5C] text-sm focus:outline-none focus:border-[#003B5C] transition ${err ? 'border-red-400 bg-red-50' : 'border-gray-200'}`;
+  const inp = (err) => `w-full p-3 bg-white border rounded-xl font-semibold text-[#003B5C] text-sm placeholder:text-slate-300 focus:outline-none focus:border-[#003B5C] focus:ring-4 focus:ring-[#003B5C]/10 transition ${err ? 'border-red-400 bg-red-50' : 'border-slate-200'}`;
   const lbl = 'text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 block';
 
   const Err = ({ msg }) => msg ? <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={11}/>{msg}</p> : null;
@@ -365,7 +265,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   };
 
   // ── Schema field renderer for nested objects (vehicle, collateral) ─────────
-  const renderNestedField = (f, obj, setFn, aiFlag) => {
+  const renderNestedField = (f, obj, setFn) => {
     const v = obj[f.key];
     const colCls = `space-y-1${f.col === 2 ? ' col-span-2' : ''}`;
     if (f.type === 'select') return (
@@ -380,43 +280,50 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     return (
       <label key={f.key} className={colCls}>
         <span className={lbl}>{f.label}</span>
-        <div className="relative">
-          <input value={v || ''} onChange={e => setFn(f.key, e.target.value)}
-            className={`${inp()}${aiFlag && v ? ' pr-7' : ''}`} />
-          {aiFlag && v && <Sparkles size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#00A651]"/>}
-        </div>
+        <input value={v || ''} onChange={e => setFn(f.key, e.target.value)} className={inp()} />
       </label>
     );
   };
 
   // File upload zone
-  const UploadZone = ({ name, label: zoneLbl, accept = '.pdf,.jpg,.jpeg,.png', onFiles, aiLoading, aiDone, note }) => {
+  const UploadZone = ({ name, label: zoneLbl, accept = '.pdf,.jpg,.jpeg,.png', onFiles, note }) => {
     const ref = useRef(null);
     const files = formData.files[name] || [];
+    const openFile = (file) => {
+      const url = URL.createObjectURL(file);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    };
     return (
-      <div className={`relative rounded-xl border-2 border-dashed transition-all ${errors[name] ? 'border-red-300 bg-red-50' : aiDone ? 'border-[#00A651] bg-green-50' : 'border-gray-200 hover:border-[#D4AF37] hover:bg-slate-50'}`}
+      <div className={`relative rounded-2xl border transition-all ${errors[name] ? 'border-red-300 bg-red-50' : files.length ? 'border-[#00A651]/40 bg-green-50/40' : 'border-slate-200 bg-white hover:border-[#D4AF37] hover:bg-slate-50'}`}
         onDragOver={e => e.preventDefault()} onDrop={e => handleFileDrop(e, name)}>
         <input ref={ref} type="file" accept={accept} multiple className="hidden"
           onChange={e => { const f = Array.from(e.target.files || []); if (f.length) onFiles ? onFiles(f) : processFiles(f, name); }} />
         <div className="flex items-center gap-3 p-4 cursor-pointer" onClick={() => ref.current.click()}>
-          <div className={`w-10 h-10 flex-shrink-0 rounded-full flex items-center justify-center transition ${aiDone ? 'bg-[#00A651] text-white' : 'bg-white text-[#003B5C] border border-gray-100'}`}>
-            {aiLoading ? <Loader2 size={18} className="animate-spin" /> : aiDone ? <BadgeCheck size={18} /> : files.length ? <CheckCircle size={18} className="text-[#00A651]" /> : <UploadCloud size={18} />}
+          <div className={`w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center transition ${files.length ? 'bg-[#00A651] text-white' : 'bg-slate-50 text-[#003B5C] border border-slate-200'}`}>
+            {files.length ? <CheckCircle size={18} /> : <UploadCloud size={18} />}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-slate-600 truncate">{zoneLbl}</p>
-            {aiLoading && <p className="text-xs text-[#003B5C] font-medium mt-0.5 flex items-center gap-1"><Sparkles size={10}/> AI уншиж байна...</p>}
-            {aiDone  && <p className="text-xs text-[#00A651] font-medium mt-0.5">AI автоматаар бөглөлөө — засварлах боломжтой</p>}
-            {!aiLoading && !aiDone && files.length > 0 && <p className="text-xs text-slate-500 mt-0.5">{files.length} файл</p>}
-            {!aiLoading && !aiDone && !files.length && <p className="text-xs text-slate-400 mt-0.5">{note || 'Товших эсвэл чирж оруулна уу'}</p>}
+            <p className="text-xs font-black text-[#003B5C] truncate">{zoneLbl}</p>
+            {files.length > 0 ? <p className="text-xs text-[#00A651] font-semibold mt-0.5">{files.length} файл хавсаргасан</p>
+              : <p className="text-xs text-slate-400 mt-0.5">{note || 'Товших эсвэл чирж оруулна уу'}</p>}
           </div>
           {files.length > 0 && <button type="button" onClick={e => { e.stopPropagation(); removeFiles(name); }} className="text-slate-400 hover:text-red-500 p-1"><X size={14}/></button>}
         </div>
         {files.length > 0 && (
-          <div className="px-4 pb-3 flex gap-2 flex-wrap">
+          <div className="px-4 pb-3 grid gap-2">
             {files.map((f, i) => f.type?.startsWith('image/') ? (
-              <img key={i} src={URL.createObjectURL(f)} alt="" className="h-12 w-12 object-cover rounded-lg border border-gray-200" />
+              <div key={i} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                <img src={URL.createObjectURL(f)} alt="" className="h-10 w-10 object-cover rounded-lg border border-gray-200" />
+                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-600">{f.name}</span>
+                <button type="button" onClick={() => openFile(f)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-[#003B5C] hover:bg-blue-50"><Eye size={12}/> Харах</button>
+              </div>
             ) : (
-              <div key={i} className="h-12 w-12 bg-slate-100 rounded-lg border border-gray-200 flex items-center justify-center text-[#003B5C]"><FileText size={16}/></div>
+              <div key={i} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                <div className="h-10 w-10 bg-slate-100 rounded-lg border border-gray-200 flex items-center justify-center text-[#003B5C]"><FileText size={16}/></div>
+                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-600">{f.name}</span>
+                <button type="button" onClick={() => openFile(f)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-[#003B5C] hover:bg-blue-50"><Eye size={12}/> Харах</button>
+              </div>
             ))}
           </div>
         )}
@@ -492,15 +399,13 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   // STEP 3 — Borrower info
   const Step3Individual = () => (
     <div className="space-y-5 animate-fade-in">
-      {/* ID card AI upload */}
       <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-[#003B5C]"/>
-          <p className="text-sm font-bold text-[#003B5C]">Иргэний үнэмлэх оруулахад автоматаар бөглөнө</p>
+          <FileText size={16} className="text-[#003B5C]"/>
+          <p className="text-sm font-bold text-[#003B5C]">Иргэний үнэмлэхээ хавсаргаад доорх талбаруудыг бөглөнө үү</p>
         </div>
         <UploadZone name="file_id" label="Иргэний үнэмлэх" onFiles={onIdFiles}
-          aiLoading={analyzingId} aiDone={aiFilledId}
-          note="Зураг эсвэл PDF оруулна уу — AI талбаруудыг бөглөнө" />
+          note="Зураг эсвэл PDF файл хавсаргана" />
       </div>
 
       {/* Basic info — schema-driven */}
@@ -516,25 +421,18 @@ const LoanRequest = ({ onBack, initialProduct }) => {
         </div>
       </div>
 
-      {aiFilledId && (
-        <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">
-          <BadgeCheck size={16}/> AI талбаруудыг бөглөлөө. Та мэдээллийг нягтлаад засварлана уу.
-        </div>
-      )}
     </div>
   );
 
   const Step3Org = () => (
     <div className="space-y-5 animate-fade-in">
-      {/* Org cert AI upload */}
       <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-[#003B5C]"/>
-          <p className="text-sm font-bold text-[#003B5C]">Улсын бүртгэлийн гэрчилгээ оруулахад автоматаар бөглөнө</p>
+          <FileText size={16} className="text-[#003B5C]"/>
+          <p className="text-sm font-bold text-[#003B5C]">Улсын бүртгэлийн гэрчилгээг хавсаргаад мэдээллээ бөглөнө үү</p>
         </div>
         <UploadZone name="file_org_cert" label="Улсын бүртгэлийн гэрчилгээ" onFiles={onOrgFiles}
-          aiLoading={analyzingOrg} aiDone={aiFilledOrg}
-          note="Зураг эсвэл PDF — AI талбаруудыг бөглөнө" />
+          note="Зураг эсвэл PDF файл хавсаргана" />
       </div>
 
       {/* Org fields — schema-driven */}
@@ -594,11 +492,6 @@ const LoanRequest = ({ onBack, initialProduct }) => {
         )}
       </div>
 
-      {aiFilledOrg && (
-        <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">
-          <BadgeCheck size={16}/> AI гэрчилгээнээс мэдээлэл бөглөлөө. Нягтлан засварлана уу.
-        </div>
-      )}
     </div>
   );
 
@@ -617,6 +510,11 @@ const LoanRequest = ({ onBack, initialProduct }) => {
           <span className={lbl}>Хугацаа (сар) *</span>
           <input name="term" type="text" value={formData.term} onChange={handleChange} placeholder="36" className={inp(errors.term)} />
           <Err msg={errors.term}/>
+        </label>
+        <label className="space-y-1">
+          <span className={lbl}>Зээлээ төлж эхлэх хугацаа</span>
+          <input name="repaymentStartDate" type="date" value={formData.repaymentStartDate} onChange={handleChange} className={inp(errors.repaymentStartDate)} />
+          <p className="text-[10px] font-medium text-slate-400">Жишээ: цалин буух өдөртэйгээ уялдуулж сонгоно.</p>
         </label>
       </div>
 
@@ -669,21 +567,16 @@ const LoanRequest = ({ onBack, initialProduct }) => {
         {isVehicle ? (
           <>
             <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2"><Sparkles size={16} className="text-[#003B5C]"/>
-                <p className="text-sm font-bold text-[#003B5C]">Техникийн паспорт оруулахад автоматаар бөглөнө</p>
+              <div className="flex items-center gap-2"><FileText size={16} className="text-[#003B5C]"/>
+                <p className="text-sm font-bold text-[#003B5C]">Техникийн паспортоо хавсаргаад мэдээллээ бөглөнө үү</p>
               </div>
               <UploadZone name="file_car_cert" label="Техникийн паспорт / Бүртгэлийн гэрчилгээ"
-                onFiles={onVehicleFiles} aiLoading={analyzingVehicle} aiDone={aiFilledVehicle}
+                onFiles={onVehicleFiles}
                 note="Техникийн паспортын зураг оруулна уу" />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {COLLATERAL_VEHICLE_FIELDS.map(f => renderNestedField(f, formData.vehicle, setVeh, aiFilledVehicle))}
+              {COLLATERAL_VEHICLE_FIELDS.map(f => renderNestedField(f, formData.vehicle, setVeh))}
             </div>
-            {aiFilledVehicle && (
-              <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">
-                <BadgeCheck size={16}/> Техникийн паспортоос мэдээлэл бөглөлөө. Нягтлан засварлана уу.
-              </div>
-            )}
             <div className="border-t border-gray-100 pt-3">
               <p className={lbl}>Тээврийн хэрэгслийн зураг</p>
               <UploadZone name="file_car_photos" label="Машины зургууд (гадна, дотор)" note="Олон зураг оруулж болно" />
@@ -692,21 +585,16 @@ const LoanRequest = ({ onBack, initialProduct }) => {
         ) : (
           <>
             <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2"><Sparkles size={16} className="text-[#003B5C]"/>
-                <p className="text-sm font-bold text-[#003B5C]">Үл хөдлөхийн гэрчилгээ оруулахад автоматаар бөглөнө</p>
+              <div className="flex items-center gap-2"><FileText size={16} className="text-[#003B5C]"/>
+                <p className="text-sm font-bold text-[#003B5C]">Үл хөдлөхийн гэрчилгээг хавсаргаад мэдээллээ бөглөнө үү</p>
               </div>
               <UploadZone name="file_prop_cert" label="Эд хөрөнгийн эрхийн гэрчилгээ"
-                onFiles={onPropertyFiles} aiLoading={analyzingProperty} aiDone={aiFilledProp}
+                onFiles={onPropertyFiles}
                 note="Гэрчилгээний зураг оруулна уу" />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {COLLATERAL_REALESTATE_FIELDS.map(f => renderNestedField(f, formData.collateral, setColl, aiFilledProp))}
+              {COLLATERAL_REALESTATE_FIELDS.map(f => renderNestedField(f, formData.collateral, setColl))}
             </div>
-            {aiFilledProp && (
-              <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">
-                <BadgeCheck size={16}/> Гэрчилгээнээс мэдээлэл бөглөлөө. Нягтлан засварлана уу.
-              </div>
-            )}
             <div className="border-t border-gray-100 pt-3">
               <p className={lbl}>Кадастрын зураг / Нэмэлт баримт</p>
               <UploadZone name="file_prop_map" label="Кадастрын зураг / Гэрээ" note="PDF эсвэл зураг" />
@@ -838,7 +726,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
         <div className="bg-slate-50 rounded-xl p-4 border border-gray-100 space-y-2">
           <p className="text-xs font-bold text-[#003B5C] uppercase border-b pb-1 mb-2">Зээлдэгч</p>
           {formData.userType === 'individual' ? (<>
-            <Row l="Нэр" v={`${formData.lastname?.charAt(0) || ''}.${formData.firstname} ${formData.fatherName ? '('+formData.fatherName+')' : ''}`} />
+            <Row l="Нэр" v={`${formData.lastName?.charAt(0) || ''}.${formData.firstName} ${formData.fatherName ? '('+formData.fatherName+')' : ''}`} />
             <Row l="Регистр" v={formData.regNo}/>
             <Row l="Утас" v={formData.phone}/>
             {formData.employmentType && <Row l="Ажлын байр" v={`${formData.employmentType}${formData.employer ? ' — '+formData.employer : ''}`}/>}
@@ -858,6 +746,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
           <Row l="Бүтээгдэхүүн" v={productName}/>
           <Row l="Дүн" v={formData.amount + ' ₮'} vClass="text-[#00A651] font-bold"/>
           <Row l="Хугацаа" v={formData.term + ' сар'}/>
+          {formData.repaymentStartDate && <Row l="Төлж эхлэх" v={formData.repaymentStartDate}/>}
           {calcMonthly() && <Row l="Сарын төлбөр" v={calcMonthly() + ' ₮'}/>}
           <Row l="Барьцаа" v={formData.collateralType === 'vehicle' ? 'Тээврийн хэрэгсэл' : 'Үл хөдлөх'}/>
           <Row l="Зориулалт" v={formData.purpose}/>
