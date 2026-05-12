@@ -34,6 +34,8 @@ const EMPTY_GUARANTOR = { guarantorType: 'Хамтран зээлдэгч', last
 const EMPTY_COLLATERAL = { certificateNumber: '', propertyType: '', address: '', area: '', district: '', khoroo: '', blockNumber: '', apartmentNumber: '', landArea: '', buildingYear: '', ownerName: '', ownerRegNo: '', ownerRelation: '' };
 const EMPTY_VEHICLE = { plateNumber: '', vehicleType: '', make: '', model: '', year: '', color: '', engineNumber: '', chassisNumber: '', technicalPassportNumber: '', ownerName: '', ownerRegNo: '', ownerRelation: '' };
 const EMPTY_PERSON = { firstName: '', lastName: '', fatherName: '', regNo: '', phone: '' };
+const PUBLIC_INDIVIDUAL_FIELDS = INDIVIDUAL_FIELDS.filter(f => !['dob', 'gender', 'idIssueDate', 'idExpiryDate', 'address'].includes(f.key));
+const PUBLIC_ORG_FIELDS = ORG_FIELDS.filter(f => f.key !== 'orgAddress');
 
 // ─────────────────────────────────────────────
 const LoanRequest = ({ onBack, initialProduct }) => {
@@ -183,7 +185,6 @@ const LoanRequest = ({ onBack, initialProduct }) => {
         if (!formData.firstName) e.firstName = 'Нэр оруулна уу';
         if (!formData.regNo || formData.regNo.length < 10) e.regNo = 'Регистр дутуу';
         if (!formData.phone || formData.phone.length < 8)  e.phone = 'Утас дутуу';
-        if (!formData.address)   e.address   = 'Хаяг оруулна уу';
         if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) e.email = 'И-мэйл буруу';
       } else {
         if (!formData.orgName)   e.orgName   = 'Байгууллагын нэр';
@@ -435,7 +436,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
 
       {/* Basic info — schema-driven */}
       <div className="grid grid-cols-2 gap-4">
-        {INDIVIDUAL_FIELDS.map(renderFormField)}
+        {PUBLIC_INDIVIDUAL_FIELDS.map(renderFormField)}
       </div>
 
       {/* Employment — schema-driven */}
@@ -462,7 +463,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
 
       {/* Org fields — schema-driven */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {ORG_FIELDS.map(renderFormField)}
+        {PUBLIC_ORG_FIELDS.map(renderFormField)}
       </div>
 
       {/* Contact person — schema-driven */}
@@ -756,7 +757,6 @@ const LoanRequest = ({ onBack, initialProduct }) => {
             <Row l="Утас" v={formData.phone}/>
             {formData.employmentType && <Row l="Ажлын байр" v={`${formData.employmentType}${formData.employer ? ' — '+formData.employer : ''}`}/>}
             {formData.monthlyIncome && <Row l="Сарын орлого" v={formData.monthlyIncome + ' ₮'}/>}
-            <Row l="Хаяг" v={formData.address}/>
           </>) : (<>
             <Row l="Байгууллага" v={formData.orgName}/>
             <Row l="Регистр" v={formData.orgRegNo}/>
