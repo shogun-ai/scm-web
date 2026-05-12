@@ -623,6 +623,12 @@ const LoanOrigination = ({
     ...row,
     percent: requests.length ? Math.round((row.count / requests.length) * 100) : 0,
   }));
+  const pipelineStats = [
+    { label: text.stats.total, value: requests.length, tone: 'blue' },
+    { label: text.stats.assessment, value: requests.filter(r => ['assessment', 'studying'].includes(r.status)).length, tone: 'amber' },
+    { label: text.stats.committee, value: requests.filter(r => r.status === 'committee').length, tone: 'indigo' },
+    { label: text.stats.disbursed, value: requests.filter(r => r.status === 'disbursed').length, tone: 'green' },
+  ];
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const filteredRequests = requests.filter(r => {
@@ -658,12 +664,27 @@ const LoanOrigination = ({
         </div>
       )}
 
+      {/* Context strip */}
+      <div className="loan-workspace-hero">
+        <div>
+          <p className="loan-eyebrow">{text.loanRequests}</p>
+          <h2>{applicationView === 'exposure' ? text.exposureMonitor : text.loanRequests}</h2>
+          <p className="loan-hero-subtitle">{requests.length} хүсэлт · {fmt(totalAmount)} нийт дүн</p>
+        </div>
+        <div className="loan-pipeline-strip">
+          {pipelineStats.map(item => (
+            <div key={item.label} className={`loan-pipeline-pill ${item.tone}`}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex items-end justify-between gap-4">
-        <div>
-        </div>
         {selectedLoan && (
-          <div className="flex items-center gap-2 bg-white border rounded-xl px-4 py-2 text-sm">
+          <div className="loan-selected-pill">
             <User size={15} className="text-[#003B5C]" />
             <span className="font-black text-[#003B5C]">{borrowerName(selectedLoan)}</span>
             <StatusBadge status={selectedLoan.status} />
@@ -674,7 +695,7 @@ const LoanOrigination = ({
       </div>
 
       {/* Step nav */}
-      <div className="bg-white border rounded-2xl overflow-hidden shadow-sm">
+      <div className="loan-stepper">
         <div className="flex overflow-x-auto">
           {LOS_STEPS.map((step, idx) => {
             const Icon = step.icon;
@@ -684,7 +705,7 @@ const LoanOrigination = ({
               <button
                 key={step.key}
                 onClick={() => setActiveStep(step.key)}
-                className={`flex-1 min-w-[130px] flex flex-col items-center gap-1.5 py-5 px-3 border-b-[3px] text-xs font-bold transition-all relative ${
+                className={`loan-stepper-item flex-1 min-w-[130px] flex flex-col items-center gap-1.5 py-5 px-3 border-b-[3px] text-xs font-bold transition-all relative ${
                   isActive
                     ? 'border-[#003B5C] text-[#003B5C] bg-blue-50'
                     : isDone
@@ -831,7 +852,7 @@ const LoanOrigination = ({
           </div>
 
           {/* Toolbar */}
-          <div className="bg-white border rounded-2xl p-3 shadow-sm space-y-3">
+          <div className="loan-toolbar">
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
               <div className="relative flex-1 max-w-xl">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -839,7 +860,7 @@ const LoanOrigination = ({
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder={text.searchPlaceholder}
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:outline-none focus:border-[#003B5C] focus:bg-white"
+                  className="loan-search-input"
                 />
               </div>
               <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
@@ -859,8 +880,8 @@ const LoanOrigination = ({
                   { value: 'disbursed', label: text.filters.disbursed },
                 ].map(f => (
                   <button key={f.value} onClick={() => setStatusFilter(f.value)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                      isFilterActive(f.value) ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#003B5C]'
+                    className={`loan-filter-chip ${
+                      isFilterActive(f.value) ? 'is-active' : ''
                     }`}>
                     {f.label}
                   </button>
@@ -868,12 +889,12 @@ const LoanOrigination = ({
               </div>
             <div className="flex items-center gap-2">
               <button onClick={backfillAiLoanOfficer} disabled={aiBackfillLoading}
-                className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-[#003B5C] border border-[#003B5C]/30 px-4 py-2.5 rounded-xl font-bold text-sm disabled:opacity-60 transition-all">
+                className="loan-secondary-action">
                 {aiBackfillLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
                 {text.ai.startEvaluation}
               </button>
               <button onClick={() => setShowNewForm(v => !v)}
-                className="inline-flex items-center gap-2 bg-[#003B5C] hover:bg-[#002d47] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all">
+                className="loan-primary-action">
                 <Plus size={15} /> {text.createNew}
               </button>
             </div>
@@ -905,10 +926,10 @@ const LoanOrigination = ({
           )}
 
           {/* Table */}
-          <div className="loan-request-table bg-white border rounded-2xl overflow-hidden shadow-sm">
+          <div className="loan-request-table">
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[860px]">
-                <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-600 uppercase">
+                <thead className="border-b text-[11px] font-black uppercase">
                   <tr>
                     <th className="p-3 text-left">{text.table.date}</th>
                     <th className="p-3 text-left">{text.table.name}</th>
@@ -921,7 +942,7 @@ const LoanOrigination = ({
                 </thead>
                 <tbody className="divide-y">
                   {filteredRequests.map(req => (
-                    <tr key={req._id} className={`hover:bg-slate-50 cursor-pointer ${selectedLoan?._id === req._id ? 'bg-blue-50' : ''}`}
+                    <tr key={req._id} className={`cursor-pointer ${selectedLoan?._id === req._id ? 'is-selected' : ''}`}
                       onClick={() => setSelectedLoan(req)}>
                       <td className="p-3 text-slate-600 text-xs font-semibold">{fmtDate(req.createdAt)}</td>
                       <td className="p-3 font-black text-[#003B5C]">
