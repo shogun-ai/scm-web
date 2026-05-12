@@ -1853,11 +1853,13 @@ app.post('/api/loans', (req, res) => {
             // Parse JSON fields sent from the public form
             let collateral = {};
             let vehicle = {};
+            let submittedCollaterals = [];
             let guarantors = [];
             let orgCeo = {};
             let orgOwner = {};
             try { if (body.collateralJSON)  collateral  = JSON.parse(body.collateralJSON);  } catch {}
             try { if (body.vehicleJSON)     vehicle     = JSON.parse(body.vehicleJSON);     } catch {}
+            try { if (body.collateralsJSON) submittedCollaterals = JSON.parse(body.collateralsJSON); } catch {}
             try { if (body.guarantorsJSON)  guarantors  = JSON.parse(body.guarantorsJSON);  } catch {}
             try { if (body.orgCeoJSON)      orgCeo      = JSON.parse(body.orgCeoJSON);      } catch {}
             try { if (body.orgOwnerJSON)    orgOwner    = JSON.parse(body.orgOwnerJSON);    } catch {}
@@ -1866,6 +1868,27 @@ app.post('/api/loans', (req, res) => {
             const fileDetails = files.map(f => ({ fieldName: f.fieldname, fileName: f.originalname, fileUrl: f.path, mimeType: f.mimetype, size: f.size }));
             const vehicleFiles = fileDetails.filter(f => ['file_car_cert','file_car_photos'].includes(f.fieldName));
             const propertyFiles = fileDetails.filter(f => ['file_prop_cert','file_prop_map'].includes(f.fieldName));
+            const collateralsFromPublic = Array.isArray(submittedCollaterals) && submittedCollaterals.length
+                ? submittedCollaterals.map((item, idx) => {
+                    const type = item.type === 'vehicle' ? 'vehicle' : 'real_estate';
+                    const fieldPrefix = `collateral_${idx}_`;
+                    const itemFiles = fileDetails.filter(f => String(f.fieldName || '').startsWith(fieldPrefix));
+                    if (!itemFiles.length) return null;
+                    const fields = type === 'vehicle' ? (item.vehicle || {}) : (item.collateral || {});
+                    return {
+                        type,
+                        files: itemFiles,
+                        aiData: null,
+                        fields,
+                        hasPlate: type === 'vehicle' && fields.plateNumber ? 'yes' : 'no',
+                        plateNumber: type === 'vehicle' ? (fields.plateNumber || '') : '',
+                        ownerRelation: fields.ownerRelation || '',
+                        valuation: { borrowerAmount: '', officerAmount: '', date: '', sourceFiles: [], sourceLink: '', sourceNotes: '', coverageRate: '', notes: '' },
+                        notes: '',
+                        auditLog: [],
+                    };
+                }).filter(Boolean)
+                : [];
 
             // Build applicationData structure compatible with LoanApplicationDetail
             const applicationData = {
@@ -1922,7 +1945,7 @@ app.post('/api/loans', (req, res) => {
                     collateralType: body.collateralType || 'real_estate',
                 },
                 // Convert flat collateral/vehicle → collaterals array format
-                collaterals: isVehicle
+                collaterals: collateralsFromPublic.length ? collateralsFromPublic : (isVehicle
                     ? (vehicle.plateNumber || vehicle.make || vehicleFiles.length ? [{
                         type: 'vehicle',
                         files: vehicleFiles,
@@ -1946,7 +1969,7 @@ app.post('/api/loans', (req, res) => {
                         valuation: { borrowerAmount: '', officerAmount: '', date: '', sourceFiles: [], sourceLink: '', sourceNotes: '', coverageRate: '', notes: '' },
                         notes: '',
                         auditLog: [],
-                      }] : []),
+                      }] : [])),
                 // Convert guarantors array format
                 guarantors: guarantors.map(g => ({
                     guarantorType: g.guarantorType || 'Хамтран зээлдэгч',
@@ -3826,7 +3849,10 @@ const FIELD_GROUPS = {
 
 const filesByFields = (fileDetails = [], fields = []) => {
     const fieldSet = new Set(fields);
-    return safeList(fileDetails).filter(file => fieldSet.has(file.fieldName) && file.fileUrl);
+    return safeList(fileDetails).filter(file => {
+        const fieldName = String(file.fieldName || '');
+        return file.fileUrl && (fieldSet.has(fieldName) || fields.some(field => fieldName.endsWith(`_${field}`)));
+    });
 };
 
 const fileUrlsOf = (files = []) => files.map(file => file.fileUrl).filter(Boolean);
@@ -3981,23 +4007,52 @@ async function autoExtractSubmittedFiles(loanDoc) {
     }));
     applicationData = mergeAutoIntakeResult(applicationData, { org: orgResult });
 
-    const vehicleResult = await run('vehicle', () => analyzeRemoteDocuments({
-        files: filesByFields(fileDetails, FIELD_GROUPS.vehicle),
-        schema: vehicleDocSchema,
-        schemaName: 'auto_vehicle_document',
-        instructions: 'Та бол Монгол улсын тээврийн хэрэгслийн бүртгэлийн мэргэжилтэн. Техникийн паспорт/гэрчилгээнээс мэдээллийг гарга.',
-        prompt: 'Тээврийн хэрэгслийн баримтаас бүх мэдээллийг гарга.'
-    }));
-    applicationData = mergeAutoIntakeResult(applicationData, { vehicle: vehicleResult });
+    if (Array.isArray(applicationData.collaterals) && applicationData.collaterals.length) {
+        const analyzedCollaterals = [];
+        for (const [idx, item] of applicationData.collaterals.entries()) {
+            const itemFiles = safeList(item.files).filter(file => file.fileUrl);
+            if (!itemFiles.length || !['vehicle', 'real_estate'].includes(item.type)) {
+                analyzedCollaterals.push(item);
+                continue;
+            }
+            const result = await run(`collateral_${idx + 1}`, () => analyzeRemoteDocuments({
+                files: itemFiles,
+                schema: item.type === 'vehicle' ? vehicleDocSchema : propertyDocSchema,
+                schemaName: item.type === 'vehicle' ? `auto_vehicle_document_${idx + 1}` : `auto_property_document_${idx + 1}`,
+                instructions: item.type === 'vehicle'
+                    ? 'Та бол Монгол улсын тээврийн хэрэгслийн бүртгэлийн мэргэжилтэн. Техникийн паспорт/гэрчилгээнээс мэдээллийг гарга.'
+                    : 'Та бол Монгол улсын үл хөдлөх хөрөнгийн бүртгэлийн мэргэжилтэн. Эд хөрөнгийн гэрчилгээ/кадастрын зургаас мэдээллийг гарга.',
+                prompt: item.type === 'vehicle' ? 'Тээврийн хэрэгслийн баримтаас бүх мэдээллийг гарга.' : 'Эд хөрөнгийн баримтаас бүх мэдээллийг гарга.'
+            }));
+            analyzedCollaterals.push(result ? {
+                ...item,
+                aiData: result,
+                fields: { ...(item.fields || {}), ...result },
+                plateNumber: item.type === 'vehicle' ? (result.plateNumber || item.plateNumber || '') : item.plateNumber,
+                hasPlate: item.type === 'vehicle' && (result.plateNumber || item.plateNumber) ? 'yes' : item.hasPlate,
+                ownerRelation: item.ownerRelation || result.ownerRelation || '',
+            } : item);
+        }
+        applicationData.collaterals = analyzedCollaterals;
+    } else {
+        const vehicleResult = await run('vehicle', () => analyzeRemoteDocuments({
+            files: filesByFields(fileDetails, FIELD_GROUPS.vehicle),
+            schema: vehicleDocSchema,
+            schemaName: 'auto_vehicle_document',
+            instructions: 'Та бол Монгол улсын тээврийн хэрэгслийн бүртгэлийн мэргэжилтэн. Техникийн паспорт/гэрчилгээнээс мэдээллийг гарга.',
+            prompt: 'Тээврийн хэрэгслийн баримтаас бүх мэдээллийг гарга.'
+        }));
+        applicationData = mergeAutoIntakeResult(applicationData, { vehicle: vehicleResult });
 
-    const propertyResult = await run('property', () => analyzeRemoteDocuments({
-        files: filesByFields(fileDetails, FIELD_GROUPS.property),
-        schema: propertyDocSchema,
-        schemaName: 'auto_property_document',
-        instructions: 'Та бол Монгол улсын үл хөдлөх хөрөнгийн бүртгэлийн мэргэжилтэн. Эд хөрөнгийн гэрчилгээ/кадастрын зургаас мэдээллийг гарга.',
-        prompt: 'Эд хөрөнгийн баримтаас бүх мэдээллийг гарга.'
-    }));
-    applicationData = mergeAutoIntakeResult(applicationData, { property: propertyResult });
+        const propertyResult = await run('property', () => analyzeRemoteDocuments({
+            files: filesByFields(fileDetails, FIELD_GROUPS.property),
+            schema: propertyDocSchema,
+            schemaName: 'auto_property_document',
+            instructions: 'Та бол Монгол улсын үл хөдлөх хөрөнгийн бүртгэлийн мэргэжилтэн. Эд хөрөнгийн гэрчилгээ/кадастрын зургаас мэдээллийг гарга.',
+            prompt: 'Эд хөрөнгийн баримтаас бүх мэдээллийг гарга.'
+        }));
+        applicationData = mergeAutoIntakeResult(applicationData, { property: propertyResult });
+    }
 
     const bankUrls = fileUrlsOf(filesByFields(fileDetails, FIELD_GROUPS.bank));
     const bankAnalysis = await run('bank_statement', () => bankUrls.length ? analyzeStatementsWithAI({ fileUrls: bankUrls, borrower: applicationData.borrower || applicationData.org || {} }) : null);

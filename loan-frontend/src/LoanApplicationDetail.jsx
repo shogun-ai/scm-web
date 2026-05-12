@@ -628,8 +628,14 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
   const [pendingPhoto, setPendingPhoto] = useState(null);
   const [cropSource, setCropSource] = useState(null);
   const [cropEditorOpen, setCropEditorOpen] = useState(false);
+  const dataRef = useRef(data);
+  useEffect(() => { dataRef.current = data; }, [data]);
 
-  const set = (field, val) => onChange({ ...data, [field]: val });
+  const set = (field, val) => {
+    const next = { ...dataRef.current, [field]: val };
+    dataRef.current = next;
+    onChange(next);
+  };
 
   const handleIdAI = async (files) => {
     if (!files?.length) return;
@@ -653,19 +659,22 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
 
       if (aiResult.status === 'fulfilled') {
         const d = aiResult.value.data;
-        onChange({
-          ...data,
-          lastName: d.lastName || data.lastName,
-          firstName: d.firstName || data.firstName,
-          fatherName: d.fatherName || data.fatherName,
-          regNo: d.regNo || data.regNo,
-          dob: d.dob || data.dob,
-          gender: d.gender || data.gender,
-          citizenship: d.citizenship || data.citizenship,
-          address: d.address || data.address,
-          idIssueDate: d.issueDate || data.idIssueDate,
-          idExpiryDate: d.expiryDate || data.idExpiryDate,
-        });
+        const current = dataRef.current || {};
+        const next = {
+          ...current,
+          lastName: d.lastName || current.lastName,
+          firstName: d.firstName || current.firstName,
+          fatherName: d.fatherName || current.fatherName,
+          regNo: d.regNo || current.regNo,
+          dob: d.dob || current.dob,
+          gender: d.gender || current.gender,
+          citizenship: d.citizenship || current.citizenship,
+          address: d.address || current.address,
+          idIssueDate: d.issueDate || current.idIssueDate,
+          idExpiryDate: d.expiryDate || current.idExpiryDate,
+        };
+        dataRef.current = next;
+        onChange(next);
         showToast(extractedPhoto?.photo ? 'Иргэний үнэмлэх уншигдлаа. Зураг crop хийх боломжтой.' : 'Иргэний үнэмлэх уншигдлаа.');
       } else if (extractedPhoto?.photo) {
         showToast('AI уншилт амжилтгүй боллоо. Гэхдээ зураг crop хийх боломжтой.', 'warning');
@@ -1330,8 +1339,8 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
             <div className="bg-white rounded-xl border p-3 space-y-2">
               <span className="text-xs font-bold text-slate-500">Баримт бичиг</span>
               <FilePickerWithPreview
-                files={item.files || []}
-                existingFiles={existingFilesByType[item.type] || []}
+                files={(item.files || []).filter(f => f instanceof File || f instanceof Blob)}
+                existingFiles={(item.files || []).filter(f => filePreviewUrl(f)).length ? (item.files || []).filter(f => filePreviewUrl(f)) : (existingFilesByType[item.type] || [])}
                 onChange={files => updateItem(idx, { files })}
                 accept=".pdf,image/*"
                 onAI={canReadAI(item.type) ? (files) => handleAI(idx, files, item.type) : undefined}
@@ -2458,7 +2467,10 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
   const loanFiles = collectFileReferences(loan || {});
   const filesByField = (...fieldNames) => {
     const fields = new Set(fieldNames);
-    return loanFiles.filter(file => fields.has(file.fieldName));
+    return loanFiles.filter(file => {
+      const fieldName = String(file.fieldName || '');
+      return fields.has(fieldName) || fieldNames.some(name => fieldName.endsWith(`_${name}`));
+    });
   };
   const filesByText = (...patterns) => loanFiles.filter(file => {
     const haystack = `${file.fieldName || ''} ${file.fileName || ''} ${file.fileUrl || ''}`.toLowerCase();

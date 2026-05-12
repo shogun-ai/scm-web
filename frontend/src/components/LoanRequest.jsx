@@ -34,6 +34,7 @@ const EMPTY_GUARANTOR = { guarantorType: 'Хамтран зээлдэгч', last
 const EMPTY_COLLATERAL = { certificateNumber: '', propertyType: '', address: '', area: '', district: '', khoroo: '', blockNumber: '', apartmentNumber: '', landArea: '', buildingYear: '', ownerName: '', ownerRegNo: '', ownerRelation: '' };
 const EMPTY_VEHICLE = { plateNumber: '', vehicleType: '', make: '', model: '', year: '', color: '', engineNumber: '', chassisNumber: '', technicalPassportNumber: '', ownerName: '', ownerRegNo: '', ownerRelation: '' };
 const EMPTY_PERSON = { firstName: '', lastName: '', fatherName: '', regNo: '', phone: '' };
+const EMPTY_PUBLIC_COLLATERAL = { type: 'real_estate', files: {}, collateral: { ...EMPTY_COLLATERAL }, vehicle: { ...EMPTY_VEHICLE } };
 const PUBLIC_INDIVIDUAL_FIELDS = INDIVIDUAL_FIELDS.filter(f => !['dob', 'gender', 'idIssueDate', 'idExpiryDate', 'address'].includes(f.key));
 const PUBLIC_ORG_FIELDS = ORG_FIELDS.filter(f => f.key !== 'orgAddress');
 
@@ -89,6 +90,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     // Collateral
     collateral: { ...EMPTY_COLLATERAL },
     vehicle: { ...EMPTY_VEHICLE },
+    collaterals: [{ ...EMPTY_PUBLIC_COLLATERAL, collateral: { ...EMPTY_COLLATERAL }, vehicle: { ...EMPTY_VEHICLE }, files: {} }],
     // Guarantors
     guarantors: [],
     // Files
@@ -167,6 +169,46 @@ const LoanRequest = ({ onBack, initialProduct }) => {
 
   const handleFileDrop = (e, name) => { e.preventDefault(); processFiles(Array.from(e.dataTransfer.files || []), name); };
   const removeFiles = name => setFormData(p => ({ ...p, files: { ...p.files, [name]: [] } }));
+  const addCollateralItem = () => setFormData(p => ({
+    ...p,
+    collaterals: [...(p.collaterals || []), { ...EMPTY_PUBLIC_COLLATERAL, collateral: { ...EMPTY_COLLATERAL }, vehicle: { ...EMPTY_VEHICLE }, files: {} }],
+  }));
+  const removeCollateralItem = idx => setFormData(p => ({
+    ...p,
+    collaterals: (p.collaterals || []).filter((_, i) => i !== idx),
+  }));
+  const updateCollateralItem = (idx, patch) => setFormData(p => ({
+    ...p,
+    collaterals: (p.collaterals || []).map((item, i) => i === idx ? { ...item, ...patch } : item),
+  }));
+  const processCollateralFiles = async (idx, fieldName, files) => {
+    setFileProcessing(true);
+    const opts = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
+    const out = [];
+    for (const f of files) {
+      if (f.type === 'application/pdf') { if (f.size < 10 * 1024 * 1024) out.push(f); }
+      else if (f.type.startsWith('image/')) {
+        try { const c = await imageCompression(f, opts); out.push(new File([c], f.name, { type: f.type })); }
+        catch { out.push(f); }
+      } else { out.push(f); }
+    }
+    setFileProcessing(false);
+    if (!out.length) return;
+    setFormData(p => ({
+      ...p,
+      files: { ...p.files, [`collateral_${idx}_${fieldName}`]: [...(p.files[`collateral_${idx}_${fieldName}`] || []), ...out] },
+      collaterals: (p.collaterals || []).map((item, i) => i === idx
+        ? { ...item, files: { ...(item.files || {}), [fieldName]: [...(item.files?.[fieldName] || []), ...out] } }
+        : item),
+    }));
+  };
+  const removeCollateralFiles = (idx, fieldName) => setFormData(p => ({
+    ...p,
+    files: { ...p.files, [`collateral_${idx}_${fieldName}`]: [] },
+    collaterals: (p.collaterals || []).map((item, i) => i === idx
+      ? { ...item, files: { ...(item.files || {}), [fieldName]: [] } }
+      : item),
+  }));
 
   const onIdFiles = files => processFiles(files, 'file_id');
   const onOrgFiles = files => processFiles(files, 'file_org_cert');
@@ -220,7 +262,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     setLoading(true);
     try {
       const fd = new FormData();
-      const { files, collateral, vehicle, guarantors, orgCeo, orgOwner, ...scalar } = formData;
+      const { files, collateral, vehicle, collaterals, guarantors, orgCeo, orgOwner, ...scalar } = formData;
       Object.entries(scalar).forEach(([k, v]) => fd.append(k, v));
       fd.set('amount', parseInt((formData.amount || '').replace(/,/g, ''), 10) || 0);
       fd.set('source', 'web');
@@ -228,6 +270,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
       // nested objects as JSON strings
       fd.append('collateralJSON',  JSON.stringify(collateral));
       fd.append('vehicleJSON',     JSON.stringify(vehicle));
+      fd.append('collateralsJSON', JSON.stringify(collaterals || []));
       fd.append('guarantorsJSON',  JSON.stringify(guarantors));
       fd.append('orgCeoJSON',      JSON.stringify(orgCeo));
       fd.append('orgOwnerJSON',    JSON.stringify(orgOwner));
@@ -567,60 +610,68 @@ const LoanRequest = ({ onBack, initialProduct }) => {
           placeholder="Жишээ: Цалингийн орлого, борлуулалтын орлого..." className={`${inp()} resize-none`} {...focusProps('repaymentSource')} />
       </label>
 
-      {!isCarLoan && (
-        <div>
-          <p className={lbl}>Барьцааны төрөл *</p>
-          <div className="grid grid-cols-2 gap-4">
-            {[{ val: 'real_estate', Icon: Home, title: 'Үл хөдлөх хөрөнгө' }, { val: 'vehicle', Icon: Car, title: 'Тээврийн хэрэгсэл' }].map(({ val, Icon, title }) => (
-              <div key={val} onClick={() => set('collateralType', val)}
-                className={`cursor-pointer p-4 rounded-xl border-2 flex items-center gap-3 transition-all
-                  ${formData.collateralType === val ? 'border-[#003B5C] bg-blue-50 ring-4 ring-[#003B5C]/10' : 'border-slate-200 bg-white hover:border-[#003B5C]/50 hover:bg-slate-50'}`}>
-                <Icon size={20} className={formData.collateralType === val ? 'text-[#003B5C]' : 'text-slate-400'} />
-                <span className={`font-semibold text-sm ${formData.collateralType === val ? 'text-[#003B5C]' : 'text-slate-500'}`}>{title}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 
   // STEP 5 — Collateral details
   const renderStep5 = () => {
-    const isVehicle = formData.collateralType === 'vehicle';
     return (
       <div className="space-y-5 animate-fade-in">
-        {isVehicle ? (
-          <>
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2"><FileText size={16} className="text-[#003B5C]"/>
-                <p className="text-sm font-bold text-[#003B5C]">Техникийн паспортоо хавсаргаад мэдээллээ бөглөнө үү</p>
+        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+          <p className="text-sm font-bold text-[#003B5C] flex items-center gap-2"><FileText size={16}/> Барьцаа хөрөнгийн бичиг баримтаа оруулна уу</p>
+          <p className="text-xs text-slate-500 mt-1">Нэгээс олон үл хөдлөх, тээврийн хэрэгсэл барьцаанд оруулах боломжтой. Мэдээллийг loan.scm.mn дээр AI уншиж бөглөнө.</p>
+        </div>
+        {(formData.collaterals || []).map((item, idx) => {
+          const isVehicle = item.type === 'vehicle';
+          const zone = (name, label, note) => (
+            <UploadZone
+              name={`collateral_${idx}_${name}`}
+              label={label}
+              note={note}
+              onFiles={(files) => processCollateralFiles(idx, name, files)}
+            />
+          );
+          return (
+            <div key={idx} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase text-slate-500">Барьцаа #{idx + 1}</p>
+                  <div className="mt-2 flex gap-2">
+                    {[
+                      ['real_estate', 'Үл хөдлөх'],
+                      ['vehicle', 'Тээврийн хэрэгсэл'],
+                    ].map(([type, labelText]) => (
+                      <button key={type} type="button" onClick={() => updateCollateralItem(idx, { type })}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${item.type === type ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200'}`}>
+                        {labelText}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {(formData.collaterals || []).length > 1 && (
+                  <button type="button" onClick={() => removeCollateralItem(idx)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">
+                    <Trash2 size={15}/>
+                  </button>
+                )}
               </div>
-              <UploadZone name="file_car_cert" label="Техникийн паспорт / Бүртгэлийн гэрчилгээ"
-                onFiles={onVehicleFiles}
-                note="Техникийн паспортын зураг оруулна уу" />
+              {isVehicle ? (
+                <div className="space-y-3">
+                  {zone('file_car_cert', 'Техникийн паспорт / Бүртгэлийн гэрчилгээ', 'PDF эсвэл зураг')}
+                  {zone('file_car_photos', 'Машины зургууд', 'Олон зураг оруулж болно')}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {zone('file_prop_cert', 'Эд хөрөнгийн эрхийн гэрчилгээ', 'PDF эсвэл зураг')}
+                  {zone('file_prop_map', 'Кадастрын зураг / Нэмэлт баримт', 'PDF эсвэл зураг')}
+                </div>
+              )}
             </div>
-            <div className="border-t border-gray-100 pt-3">
-              <p className={lbl}>Тээврийн хэрэгслийн зураг</p>
-              <UploadZone name="file_car_photos" label="Машины зургууд (гадна, дотор)" note="Олон зураг оруулж болно" />
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2"><FileText size={16} className="text-[#003B5C]"/>
-                <p className="text-sm font-bold text-[#003B5C]">Үл хөдлөхийн гэрчилгээг хавсаргаад мэдээллээ бөглөнө үү</p>
-              </div>
-              <UploadZone name="file_prop_cert" label="Эд хөрөнгийн эрхийн гэрчилгээ"
-                onFiles={onPropertyFiles}
-                note="Гэрчилгээний зураг оруулна уу" />
-            </div>
-            <div className="border-t border-gray-100 pt-3">
-              <p className={lbl}>Кадастрын зураг / Нэмэлт баримт</p>
-              <UploadZone name="file_prop_map" label="Кадастрын зураг / Гэрээ" note="PDF эсвэл зураг" />
-            </div>
-          </>
-        )}
+          );
+        })}
+        <button type="button" onClick={addCollateralItem}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-[#003B5C] text-white rounded-xl text-sm font-bold hover:bg-[#002d47] transition">
+          <Plus size={14}/> Барьцаа нэмэх
+        </button>
       </div>
     );
   };
@@ -700,6 +751,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
           <UploadZone name="file_address" label="Оршин суугаа хаягийн лавлагаа" />
           <UploadZone name="file_social" label="НДШ-ийн лавлагаа (3 сар)" />
           <UploadZone name="file_bank" label="Дансны хуулга (12 сар)" />
+          <UploadZone name="file_credit" label="Зээлийн мэдээллийн лавлагаа" />
         </div>
       ) : (
         <div className="space-y-3">
