@@ -28,15 +28,24 @@ const filePreviewType = (file = {}) => file.type || file.mimeType || '';
 const filePreviewUrl = (file = {}) => file.fileUrl || file.url || '';
 const appendAnalysisFiles = (fd, files = [], fieldName = 'bankStatements') => {
   const urls = [];
+  const urlDetails = [];
   Array.from(files || []).forEach(file => {
     if (file instanceof File || file instanceof Blob) {
       fd.append(fieldName, file);
       return;
     }
     const url = filePreviewUrl(file);
-    if (url) urls.push(url);
+    if (url) {
+      urls.push(url);
+      urlDetails.push({
+        fileUrl: url,
+        fileName: fileDisplayName(file),
+        mimeType: filePreviewType(file) || inferMimeFromUrl(url),
+      });
+    }
   });
   if (urls.length) fd.append('fileUrls', JSON.stringify(urls));
+  if (urlDetails.length) fd.append('fileUrlDetails', JSON.stringify(urlDetails));
 };
 const isPreviewImageFile = (file = {}) => String(filePreviewType(file)).startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(fileDisplayName(file));
 const isPreviewPdfFile = (file = {}) => filePreviewType(file) === 'application/pdf' || /\.pdf$/i.test(fileDisplayName(file));

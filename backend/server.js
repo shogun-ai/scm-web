@@ -2965,6 +2965,36 @@ const downloadFromUrl = async (url) => {
     return axios.get(signedUrl, { responseType: 'arraybuffer', timeout: 60000 });
 };
 
+const remoteFileUrl = (item) => typeof item === 'string' ? item : (item?.fileUrl || item?.url || '');
+const remoteFileName = (item, fallback = 'document.pdf') => {
+    const explicit = typeof item === 'object' ? (item.fileName || item.name || item.originalname) : '';
+    const url = remoteFileUrl(item);
+    const fromUrl = String(url).split('?')[0].split('/').pop();
+    return explicit || fromUrl || fallback;
+};
+const mimeFromName = (name = '') => {
+    if (/\.pdf$/i.test(name)) return 'application/pdf';
+    if (/\.png$/i.test(name)) return 'image/png';
+    if (/\.jpe?g$/i.test(name)) return 'image/jpeg';
+    if (/\.webp$/i.test(name)) return 'image/webp';
+    if (/\.gif$/i.test(name)) return 'image/gif';
+    if (/\.csv$/i.test(name)) return 'text/csv';
+    if (/\.xlsx$/i.test(name)) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if (/\.xls$/i.test(name)) return 'application/vnd.ms-excel';
+    return '';
+};
+const ensureFileExtension = (name = 'document', mime = '') => {
+    if (/\.[a-z0-9]{2,8}$/i.test(name)) return name;
+    if (mime.includes('pdf')) return `${name}.pdf`;
+    if (mime.includes('png')) return `${name}.png`;
+    if (mime.includes('jpeg') || mime.includes('jpg')) return `${name}.jpg`;
+    if (mime.includes('webp')) return `${name}.webp`;
+    if (mime.includes('gif')) return `${name}.gif`;
+    if (mime.includes('csv')) return `${name}.csv`;
+    if (mime.includes('spreadsheet')) return `${name}.xlsx`;
+    return `${name}.pdf`;
+};
+
 const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) => {
     if (!openai) {
         const error = new Error('OPENAI_API_KEY is not configured');
@@ -2987,12 +3017,15 @@ const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) 
             file_id: uploaded.id
         };
     }));
-    const remoteFiles = await Promise.all(fileUrls.filter(Boolean).map(async (url, index) => {
+    const remoteFiles = await Promise.all(fileUrls.filter(Boolean).map(async (item, index) => {
+        const url = remoteFileUrl(item);
         console.log('[ANALYZE-STMT] Fetching remote file:', url.substring(0, 120));
         const response = await downloadFromUrl(url);
-        const fileName = String(url).split('/').pop()?.split('?')[0] || `statement-${index + 1}.pdf`;
+        const headerMime = String(response.headers['content-type'] || '').split(';')[0];
+        const mime = (typeof item === 'object' ? item.mimeType : '') || mimeFromName(remoteFileName(item)) || headerMime || 'application/pdf';
+        const fileName = ensureFileExtension(remoteFileName(item, `statement-${index + 1}.pdf`), mime);
         const uploaded = await openai.files.create({
-            file: await toFile(Buffer.from(response.data), fileName, { type: response.headers['content-type'] || 'application/octet-stream' }),
+            file: await toFile(Buffer.from(response.data), fileName, { type: mime }),
             purpose: 'user_data'
         });
         return {
@@ -3002,7 +3035,7 @@ const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) 
     }));
     const fileLabels = [
         ...files.map(file => file.originalname),
-        ...fileUrls.map(url => String(url).split('/').pop() || url)
+        ...fileUrls.map(item => remoteFileName(item, String(remoteFileUrl(item)) || 'remote-file'))
     ];
 
     const response = await openai.responses.create({
@@ -3245,8 +3278,7 @@ app.post('/api/loan-research/analyze-statement', authenticateUser, (req, res) =>
         if (err) return res.status(400).json({ message: err.message });
         try {
             const borrower = parseJsonField(req.body.borrower);
-            const parsedFileUrls = parseJsonField(req.body.fileUrls, []);
-            const fileUrls = Array.isArray(parsedFileUrls) ? parsedFileUrls : [parsedFileUrls].filter(Boolean);
+            const fileUrls = requestRemoteFiles(req);
             const analysis = await analyzeStatementsWithAI({ files: req.files || [], fileUrls, borrower });
             res.json(analysis);
         } catch (e) {
@@ -3270,6 +3302,14 @@ const inferMimeFromUrl = (url = '') => {
     return '';
 };
 
+const requestRemoteFiles = (req) => {
+    const details = parseJsonField(req.body.fileUrlDetails, []);
+    if (Array.isArray(details) && details.length) return details;
+    const parsedUrls = parseJsonField(req.body.fileUrls, []);
+    const urls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+    return urls.map(url => ({ fileUrl: url, fileName: remoteFileName(url), mimeType: inferMimeFromUrl(url) || mimeFromName(remoteFileName(url)) }));
+};
+
 const filesToContentBlocks = async (files = [], fileUrls = []) => {
     const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     const blocks = [];
@@ -3288,10 +3328,10 @@ const filesToContentBlocks = async (files = [], fileUrls = []) => {
             uploadedIds.push(up.id);
         }
     }
-    const remoteFiles = safeList(fileUrls).filter(Boolean).map((url, index) => ({
-        fileUrl: url,
-        fileName: String(url).split('/').pop()?.split('?')[0] || `remote-${index + 1}.pdf`,
-        mimeType: inferMimeFromUrl(url),
+    const remoteFiles = safeList(fileUrls).filter(Boolean).map((item, index) => ({
+        fileUrl: remoteFileUrl(item),
+        fileName: remoteFileName(item, `remote-${index + 1}.pdf`),
+        mimeType: (typeof item === 'object' ? item.mimeType : '') || inferMimeFromUrl(remoteFileUrl(item)) || mimeFromName(remoteFileName(item)),
     }));
     if (remoteFiles.length) {
         const remote = await remoteFilesToContentBlocks(remoteFiles);
@@ -3322,8 +3362,7 @@ app.post('/api/loans/analyze-id-document', authenticateUser, (req, res) => {
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            const parsedUrls = parseJsonField(req.body.fileUrls, []);
-            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            const fileUrls = requestRemoteFiles(req);
             if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
             const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
             const response = await openai.responses.create({
@@ -3363,8 +3402,7 @@ app.post('/api/loans/analyze-org-document', authenticateUser, (req, res) => {
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            const parsedUrls = parseJsonField(req.body.fileUrls, []);
-            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            const fileUrls = requestRemoteFiles(req);
             if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
             const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
             const response = await openai.responses.create({
@@ -3405,8 +3443,7 @@ app.post('/api/loans/analyze-vehicle-document', authenticateUser, (req, res) => 
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            const parsedUrls = parseJsonField(req.body.fileUrls, []);
-            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            const fileUrls = requestRemoteFiles(req);
             if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
             const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
             const response = await openai.responses.create({
@@ -3448,8 +3485,7 @@ app.post('/api/loans/analyze-property-document', authenticateUser, (req, res) =>
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            const parsedUrls = parseJsonField(req.body.fileUrls, []);
-            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            const fileUrls = requestRemoteFiles(req);
             if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
             const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
             const response = await openai.responses.create({
@@ -3537,12 +3573,15 @@ const analyzeCreditReferenceWithAI = async ({ files = [], fileUrls = [], borrowe
         });
         return { type: 'input_file', file_id: up.id };
     }));
-    const remoteFiles = await Promise.all(fileUrls.filter(Boolean).map(async (url) => {
+    const remoteFiles = await Promise.all(fileUrls.filter(Boolean).map(async (item, index) => {
+        const url = remoteFileUrl(item);
         console.log('[ANALYZE-CREDIT] Fetching remote file:', url.substring(0, 120));
         const resp = await downloadFromUrl(url);
-        const fname = String(url).split('/').pop()?.split('?')[0] || 'credit-ref.pdf';
+        const headerMime = String(resp.headers['content-type'] || '').split(';')[0];
+        const mime = (typeof item === 'object' ? item.mimeType : '') || mimeFromName(remoteFileName(item)) || headerMime || 'application/pdf';
+        const fname = ensureFileExtension(remoteFileName(item, `credit-ref-${index + 1}.pdf`), mime);
         const up = await openai.files.create({
-            file: await toFile(Buffer.from(resp.data), fname, { type: resp.headers['content-type'] || 'application/octet-stream' }),
+            file: await toFile(Buffer.from(resp.data), fname, { type: mime }),
             purpose: 'user_data'
         });
         return { type: 'input_file', file_id: up.id };
@@ -3621,8 +3660,7 @@ app.post('/api/loan-research/analyze-credit-reference', authenticateUser, (req, 
         if (err) return res.status(400).json({ message: err.message });
         try {
             const borrower = parseJsonField(req.body.borrower);
-            const parsedUrls = parseJsonField(req.body.fileUrls, []);
-            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            const fileUrls = requestRemoteFiles(req);
             const analysis = await analyzeCreditReferenceWithAI({ files: req.files || [], fileUrls, borrower });
             res.json(analysis);
         } catch (e) {
@@ -3655,8 +3693,7 @@ app.post('/api/loans/analyze-fico-document', authenticateUser, (req, res) => {
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            const parsedUrls = parseJsonField(req.body.fileUrls, []);
-            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            const fileUrls = requestRemoteFiles(req);
             if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
             if (!openai) return res.status(503).json({ message: 'OPENAI_API_KEY тохируулагдаагүй' });
             const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
@@ -3788,8 +3825,7 @@ app.post('/api/loans/analyze-social-insurance', authenticateUser, (req, res) => 
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            const parsedUrls = parseJsonField(req.body.fileUrls, []);
-            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            const fileUrls = requestRemoteFiles(req);
             if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
             if (!openai) return res.status(503).json({ message: 'OPENAI_API_KEY тохируулагдаагүй' });
             const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
@@ -3855,7 +3891,9 @@ const filesByFields = (fileDetails = [], fields = []) => {
     });
 };
 
-const fileUrlsOf = (files = []) => files.map(file => file.fileUrl).filter(Boolean);
+const fileUrlsOf = (files = []) => files
+    .filter(file => file?.fileUrl)
+    .map(file => ({ fileUrl: file.fileUrl, fileName: file.fileName || remoteFileName(file.fileUrl), mimeType: file.mimeType || inferMimeFromUrl(file.fileUrl) }));
 
 async function remoteFilesToContentBlocks(files = []) {
     const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
@@ -3863,13 +3901,15 @@ async function remoteFilesToContentBlocks(files = []) {
     const uploadedIds = [];
     for (const [index, file] of files.entries()) {
         const response = await downloadFromUrl(file.fileUrl);
-        const mime = String(file.mimeType || response.headers?.['content-type'] || '').toLowerCase();
+        const headerMime = String(response.headers?.['content-type'] || '').split(';')[0].toLowerCase();
+        const mime = String(file.mimeType || mimeFromName(file.fileName) || headerMime || 'application/pdf').toLowerCase();
+        const fileName = ensureFileExtension(file.fileName || `document-${index + 1}`, mime);
         const buffer = Buffer.from(response.data);
         if (IMAGE_TYPES.includes(mime)) {
             blocks.push({ type: 'input_image', image_url: `data:${mime};base64,${buffer.toString('base64')}` });
         } else {
             const uploaded = await openai.files.create({
-                file: await toFile(buffer, file.fileName || `document-${index + 1}.pdf`, { type: mime || 'application/octet-stream' }),
+                file: await toFile(buffer, fileName, { type: mime }),
                 purpose: 'user_data'
             });
             uploadedIds.push(uploaded.id);
