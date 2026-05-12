@@ -26,6 +26,18 @@ const fileDisplayName = (file = {}, fallback = 'Файл') => (
 
 const filePreviewType = (file = {}) => file.type || file.mimeType || '';
 const filePreviewUrl = (file = {}) => file.fileUrl || file.url || '';
+const appendAnalysisFiles = (fd, files = [], fieldName = 'bankStatements') => {
+  const urls = [];
+  Array.from(files || []).forEach(file => {
+    if (file instanceof File || file instanceof Blob) {
+      fd.append(fieldName, file);
+      return;
+    }
+    const url = filePreviewUrl(file);
+    if (url) urls.push(url);
+  });
+  if (urls.length) fd.append('fileUrls', JSON.stringify(urls));
+};
 const isPreviewImageFile = (file = {}) => String(filePreviewType(file)).startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(fileDisplayName(file));
 const isPreviewPdfFile = (file = {}) => filePreviewType(file) === 'application/pdf' || /\.pdf$/i.test(fileDisplayName(file));
 const looksLikeFileUrl = (value = '') => /^https?:\/\//i.test(value)
@@ -34,6 +46,14 @@ const inferMimeFromUrl = (url = '') => {
   if (/\.pdf(\?|$)/i.test(url)) return 'application/pdf';
   if (/\.(png|jpe?g|webp|gif)(\?|$)/i.test(url)) return 'image/*';
   return '';
+};
+const toBrowserFile = async (file) => {
+  if (file instanceof File || file instanceof Blob) return file;
+  const url = filePreviewUrl(file);
+  if (!url) return null;
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new File([blob], fileDisplayName(file), { type: blob.type || filePreviewType(file) || inferMimeFromUrl(url) || 'application/octet-stream' });
 };
 const collectFileReferences = (loan = {}) => {
   const files = [];
@@ -196,8 +216,8 @@ const FilePickerWithPreview = ({ files = [], existingFiles = [], onChange, accep
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-lg hover:bg-slate-50 transition-all">
             <Upload size={12} /> {visibleFiles.length > 0 || existingFiles.length > 0 ? 'Файл нэмэх' : 'Файл сонгох'}
           </button>
-          {onAI && visibleFiles.length > 0 && (
-            <AiReadBtn loading={aiLoading} onClick={() => onAI(visibleFiles)} label={aiLabel || 'AI унших'} />
+          {onAI && (visibleFiles.length > 0 || existingFiles.length > 0) && (
+            <AiReadBtn loading={aiLoading} onClick={() => onAI(visibleFiles.length > 0 ? visibleFiles : existingFiles)} label={aiLabel || 'AI унших'} />
           )}
         </div>
       )}
@@ -325,13 +345,15 @@ const canvasFromPdfFile = async (file) => {
 const extractPhotoFromIdDocument = async (file) => {
   if (!file) return null;
   try {
-    if (file.type.startsWith('image/')) {
-      const canvas = await canvasFromImageFile(file);
+    const sourceFile = await toBrowserFile(file);
+    if (!sourceFile) return null;
+    if (sourceFile.type.startsWith('image/')) {
+      const canvas = await canvasFromImageFile(sourceFile);
       if (!canvas) return null;
       return { photo: cropPhotoFromCanvas(canvas), source: canvas.toDataURL('image/jpeg', 0.92) };
     }
-    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')) {
-      const canvas = await canvasFromPdfFile(file);
+    if (sourceFile.type === 'application/pdf' || /\.pdf$/i.test(sourceFile.name || '')) {
+      const canvas = await canvasFromPdfFile(sourceFile);
       return { photo: cropPhotoFromCanvas(canvas), source: canvas.toDataURL('image/jpeg', 0.92) };
     }
   } catch { return null; }
@@ -441,7 +463,7 @@ const MiniPersonForm = ({ title, data = {}, onChange, apiUrl, showToast, locked 
     setAnalyzingId(true);
     try {
       const fd = new FormData();
-      files.forEach(f => fd.append('bankStatements', f));
+      appendAnalysisFiles(fd, files);
       const [aiResult, photoResult] = await Promise.allSettled([
         axios.post(`${apiUrl}/api/loans/analyze-id-document`, fd, {
           headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
@@ -614,7 +636,7 @@ const PersonForm = ({ data = {}, onChange, apiUrl, showToast, prefix = '', locke
     setAnalyzingId(true);
     try {
       const fd = new FormData();
-      files.forEach(f => fd.append('bankStatements', f));
+      appendAnalysisFiles(fd, files);
       const [aiResult, photoResult] = await Promise.allSettled([
         axios.post(`${apiUrl}/api/loans/analyze-id-document`, fd, {
           headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
@@ -823,7 +845,7 @@ const OrgForm = ({ data = {}, onChange, locked = false, apiUrl, showToast, exist
     setAnalyzingOrg(true);
     try {
       const fd = new FormData();
-      files.forEach(f => fd.append('bankStatements', f));
+      appendAnalysisFiles(fd, files);
       const res = await axios.post(`${apiUrl}/api/loans/analyze-org-document`, fd, {
         headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
       });
@@ -952,7 +974,7 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId, e
     setAnalyzing(true);
     try {
       const fd = new FormData();
-      files.forEach(f => fd.append('bankStatements', f));
+      appendAnalysisFiles(fd, files);
       fd.append('borrower', JSON.stringify({ regNo: data.regNo || '' }));
       const res = await axios.post(`${apiUrl}/api/loan-research/analyze-credit-reference`, fd, {
         headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
@@ -969,7 +991,7 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId, e
     setAnalyzingFico(true);
     try {
       const fd = new FormData();
-      files.forEach(f => fd.append('bankStatements', f));
+      appendAnalysisFiles(fd, files);
       const res = await axios.post(`${apiUrl}/api/loans/analyze-fico-document`, fd, {
         headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
       });
@@ -1208,7 +1230,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
     setAnalyzing(String(idx));
     try {
       const fd = new FormData();
-      files.forEach(f => fd.append('bankStatements', f));
+      appendAnalysisFiles(fd, files);
       const res = await axios.post(endpoint, fd, {
         headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
       });
@@ -1734,12 +1756,27 @@ const IncomeResearchSection = ({ data = {}, onBSAppend, onSIChange, onRemoveBS, 
     }
   };
 
+  const handleAnalyzeBankFiles = async (files) => {
+    if (!files?.length) return;
+    try {
+      const fd = new FormData();
+      appendAnalysisFiles(fd, files);
+      const res = await axios.post(`${apiUrl}/api/loan-research/analyze-statement`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
+      });
+      onBSAppend({ ...res.data, _fileName: files.map(fileDisplayName).join(', ') });
+      showToast('Дансны хуулга уншигдлаа.');
+    } catch (e) {
+      showToast(e.response?.data?.message || 'Дансны хуулга унших алдаа', 'error');
+    }
+  };
+
   const handleSocialInsuranceAI = async (files) => {
     if (!files?.length) return;
     setAnalyzingSI(true);
     try {
       const fd = new FormData();
-      files.forEach(f => fd.append('bankStatements', f));
+      appendAnalysisFiles(fd, files);
       const res = await axios.post(`${apiUrl}/api/loans/analyze-social-insurance`, fd, {
         headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
       });
@@ -1770,6 +1807,8 @@ const IncomeResearchSection = ({ data = {}, onBSAppend, onSIChange, onRemoveBS, 
                   existingFiles={existingBankFiles}
                   onChange={() => {}}
                   accept=".pdf,image/*"
+                  onAI={handleAnalyzeBankFiles}
+                  aiLabel="AI унших"
                 />
               </div>
             )}

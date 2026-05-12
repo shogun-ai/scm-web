@@ -600,9 +600,6 @@ const LoanRequest = ({ onBack, initialProduct }) => {
                 onFiles={onVehicleFiles}
                 note="Техникийн паспортын зураг оруулна уу" />
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {COLLATERAL_VEHICLE_FIELDS.map(f => renderNestedField(f, formData.vehicle, setVeh, 'vehicle'))}
-            </div>
             <div className="border-t border-gray-100 pt-3">
               <p className={lbl}>Тээврийн хэрэгслийн зураг</p>
               <UploadZone name="file_car_photos" label="Машины зургууд (гадна, дотор)" note="Олон зураг оруулж болно" />
@@ -617,9 +614,6 @@ const LoanRequest = ({ onBack, initialProduct }) => {
               <UploadZone name="file_prop_cert" label="Эд хөрөнгийн эрхийн гэрчилгээ"
                 onFiles={onPropertyFiles}
                 note="Гэрчилгээний зураг оруулна уу" />
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {COLLATERAL_REALESTATE_FIELDS.map(f => renderNestedField(f, formData.collateral, setColl, 'collateral'))}
             </div>
             <div className="border-t border-gray-100 pt-3">
               <p className={lbl}>Кадастрын зураг / Нэмэлт баримт</p>

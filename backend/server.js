@@ -3194,7 +3194,16 @@ app.post('/api/loan-research/analyze-statement', authenticateUser, (req, res) =>
 // HELPER: файлыг зураг эсвэл PDF байдлаас хамаарч content block болгоно
 // Зураг → input_image (base64), PDF/бусад → input_file (upload)
 // ============================================================
-const filesToContentBlocks = async (files = []) => {
+const inferMimeFromUrl = (url = '') => {
+    if (/\.pdf(\?|$)/i.test(url)) return 'application/pdf';
+    if (/\.(png)(\?|$)/i.test(url)) return 'image/png';
+    if (/\.(jpe?g)(\?|$)/i.test(url)) return 'image/jpeg';
+    if (/\.(webp)(\?|$)/i.test(url)) return 'image/webp';
+    if (/\.(gif)(\?|$)/i.test(url)) return 'image/gif';
+    return '';
+};
+
+const filesToContentBlocks = async (files = [], fileUrls = []) => {
     const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     const blocks = [];
     const uploadedIds = [];
@@ -3211,6 +3220,16 @@ const filesToContentBlocks = async (files = []) => {
             blocks.push({ type: 'input_file', file_id: up.id });
             uploadedIds.push(up.id);
         }
+    }
+    const remoteFiles = safeList(fileUrls).filter(Boolean).map((url, index) => ({
+        fileUrl: url,
+        fileName: String(url).split('/').pop()?.split('?')[0] || `remote-${index + 1}.pdf`,
+        mimeType: inferMimeFromUrl(url),
+    }));
+    if (remoteFiles.length) {
+        const remote = await remoteFilesToContentBlocks(remoteFiles);
+        blocks.push(...remote.blocks);
+        uploadedIds.push(...remote.uploadedIds);
     }
     return { blocks, uploadedIds };
 };
@@ -3236,8 +3255,10 @@ app.post('/api/loans/analyze-id-document', authenticateUser, (req, res) => {
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            if (!files.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
-            const { blocks, uploadedIds } = await filesToContentBlocks(files);
+            const parsedUrls = parseJsonField(req.body.fileUrls, []);
+            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
+            const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
             const response = await openai.responses.create({
                 model: process.env.OPENAI_STATEMENT_MODEL || 'gpt-4.1-mini',
                 temperature: 0,
@@ -3275,8 +3296,10 @@ app.post('/api/loans/analyze-org-document', authenticateUser, (req, res) => {
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            if (!files.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
-            const { blocks, uploadedIds } = await filesToContentBlocks(files);
+            const parsedUrls = parseJsonField(req.body.fileUrls, []);
+            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
+            const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
             const response = await openai.responses.create({
                 model: process.env.OPENAI_STATEMENT_MODEL || 'gpt-4.1-mini',
                 temperature: 0,
@@ -3315,8 +3338,10 @@ app.post('/api/loans/analyze-vehicle-document', authenticateUser, (req, res) => 
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            if (!files.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
-            const { blocks, uploadedIds } = await filesToContentBlocks(files);
+            const parsedUrls = parseJsonField(req.body.fileUrls, []);
+            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
+            const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
             const response = await openai.responses.create({
                 model: process.env.OPENAI_STATEMENT_MODEL || 'gpt-4.1-mini',
                 temperature: 0,
@@ -3356,8 +3381,10 @@ app.post('/api/loans/analyze-property-document', authenticateUser, (req, res) =>
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            if (!files.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
-            const { blocks, uploadedIds } = await filesToContentBlocks(files);
+            const parsedUrls = parseJsonField(req.body.fileUrls, []);
+            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
+            const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
             const response = await openai.responses.create({
                 model: process.env.OPENAI_STATEMENT_MODEL || 'gpt-4.1-mini',
                 temperature: 0,
@@ -3561,9 +3588,11 @@ app.post('/api/loans/analyze-fico-document', authenticateUser, (req, res) => {
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            if (!files.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
+            const parsedUrls = parseJsonField(req.body.fileUrls, []);
+            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
             if (!openai) return res.status(503).json({ message: 'OPENAI_API_KEY тохируулагдаагүй' });
-            const { blocks, uploadedIds } = await filesToContentBlocks(files);
+            const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
             const response = await openai.responses.create({
                 model: process.env.OPENAI_STATEMENT_MODEL || 'gpt-4.1-mini',
                 temperature: 0,
@@ -3692,9 +3721,11 @@ app.post('/api/loans/analyze-social-insurance', authenticateUser, (req, res) => 
         if (err) return res.status(400).json({ message: err.message });
         try {
             const files = req.files || [];
-            if (!files.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
+            const parsedUrls = parseJsonField(req.body.fileUrls, []);
+            const fileUrls = Array.isArray(parsedUrls) ? parsedUrls : [parsedUrls].filter(Boolean);
+            if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Файл олдсонгүй' });
             if (!openai) return res.status(503).json({ message: 'OPENAI_API_KEY тохируулагдаагүй' });
-            const { blocks, uploadedIds } = await filesToContentBlocks(files);
+            const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
             const instructions = [
                 'You are a Mongolian credit analyst. Read the Нийгмийн даатгалын шимтгэлийн лавлагаа (social insurance contribution certificate) carefully.',
                 'Extract ALL rows sorted chronologically (oldest first).',
