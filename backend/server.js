@@ -632,6 +632,10 @@ function runLoanOfficerAssessmentInBackground(loanId) {
     updateLoanOfficerAssessment(String(loanId)).catch(e => console.error('AI loan officer background error:', e.message));
 }
 
+function runPostSubmissionAutomationInBackground(loanId) {
+    runPostSubmissionAutomation(String(loanId)).catch(e => console.error('Post-submission automation background error:', e.message));
+}
+
 const COMPLIANCE_REVIEW_VERSION = '2026-05-06';
 
 function buildComplianceStatus(status, note = '') {
@@ -1976,7 +1980,7 @@ app.post('/api/loans', (req, res) => {
                 aiLoanOfficer: buildAiLoanOfficerStatus('pending', 'Шинэ хүсэлт үүссэн тул AI дүгнэлт дараалалд орлоо.'),
             });
             await newLoan.save();
-            runLoanOfficerAssessmentInBackground(newLoan._id);
+            runPostSubmissionAutomationInBackground(newLoan._id);
             res.status(201).json({ message: 'Success' });
         } catch (e) {
             console.error('Loan submit error:', e.message);
@@ -2101,7 +2105,7 @@ app.post('/api/loans/:id/files', authenticateUser, (req, res) => {
                 { new: true }
             );
             if (!loan) return res.status(404).json({ message: 'Not found' });
-            runLoanOfficerAssessmentInBackground(loan._id);
+            runPostSubmissionAutomationInBackground(loan._id);
             res.json(loan);
         } catch (e) {
             console.error('File upload error:', e.message);
@@ -3733,6 +3737,268 @@ app.post('/api/loans/analyze-social-insurance', authenticateUser, (req, res) => 
         }
     });
 });
+
+const AUTO_INTAKE_VERSION = '2026-05-12';
+const FIELD_GROUPS = {
+    id: ['file_id', 'file_address'],
+    org: ['file_org_cert', 'file_charter', 'file_finance'],
+    bank: ['file_bank', 'file_org_bank'],
+    social: ['file_social'],
+    vehicle: ['file_car_cert', 'file_car_photos'],
+    property: ['file_prop_cert', 'file_prop_map'],
+    credit: ['file_credit', 'file_fico', 'file_sainscore'],
+};
+
+const filesByFields = (fileDetails = [], fields = []) => {
+    const fieldSet = new Set(fields);
+    return safeList(fileDetails).filter(file => fieldSet.has(file.fieldName) && file.fileUrl);
+};
+
+const fileUrlsOf = (files = []) => files.map(file => file.fileUrl).filter(Boolean);
+
+async function remoteFilesToContentBlocks(files = []) {
+    const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    const blocks = [];
+    const uploadedIds = [];
+    for (const [index, file] of files.entries()) {
+        const response = await downloadFromUrl(file.fileUrl);
+        const mime = String(file.mimeType || response.headers?.['content-type'] || '').toLowerCase();
+        const buffer = Buffer.from(response.data);
+        if (IMAGE_TYPES.includes(mime)) {
+            blocks.push({ type: 'input_image', image_url: `data:${mime};base64,${buffer.toString('base64')}` });
+        } else {
+            const uploaded = await openai.files.create({
+                file: await toFile(buffer, file.fileName || `document-${index + 1}.pdf`, { type: mime || 'application/octet-stream' }),
+                purpose: 'user_data'
+            });
+            uploadedIds.push(uploaded.id);
+            blocks.push({ type: 'input_file', file_id: uploaded.id });
+        }
+    }
+    return { blocks, uploadedIds };
+}
+
+async function analyzeRemoteDocuments({ files = [], instructions, prompt, schema, schemaName }) {
+    if (!openai || !files.length) return null;
+    const { blocks, uploadedIds } = await remoteFilesToContentBlocks(files);
+    try {
+        const response = await openai.responses.create({
+            model: process.env.OPENAI_STATEMENT_MODEL || 'gpt-4.1-mini',
+            temperature: 0,
+            instructions,
+            input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }, ...blocks] }],
+            text: { format: { type: 'json_schema', name: schemaName, schema, strict: true } }
+        });
+        return parseAiJson(response.output_text);
+    } finally {
+        Promise.allSettled(uploadedIds.map(id => openai.files.delete(id))).catch(() => {});
+    }
+}
+
+function firstTruthy(...values) {
+    return values.find(v => v !== undefined && v !== null && String(v).trim() !== '') || '';
+}
+
+function mergeAutoIntakeResult(appData = {}, result = {}) {
+    const next = JSON.parse(JSON.stringify(appData || {}));
+    if (result.borrower) {
+        next.borrower = {
+            ...(next.borrower || {}),
+            lastName: firstTruthy(next.borrower?.lastName, result.borrower.lastName),
+            firstName: firstTruthy(next.borrower?.firstName, result.borrower.firstName),
+            fatherName: firstTruthy(next.borrower?.fatherName, result.borrower.fatherName),
+            regNo: firstTruthy(next.borrower?.regNo, result.borrower.regNo),
+            dob: firstTruthy(next.borrower?.dob, result.borrower.dob),
+            gender: firstTruthy(next.borrower?.gender, result.borrower.gender),
+            citizenship: firstTruthy(next.borrower?.citizenship, result.borrower.citizenship),
+            address: firstTruthy(next.borrower?.address, result.borrower.address),
+            idIssueDate: firstTruthy(next.borrower?.idIssueDate, result.borrower.issueDate),
+            idExpiryDate: firstTruthy(next.borrower?.idExpiryDate, result.borrower.expiryDate),
+        };
+    }
+    if (result.org) {
+        next.org = {
+            ...(next.org || {}),
+            orgName: firstTruthy(next.org?.orgName, result.org.orgName),
+            orgRegNo: firstTruthy(next.org?.orgRegNo, result.org.orgRegNo),
+            foundedDate: firstTruthy(next.org?.foundedDate, result.org.foundedDate),
+            legalForm: firstTruthy(next.org?.legalForm, result.org.legalForm),
+            industry: firstTruthy(next.org?.industry, result.org.industry),
+            orgAddress: firstTruthy(next.org?.orgAddress, next.org?.address, result.org.address),
+            address: firstTruthy(next.org?.address, next.org?.orgAddress, result.org.address),
+        };
+    }
+    if (result.vehicle) {
+        const collaterals = Array.isArray(next.collaterals) ? [...next.collaterals] : [];
+        const idx = collaterals.findIndex(c => c.type === 'vehicle');
+        const current = idx >= 0 ? collaterals[idx] : { type: 'vehicle' };
+        const vehicle = {
+            ...(current.vehicle || {}),
+            plateNumber: firstTruthy(current.vehicle?.plateNumber, result.vehicle.plateNumber),
+            make: firstTruthy(current.vehicle?.make, result.vehicle.make),
+            model: firstTruthy(current.vehicle?.model, result.vehicle.model),
+            year: firstTruthy(current.vehicle?.year, result.vehicle.year),
+            color: firstTruthy(current.vehicle?.color, result.vehicle.color),
+            engineNumber: firstTruthy(current.vehicle?.engineNumber, result.vehicle.engineNumber),
+            chassisNumber: firstTruthy(current.vehicle?.chassisNumber, result.vehicle.chassisNumber),
+            ownerName: firstTruthy(current.vehicle?.ownerName, result.vehicle.ownerName),
+            ownerRegNo: firstTruthy(current.vehicle?.ownerRegNo, result.vehicle.ownerRegNo),
+        };
+        const merged = { ...current, type: 'vehicle', vehicle };
+        if (idx >= 0) collaterals[idx] = merged; else collaterals.push(merged);
+        next.collaterals = collaterals;
+    }
+    if (result.property) {
+        const collaterals = Array.isArray(next.collaterals) ? [...next.collaterals] : [];
+        const idx = collaterals.findIndex(c => c.type === 'real_estate');
+        const current = idx >= 0 ? collaterals[idx] : { type: 'real_estate' };
+        const property = {
+            ...(current.property || {}),
+            certificateNumber: firstTruthy(current.property?.certificateNumber, result.property.certificateNumber),
+            propertyType: firstTruthy(current.property?.propertyType, result.property.propertyType),
+            address: firstTruthy(current.property?.address, result.property.address),
+            area: firstTruthy(current.property?.area, result.property.area),
+            ownerName: firstTruthy(current.property?.ownerName, result.property.ownerName),
+            ownerRegNo: firstTruthy(current.property?.ownerRegNo, result.property.ownerRegNo),
+            registrationDate: firstTruthy(current.property?.registrationDate, result.property.registrationDate),
+        };
+        const merged = { ...current, type: 'real_estate', property };
+        if (idx >= 0) collaterals[idx] = merged; else collaterals.push(merged);
+        next.collaterals = collaterals;
+    }
+    return next;
+}
+
+async function autoExtractSubmittedFiles(loanDoc) {
+    const loan = loanDoc.toObject ? loanDoc.toObject() : loanDoc;
+    const fileDetails = safeList(loan.fileDetails);
+    if (!openai || !fileDetails.length) return { applicationData: loan.applicationData || {}, extracted: [], errors: [] };
+
+    let applicationData = JSON.parse(JSON.stringify(loan.applicationData || {}));
+    const extracted = [];
+    const errors = [];
+    const run = async (key, fn) => {
+        try {
+            const value = await fn();
+            if (value) extracted.push(key);
+            return value;
+        } catch (e) {
+            errors.push(`${key}: ${e.message}`);
+            return null;
+        }
+    };
+
+    const idResult = await run('id', () => analyzeRemoteDocuments({
+        files: filesByFields(fileDetails, FIELD_GROUPS.id),
+        schema: idDocumentSchema,
+        schemaName: 'auto_id_document',
+        instructions: 'Та бол Монголын KYC мэргэжилтэн. Иргэний үнэмлэх эсвэл оршин суугаа газрын лавлагаанаас мэдээллийг яг таг гарга. Мэдээлэл олдохгүй бол хоосон мөр ашигла.',
+        prompt: 'Иргэний үнэмлэх/лавлагаанаас бүх мэдээллийг гарга.'
+    }));
+    applicationData = mergeAutoIntakeResult(applicationData, { borrower: idResult });
+
+    const orgResult = await run('org', () => analyzeRemoteDocuments({
+        files: filesByFields(fileDetails, FIELD_GROUPS.org),
+        schema: orgDocSchema,
+        schemaName: 'auto_org_document',
+        instructions: 'Та бол Монгол улсын бизнесийн бүртгэлийн мэргэжилтэн. Байгууллагын бүртгэлийн баримтаас мэдээллийг яг таг гарга.',
+        prompt: 'Байгууллагын бүртгэлийн гэрчилгээнээс бүх мэдээллийг гарга.'
+    }));
+    applicationData = mergeAutoIntakeResult(applicationData, { org: orgResult });
+
+    const vehicleResult = await run('vehicle', () => analyzeRemoteDocuments({
+        files: filesByFields(fileDetails, FIELD_GROUPS.vehicle),
+        schema: vehicleDocSchema,
+        schemaName: 'auto_vehicle_document',
+        instructions: 'Та бол Монгол улсын тээврийн хэрэгслийн бүртгэлийн мэргэжилтэн. Техникийн паспорт/гэрчилгээнээс мэдээллийг гарга.',
+        prompt: 'Тээврийн хэрэгслийн баримтаас бүх мэдээллийг гарга.'
+    }));
+    applicationData = mergeAutoIntakeResult(applicationData, { vehicle: vehicleResult });
+
+    const propertyResult = await run('property', () => analyzeRemoteDocuments({
+        files: filesByFields(fileDetails, FIELD_GROUPS.property),
+        schema: propertyDocSchema,
+        schemaName: 'auto_property_document',
+        instructions: 'Та бол Монгол улсын үл хөдлөх хөрөнгийн бүртгэлийн мэргэжилтэн. Эд хөрөнгийн гэрчилгээ/кадастрын зургаас мэдээллийг гарга.',
+        prompt: 'Эд хөрөнгийн баримтаас бүх мэдээллийг гарга.'
+    }));
+    applicationData = mergeAutoIntakeResult(applicationData, { property: propertyResult });
+
+    const bankUrls = fileUrlsOf(filesByFields(fileDetails, FIELD_GROUPS.bank));
+    const bankAnalysis = await run('bank_statement', () => bankUrls.length ? analyzeStatementsWithAI({ fileUrls: bankUrls, borrower: applicationData.borrower || applicationData.org || {} }) : null);
+    if (bankAnalysis) {
+        applicationData.incomeResearch = {
+            ...(applicationData.incomeResearch || {}),
+            bankStatementAnalyses: [bankAnalysis],
+        };
+    }
+
+    const socialResult = await run('social_insurance', () => analyzeRemoteDocuments({
+        files: filesByFields(fileDetails, FIELD_GROUPS.social),
+        schema: socialInsuranceSchema,
+        schemaName: 'auto_social_insurance',
+        instructions: 'Та бол Монголын зээлийн шинжээч. Нийгмийн даатгалын лавлагааг уншиж орлогын тогтвортой байдал, ажил олгогч, цалингийн мэдээллийг бүтцээр гарга.',
+        prompt: 'Нийгмийн даатгалын лавлагааг бүрэн шинжил.'
+    }));
+    if (socialResult) {
+        applicationData.incomeResearch = {
+            ...(applicationData.incomeResearch || {}),
+            socialInsuranceAnalysis: socialResult,
+        };
+    }
+
+    const creditUrls = fileUrlsOf([
+        ...filesByFields(fileDetails, FIELD_GROUPS.credit),
+        ...fileDetails.filter(f => `${f.fieldName || ''} ${f.fileName || ''}`.toLowerCase().includes('credit')),
+    ]);
+    const creditResult = await run('credit_reference', () => creditUrls.length ? analyzeCreditReferenceWithAI({ fileUrls: creditUrls, borrower: applicationData.borrower || applicationData.org || {} }) : null);
+    if (creditResult) applicationData.creditBureau = creditResult;
+
+    return { applicationData, extracted, errors };
+}
+
+async function runPostSubmissionAutomation(loanId) {
+    let loan = await LoanRequest.findById(loanId);
+    if (!loan) return null;
+
+    await LoanRequest.findByIdAndUpdate(loan._id, {
+        'applicationData.autoIntake': {
+            status: 'running',
+            version: AUTO_INTAKE_VERSION,
+            startedAt: new Date(),
+            note: 'Оруулсан файлуудаас талбар бөглөж байна.',
+        },
+        aiLoanOfficer: buildAiLoanOfficerStatus('pending', 'Файл уншилт дуусмагц зээлийн агент ажиллана.'),
+        complianceReview: buildComplianceStatus('running', 'Файл уншилт дуусмагц комплианс, хуулийн агент ажиллана.'),
+    });
+
+    const { applicationData, extracted, errors } = await autoExtractSubmittedFiles(loan);
+    applicationData.autoIntake = {
+        status: errors.length ? 'completed_with_warnings' : 'completed',
+        version: AUTO_INTAKE_VERSION,
+        generatedAt: new Date(),
+        extracted,
+        errors,
+    };
+
+    loan = await LoanRequest.findByIdAndUpdate(
+        loan._id,
+        {
+            applicationData,
+            lastname: applicationData.borrower?.lastName || loan.lastname,
+            firstname: applicationData.borrower?.firstName || loan.firstname,
+            regNo: applicationData.borrower?.regNo || loan.regNo,
+            orgName: applicationData.org?.orgName || loan.orgName,
+            orgRegNo: applicationData.org?.orgRegNo || loan.orgRegNo,
+            legalForm: applicationData.org?.legalForm || loan.legalForm,
+            orgAddress: applicationData.org?.orgAddress || loan.orgAddress,
+        },
+        { new: true }
+    );
+
+    const withLoanAgent = await updateLoanOfficerAssessment(loan);
+    return await updateComplianceReview(withLoanAgent || loan);
+}
 
 // ============================================================
 // RAG: Зээлийн судалгааны текст + embedding үүсгэх
