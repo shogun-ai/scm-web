@@ -121,7 +121,7 @@ const LoanRequestSchema = new mongoose.Schema({
     lastname: String, firstname: String, regNo: String, phone: String, email: String,
     address: String, status: { type: String, default: 'pending' },
     // Байгууллага
-    orgName: String, orgRegNo: String, contactName: String, contactPhone: String,
+    orgName: String, orgRegNo: String, legalForm: String, contactName: String, contactPosition: String, contactPhone: String, orgAddress: String,
     purpose: String, repaymentSource: String,
     // Хариуцагч
     assignee: { userId: String, name: String },
@@ -226,7 +226,9 @@ function getLoanOfficerInput(loanDoc) {
             employeeCount: org.employeeCount,
             industry: org.industry,
             contactName: loan.contactName || org.contactName,
+            contactPosition: loan.contactPosition || org.contactPosition,
             contactPhone: loan.contactPhone || org.contactPhone,
+            orgAddress: loan.orgAddress || org.orgAddress || org.address,
         },
         loanRequest: {
             product: loan.selectedProduct || loanRequest.product,
@@ -234,6 +236,7 @@ function getLoanOfficerInput(loanDoc) {
             term: toNumber(loan.term || loanRequest.term),
             purpose: loan.purpose || loanRequest.purpose,
             repaymentSource: loan.repaymentSource || loanRequest.repaymentSource,
+            repaymentStartDate: loanRequest.repaymentStartDate,
             collateralType: loan.collateralType || loanRequest.collateralType,
         },
         collaterals: (appData.collaterals || []).map(c => ({
@@ -702,7 +705,9 @@ function getComplianceInput(loanDoc) {
             legalForm: appData.org?.legalForm,
             industry: appData.org?.industry,
             contactName: loan.contactName || appData.org?.contactName,
+            contactPosition: loan.contactPosition || appData.org?.contactPosition,
             contactPhone: loan.contactPhone || appData.org?.contactPhone,
+            orgAddress: loan.orgAddress || appData.org?.orgAddress || appData.org?.address,
         },
         loanRequest: {
             product: loan.selectedProduct || appData.loanRequest?.product,
@@ -710,6 +715,7 @@ function getComplianceInput(loanDoc) {
             term: toNumber(loan.term || appData.loanRequest?.term),
             purpose: loan.purpose || appData.loanRequest?.purpose,
             repaymentSource: loan.repaymentSource || appData.loanRequest?.repaymentSource,
+            repaymentStartDate: appData.loanRequest?.repaymentStartDate,
             collateralType: loan.collateralType || appData.loanRequest?.collateralType,
         },
         documents: fileDetails.map(f => ({
@@ -1883,7 +1889,9 @@ app.post('/api/loans', (req, res) => {
                     orgRegNo:      body.orgRegNo      || '',
                     legalForm:     body.legalForm     || '',
                     contactName:   body.contactName   || '',
+                    contactPosition: body.contactPosition || '',
                     contactPhone:  body.contactPhone  || '',
+                    orgAddress:    body.orgAddress    || '',
                     address:       body.orgAddress    || '',
                     foundedDate:   body.foundedDate   || '',
                     employeeCount: body.employeeCount || '',

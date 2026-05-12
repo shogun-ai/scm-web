@@ -2287,11 +2287,21 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
       },
 
       // Organization
-      org: saved.org || {
+      org: saved.org ? {
+        ...saved.org,
+        legalForm: saved.org.legalForm || loan?.legalForm || '',
+        contactPosition: saved.org.contactPosition || loan?.contactPosition || '',
+        orgAddress: saved.org.orgAddress || saved.org.address || loan?.orgAddress || '',
+        address: saved.org.address || saved.org.orgAddress || loan?.orgAddress || '',
+      } : {
         orgName: loan?.orgName || '',
         orgRegNo: loan?.orgRegNo || '',
+        legalForm: loan?.legalForm || '',
         contactName: loan?.contactName || '',
+        contactPosition: loan?.contactPosition || '',
         contactPhone: loan?.contactPhone || '',
+        orgAddress: loan?.orgAddress || '',
+        address: loan?.orgAddress || '',
         foundedDate: '',
         employeeCount: '',
         revenueRange: '',
@@ -2324,11 +2334,15 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
       ),
 
       // Loan request
-      loanRequest: saved.loanRequest || {
+      loanRequest: saved.loanRequest ? {
+        ...saved.loanRequest,
+        repaymentSource: saved.loanRequest.repaymentSource || loan?.repaymentSource || '',
+      } : {
         amount: loan?.amount ? String(loan.amount) : '',
         product: loan?.selectedProduct || 'cons_loan',
         term: loan?.term ? String(loan.term) : '',
         purpose: loan?.purpose || '',
+        repaymentSource: loan?.repaymentSource || '',
         repaymentStartDate: '',
         repaymentType: 'equal',
         graceMonths: '',
@@ -2364,18 +2378,32 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
         phone: loan.phone || prev.borrower?.phone || '',
         profileImageUrl: loan.selfieUrl || prev.borrower?.profileImageUrl || '',
       },
-      org: saved.org || {
+      org: saved.org ? {
+        ...saved.org,
+        legalForm: saved.org.legalForm || loan.legalForm || prev.org?.legalForm || '',
+        contactPosition: saved.org.contactPosition || loan.contactPosition || prev.org?.contactPosition || '',
+        orgAddress: saved.org.orgAddress || saved.org.address || loan.orgAddress || prev.org?.orgAddress || '',
+        address: saved.org.address || saved.org.orgAddress || loan.orgAddress || prev.org?.address || '',
+      } : {
         ...prev.org,
         orgName: loan.orgName || prev.org?.orgName || '',
         orgRegNo: loan.orgRegNo || prev.org?.orgRegNo || '',
+        legalForm: loan.legalForm || prev.org?.legalForm || '',
         contactName: loan.contactName || prev.org?.contactName || '',
+        contactPosition: loan.contactPosition || prev.org?.contactPosition || '',
         contactPhone: loan.contactPhone || prev.org?.contactPhone || '',
+        orgAddress: loan.orgAddress || prev.org?.orgAddress || prev.org?.address || '',
+        address: loan.orgAddress || prev.org?.address || '',
       },
-      loanRequest: saved.loanRequest || {
+      loanRequest: saved.loanRequest ? {
+        ...saved.loanRequest,
+        repaymentSource: saved.loanRequest.repaymentSource || loan.repaymentSource || prev.loanRequest?.repaymentSource || '',
+      } : {
         amount: loan.amount ? String(loan.amount) : prev.loanRequest?.amount || '',
         product: loan.selectedProduct || prev.loanRequest?.product || 'cons_loan',
         term: loan.term ? String(loan.term) : prev.loanRequest?.term || '',
         purpose: loan.purpose || prev.loanRequest?.purpose || '',
+        repaymentSource: loan.repaymentSource || prev.loanRequest?.repaymentSource || '',
         repaymentStartDate: prev.loanRequest?.repaymentStartDate || '',
         repaymentType: prev.loanRequest?.repaymentType || 'equal',
         graceMonths: prev.loanRequest?.graceMonths || '',
@@ -2445,13 +2473,17 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
       payload.userType = 'organization';
       payload.orgName = appData.org.orgName;
       payload.orgRegNo = appData.org.orgRegNo;
+      payload.legalForm = appData.org.legalForm;
       payload.contactName = appData.org.contactName;
+      payload.contactPosition = appData.org.contactPosition;
       payload.contactPhone = appData.org.contactPhone;
+      payload.orgAddress = appData.org.orgAddress || appData.org.address;
     }
     payload.amount = parseFmtNum(appData.loanRequest.amount) || 0;
     payload.selectedProduct = appData.loanRequest.product;
     payload.term = Number(appData.loanRequest.term) || 0;
     payload.purpose = appData.loanRequest.purpose;
+    payload.repaymentSource = appData.loanRequest.repaymentSource;
     return payload;
   };
 
@@ -2648,6 +2680,10 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                   <label className="space-y-1 col-span-2 md:col-span-4">
                     <span className={label}>Зориулалт / Зорилго</span>
                     <input value={appData.loanRequest.purpose} onChange={e => set('loanRequest', { ...appData.loanRequest, purpose: e.target.value })} className={inp} />
+                  </label>
+                  <label className="space-y-1 col-span-2 md:col-span-4">
+                    <span className={label}>Эргэн төлөх эх үүсвэр</span>
+                    <textarea rows={2} value={appData.loanRequest.repaymentSource || ''} onChange={e => set('loanRequest', { ...appData.loanRequest, repaymentSource: e.target.value })} className={`${inp} resize-none`} />
                   </label>
                 </div>
               </div>
