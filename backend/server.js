@@ -1864,6 +1864,8 @@ app.post('/api/loans', (req, res) => {
 
             const isVehicle = body.collateralType === 'vehicle';
             const fileDetails = files.map(f => ({ fieldName: f.fieldname, fileName: f.originalname, fileUrl: f.path, mimeType: f.mimetype, size: f.size }));
+            const vehicleFiles = fileDetails.filter(f => ['file_car_cert','file_car_photos'].includes(f.fieldName));
+            const propertyFiles = fileDetails.filter(f => ['file_prop_cert','file_prop_map'].includes(f.fieldName));
 
             // Build applicationData structure compatible with LoanApplicationDetail
             const applicationData = {
@@ -1921,9 +1923,9 @@ app.post('/api/loans', (req, res) => {
                 },
                 // Convert flat collateral/vehicle → collaterals array format
                 collaterals: isVehicle
-                    ? (vehicle.plateNumber || vehicle.make ? [{
+                    ? (vehicle.plateNumber || vehicle.make || vehicleFiles.length ? [{
                         type: 'vehicle',
-                        files: fileDetails.filter(f => ['file_car_cert','file_car_photos'].includes(f.fieldName)),
+                        files: vehicleFiles,
                         aiData: null,
                         fields: vehicle,
                         hasPlate: vehicle.plateNumber ? 'yes' : 'no',
@@ -1933,9 +1935,9 @@ app.post('/api/loans', (req, res) => {
                         notes: '',
                         auditLog: [],
                       }] : [])
-                    : (collateral.certificateNumber || collateral.address ? [{
+                    : (collateral.certificateNumber || collateral.address || propertyFiles.length ? [{
                         type: 'real_estate',
-                        files: fileDetails.filter(f => ['file_prop_cert','file_prop_map'].includes(f.fieldName)),
+                        files: propertyFiles,
                         aiData: null,
                         fields: collateral,
                         hasPlate: 'no',
@@ -2015,14 +2017,56 @@ app.post('/api/loans/staff', authenticateUser, async (req, res) => {
         const loan = await new LoanRequest({
             ...req.body,
             status: 'created',
+            source: 'staff',
             createdByStaff: true,
             createdByUser: { userId: String(req.user?._id || ''), name: req.user?.name || '' },
             aiLoanOfficer: buildAiLoanOfficerStatus('pending', 'Ажилтан үүсгэсэн хүсэлт тул AI дүгнэлт дараалалд орлоо.'),
+            complianceReview: buildComplianceStatus('running', 'Ажилтан үүсгэсэн хүсэлт тул комплианс, хуулийн агент ажиллана.'),
         }).save();
         const loanWithAiReview = await updateLoanOfficerAssessment(loan);
+        const loanWithComplianceReview = await updateComplianceReview(loanWithAiReview || loan);
         await createLog(req.user, 'loan_created_by_staff', `${loan.lastname || loan.orgName} - ${loan.amount}`);
-        res.status(201).json(loanWithAiReview || loan);
+        res.status(201).json(loanWithComplianceReview || loanWithAiReview || loan);
     } catch (e) { res.status(500).json({ message: 'Error' }); }
+});
+
+app.post('/api/loans/intake-automation/backfill', authenticateUser, async (req, res) => {
+    try {
+        const limit = Math.min(Number(req.body?.limit) || 50, 200);
+        const force = Boolean(req.body?.force);
+        const query = force ? {} : {
+            fileDetails: { $exists: true, $ne: [] },
+            $or: [
+                { 'applicationData.autoIntake.status': { $exists: false } },
+                { 'applicationData.autoIntake.status': { $in: ['failed', 'completed_with_warnings'] } },
+                { aiLoanOfficer: null },
+                { aiLoanOfficer: { $exists: false } },
+                { complianceReview: null },
+                { complianceReview: { $exists: false } },
+            ],
+        };
+        const loans = await LoanRequest.find(query).select('_id').sort({ createdAt: -1 }).limit(limit);
+        const ids = loans.map(l => l._id);
+        if (!ids.length) return res.json({ queued: 0, ids: [] });
+        await LoanRequest.updateMany(
+            { _id: { $in: ids } },
+            {
+                'applicationData.autoIntake': {
+                    status: 'pending',
+                    version: AUTO_INTAKE_VERSION,
+                    queuedAt: new Date(),
+                    note: 'Хуучин хүсэлтийг ажилтан үүсгэсэн хүсэлттэй ижил pipeline-д орууллаа.',
+                },
+                aiLoanOfficer: buildAiLoanOfficerStatus('pending', 'Intake automation backfill дараалалд орлоо.'),
+                complianceReview: buildComplianceStatus('running', 'Intake automation backfill дараалалд орлоо.'),
+            }
+        );
+        ids.forEach(id => runPostSubmissionAutomationInBackground(id));
+        res.json({ queued: ids.length, ids: ids.map(String) });
+    } catch (e) {
+        console.error('Intake automation backfill error:', e.message);
+        res.status(500).json({ message: 'Intake automation backfill эхлүүлэхэд алдаа гарлаа' });
+    }
 });
 
 app.post('/api/loans/:id/ai-loan-officer', authenticateUser, async (req, res) => {
