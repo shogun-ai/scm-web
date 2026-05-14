@@ -2953,7 +2953,68 @@ const parseAiJson = (text = '') => {
     return JSON.parse(cleaned);
 };
 
+const normalizeComparableText = (value = '') => String(value || '').toLowerCase();
+const LOAN_EVIDENCE_RE = /(зээл|зээлийн|zeel|loan|repay|repayment|installment|instalment|лизинг|leasing|lizing|ббсб|bb[sc]b|nbfi|lend|lending|principal|interest|үндсэн төлбөр|хүүний төлбөр)/i;
+const LOAN_CLASSIFICATION_RE = /(зээл|loan|лизинг|leasing|repayment|далд өр|өрийн ачаалал|ббсб|bb[sc]b|nbfi)/i;
+const LOAN_FALSE_POSITIVE_RE = /(зээлийн эргэн төлөлт|зээлийн төлөлт|зээл төл|loan repay|repayment|далд өр|өрийн ачаалал|ббсб|bb[sc]b|nbfi|лизинг|leasing)/i;
+
+const hasExplicitLoanEvidence = (transaction = {}) => {
+    const text = normalizeComparableText(transaction.description || '');
+    if (!text) return false;
+    return LOAN_EVIDENCE_RE.test(text);
+};
+
+const scrubLoanFalsePositives = (analysis = {}) => {
+    const transactions = safeList(analysis.transactions).map((transaction) => {
+        if (transaction?.direction === 'expense' && LOAN_CLASSIFICATION_RE.test(transaction.category || '') && !hasExplicitLoanEvidence(transaction)) {
+            return { ...transaction, category: 'Бусад ангилдаагүй' };
+        }
+        return transaction;
+    });
+    const loanTransactions = transactions.filter((transaction) => transaction.direction === 'expense' && hasExplicitLoanEvidence(transaction));
+    if (loanTransactions.length) {
+        return { ...analysis, transactions };
+    }
+
+    const stripLoanRows = (rows = [], key) => safeList(rows).filter((row) => !LOAN_CLASSIFICATION_RE.test(row?.[key] || ''));
+    const stripLoanWarnings = (items = []) => safeList(items).filter((item) => !LOAN_FALSE_POSITIVE_RE.test(item));
+    const stripLoanText = (text = '') => String(text || '')
+        .split(/(?<=[.!?。])\s+|\s*\|\s*/g)
+        .filter((part) => !LOAN_FALSE_POSITIVE_RE.test(part))
+        .join(' | ');
+    const frontSheet = {
+        ...(analysis.frontSheet || {}),
+        hasLoanRepayments: 'үгүй',
+        loanRepaymentDetails: '',
+        keyRisks: stripLoanText(analysis.frontSheet?.keyRisks),
+        mainExpensePattern: stripLoanText(analysis.frontSheet?.mainExpensePattern) || analysis.frontSheet?.mainExpensePattern || '',
+    };
+
+    return {
+        ...analysis,
+        frontSheet,
+        transactions,
+        expenseCategories: stripLoanRows(analysis.expenseCategories, 'category'),
+        notableTransactions: safeList(analysis.notableTransactions).filter((item) => !LOAN_FALSE_POSITIVE_RE.test(`${item.flagReason || ''} ${item.description || ''}`)),
+        warnings: stripLoanWarnings(analysis.warnings),
+        cashFlowBehaviour: {
+            ...(analysis.cashFlowBehaviour || {}),
+            expenseBehaviour: stripLoanText(analysis.cashFlowBehaviour?.expenseBehaviour) || analysis.cashFlowBehaviour?.expenseBehaviour || '',
+            conclusion: stripLoanText(analysis.cashFlowBehaviour?.conclusion) || analysis.cashFlowBehaviour?.conclusion || '',
+        },
+        analysisReport: {
+            ...(analysis.analysisReport || {}),
+            expenseClassification: stripLoanRows(analysis.analysisReport?.expenseClassification, 'category'),
+            behaviorPatterns: {
+                ...(analysis.analysisReport?.behaviorPatterns || {}),
+                expensePattern: stripLoanText(analysis.analysisReport?.behaviorPatterns?.expensePattern) || analysis.analysisReport?.behaviorPatterns?.expensePattern || '',
+            },
+        },
+    };
+};
+
 const normalizeStatementAnalysis = (analysis = {}) => {
+    analysis = scrubLoanFalsePositives(analysis);
     const months = Array.isArray(analysis.monthlySummary) ? analysis.monthlySummary : [];
     const sortedMonths = months
         .map(item => ({
@@ -3103,10 +3164,10 @@ const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) 
 - Нэг удаагийн орлого: тогтмол бус, онцгой шилжүүлэг
 - Тодорхойгүй орлого: эх үүсвэр тодорхойгүй
 
-ЗАРЛАГЫН АНГИЛАЛ: өдрийн хэрэглээ, түрээс/тогтмол, зээлийн эргэн төлөлт, бусад ББСБ/банк руу төлөлт, хувь хүнд шилжүүлэг, бизнесийн зардал, бэлэн мөнгоний зарлага, тодорхойгүй.
+ЗАРЛАГЫН АНГИЛАЛ: өдрийн хэрэглээ, түрээс/тогтмол, зээлийн эргэн төлөлт, бусад банк/байгууллага руу шилжүүлэг, хувь хүнд шилжүүлэг, бизнесийн зардал, бэлэн мөнгоний зарлага, тодорхойгүй.
 
 ЭРСДЭЛИЙН ДОХИО — keyRisks-д заавал тусга:
-- Олон ББСБ/банк руу тогтмол гарах шилжүүлэг → далд өрийн ачаалал
+- Зөвхөн гүйлгээний утга дээр зээл/зээлийн төлөлт/loan/repayment/лизинг/ББСБ гэж ил тод бичигдсэн үед далд өрийн ачаалал гэж тэмдэглэ
 - Байнга бэлэн мөнго авах (ATM) → санхүүгийн сахилга бат сул
 - Мөрийтэй тоглоом/betting/казино шинжтэй гүйлгээ
 - ББСБ-аас ББСБ руу эргэлдэх (давтан дахин санхүүжилт)
@@ -3125,13 +3186,13 @@ const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) 
 - spendingBehavior: зарлагын ерөнхий зан төлөвийг монголоор 1-2 өгүүлбэрээр тайлбарла (хэрэглээний хэв маяг, зарлагын тогтвортой байдал, хуримтлалын зан)
 - avgTransactionsPerMonth: transactions массиваас сарын дундаж гүйлгээний тоог тооцоол (нийт гүйлгээний тоо ÷ coveredMonths)
 - cashWithdrawalFrequency: ATM болон бэлэн мөнгоний авалтын давтамжийг тайлбарла (жишээ: "Сард 3-4 удаа, дундаж 150,000₮") — байхгүй бол ""
-- hasLoanRepayments: ББСБ/банк/хувь хүнд тогтмол гарч буй зээлийн эргэн төлөлт илэрвэл "тийм", байхгүй бол "үгүй", тодорхойгүй бол "тодорхойгүй"
-- loanRepaymentDetails: hasLoanRepayments="тийм" үед хэний зээл, хэдий хэмжээний сарын төлбөр гэдгийг тайлбарла — байхгүй бол ""
+- hasLoanRepayments: зөвхөн гүйлгээний бодит description дээр зээл, зээлийн төлөлт, loan, repayment, installment, лизинг, ББСБ/NBFI гэх тодорхой нотолгоо байвал "тийм"; ердийн банк/хувь хүн/байгууллага руу шилжүүлгийг зээл гэж таамаглаж болохгүй; нотолгоо байхгүй бол заавал "үгүй"
+- loanRepaymentDetails: hasLoanRepayments="тийм" үед зөвхөн нотолгоотой гүйлгээний огноо, тайлбар, дүнг бич — нотолгоо байхгүй бол ""
 
 АНХААРАЛ ТАТАХ ГҮЙЛГЭЭ — notableTransactions:
 - Дараах төрлийн гүйлгээнүүдийг notableTransactions-д оруул:
   1. Мөрийтэй тоглоом/betting/казино шинжтэй гүйлгээ
-  2. ББСБ/МФБ/банк руу тогтмол хэт том дүнгийн шилжүүлэг (далд зээл)
+  2. Зээл/loan/repayment/лизинг/ББСБ гэж ил тод бичигдсэн тогтмол хэт том дүнгийн төлөлт
   3. Нэг удаагийн маш том орлого (сарын дундажаас 3 дахин их)
   4. Тодорхойгүй эх үүсвэртэй том дүнгийн орлого (нотлох баримтгүй)
   5. Богино хугацаанд ATM-ээс маш олон удаа бэлэн мөнго авсан
@@ -3179,8 +3240,8 @@ const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) 
    frequency: тухайн хугацаанд хэдэн удаа орж ирсэн, totalAmount: нийт дүн, sharePercent: нийт орлогод эзлэх хувь
 
 4. expenseClassification — Зардлыг ангилах:
-   Байгууллагад зориулсан: Касс руу таталт, Захирал руу шилжүүлэг, Цалин/урьдчилгаа/бонус, Тоног төхөөрөмж/оффис, Түрээс, Маркетинг/хэвлэл, Хоол/шатахуун/аялал, Хууль/нотариат/өмгөөлөл, Коммунал/хурааmж, Зээлийн эргэн төлөлт, Бусад ангилдаагүй
-   Иргэнд зориулсан: Зээлийн эргэн төлөлт, Хоол/хэрэглээ, Коммунал/тогтмол зардал, ATM/бэлэн мөнго, Хувийн шилжүүлэг, Бусад
+   Байгууллагад зориулсан: Касс руу таталт, Захирал руу шилжүүлэг, Цалин/урьдчилгаа/бонус, Тоног төхөөрөмж/оффис, Түрээс, Маркетинг/хэвлэл, Хоол/шатахуун/аялал, Хууль/нотариат/өмгөөлөл, Коммунал/хурааmж, Зээлийн эргэн төлөлт (зөвхөн тодорхой нотолгоотой үед), Бусад ангилдаагүй
+   Иргэнд зориулсан: Зээлийн эргэн төлөлт (зөвхөн тодорхой нотолгоотой үед), Хоол/хэрэглээ, Коммунал/тогтмол зардал, ATM/бэлэн мөнго, Хувийн шилжүүлэг, Бусад
    frequency, totalAmount, sharePercent адилхан бөглөнө
 
 5. behaviorPatterns — Бусад хэв шинж:

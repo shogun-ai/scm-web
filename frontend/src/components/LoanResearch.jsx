@@ -264,6 +264,9 @@ const mergeCategoryRows = (items, nameKey, totalAmount) => {
   }));
 };
 
+const LOAN_EVIDENCE_RE = /(зээл|зээлийн|zeel|loan|repay|repayment|installment|instalment|лизинг|leasing|lizing|ббсб|bb[sc]b|nbfi|lend|lending|principal|interest|үндсэн төлбөр|хүүний төлбөр)/i;
+const hasLoanEvidence = (text = '') => LOAN_EVIDENCE_RE.test(String(text || '').toLowerCase());
+
 const mergeStatementAnalyses = (items = []) => {
   const validItems = items.filter((item) => item?.analysis);
   if (!validItems.length) return null;
@@ -317,6 +320,8 @@ const mergeStatementAnalyses = (items = []) => {
   const uniqueBanks = [...new Set(frontSheets.map((sheet) => sheet.bankName).filter(Boolean))];
   const periodStarts = frontSheets.map((sheet) => sheet.periodStart).filter(Boolean).sort();
   const periodEnds = frontSheets.map((sheet) => sheet.periodEnd).filter(Boolean).sort();
+  const loanEvidenceSheets = frontSheets.filter((sheet) => sheet.hasLoanRepayments === 'тийм' && hasLoanEvidence(sheet.loanRepaymentDetails));
+  const loanRepaymentDetails = [...new Set(loanEvidenceSheets.map((sheet) => sheet.loanRepaymentDetails).filter(Boolean))].join(' | ');
 
   return {
     frontSheet: {
@@ -339,8 +344,8 @@ const mergeStatementAnalyses = (items = []) => {
       keyRisks: [...new Set(frontSheets.map((sheet) => sheet.keyRisks).filter(Boolean))].join(' | '),
       spendingBehavior: [...new Set(frontSheets.map((sheet) => sheet.spendingBehavior).filter(Boolean))].join(' | '),
       avgTransactionsPerMonth: frontSheets.reduce((sum, s) => sum + Number(s.avgTransactionsPerMonth || 0), 0) / (frontSheets.length || 1),
-      hasLoanRepayments: frontSheets.some((s) => s.hasLoanRepayments === 'тийм') ? 'тийм' : frontSheets.every((s) => s.hasLoanRepayments === 'үгүй') ? 'үгүй' : 'тодорхойгүй',
-      loanRepaymentDetails: [...new Set(frontSheets.map((sheet) => sheet.loanRepaymentDetails).filter(Boolean))].join(' | '),
+      hasLoanRepayments: loanEvidenceSheets.length ? 'тийм' : frontSheets.every((s) => s.hasLoanRepayments === 'үгүй') ? 'үгүй' : 'тодорхойгүй',
+      loanRepaymentDetails,
       cashWithdrawalFrequency: [...new Set(frontSheets.map((sheet) => sheet.cashWithdrawalFrequency).filter(Boolean))].join(' | '),
     },
     monthlySummary,
