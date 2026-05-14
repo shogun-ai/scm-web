@@ -34,6 +34,29 @@ const STATUS_META = {
   disbursed:       { label: 'Зээл олгосон',         color: 'bg-emerald-100 text-emerald-700'},
 };
 
+const PERMISSION_RANK = { none: 0, view: 1, partial: 2, full: 3 };
+const COMMITTEE_PERMISSION_DEFAULTS = {
+  'Зөвшөөрөх': { admin: 'full', director: 'full', loan_officer: 'none', finance_manager: 'none' },
+  'Татгалзах': { admin: 'full', director: 'full', loan_officer: 'none', finance_manager: 'none' },
+  'Нөхцөлтэй зөвшөөрөх': { admin: 'full', director: 'full', loan_officer: 'none', finance_manager: 'none' },
+  'Дахин шийдэх (цуцлах)': { admin: 'full', director: 'full', loan_officer: 'none', finance_manager: 'none' },
+};
+
+const getUserRoleKeys = (user) => [...new Set([user?.role, ...(Array.isArray(user?.roles) ? user.roles : [])].filter(Boolean))];
+
+const hasCommitteePermission = (user, permissionMap, action, minimum = 'full') => {
+  const roles = getUserRoleKeys(user);
+  if (roles.includes('admin')) return true;
+  const matrixKey = `los_committee:${action}`;
+  const requiredRank = PERMISSION_RANK[minimum] ?? PERMISSION_RANK.full;
+  return roles.some((role) => {
+    const savedLevel = permissionMap?.[role]?.[matrixKey];
+    const defaultLevel = COMMITTEE_PERMISSION_DEFAULTS[action]?.[role];
+    const level = savedLevel || defaultLevel || 'none';
+    return (PERMISSION_RANK[level] || 0) >= requiredRank;
+  });
+};
+
 const PRODUCTS = {
   biz_loan: 'Бизнесийн зээл', car_purchase_loan: 'Автомашин худалдан авах',
   car_coll_loan: 'Автомашин барьцаалсан', cons_loan: 'Хэрэглээний зээл',
@@ -387,6 +410,7 @@ const LoanOrigination = ({
   navigationView,
   onNavigationViewChange,
   showApplicationSwitch = true,
+  permissionMap = {},
 }) => {
   const [activeStep, setActiveStep] = useState('application');
   const [selectedLoan, setSelectedLoan] = useState(null);
@@ -455,6 +479,12 @@ const LoanOrigination = ({
 
   // ── helpers ──────────────────────────────
   const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('loan_token') || ''}` } });
+  const committeePermissions = {
+    approve: hasCommitteePermission(user, permissionMap, 'Зөвшөөрөх'),
+    reject: hasCommitteePermission(user, permissionMap, 'Татгалзах'),
+    conditional: hasCommitteePermission(user, permissionMap, 'Нөхцөлтэй зөвшөөрөх'),
+    revert: hasCommitteePermission(user, permissionMap, 'Дахин шийдэх (цуцлах)'),
+  };
 
   const updateStatus = async (loan, status) => {
     try {
@@ -538,6 +568,10 @@ const LoanOrigination = ({
 
   const makeDecision = async (decision) => {
     if (!selectedLoan) return;
+    if (!committeePermissions[decision]) {
+      showToast('Танд зээлийн хорооны шийдвэр гаргах эрх байхгүй байна.', 'error');
+      return;
+    }
     setSavingDecision(true);
     const status = decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'resolved';
     try {
@@ -553,6 +587,10 @@ const LoanOrigination = ({
 
   const revertDecision = async (reason) => {
     if (!selectedLoan) return;
+    if (!committeePermissions.revert) {
+      showToast('Танд шийдвэр цуцлах эрх байхгүй байна.', 'error');
+      return;
+    }
     try {
       const res = await axios.put(`${apiUrl}/api/loans/${selectedLoan._id}`, { status: 'committee', approvalNote: reason }, authHeaders());
       onRequestsChange(requests.map(r => r._id === res.data._id ? res.data : r));
@@ -1093,6 +1131,7 @@ const LoanOrigination = ({
             savingDecision={savingDecision}
             makeDecision={makeDecision}
             revertDecision={revertDecision}
+            canDecide={committeePermissions}
             onGoAssessment={() => setActiveStep('assessment')}
             labels={text.ai}
             complianceLabels={COMPLIANCE_TEXT[language] || COMPLIANCE_TEXT.mn}
@@ -1503,7 +1542,7 @@ const ANALYST_DECISION_LABELS = {
   reject: 'Татгалзах',
 };
 
-const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, setApprovalNote, savingDecision, makeDecision, revertDecision, onGoAssessment, labels = UI_TEXT.mn.ai, complianceLabels = COMPLIANCE_TEXT.mn, onRunAi, aiLoading = false, onRunCompliance, complianceLoading = false }) => {
+const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, setApprovalNote, savingDecision, makeDecision, revertDecision, canDecide = {}, onGoAssessment, labels = UI_TEXT.mn.ai, complianceLabels = COMPLIANCE_TEXT.mn, onRunAi, aiLoading = false, onRunCompliance, complianceLoading = false }) => {
   const nfmt = v => new Intl.NumberFormat('mn-MN').format(Math.round(v || 0));
   const [revertMode, setRevertMode] = useState(false);
   const [revertReason, setRevertReason] = useState('');
@@ -1636,6 +1675,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
   ];
 
   const isDecided = ['approved', 'rejected', 'resolved', 'disbursed'].includes(loan.status);
+  const hasAnyDecisionPermission = !!(canDecide.approve || canDecide.conditional || canDecide.reject);
 
   const decidedMeta = {
     approved:  { label: 'Зөвшөөрөгдсөн',      cls: 'bg-green-50 border-green-400 text-green-700',   icon: <ThumbsUp size={20} /> },
@@ -2464,7 +2504,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
             </div>
 
             {/* Re-decide — not available after disbursement */}
-            {loan.status !== 'disbursed' && (
+            {loan.status !== 'disbursed' && canDecide.revert && (
               revertMode ? (
                 <div className="border-2 border-amber-300 bg-amber-50 rounded-2xl p-4 space-y-3">
                   <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Дахин шийдэх шалтгаан</p>
@@ -2503,6 +2543,10 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
               )
             )}
           </div>
+        ) : !hasAnyDecisionPermission ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+            Танд зээлийн хорооны шийдвэр гаргах эрх байхгүй байна.
+          </div>
         ) : (
           <>
             <textarea
@@ -2512,7 +2556,8 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
               placeholder="Шийдвэрийн тайлбар, нөхцөл болон тэмдэглэл..."
               className="w-full p-3 border rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C] resize-none"
             />
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-3 md:grid-cols-3">
+              {canDecide.approve && (
               <button
                 onClick={() => makeDecision('approve')}
                 disabled={savingDecision}
@@ -2521,6 +2566,8 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
                 {savingDecision ? <Loader2 size={16} className="animate-spin" /> : <ThumbsUp size={16} />}
                 Зөвшөөрөх
               </button>
+              )}
+              {canDecide.conditional && (
               <button
                 onClick={() => makeDecision('conditional')}
                 disabled={savingDecision}
@@ -2529,6 +2576,8 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
                 {savingDecision ? <Loader2 size={16} className="animate-spin" /> : <AlertCircle size={16} />}
                 Нөхцөлтэй
               </button>
+              )}
+              {canDecide.reject && (
               <button
                 onClick={() => makeDecision('reject')}
                 disabled={savingDecision}
@@ -2537,6 +2586,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
                 {savingDecision ? <Loader2 size={16} className="animate-spin" /> : <ThumbsDown size={16} />}
                 Татгалзах
               </button>
+              )}
             </div>
           </>
         )}

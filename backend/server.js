@@ -1032,6 +1032,47 @@ const requireAdmin = (req, res, next) => {
     next();
 };
 
+const PERMISSION_RANK = { none: 0, view: 1, partial: 2, full: 3 };
+const COMMITTEE_PERMISSION_DEFAULTS = {
+    'Зөвшөөрөх': { admin: 'full', director: 'full', loan_officer: 'none', finance_manager: 'none' },
+    'Татгалзах': { admin: 'full', director: 'full', loan_officer: 'none', finance_manager: 'none' },
+    'Нөхцөлтэй зөвшөөрөх': { admin: 'full', director: 'full', loan_officer: 'none', finance_manager: 'none' },
+    'Дахин шийдэх (цуцлах)': { admin: 'full', director: 'full', loan_officer: 'none', finance_manager: 'none' },
+};
+
+const getUserRoleKeys = (user) => [...new Set([user?.role, ...(Array.isArray(user?.roles) ? user.roles : [])].filter(Boolean))];
+
+const getSavedPermissionMap = async () => {
+    const doc = await SiteConfig.findOne({ key: 'permissions_matrix' });
+    if (!doc?.value) return {};
+    try { return JSON.parse(doc.value) || {}; } catch { return {}; }
+};
+
+const userHasPermission = async (user, sectionKey, action, minimum = 'full') => {
+    const roles = getUserRoleKeys(user);
+    if (roles.includes('admin')) return true;
+    const saved = await getSavedPermissionMap();
+    const matrixKey = `${sectionKey}:${action}`;
+    const requiredRank = PERMISSION_RANK[minimum] ?? PERMISSION_RANK.full;
+
+    return roles.some((role) => {
+        const savedLevel = saved?.[role]?.[matrixKey];
+        const defaultLevel = sectionKey === 'los_committee' ? COMMITTEE_PERMISSION_DEFAULTS[action]?.[role] : undefined;
+        const level = savedLevel || defaultLevel || 'none';
+        return (PERMISSION_RANK[level] || 0) >= requiredRank;
+    });
+};
+
+const getCommitteeDecisionAction = (nextStatus, currentStatus) => {
+    if (nextStatus === 'approved') return 'Зөвшөөрөх';
+    if (nextStatus === 'rejected') return 'Татгалзах';
+    if (nextStatus === 'resolved') return 'Нөхцөлтэй зөвшөөрөх';
+    if (nextStatus === 'committee' && ['approved', 'rejected', 'resolved', 'disbursed'].includes(currentStatus)) {
+        return 'Дахин шийдэх (цуцлах)';
+    }
+    return null;
+};
+
 if (!MONGO_URI) {
     throw new Error('MONGO_URI or MONGODB_URI is required');
 }
@@ -1794,8 +1835,8 @@ app.post('/api/auth/login', async (req, res) => {
             console.log('2FA verified:', verified);
             if (!verified) return res.status(401).json({ message: '2FA error' });
         }
-        const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-        res.json({ token, user: { id: user._id, name: user.name, role: user.role } });
+        const token = jwt.sign({ id: user._id, role: user.role, roles: user.roles || [] }, JWT_SECRET, { expiresIn: '1d' });
+        res.json({ token, user: { id: user._id, name: user.name, role: user.role, roles: user.roles || [] } });
     } catch (e) { res.status(500).send("Error"); }
 });
 
@@ -2019,6 +2060,17 @@ app.get('/api/loans', authenticateUser, async (req, res) => { try { res.json(awa
 app.put('/api/loans/:id', authenticateUser, async (req, res) => {
     try {
         const { adminUser, ...updateData } = req.body;
+        if (Object.prototype.hasOwnProperty.call(updateData, 'status')) {
+            const existingLoan = await LoanRequest.findById(req.params.id).select('status');
+            if (!existingLoan) return res.status(404).json({ message: 'Loan not found' });
+            const committeeAction = getCommitteeDecisionAction(updateData.status, existingLoan.status);
+            if (committeeAction) {
+                const allowed = await userHasPermission(req.user, 'los_committee', committeeAction, 'full');
+                if (!allowed) {
+                    return res.status(403).json({ message: 'Энэ үйлдлийг хийх эрхгүй байна.' });
+                }
+            }
+        }
         let updated = await LoanRequest.findByIdAndUpdate(req.params.id, updateData, { new: true });
         if (updated && (
             Object.prototype.hasOwnProperty.call(updateData, 'applicationData') ||
@@ -4877,7 +4929,7 @@ if (fs.existsSync(frontendDist)) {
 // ─────────────────────────────────────────────
 // PERMISSIONS MATRIX CONFIG
 // ─────────────────────────────────────────────
-app.get('/api/config/permissions', authenticateUser, requireAdmin, async (req, res) => {
+app.get('/api/config/permissions', authenticateUser, async (req, res) => {
   try {
     const doc = await SiteConfig.findOne({ key: 'permissions_matrix' });
     res.json(doc ? JSON.parse(doc.value) : {});

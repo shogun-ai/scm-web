@@ -43,6 +43,7 @@ export default function Dashboard({ token, user, onLogout }) {
   const [navigationView, setNavigationView] = useState('requests');
   const [requests, setRequests] = useState([]);
   const [usersList, setUsersList] = useState([]);
+  const [permissionMap, setPermissionMap] = useState({});
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [requestsError, setRequestsError] = useState('');
   const text = UI_TEXT[language] || UI_TEXT.mn;
@@ -91,9 +92,19 @@ export default function Dashboard({ token, user, onLogout }) {
     } catch {}
   }
 
+  async function loadPermissions() {
+    const effectiveToken = token || localStorage.getItem('loan_token') || '';
+    if (!effectiveToken) return;
+    try {
+      const res = await axios.get(`${API}/api/config/permissions`, authHeaders(effectiveToken));
+      setPermissionMap(res.data || {});
+    } catch {}
+  }
+
   useEffect(() => {
     loadRequests();
     loadUsers();
+    loadPermissions();
   }, [token]);
 
   useEffect(() => {
@@ -206,6 +217,7 @@ export default function Dashboard({ token, user, onLogout }) {
               requests={requests}
               onRequestsChange={loadRequests}
               usersList={usersList}
+              permissionMap={permissionMap}
               language={language}
               theme={theme}
               navigationView={navigationView}
