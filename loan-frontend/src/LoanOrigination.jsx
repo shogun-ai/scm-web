@@ -1508,6 +1508,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
   const [revertMode, setRevertMode] = useState(false);
   const [revertReason, setRevertReason] = useState('');
   const [reverting, setReverting] = useState(false);
+  const printContentRef = useRef(null);
 
   if (loadingResearch) return (
     <div className="flex items-center justify-center py-24 bg-white border rounded-2xl gap-3 text-slate-400">
@@ -1653,6 +1654,68 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
   };
 
   const printCommittee = () => {
+    if (printContentRef.current) {
+      const clone = printContentRef.current.cloneNode(true);
+
+      clone.querySelectorAll('textarea').forEach((textarea) => {
+        const value = textarea.value || textarea.getAttribute('placeholder') || '';
+        const div = document.createElement('div');
+        div.textContent = value;
+        div.style.cssText = 'border:1px solid #cbd5e1;border-radius:12px;padding:12px;font-size:12px;line-height:1.6;color:#334155;white-space:pre-wrap;background:#f8fafc;';
+        textarea.replaceWith(div);
+      });
+      clone.querySelectorAll('button,[data-print-hidden]').forEach((el) => el.remove());
+
+      const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+        .map((node) => node.outerHTML)
+        .join('\n');
+      const today = new Date().toLocaleDateString('mn-MN', { year:'numeric', month:'long', day:'numeric' });
+      const safeDisplayName = String(displayName ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const w = window.open('', '_blank', 'width=1100,height=800');
+      if (!w) return;
+      w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+        <title>Зээлийн хорооны дүгнэлт — ${safeDisplayName}</title>
+        ${styles}
+        <style>
+          *{box-sizing:border-box}
+          body{margin:0;background:#fff;color:#1e293b;font-family:'Segoe UI',Arial,sans-serif}
+          @page{size:A4;margin:14mm}
+          @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.print-page{box-shadow:none!important;margin:0!important;width:auto!important}.print-avoid-break{break-inside:avoid}}
+          .print-page{max-width:980px;margin:0 auto;padding:24px;background:#fff}
+          .print-header{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #003B5C}
+          .print-brand{font-size:10px;font-weight:900;color:#00A651;text-transform:uppercase;letter-spacing:.16em}
+          .print-title{font-size:24px;font-weight:900;color:#003B5C;line-height:1.1;margin-top:2px}
+          .print-meta{font-size:12px;font-weight:700;color:#64748b;margin-top:5px}
+          .print-signatures{margin-top:40px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px}
+          .print-signature{text-align:center;border-top:1px solid #cbd5e1;padding-top:8px;font-size:11px;font-weight:700;color:#64748b}
+          .print-page button,.print-page .no-print{display:none!important}
+          .print-page .fixed,.print-page .sticky{position:static!important}
+          .print-page .shadow-2xl,.print-page .shadow-xl,.print-page .shadow-lg,.print-page .shadow-md,.print-page .shadow-sm{box-shadow:none!important}
+        </style>
+      </head><body>
+        <main class="print-page">
+          <header class="print-header">
+            <div>
+              <div class="print-brand">Solongo Capital</div>
+              <div class="print-title">Зээлийн хорооны дүгнэлт</div>
+              <div class="print-meta">Огноо: ${today}</div>
+            </div>
+            <div style="text-align:right">
+              <div class="print-meta">Зээлдэгч</div>
+              <div style="font-size:18px;font-weight:900;color:#003B5C">${safeDisplayName}</div>
+            </div>
+          </header>
+          <section class="space-y-5">${clone.innerHTML}</section>
+          <footer class="print-signatures">
+            ${['Зээлийн ажилтан','Хорооны гишүүн','Хорооны дарга'].map(role => `<div><div class="print-signature">${role}</div><div style="text-align:center;font-size:10px;color:#cbd5e1;margin-top:3px">Гарын үсэг / огноо</div></div>`).join('')}
+          </footer>
+        </main>
+      </body></html>`);
+      w.document.close();
+      w.onload = () => { w.focus(); w.print(); };
+      return;
+    }
+
     const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const fmtM = v => new Intl.NumberFormat('mn-MN').format(Math.round(v || 0));
     const today = new Date().toLocaleDateString('mn-MN', { year:'numeric', month:'long', day:'numeric' });
@@ -2083,6 +2146,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
         </div>
       </div>
 
+      <div ref={printContentRef} className="space-y-5">
       {/* Hero — grade + score + borrower */}
       <AiLoanOfficerCard loan={loan} labels={labels} onRun={onRunAi} loading={aiLoading} />
       <ComplianceReviewCard
@@ -2476,6 +2540,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
             </div>
           </>
         )}
+      </div>
       </div>
     </div>
   );
