@@ -1715,6 +1715,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     const grtrs = (f.guarantors || []);
     const stmtFs = displayedStatementAnalysis?.frontSheet || {};
     const stmtAccounts = displayedStatementAnalysis?.accounts || [];
+    const stmtReport = displayedStatementAnalysis?.analysisReport || {};
+    const stmtMonthly = displayedStatementAnalysis?.monthlySummary || [];
+    const stmtNotable = displayedStatementAnalysis?.notableTransactions || [];
     const cbRef = creditRefAnalysis || null;
     const cbLoans = cbRef?.primaryLoans || cbRef?.loans || [];
     const si = siAnalysis || null;
@@ -1763,6 +1766,33 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
         </div>
       </div>`;
     };
+    const listHtml = (items = []) => (items || []).length
+      ? `<ul style="margin:0;padding-left:16px">${items.map(item => `<li style="margin-bottom:3px">${esc(typeof item === 'string' ? item : JSON.stringify(item))}</li>`).join('')}</ul>`
+      : '—';
+    const summaryRowsHtml = (rows = []) => rows.length ? `
+      <table style="margin-top:6px"><thead><tr><th>Үзүүлэлт</th><th>Дүн</th><th>Дүгнэлт</th></tr></thead><tbody>
+        ${rows.map((row, i) => `<tr style="${rowStyle(i)}">
+          <td>${esc(row.metric || row.label || row.name || '-')}</td>
+          <td>${esc(row.value ?? row.amount ?? '-')}</td>
+          <td>${esc(row.comment || row.assessment || row.conclusion || '-')}</td>
+        </tr>`).join('')}
+      </tbody></table>` : '';
+    const classificationRowsHtml = (rows = [], positive = true) => rows.length ? `
+      <table style="margin-top:6px"><thead><tr><th>Ангилал</th><th style="text-align:right">Дүн</th><th>Дүгнэлт</th></tr></thead><tbody>
+        ${rows.map((row, i) => `<tr style="${rowStyle(i)}">
+          <td>${esc(row.category || row.name || '-')}</td>
+          <td style="text-align:right" class="${positive ? 'positive' : 'negative'}">${formatMoney(row.totalAmount || row.amount || 0)}</td>
+          <td>${esc(row.assessment || row.comment || row.conclusion || '-')}</td>
+        </tr>`).join('')}
+      </tbody></table>` : '';
+    const keyMetricsHtml = (metrics = []) => metrics.length ? `
+      <table style="margin-top:6px"><thead><tr><th>Үзүүлэлт</th><th>Утга</th><th>Үнэлгээ</th></tr></thead><tbody>
+        ${metrics.map((row, i) => `<tr style="${rowStyle(i)}">
+          <td>${esc(row.metric || row.label || '-')}</td>
+          <td>${esc(row.value ?? '-')}</td>
+          <td>${esc(row.assessment || row.comment || '-')}</td>
+        </tr>`).join('')}
+      </tbody></table>` : '';
 
     printWindow.document.write(`
       <html>
@@ -1928,6 +1958,38 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           </tbody></table>` : ''}
           </div>` : ''}
 
+          ${(stmtReport.summaryRows?.length || stmtReport.incomeClassification?.length || stmtReport.expenseClassification?.length || stmtReport.behaviorPatterns || stmtNotable.length || stmtMonthly.length) ? `
+          <div class="no-break" style="margin-top:10px">
+            <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Дансны хуулгын дэлгэрэнгүй дүгнэлт</div>
+            ${summaryRowsHtml(stmtReport.summaryRows || [])}
+            ${classificationRowsHtml(stmtReport.incomeClassification || [], true)}
+            ${classificationRowsHtml(stmtReport.expenseClassification || [], false)}
+            ${stmtReport.behaviorPatterns ? `
+              <table style="margin-top:6px"><tbody>
+                <tr><td class="label-cell">Орлогын хэв маяг</td><td>${esc(stmtReport.behaviorPatterns.incomePattern || '-')}</td><td class="label-cell">Зарлагын хэв маяг</td><td>${esc(stmtReport.behaviorPatterns.expensePattern || '-')}</td></tr>
+                <tr><td class="label-cell">Цалингийн мөчлөг</td><td>${esc(stmtReport.behaviorPatterns.payrollCycle || '-')}</td><td class="label-cell">Кассын хамаарал</td><td>${esc(stmtReport.behaviorPatterns.cashDependency || '-')}</td></tr>
+                <tr><td class="label-cell">Owner-related flow</td><td>${esc(stmtReport.behaviorPatterns.ownerRelatedFlow || '-')}</td><td class="label-cell">Cash buffer</td><td>${esc(stmtReport.behaviorPatterns.cashBuffer || '-')}</td></tr>
+              </tbody></table>` : ''}
+            ${stmtNotable.length ? `
+              <table style="margin-top:6px"><thead><tr><th>Огноо</th><th>Тайлбар</th><th style="text-align:right">Дүн</th><th>Дүгнэлт</th></tr></thead><tbody>
+                ${stmtNotable.slice(0, 20).map((tx, i) => `<tr style="${rowStyle(i)}">
+                  <td>${esc(tx.date || '-')}</td>
+                  <td>${esc(tx.description || tx.counterparty || '-')}</td>
+                  <td style="text-align:right" class="${tx.direction === 'income' ? 'positive' : 'negative'}">${formatMoney(tx.amount || 0)}</td>
+                  <td>${esc(tx.reason || tx.note || tx.assessment || '-')}</td>
+                </tr>`).join('')}
+              </tbody></table>` : ''}
+            ${stmtMonthly.length ? `
+              <table style="margin-top:6px"><thead><tr><th>Сар</th><th style="text-align:right">Орлого</th><th style="text-align:right">Зарлага</th><th style="text-align:right">Цэвэр урсгал</th></tr></thead><tbody>
+                ${stmtMonthly.map((m, i) => `<tr style="${rowStyle(i)}">
+                  <td>${esc(m.month || m.period || '-')}</td>
+                  <td style="text-align:right" class="positive">${formatMoney(m.income || 0)}</td>
+                  <td style="text-align:right" class="negative">${formatMoney(m.expense || 0)}</td>
+                  <td style="text-align:right;font-weight:600;color:${((m.income || 0) - (m.expense || 0)) >= 0 ? '#15803d' : '#b91c1c'}">${formatMoney((m.income || 0) - (m.expense || 0))}</td>
+                </tr>`).join('')}
+              </tbody></table>` : ''}
+          </div>` : ''}
+
           ${si?.averageSalary > 0 ? `
           <div class="no-break" style="margin-top:10px">
           <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Нийгмийн даатгал</div>
@@ -1938,6 +2000,15 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
             </tr>
             ${si.employerName ? `<tr><td class="label-cell">Ажил олгогч</td><td colspan="3">${esc(si.employerName)}</td></tr>` : ''}
           </tbody></table>
+          ${(si.analysisReport || si.summary || si.incomeAnalysis || si.cashFlowAnalysis || si.creditRecommendation || (si.riskFlags || []).length || (si.keyMetrics || []).length) ? `
+            <table style="margin-top:6px"><tbody>
+              ${si.summary ? `<tr><td class="label-cell">Хураангуй</td><td colspan="3">${esc(si.summary)}</td></tr>` : ''}
+              ${si.incomeAnalysis ? `<tr><td class="label-cell">Орлогын шинжилгээ</td><td colspan="3">${esc(si.incomeAnalysis)}</td></tr>` : ''}
+              ${si.cashFlowAnalysis ? `<tr><td class="label-cell">Мөнгөн урсгалын шинж</td><td colspan="3">${esc(si.cashFlowAnalysis)}</td></tr>` : ''}
+              ${si.creditRecommendation ? `<tr><td class="label-cell">Зээлийн санал</td><td colspan="3">${esc(si.creditRecommendation)}</td></tr>` : ''}
+              ${(si.riskFlags || []).length ? `<tr><td class="label-cell">Эрсдэл</td><td colspan="3">${listHtml(si.riskFlags)}</td></tr>` : ''}
+            </tbody></table>
+            ${keyMetricsHtml(si.keyMetrics || [])}` : ''}
           </div>` : ''}
 
           <!-- ══════════════ 3. ЗЭЭЛИЙН МЭД. ЛАВЛАГАА ══════════════ -->
