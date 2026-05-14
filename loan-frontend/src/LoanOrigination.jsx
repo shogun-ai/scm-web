@@ -1811,6 +1811,110 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       <div style="font-size:11px;color:#64748b;margin-top:5px">${esc(ai.note || aiStatusLabel)}</div>
     </div>`;
 
+    const frontSheet = outputs.frontSheet || {};
+    const repaymentTypeLabel = {
+      equal: 'Тэнцүү төлөлт',
+      declining: 'Үндсэн төлбөр тэнцүү',
+      interest_only_bullet: 'Хүү төлөөд эцэст нь үндсэн дүн',
+    }[frontSheet.repaymentType || b.repaymentType] || (frontSheet.repaymentType || b.repaymentType || '-');
+    const loanTerms = [
+      ['Бүтээгдэхүүн', PRODUCTS[loan.selectedProduct || b.sourceProduct] || loan.selectedProduct || b.sourceProduct || '-'],
+      ['Зориулалт', frontSheet.purpose || b.purpose || loan.purpose || '-'],
+      ['Эргэн төлөлтийн эх үүсвэр', b.repaymentSource || loan.repaymentSource || '-'],
+      ['Зээл эхлэх огноо', frontSheet.loanStartDate || b.loanStartDate || '-'],
+      ['Төлөлт эхлэх огноо', frontSheet.repaymentStartDate || b.repaymentStartDate || '-'],
+      ['Төлөлтийн төрөл', repaymentTypeLabel],
+    ];
+    const loanTermsHtml = `
+    <div class="section">
+      <div class="section-title">Зээлийн нөхцөл ба эх үүсвэр</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+        ${loanTerms.map(([l,v])=>`<div style="border:1px solid #e2e8f0;border-radius:10px;padding:9px 11px;background:#f8fafc">
+          <div style="font-size:9px;font-weight:800;color:#94a3b8;text-transform:uppercase;margin-bottom:3px">${esc(l)}</div>
+          <div style="font-size:11.5px;font-weight:800;color:#1e293b;line-height:1.45">${esc(v)}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+    const insuranceHtml = (frontSheet.hasInsurance || frontSheet.insuranceAmount || ie.totalInsurance) ? `
+    <div class="section">
+      <div class="section-title">Даатгал ба төлөлтийн тооцоо</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        ${[
+          ['Даатгалын дүн', fmtM(frontSheet.insuranceAmount || 0) + ' ₮'],
+          ['Даатгалын горим', frontSheet.insurancePaymentMode === 'monthly' ? 'Сараар' : 'Жилээр'],
+          ['Нийт даатгал', fmtM(ie.totalInsurance || 0) + ' ₮'],
+          ['Сарын дундаж даатгал', fmtM(ie.averageInsuranceMonthly || 0) + ' ₮'],
+        ].map(([l,v])=>`<div style="border:1px solid #e2e8f0;border-radius:10px;padding:9px 10px;background:#fff">
+          <div style="font-size:9px;font-weight:800;color:#94a3b8;text-transform:uppercase;margin-bottom:3px">${esc(l)}</div>
+          <div style="font-size:12px;font-weight:900;color:#003B5C">${esc(v)}</div>
+        </div>`).join('')}
+      </div>
+    </div>` : '';
+    const amortizationRows = Array.isArray(outputs.amortizationRows) ? outputs.amortizationRows : [];
+    const amortizationHtml = amortizationRows.length ? `
+    <div class="section">
+      <div class="section-title">Төлөлтийн хуваарийн товч</div>
+      <table>
+        <thead><tr><th>Сар</th><th>Огноо</th><th style="text-align:right">Төлбөр</th><th style="text-align:right">Үндсэн</th><th style="text-align:right">Хүү</th><th style="text-align:right">Үлдэгдэл</th></tr></thead>
+        <tbody>
+          ${amortizationRows.slice(0, 6).map(row => `<tr style="border-bottom:1px solid #f1f5f9">
+            <td style="padding:7px 10px;font-size:10.5px;font-weight:700">${esc(row.month || row.period || '-')}</td>
+            <td style="padding:7px 10px;font-size:10.5px">${esc(row.date || '-')}</td>
+            <td style="padding:7px 10px;font-size:10.5px;text-align:right;font-weight:800">${fmtM(row.payment)} ₮</td>
+            <td style="padding:7px 10px;font-size:10.5px;text-align:right">${fmtM(row.principal)} ₮</td>
+            <td style="padding:7px 10px;font-size:10.5px;text-align:right">${fmtM(row.interest)} ₮</td>
+            <td style="padding:7px 10px;font-size:10.5px;text-align:right">${fmtM(row.closingBalance ?? row.balance)} ₮</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <div style="font-size:10px;color:#64748b;margin-top:6px">Эхний ${Math.min(6, amortizationRows.length)} сар харуулав. Нийт хугацаа: ${esc(frontSheet.termMonths || b.termMonths || amortizationRows.length)} сар.</div>
+    </div>` : '';
+    const compliance = loan.complianceReview || {};
+    const complianceChecks = Array.isArray(compliance.checks) ? compliance.checks : [];
+    const complianceActions = Array.isArray(compliance.requiredActions) ? compliance.requiredActions : [];
+    const complianceMissing = Array.isArray(compliance.missingDocuments) ? compliance.missingDocuments : [];
+    const complianceSources = Array.isArray(compliance.policySources) ? compliance.policySources : [];
+    const complianceOverall = complianceLabels.overall?.[compliance.overallStatus] || compliance.overallStatus || '-';
+    const complianceStatus = complianceLabels.statuses?.[compliance.status] || compliance.status || complianceLabels.statuses?.not_started || '-';
+    const complianceSection = `
+    <div class="section" style="border:1px solid #cbd5e1;border-radius:14px;padding:14px 16px;background:#f8fafc">
+      <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:10px">
+        <div>
+          <div style="font-size:10px;font-weight:900;color:#003B5C;text-transform:uppercase;letter-spacing:.08em">${esc(complianceLabels.cardTitle)}</div>
+          <div style="font-size:10px;color:#64748b;margin-top:3px">${esc(compliance.generatedAt ? new Date(compliance.generatedAt).toLocaleString('mn-MN') : (compliance.note || complianceLabels.defaultSubtitle))}</div>
+        </div>
+        <div style="font-size:10px;font-weight:900;color:#0f766e;background:#ccfbf1;border:1px solid #99f6e4;border-radius:99px;padding:4px 10px">${esc(complianceStatus)}</div>
+      </div>
+      <div style="border:1px solid #e2e8f0;background:#fff;border-radius:10px;padding:10px;margin-bottom:10px">
+        <div style="font-size:9px;font-weight:900;color:#64748b;text-transform:uppercase;margin-bottom:4px">${esc(complianceLabels.summary)}</div>
+        <div style="font-size:11.5px;font-weight:800;color:#1e293b;line-height:1.55">${esc(compliance.summary || compliance.note || complianceLabels.noReview)}</div>
+        <div style="font-size:10px;font-weight:900;color:#003B5C;margin-top:5px">${esc(complianceOverall)}</div>
+      </div>
+      ${complianceChecks.length ? `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px">
+        ${complianceChecks.slice(0,4).map(check => `<div style="border:1px solid #e2e8f0;border-radius:9px;padding:8px;background:#fff">
+          <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px">
+            <div style="font-size:9px;font-weight:900;color:#475569;text-transform:uppercase">${esc(check.area || '-')}</div>
+            <div style="font-size:9px;font-weight:900;color:#64748b">${esc(check.severity || check.status || '')}</div>
+          </div>
+          <div style="font-size:10.5px;font-weight:800;color:#1e293b;line-height:1.45">${esc(check.finding || '-')}</div>
+          ${check.policyClause ? `<div style="font-size:9.5px;color:#003B5C;font-weight:800;margin-top:4px">${esc(complianceLabels.policyClause)}: ${esc(check.policyClause)}</div>` : ''}
+          ${check.recommendation ? `<div style="font-size:9.5px;color:#64748b;line-height:1.4;margin-top:3px">${esc(check.recommendation)}</div>` : ''}
+        </div>`).join('')}
+      </div>` : ''}
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+        <div style="border:1px solid #e2e8f0;border-radius:9px;padding:8px;background:#fff">
+          <div style="font-size:9px;font-weight:900;color:#64748b;text-transform:uppercase;margin-bottom:5px">${esc(complianceLabels.requiredActions)}</div>
+          ${aiList(complianceActions)}
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:9px;padding:8px;background:#fff">
+          <div style="font-size:9px;font-weight:900;color:#64748b;text-transform:uppercase;margin-bottom:5px">${esc(complianceLabels.missingDocuments)}</div>
+          ${aiList(complianceMissing)}
+        </div>
+      </div>
+      ${complianceSources.length ? `<div style="font-size:9.5px;color:#64748b;margin-top:8px">${esc(complianceLabels.source)}: ${esc(complianceSources.slice(0,3).map(p => p.title).join(', '))}${complianceSources.length > 3 ? ` +${complianceSources.length - 3}` : ''}</div>` : ''}
+      ${compliance.disclaimer ? `<div style="font-size:9.5px;color:#64748b;margin-top:8px">${esc(compliance.disclaimer)}</div>` : ''}
+    </div>`;
+
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
     <title>Зээлийн хорооны дүгнэлт — ${esc(displayName)}</title>
     <style>
@@ -1863,6 +1967,8 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     </div>
 
     ${aiSection}
+    ${complianceSection}
+    ${loanTermsHtml}
 
     <!-- KPI -->
     <div class="section">
@@ -1888,12 +1994,15 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
         </div>`).join('')}
       </div>
     </div>
+    ${insuranceHtml}
+    ${amortizationHtml}
 
     <!-- COLLATERAL -->
     <div class="section">
-      <div class="section-title">Барьцаа хөрөнгө ${col.totalValue?`· Нийт: ${fmtM(col.totalValue)} ₮`:''}${col.ltvRatio!=null?` · LTV: ${col.ltvRatio.toFixed(1)}%`:''}</div>
+      <div class="section-title">Барьцаа хөрөнгө ${col.combinedValue?`· Нийлсэн: ${fmtM(col.combinedValue)} ₮`:col.totalValue?`· Нийт: ${fmtM(col.totalValue)} ₮`:''}${col.combinedValue && b.requestedAmount?` · LTV: ${(Number(b.requestedAmount || 0) / Number(col.combinedValue || 1) * 100).toFixed(1)}%`:col.ltvRatio!=null?` · LTV: ${col.ltvRatio.toFixed(1)}%`:''}</div>
       <table><thead><tr><th>#</th><th>Төрөл</th><th>Тайлбар</th><th>Дугаар</th><th>Өмчлөгч</th><th style="text-align:right">Үнэлгээ</th></tr></thead>
       <tbody>${collHtml}</tbody></table>
+      ${col.guarantorCollateralValue ? `<div style="font-size:10.5px;color:#64748b;margin-top:6px">Батлан даагчийн барьцаа: <strong>${fmtM(col.guarantorCollateralValue)} ₮</strong></div>` : ''}
     </div>
 
     ${guarantors.length?`<!-- GUARANTORS -->
