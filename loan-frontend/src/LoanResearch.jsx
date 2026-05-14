@@ -1716,6 +1716,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       : (studyRequests || []).find(req => String(req._id) === String(sourceLoanId)) || prefillRequest || {};
     const aiAgent = sourceLoan.aiLoanOfficer || f.aiLoanOfficer || null;
     const complianceAgent = sourceLoan.complianceReview || f.complianceReview || null;
+    const requestFiles = Array.isArray(f.requestFiles) ? f.requestFiles : [];
+    const requestFileUrls = Array.isArray(f.requestFileUrls) ? f.requestFileUrls : [];
     const isOrg = f.borrowerType === 'organization';
     const colls = displayedOutputs.collateral?.items || [];
     const grtrs = (f.guarantors || []);
@@ -1799,6 +1801,10 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           <td>${esc(row.assessment || row.comment || '-')}</td>
         </tr>`).join('')}
       </tbody></table>` : '';
+    const fileNameOf = (file, index) => {
+      if (typeof file === 'string') return file.split('?')[0].split('/').pop() || `Файл ${index + 1}`;
+      return file.fileName || file.name || file.originalname || String(file.fileUrl || file.url || '').split('?')[0].split('/').pop() || `Файл ${index + 1}`;
+    };
     const agentStatusLabel = (status) => ({
       not_started: 'Эхлээгүй',
       pending: 'Хүлээгдэж байна',
@@ -1881,6 +1887,35 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           </tr>`).join('')}
         </tbody></table>` : ''}
         ${complianceAgent.disclaimer ? `<div style="font-size:10px;color:#64748b;margin-top:6px">${esc(complianceAgent.disclaimer)}</div>` : ''}
+      </div>` : '';
+    const extraMaterialsHtml = (ficoAnalysis || similarLoans?.length || requestFiles.length || requestFileUrls.length || sourceLoan?._id) ? `
+      <div class="no-break" style="margin-top:10px">
+        <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Нэмэлт материал</div>
+        <table><tbody>
+          ${sourceLoan?._id ? `<tr>
+            <td class="label-cell">Эх хүсэлтийн ID</td><td>${esc(sourceLoan._id)}</td>
+            <td class="label-cell">Үүссэн огноо</td><td>${sourceLoan.createdAt ? esc(new Date(sourceLoan.createdAt).toLocaleString('mn-MN')) : '—'}</td>
+          </tr>` : ''}
+          ${sourceLoan?.assignee?.name ? `<tr><td class="label-cell">Хариуцагч</td><td colspan="3">${esc(sourceLoan.assignee.name)}</td></tr>` : ''}
+          ${sourceLoan?.applicationData?.autoIntake ? `<tr>
+            <td class="label-cell">Автомат уншилт</td><td colspan="3">${esc([sourceLoan.applicationData.autoIntake.status, sourceLoan.applicationData.autoIntake.completedAt ? new Date(sourceLoan.applicationData.autoIntake.completedAt).toLocaleString('mn-MN') : ''].filter(Boolean).join(' · '))}</td>
+          </tr>` : ''}
+          ${ficoAnalysis ? `<tr>
+            <td class="label-cell">FICO/Sainscore</td><td style="font-weight:700;color:#003B5C">${esc(ficoAnalysis.ficoScore || ficoAnalysis.score || '—')} ${ficoAnalysis.scoreCategory ? '· ' + esc(ficoAnalysis.scoreCategory) : ''}</td>
+            <td class="label-cell">Идэвхтэй үлдэгдэл</td><td>${ficoAnalysis.totalActiveBalance ? formatMoney(ficoAnalysis.totalActiveBalance) : '—'}</td>
+          </tr>` : ''}
+          ${ficoAnalysis?.scoreReasons?.length ? `<tr><td class="label-cell">Score reasons</td><td colspan="3">${listHtml(ficoAnalysis.scoreReasons)}</td></tr>` : ''}
+          ${requestFiles.length || requestFileUrls.length ? `<tr><td class="label-cell">Хавсаргасан файлууд</td><td colspan="3">${listHtml([...requestFiles, ...requestFileUrls].map(fileNameOf))}</td></tr>` : ''}
+        </tbody></table>
+        ${similarLoans?.length ? `<table style="margin-top:6px"><thead><tr><th>Ижил төстэй зээлдэгч</th><th style="text-align:right">Дүн</th><th style="text-align:right">Хугацаа</th><th style="text-align:right">Хүү</th><th>Шийдвэр</th></tr></thead><tbody>
+          ${similarLoans.slice(0, 10).map((loan, i) => `<tr style="${rowStyle(i)}">
+            <td>${esc(loan.borrowerName || '-')}</td>
+            <td style="text-align:right">${formatMoney(loan.loanAmount || 0)}</td>
+            <td style="text-align:right">${loan.termMonths ? `${esc(loan.termMonths)} сар` : '-'}</td>
+            <td style="text-align:right">${loan.monthlyRate ? `${esc(loan.monthlyRate)}%` : '-'}</td>
+            <td>${esc(ANALYST_DECISIONS[loan.analystDecision]?.label || loan.analystDecision || '-')}</td>
+          </tr>`).join('')}
+        </tbody></table>` : ''}
       </div>` : '';
 
     printWindow.document.write(`
@@ -2233,8 +2268,12 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           ${loanAgentHtml}
           ${complianceAgentHtml}` : ''}
 
+          ${extraMaterialsHtml ? `
+          ${sectionTitle((loanAgentHtml || complianceAgentHtml) ? '8' : '7', 'Нэмэлт материал')}
+          ${extraMaterialsHtml}` : ''}
+
           ${(displayedForm.analystOpinion || displayedForm.analystDecision) ? `
-          ${sectionTitle((loanAgentHtml || complianceAgentHtml) ? '8' : '7', 'Зээлийн ажилтны санал, дүгнэлт')}
+          ${sectionTitle((loanAgentHtml || complianceAgentHtml) ? (extraMaterialsHtml ? '9' : '8') : (extraMaterialsHtml ? '8' : '7'), 'Зээлийн ажилтны санал, дүгнэлт')}
           <div class="no-break">
           ${displayedForm.analystDecision ? `
           <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:${decisionBg};border-radius:10px;margin-bottom:10px">
@@ -2257,7 +2296,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           <!-- ══════════════ 8. ЭРГЭН ТӨЛӨЛТИЙН ХУВААРЬ ══════════════ -->
           ${amortRows.length > 0 ? `
           <div class="page-break"></div>
-          ${sectionTitle((loanAgentHtml || complianceAgentHtml) ? '9' : '8', 'Эргэн төлөлтийн хуваарь')}
+          ${sectionTitle((loanAgentHtml || complianceAgentHtml) ? (extraMaterialsHtml ? '10' : '9') : (extraMaterialsHtml ? '9' : '8'), 'Эргэн төлөлтийн хуваарь')}
           <div class="no-break">
           <table><thead><tr>
             <th>№</th><th>Огноо</th><th style="text-align:right">Эхний үлдэгдэл</th><th style="text-align:right">Зээлийн төлбөр</th><th style="text-align:right">Хүү</th><th style="text-align:right">Хүү тооцох хоног</th><th style="text-align:right">Үндсэн</th><th style="text-align:right">Даатгал</th><th style="text-align:right">Нийт төлбөр</th><th style="text-align:right">Эцсийн үлдэгдэл</th>
