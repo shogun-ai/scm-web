@@ -1710,6 +1710,12 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
 
     const amortRows = displayedOutputs.amortizationRows || [];
     const f = displayedForm;
+    const sourceLoanId = f.sourceRequestId || selectedResearch?.borrower?.sourceRequestId || prefillRequest?._id || '';
+    const sourceLoan = (prefillRequest?._id && String(prefillRequest._id) === String(sourceLoanId))
+      ? prefillRequest
+      : (studyRequests || []).find(req => String(req._id) === String(sourceLoanId)) || prefillRequest || {};
+    const aiAgent = sourceLoan.aiLoanOfficer || f.aiLoanOfficer || null;
+    const complianceAgent = sourceLoan.complianceReview || f.complianceReview || null;
     const isOrg = f.borrowerType === 'organization';
     const colls = displayedOutputs.collateral?.items || [];
     const grtrs = (f.guarantors || []);
@@ -1793,6 +1799,89 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           <td>${esc(row.assessment || row.comment || '-')}</td>
         </tr>`).join('')}
       </tbody></table>` : '';
+    const agentStatusLabel = (status) => ({
+      not_started: 'Эхлээгүй',
+      pending: 'Хүлээгдэж байна',
+      running: 'Боловсруулж байна',
+      completed: 'Дууссан',
+      failed: 'Алдаа',
+      no_policies: 'Бодлогын файлгүй',
+    }[status] || status || '—');
+    const recLabel = (value) => ({
+      approve: 'Зөвшөөрөх саналтай',
+      conditional: 'Нөхцөлтэй зөвшөөрөх',
+      manual_review: 'Гараар хянах',
+      reject: 'Татгалзах саналтай',
+    }[value] || value || '—');
+    const loanAgentHtml = aiAgent ? `
+      <div class="no-break" style="margin-top:10px">
+        <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Зээлийн агентын дүгнэлт</div>
+        <table><tbody>
+          <tr>
+            <td class="label-cell">Төлөв</td><td>${esc(agentStatusLabel(aiAgent.status))}</td>
+            <td class="label-cell">Огноо</td><td>${aiAgent.generatedAt ? esc(new Date(aiAgent.generatedAt).toLocaleString('mn-MN')) : '—'}</td>
+          </tr>
+          <tr>
+            <td class="label-cell">Санал</td><td style="font-weight:700;color:#003B5C">${esc(recLabel(aiAgent.decision?.recommendation || aiAgent.credit?.recommendation))}</td>
+            <td class="label-cell">Итгэлцүүр</td><td>${Number.isFinite(Number(aiAgent.decision?.confidence)) ? Math.round(Number(aiAgent.decision.confidence) * 100) + '%' : '—'}</td>
+          </tr>
+          ${aiAgent.risk?.summary ? `<tr><td class="label-cell">Эрсдэлийн дүгнэлт</td><td colspan="3">${esc(aiAgent.risk.summary)}</td></tr>` : ''}
+          ${aiAgent.legal?.summary ? `<tr><td class="label-cell">Хууль/баримтын дүгнэлт</td><td colspan="3">${esc(aiAgent.legal.summary)}</td></tr>` : ''}
+          ${aiAgent.credit?.summary ? `<tr><td class="label-cell">Зээлийн чадвар</td><td colspan="3">${esc(aiAgent.credit.summary)}</td></tr>` : ''}
+          ${aiAgent.decision?.reason ? `<tr><td class="label-cell">Шийдвэрийн үндэслэл</td><td colspan="3">${esc(aiAgent.decision.reason)}</td></tr>` : ''}
+          ${(aiAgent.risk?.flags || []).length ? `<tr><td class="label-cell">Эрсдэлийн flags</td><td colspan="3">${listHtml(aiAgent.risk.flags)}</td></tr>` : ''}
+          ${(aiAgent.legal?.flags || []).length ? `<tr><td class="label-cell">Хууль/баримтын flags</td><td colspan="3">${listHtml(aiAgent.legal.flags)}</td></tr>` : ''}
+          ${(aiAgent.nextSteps || []).length ? `<tr><td class="label-cell">Дараагийн алхам</td><td colspan="3">${listHtml(aiAgent.nextSteps)}</td></tr>` : ''}
+        </tbody></table>
+        ${((aiAgent.decision?.approvalReasons || []).length || (aiAgent.decision?.conditionalReasons || aiAgent.credit?.conditions || []).length || (aiAgent.decision?.rejectionReasons || []).length) ? `
+          <table style="margin-top:6px"><thead><tr><th>Зөвшөөрөх үндэслэл</th><th>Нөхцөл</th><th>Татгалзах эрсдэл</th></tr></thead><tbody><tr>
+            <td>${listHtml(aiAgent.decision?.approvalReasons || [])}</td>
+            <td>${listHtml(aiAgent.decision?.conditionalReasons || aiAgent.credit?.conditions || [])}</td>
+            <td>${listHtml(aiAgent.decision?.rejectionReasons || [])}</td>
+          </tr></tbody></table>` : ''}
+        ${(aiAgent.policyCompliance?.summary || (aiAgent.policyCompliance?.checks || []).length) ? `
+          <table style="margin-top:6px"><tbody>
+            ${aiAgent.policyCompliance?.summary ? `<tr><td class="label-cell">Бодлогын нийцэл</td><td colspan="3">${esc(aiAgent.policyCompliance.summary)}</td></tr>` : ''}
+          </tbody></table>
+          ${(aiAgent.policyCompliance?.checks || []).length ? `<table style="margin-top:6px"><thead><tr><th>Хэсэг</th><th>Төлөв</th><th>Заалт/нотолгоо</th><th>Дүгнэлт</th></tr></thead><tbody>
+            ${(aiAgent.policyCompliance.checks || []).slice(0, 8).map((check, i) => `<tr style="${rowStyle(i)}">
+              <td>${esc(check.area || '-')}</td>
+              <td>${esc(check.status || '-')}</td>
+              <td>${esc([check.policyClause, check.evidence].filter(Boolean).join(' · ') || '-')}</td>
+              <td>${esc(check.finding || check.recommendation || '-')}</td>
+            </tr>`).join('')}
+          </tbody></table>` : ''}` : ''}
+        ${aiAgent.disclaimer ? `<div style="font-size:10px;color:#64748b;margin-top:6px">${esc(aiAgent.disclaimer)}</div>` : ''}
+      </div>` : '';
+    const complianceAgentHtml = complianceAgent ? `
+      <div class="no-break" style="margin-top:10px">
+        <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Хууль, комплиансын агентын дүгнэлт</div>
+        <table><tbody>
+          <tr>
+            <td class="label-cell">Төлөв</td><td>${esc(agentStatusLabel(complianceAgent.status))}</td>
+            <td class="label-cell">Нийт үнэлгээ</td><td style="font-weight:700;color:#003B5C">${esc(complianceAgent.overallStatus || '—')}</td>
+          </tr>
+          <tr>
+            <td class="label-cell">Огноо</td><td>${complianceAgent.generatedAt ? esc(new Date(complianceAgent.generatedAt).toLocaleString('mn-MN')) : '—'}</td>
+            <td class="label-cell">Итгэлцүүр</td><td>${Number.isFinite(Number(complianceAgent.confidence)) ? Math.round(Number(complianceAgent.confidence) * 100) + '%' : '—'}</td>
+          </tr>
+          ${complianceAgent.summary ? `<tr><td class="label-cell">Хураангуй</td><td colspan="3">${esc(complianceAgent.summary)}</td></tr>` : ''}
+          ${complianceAgent.note ? `<tr><td class="label-cell">Тэмдэглэл</td><td colspan="3">${esc(complianceAgent.note)}</td></tr>` : ''}
+          ${(complianceAgent.requiredActions || []).length ? `<tr><td class="label-cell">Заавал хийх ажил</td><td colspan="3">${listHtml(complianceAgent.requiredActions)}</td></tr>` : ''}
+          ${(complianceAgent.missingDocuments || []).length ? `<tr><td class="label-cell">Дутуу баримт</td><td colspan="3">${listHtml(complianceAgent.missingDocuments)}</td></tr>` : ''}
+          ${(complianceAgent.policySources || []).length ? `<tr><td class="label-cell">Ашигласан бодлого</td><td colspan="3">${listHtml(complianceAgent.policySources.map(p => p.title || p.fileName || p.policyRef || p.id))}</td></tr>` : ''}
+        </tbody></table>
+        ${(complianceAgent.checks || []).length ? `<table style="margin-top:6px"><thead><tr><th>Хэсэг</th><th>Төлөв</th><th>Ноцтой байдал</th><th>Заалт/нотолгоо</th><th>Дүгнэлт/зөвлөмж</th></tr></thead><tbody>
+          ${(complianceAgent.checks || []).slice(0, 10).map((check, i) => `<tr style="${rowStyle(i)}">
+            <td>${esc(check.area || '-')}</td>
+            <td>${esc(check.status || '-')}</td>
+            <td>${esc(check.severity || '-')}</td>
+            <td>${esc([check.policyRef, check.policyClause, check.evidence].filter(Boolean).join(' · ') || '-')}</td>
+            <td>${esc([check.finding, check.recommendation].filter(Boolean).join(' · ') || '-')}</td>
+          </tr>`).join('')}
+        </tbody></table>` : ''}
+        ${complianceAgent.disclaimer ? `<div style="font-size:10px;color:#64748b;margin-top:6px">${esc(complianceAgent.disclaimer)}</div>` : ''}
+      </div>` : '';
 
     printWindow.document.write(`
       <html>
@@ -2139,8 +2228,13 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           </div>
 
           <!-- ══════════════ 7. АЖИЛТНЫ САНАЛ ══════════════ -->
+          ${(loanAgentHtml || complianceAgentHtml) ? `
+          ${sectionTitle('7', 'AI агентуудын дүгнэлт')}
+          ${loanAgentHtml}
+          ${complianceAgentHtml}` : ''}
+
           ${(displayedForm.analystOpinion || displayedForm.analystDecision) ? `
-          ${sectionTitle('7', 'Зээлийн ажилтны санал, дүгнэлт')}
+          ${sectionTitle((loanAgentHtml || complianceAgentHtml) ? '8' : '7', 'Зээлийн ажилтны санал, дүгнэлт')}
           <div class="no-break">
           ${displayedForm.analystDecision ? `
           <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:${decisionBg};border-radius:10px;margin-bottom:10px">
@@ -2163,7 +2257,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           <!-- ══════════════ 8. ЭРГЭН ТӨЛӨЛТИЙН ХУВААРЬ ══════════════ -->
           ${amortRows.length > 0 ? `
           <div class="page-break"></div>
-          ${sectionTitle('8', 'Эргэн төлөлтийн хуваарь')}
+          ${sectionTitle((loanAgentHtml || complianceAgentHtml) ? '9' : '8', 'Эргэн төлөлтийн хуваарь')}
           <div class="no-break">
           <table><thead><tr>
             <th>№</th><th>Огноо</th><th style="text-align:right">Эхний үлдэгдэл</th><th style="text-align:right">Зээлийн төлбөр</th><th style="text-align:right">Хүү</th><th style="text-align:right">Хүү тооцох хоног</th><th style="text-align:right">Үндсэн</th><th style="text-align:right">Даатгал</th><th style="text-align:right">Нийт төлбөр</th><th style="text-align:right">Эцсийн үлдэгдэл</th>
