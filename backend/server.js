@@ -2057,8 +2057,13 @@ app.post('/api/loans', (req, res) => {
 
 app.get('/api/loans', authenticateUser, async (req, res) => { try { res.json(await LoanRequest.find().sort({ createdAt: -1 })); } catch (e) { res.status(500).send("Error"); } });
 
-app.post('/api/loans/maintenance/prune-before-date', authenticateUser, requireAdmin, async (req, res) => {
+app.post('/api/loans/maintenance/prune-before-date', authenticateUser, async (req, res) => {
     try {
+        const roleKeys = getUserRoleKeys(req.user);
+        if (!roleKeys.includes('admin') && !roleKeys.includes('loan_officer')) {
+            return res.status(403).json({ message: 'Forbidden' });
+        }
+
         const cutoffDate = req.body?.cutoffDate || '2026-05-14';
         const match = String(cutoffDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
         if (!match) return res.status(400).json({ message: 'cutoffDate must be YYYY-MM-DD' });
