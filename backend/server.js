@@ -2151,6 +2151,29 @@ app.put('/api/loans/:id', authenticateUser, async (req, res) => {
     } catch (e) { res.status(500).send("Error"); }
 });
 
+app.delete('/api/loans/:id', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+        const loan = await LoanRequest.findById(req.params.id).select('_id lastname firstname orgName amount createdAt');
+        if (!loan) return res.status(404).json({ message: 'Loan not found' });
+
+        const linkedResearchResult = await LoanResearch.deleteMany({ 'borrower.sourceRequestId': String(loan._id) });
+        await LoanRequest.findByIdAndDelete(loan._id);
+        await createLog(
+            req.user,
+            'loan_request_deleted',
+            `Deleted loan request ${loan._id} (${loan.lastname || loan.orgName || ''} ${loan.firstname || ''}) and ${linkedResearchResult.deletedCount} linked research records`
+        );
+
+        res.json({
+            deletedLoanRequest: String(loan._id),
+            deletedLinkedLoanResearch: linkedResearchResult.deletedCount,
+        });
+    } catch (e) {
+        console.error('Loan delete error:', e.message);
+        res.status(500).json({ message: 'Loan delete failed' });
+    }
+});
+
 // Ажилтан шинэ зээлийн хүсэлт үүсгэх
 app.post('/api/loans/staff', authenticateUser, async (req, res) => {
     try {

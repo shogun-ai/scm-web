@@ -4,7 +4,7 @@ import {
   Activity, AlertCircle, BadgeCheck, BarChart2, CheckCircle2, ChevronRight, Clock,
   ClipboardList, CreditCard, Eye, FileText, Loader2,
   Plus, Printer, RotateCcw, Search, Sparkles, ThumbsDown, ThumbsUp, User,
-  UserCheck, X, XCircle, Home, Users,
+  UserCheck, X, XCircle, Home, Users, Trash2,
 } from 'lucide-react';
 import LoanResearch from './LoanResearch';
 import LoanApplicationDetail from './LoanApplicationDetail';
@@ -479,6 +479,7 @@ const LoanOrigination = ({
 
   // ── helpers ──────────────────────────────
   const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('loan_token') || ''}` } });
+  const isAdmin = getUserRoleKeys(user).includes('admin');
   const committeePermissions = {
     approve: hasCommitteePermission(user, permissionMap, 'Зөвшөөрөх'),
     reject: hasCommitteePermission(user, permissionMap, 'Татгалзах'),
@@ -504,6 +505,25 @@ const LoanOrigination = ({
       onRequestsChange(requests.map(r => r._id === loan._id ? res.data : r));
       if (selectedLoan?._id === loan._id) setSelectedLoan(res.data);
     } catch { showToast('Хариуцагч хуваарилахад алдаа гарлаа.', 'error'); }
+  };
+
+  const deleteLoanRequest = async (loan) => {
+    if (!isAdmin || !loan?._id) return;
+    const name = borrowerName(loan);
+    const ok = window.confirm(`${name} хүсэлтийг DB-ээс бүр мөсөн устгах уу?\n\nХолбоотой зээлийн судалгаа байвал хамт устгана.`);
+    if (!ok) return;
+    try {
+      const res = await axios.delete(`${apiUrl}/api/loans/${loan._id}`, authHeaders());
+      onRequestsChange(requests.filter(r => r._id !== loan._id));
+      if (selectedLoan?._id === loan._id) {
+        setSelectedLoan(null);
+        setActiveStep('application');
+      }
+      if (viewLoan?._id === loan._id) setViewLoan(null);
+      showToast(`Хүсэлт устлаа. Холбоотой судалгаа: ${res.data?.deletedLinkedLoanResearch || 0}`);
+    } catch (e) {
+      showToast(e.response?.data?.message || 'Хүсэлт устгахад алдаа гарлаа.', 'error');
+    }
   };
 
   const selectAndGo = (loan, step) => {
@@ -726,6 +746,12 @@ const LoanOrigination = ({
             <User size={15} className="text-[#003B5C]" />
             <span className="font-black text-[#003B5C]">{borrowerName(selectedLoan)}</span>
             <StatusBadge status={selectedLoan.status} />
+            {isAdmin && (
+              <button onClick={() => deleteLoanRequest(selectedLoan)}
+                className="ml-2 text-red-500 hover:text-red-700" title="Хүсэлт устгах">
+                <Trash2 size={14} />
+              </button>
+            )}
             <button onClick={() => { setSelectedLoan(null); setActiveStep('application'); }}
               className="ml-2 text-slate-400 hover:text-red-500"><X size={14} /></button>
           </div>
@@ -1022,6 +1048,12 @@ const LoanOrigination = ({
                             className="action-icon p-2 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100" title="Зээлийн үнэлгээ">
                             <BarChart2 size={14} />
                           </button>
+                          {isAdmin && (
+                            <button onClick={() => deleteLoanRequest(req)}
+                              className="action-icon p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100" title="Хүсэлт устгах">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
