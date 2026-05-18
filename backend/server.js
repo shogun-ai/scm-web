@@ -2059,6 +2059,10 @@ app.get('/api/loans', authenticateUser, async (req, res) => { try { res.json(awa
 
 app.post('/api/loans/maintenance/prune-before-date', authenticateUser, async (req, res) => {
     try {
+        if (process.env.ENABLE_LOAN_PRUNE_MAINTENANCE !== 'YES') {
+            return res.status(410).json({ message: 'Loan prune maintenance is disabled' });
+        }
+
         const roleKeys = getUserRoleKeys(req.user);
         if (!roleKeys.includes('admin') && !roleKeys.includes('loan_officer')) {
             return res.status(403).json({ message: 'Forbidden' });
