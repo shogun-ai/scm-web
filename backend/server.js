@@ -2057,6 +2057,62 @@ app.post('/api/loans', (req, res) => {
 
 app.get('/api/loans', authenticateUser, async (req, res) => { try { res.json(await LoanRequest.find().sort({ createdAt: -1 })); } catch (e) { res.status(500).send("Error"); } });
 
+app.post('/api/loans/maintenance/prune-before-date', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+        const cutoffDate = req.body?.cutoffDate || '2026-05-14';
+        const match = String(cutoffDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return res.status(400).json({ message: 'cutoffDate must be YYYY-MM-DD' });
+
+        const [, year, month, day] = match.map(Number);
+        const cutoffUtc = new Date(Date.UTC(year, month - 1, day - 1, 16, 0, 0, 0));
+        const deleteQuery = { createdAt: { $exists: true, $lt: cutoffUtc } };
+        const confirm = req.body?.confirm === 'DELETE_LOANS_BEFORE_DATE';
+
+        const deleteCandidates = await LoanRequest.find(deleteQuery)
+            .select('_id createdAt lastname firstname orgName phone amount status')
+            .sort({ createdAt: 1 })
+            .lean();
+        const deleteIdStrings = deleteCandidates.map(item => String(item._id));
+        const linkedResearchQuery = { 'borrower.sourceRequestId': { $in: deleteIdStrings } };
+        const linkedResearchCount = deleteIdStrings.length
+            ? await LoanResearch.countDocuments(linkedResearchQuery)
+            : 0;
+        const total = await LoanRequest.countDocuments({});
+
+        const summary = {
+            mode: confirm ? 'DELETE' : 'DRY_RUN',
+            cutoffDateUlaanbaatar: cutoffDate,
+            deleteBeforeUtc: cutoffUtc.toISOString(),
+            totalLoanRequests: total,
+            loanRequestsToDelete: deleteCandidates.length,
+            linkedLoanResearchToDelete: linkedResearchCount,
+            sample: deleteCandidates.slice(0, 20),
+        };
+
+        if (!confirm) return res.json(summary);
+
+        const [researchResult, loanResult] = await Promise.all([
+            deleteIdStrings.length ? LoanResearch.deleteMany(linkedResearchQuery) : Promise.resolve({ deletedCount: 0 }),
+            LoanRequest.deleteMany(deleteQuery),
+        ]);
+
+        await createLog(
+            req.user,
+            'loan_requests_pruned',
+            `Deleted ${loanResult.deletedCount} loan requests before ${cutoffDate} and ${researchResult.deletedCount} linked research records`
+        );
+
+        res.json({
+            ...summary,
+            deletedLoanRequests: loanResult.deletedCount,
+            deletedLinkedLoanResearch: researchResult.deletedCount,
+        });
+    } catch (e) {
+        console.error('Loan prune error:', e.message);
+        res.status(500).json({ message: 'Loan prune failed' });
+    }
+});
+
 app.put('/api/loans/:id', authenticateUser, async (req, res) => {
     try {
         const { adminUser, ...updateData } = req.body;

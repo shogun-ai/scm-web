@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "prune:loans-before-date": "node scripts/prune-loan-requests-by-date.js",
+    "prune:loans-by-date": "node scripts/prune-loan-requests-by-date.js"
   },
   "keywords": [],
   "author": "",
