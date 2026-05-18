@@ -3,6 +3,7 @@ import './index.css';
 import './App.css';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import { API } from './api';
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('loan_token'));
@@ -16,6 +17,14 @@ function App() {
   }, []);
 
   const handleLogout = useCallback(() => {
+    const currentToken = localStorage.getItem('loan_token');
+    if (currentToken) {
+      fetch(`${API}/api/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${currentToken}` },
+        keepalive: true,
+      }).catch(() => {});
+    }
     localStorage.removeItem('loan_token');
     localStorage.removeItem('loan_user');
     setToken(null);

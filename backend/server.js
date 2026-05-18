@@ -999,9 +999,44 @@ const LogSchema = new mongoose.Schema({
 });
 const Log = mongoose.models.Log || mongoose.model('Log', LogSchema);
 
-const createLog = async (user, action, details) => { 
-    try { if(user) await new Log({ userName: user.name, userRole: user.role, action, details }).save(); } 
-    catch (e) {} 
+const createLog = async (user, action, details) => {
+    try {
+        if (!user) return;
+        await new Log({
+            userName: user.name || user.email || 'Unknown',
+            userRole: [user.role, ...(Array.isArray(user.roles) ? user.roles : [])].filter(Boolean).join(', ') || 'unknown',
+            action,
+            details,
+        }).save();
+    } catch (e) {}
+};
+
+const loanDisplayName = (loan = {}) => (
+    loan.userType === 'organization'
+        ? (loan.orgName || loan.contactName || String(loan._id || ''))
+        : [loan.lastname, loan.firstname].filter(Boolean).join(' ') || loan.orgName || String(loan._id || '')
+);
+
+const describeLoanUpdate = (before = {}, after = {}, updateData = {}) => {
+    const labels = {
+        status: 'status',
+        assignee: 'assignee',
+        amount: 'amount',
+        term: 'term',
+        selectedProduct: 'product',
+        purpose: 'purpose',
+        userType: 'borrower type',
+        applicationData: 'application data',
+        approvalNote: 'approval note',
+    };
+    const parts = Object.keys(updateData)
+        .filter(key => labels[key])
+        .map(key => {
+            if (key === 'assignee') return `assignee: ${before.assignee?.name || '-'} -> ${after.assignee?.name || '-'}`;
+            if (key === 'applicationData') return labels[key];
+            return `${labels[key]}: ${before[key] ?? '-'} -> ${after[key] ?? '-'}`;
+        });
+    return parts.length ? parts.join('; ') : `fields: ${Object.keys(updateData).join(', ')}`;
 };
 
 const authenticateUser = async (req, res, next) => {
@@ -1836,8 +1871,14 @@ app.post('/api/auth/login', async (req, res) => {
             if (!verified) return res.status(401).json({ message: '2FA error' });
         }
         const token = jwt.sign({ id: user._id, role: user.role, roles: user.roles || [] }, JWT_SECRET, { expiresIn: '1d' });
+        await createLog(user, 'loan_login', `User logged in to loan.scm.mn (${email})`);
         res.json({ token, user: { id: user._id, name: user.name, role: user.role, roles: user.roles || [] } });
     } catch (e) { res.status(500).send("Error"); }
+});
+
+app.post('/api/auth/logout', authenticateUser, async (req, res) => {
+    await createLog(req.user, 'loan_logout', 'User logged out from loan.scm.mn');
+    res.json({ message: 'Success' });
 });
 
 app.post('/api/auth/2fa/setup', authenticateUser, async (req, res) => {
@@ -2125,10 +2166,10 @@ app.post('/api/loans/maintenance/prune-before-date', authenticateUser, async (re
 app.put('/api/loans/:id', authenticateUser, async (req, res) => {
     try {
         const { adminUser, ...updateData } = req.body;
+        const existingLoanForLog = await LoanRequest.findById(req.params.id).lean();
+        if (!existingLoanForLog) return res.status(404).json({ message: 'Loan not found' });
         if (Object.prototype.hasOwnProperty.call(updateData, 'status')) {
-            const existingLoan = await LoanRequest.findById(req.params.id).select('status');
-            if (!existingLoan) return res.status(404).json({ message: 'Loan not found' });
-            const committeeAction = getCommitteeDecisionAction(updateData.status, existingLoan.status);
+            const committeeAction = getCommitteeDecisionAction(updateData.status, existingLoanForLog.status);
             if (committeeAction) {
                 const allowed = await userHasPermission(req.user, 'los_committee', committeeAction, 'full');
                 if (!allowed) {
@@ -2147,6 +2188,11 @@ app.put('/api/loans/:id', authenticateUser, async (req, res) => {
         )) {
             updated = await updateLoanOfficerAssessment(updated);
         }
+        await createLog(
+            req.user,
+            'loan_request_updated',
+            `${loanDisplayName(updated)} (${updated._id}) - ${describeLoanUpdate(existingLoanForLog, updated, updateData)}`
+        );
         res.json(updated);
     } catch (e) { res.status(500).send("Error"); }
 });
@@ -2225,6 +2271,7 @@ app.post('/api/loans/intake-automation/backfill', authenticateUser, async (req, 
             }
         );
         ids.forEach(id => runPostSubmissionAutomationInBackground(id));
+        await createLog(req.user, 'loan_intake_backfill', `Queued ${ids.length} loan requests`);
         res.json({ queued: ids.length, ids: ids.map(String) });
     } catch (e) {
         console.error('Intake automation backfill error:', e.message);
@@ -2236,6 +2283,7 @@ app.post('/api/loans/:id/ai-loan-officer', authenticateUser, async (req, res) =>
     try {
         const updated = await updateLoanOfficerAssessment(req.params.id);
         if (!updated) return res.status(404).json({ message: 'Loan not found' });
+        await createLog(req.user, 'loan_ai_review_run', `${loanDisplayName(updated)} (${updated._id})`);
         res.json(updated);
     } catch (e) {
         console.error('AI loan officer route error:', e.message);
@@ -2257,6 +2305,7 @@ app.post('/api/loans/:id/compliance-review', authenticateUser, async (req, res) 
     try {
         const updated = await updateComplianceReview(req.params.id);
         if (!updated) return res.status(404).json({ message: 'Loan not found' });
+        await createLog(req.user, 'loan_compliance_review_run', `${loanDisplayName(updated)} (${updated._id})`);
         res.json(updated);
     } catch (e) {
         console.error('Compliance review route error:', e.message);
@@ -2285,6 +2334,7 @@ app.post('/api/loans/ai-loan-officer/backfill', authenticateUser, async (req, re
             { aiLoanOfficer: buildAiLoanOfficerStatus('pending', 'Хуучин хүсэлтийн AI дүгнэлт backfill дараалалд орлоо.') }
         );
         ids.forEach(id => runLoanOfficerAssessmentInBackground(id));
+        await createLog(req.user, 'loan_ai_review_backfill', `Queued ${ids.length} loan requests`);
         res.json({ queued: ids.length, ids: ids.map(String) });
     } catch (e) {
         console.error('AI loan officer backfill error:', e.message);
@@ -2313,6 +2363,7 @@ app.post('/api/loans/:id/files', authenticateUser, (req, res) => {
             );
             if (!loan) return res.status(404).json({ message: 'Not found' });
             runPostSubmissionAutomationInBackground(loan._id);
+            await createLog(req.user, 'loan_files_added', `${loanDisplayName(loan)} (${loan._id}) - ${files.length} file(s) added to ${fieldName}`);
             res.json(loan);
         } catch (e) {
             console.error('File upload error:', e.message);
@@ -2324,12 +2375,15 @@ app.post('/api/loans/:id/files', authenticateUser, (req, res) => {
 // Зээлийн хүсэлтийн файл устгах
 app.delete('/api/loans/:id/files/:fileId', authenticateUser, async (req, res) => {
     try {
+        const existingLoan = await LoanRequest.findById(req.params.id).select('fileDetails lastname firstname orgName userType');
+        const removedFile = existingLoan?.fileDetails?.find(file => String(file._id) === String(req.params.fileId));
         const loan = await LoanRequest.findByIdAndUpdate(
             req.params.id,
             { $pull: { fileDetails: { _id: req.params.fileId } } },
             { new: true }
         );
         if (!loan) return res.status(404).json({ message: 'Олдсонгүй' });
+        await createLog(req.user, 'loan_file_deleted', `${loanDisplayName(loan)} (${loan._id}) - ${removedFile?.fileName || req.params.fileId}`);
         res.json(loan);
     } catch (e) {
         res.status(500).json({ message: 'Файл устгахад алдаа гарлаа' });
