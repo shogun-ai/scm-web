@@ -115,6 +115,12 @@ const AdminPanel = ({ user, token, onLogout }) => {
   // API URL
   const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com');
 
+  const refreshLogs = async () => {
+    if (user?.role !== 'admin') return;
+    const logRes = await axios.get(`${API_URL}/api/logs`);
+    setLogs(logRes.data || []);
+  };
+
   useEffect(() => {
     if (!token) return undefined;
     axios.defaults.headers.common.Authorization = `Bearer ${token}`;
@@ -608,6 +614,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
             <button onClick={() => setActiveTab('cms')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'cms' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Globe size={18} /> Контент засах</button>
             <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'users' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Users size={18} /> Хэрэглэгчид</button>
             <button onClick={() => setActiveTab('permissions')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'permissions' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Shield size={18} /> Эрхийн матриц</button>
+            <button onClick={() => setActiveTab('logs')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'logs' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Activity size={18} /> Үйлдлийн лог</button>
           </>)}
           <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'settings' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Settings size={18} /> Тохиргоо</button>
         </nav>
@@ -847,6 +854,74 @@ const AdminPanel = ({ user, token, onLogout }) => {
 
         {activeTab === 'permissions' && user?.role === 'admin' && (
           <PermissionMatrix apiUrl={API_URL} />
+        )}
+
+        {activeTab === 'logs' && user?.role === 'admin' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-[#00A651]">Аудит</p>
+                <h2 className="text-2xl font-bold text-[#003B5C]">Үйлдлийн лог</h2>
+                <p className="text-sm text-slate-500">loan.scm.mn болон admin panel дээрх хэрэглэгчийн оролт, зээлийн үйлдлүүд.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => refreshLogs().catch(() => alert('Лог шинэчлэхэд алдаа гарлаа'))}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#003B5C] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#00527d]"
+              >
+                <Activity size={15} /> Шинэчлэх
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-2xl border bg-white p-5 shadow-sm">
+                <p className="text-xs font-bold uppercase text-slate-400">Нийт лог</p>
+                <p className="mt-2 text-3xl font-black text-[#003B5C]">{logs.length}</p>
+              </div>
+              <div className="rounded-2xl border bg-white p-5 shadow-sm">
+                <p className="text-xs font-bold uppercase text-slate-400">Login</p>
+                <p className="mt-2 text-3xl font-black text-emerald-600">{logs.filter(l => l.action === 'loan_login').length}</p>
+              </div>
+              <div className="rounded-2xl border bg-white p-5 shadow-sm">
+                <p className="text-xs font-bold uppercase text-slate-400">Loan үйлдэл</p>
+                <p className="mt-2 text-3xl font-black text-amber-600">{logs.filter(l => String(l.action || '').startsWith('loan_')).length}</p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 border-b text-xs font-bold text-gray-500 uppercase">
+                  <tr>
+                    <th className="p-4">Огноо</th>
+                    <th className="p-4">Хэрэглэгч</th>
+                    <th className="p-4">Эрх</th>
+                    <th className="p-4">Үйлдэл</th>
+                    <th className="p-4">Дэлгэрэнгүй</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {logs.map(log => (
+                    <tr key={log._id} className="hover:bg-slate-50 align-top">
+                      <td className="p-4 whitespace-nowrap text-xs font-semibold text-slate-500">
+                        {log.date ? new Date(log.date).toLocaleString('mn-MN') : '-'}
+                      </td>
+                      <td className="p-4 font-bold text-[#003B5C]">{log.userName || '-'}</td>
+                      <td className="p-4 text-xs text-slate-500">{log.userRole || '-'}</td>
+                      <td className="p-4">
+                        <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">
+                          {log.action || '-'}
+                        </span>
+                      </td>
+                      <td className="p-4 max-w-xl text-slate-600">{log.details || '-'}</td>
+                    </tr>
+                  ))}
+                  {logs.length === 0 && (
+                    <tr><td colSpan={5} className="p-10 text-center text-gray-400">Лог бүртгэл алга байна.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
 
         {activeTab === 'finance' && user?.role === 'admin' && (
