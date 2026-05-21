@@ -408,22 +408,23 @@ const ScrollDownArrow = ({ targetId, color = "text-white/70" }) => {
     );
 };
 
-const PromotionSlider = ({ promotions, fallbackBg, homeSlide, onOpen, onProducts }) => {
+const PromotionSlider = ({ promotions, fallbackBg, homeSlide, intervalSeconds = 15, onOpen, onProducts }) => {
     const slides = [homeSlide, ...promotions];
     const [active, setActive] = useState(0);
     const current = slides[active] || slides[0];
 
     useEffect(() => {
         if (slides.length <= 1) return undefined;
-        const timer = window.setInterval(() => setActive(prev => (prev + 1) % slides.length), 2500);
+        const intervalMs = Math.max(Number(intervalSeconds) || 15, 3) * 1000;
+        const timer = window.setInterval(() => setActive(prev => (prev + 1) % slides.length), intervalMs);
         return () => window.clearInterval(timer);
-    }, [slides.length]);
+    }, [slides.length, intervalSeconds]);
 
     const go = (direction) => setActive(prev => (prev + direction + slides.length) % slides.length);
 
     return (
         <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute inset-0 flex transition-transform duration-700 ease-out" style={{ transform: `translateX(-${active * 100}%)` }}>
+            <div className="absolute inset-0 flex transition-transform duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform" style={{ transform: `translateX(-${active * 100}%)` }}>
                 {slides.map((slide, idx) => (
                     <div
                         key={slide._id || slide.slug || slide.kind || idx}
@@ -432,7 +433,7 @@ const PromotionSlider = ({ promotions, fallbackBg, homeSlide, onOpen, onProducts
                     />
                 ))}
             </div>
-            <div className={`absolute inset-0 ${current?.kind === 'home' ? 'sc-overlay-80 mix-blend-multiply' : 'sc-overlay-70'}`}></div>
+            <div className={`absolute inset-0 transition-colors duration-700 ${current?.kind === 'home' ? 'sc-overlay-80 mix-blend-multiply' : 'sc-overlay-70'}`}></div>
             {current?.kind === 'home' ? (
                 <div className="relative z-10 h-full flex items-center justify-center text-center px-4">
                     <div className="max-w-5xl space-y-8 text-white animate-fade-in-up px-4 flex flex-col items-center">
@@ -1319,6 +1320,7 @@ function App() {
                       <PromotionSlider
                         promotions={promotions}
                         fallbackBg={BACKGROUNDS.hero}
+                        intervalSeconds={cfg.hero_slider_interval || 15}
                         onOpen={(item) => navigateTo('promotion_detail', item)}
                         onProducts={() => scrollToSection('products')}
                         homeSlide={{

@@ -4805,6 +4805,7 @@ const seedSiteConfig = async () => {
         { key: "hero_line2", value: "Дэмжинэ", label: "Hero гарчиг (2-р мөр)", group: "hero" },
         { key: "hero_description", value: "Бид танд зах зээлийн хамгийн уян хатан нөхцөлийг санал болгож, таны санхүүгийн найдвартай түнш байх болно.", label: "Hero тайлбар текст", group: "hero" },
         { key: "hero_button", value: "Бүтээгдэхүүн үзэх", label: "Hero товчны текст", group: "hero" },
+        { key: "hero_slider_interval", value: 15, label: "Slider солигдох хугацаа", group: "hero" },
         { key: "about_title", value: "Бид хэн бэ?", label: "Бид хэн бэ гарчиг", group: "about" },
         { key: "about_intro", value: "Солонго Капитал ББСБ ХХК нь харилцагч төвтэй үйлчилгээг эрхэмлэн, санхүүгийн салбарт шинэ жишиг тогтоохоор зорин ажиллаж байна.", label: "Танилцуулгын оршил", group: "about" },
         { key: "about_mission_title", value: "Эрхэм зорилго", label: "Эрхэм зорилго гарчиг", group: "about" },

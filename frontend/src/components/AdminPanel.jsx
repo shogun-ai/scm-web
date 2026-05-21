@@ -480,6 +480,9 @@ const AdminPanel = ({ user, token, onLogout }) => {
       if (group === 'contact' && configEdits['contact_image'] !== undefined) {
         updates['contact_image'] = configEdits['contact_image'];
       }
+      if (group === 'hero' && configEdits['hero_slider_interval'] !== undefined) {
+        updates['hero_slider_interval'] = Number(configEdits['hero_slider_interval']);
+      }
       await axios.post(`${API_URL}/api/config/bulk`, updates);
       alert('Амжилттай хадгалагдлаа!');
       fetchCMSData();
@@ -1089,7 +1092,23 @@ const AdminPanel = ({ user, token, onLogout }) => {
                         <h4 className="font-bold text-sm text-[#003B5C] border-b pb-2">
                           {group==='hero'?'🏠 Hero хэсэг':group==='about'?'🏢 Бид хэн бэ':group==='financials'?'📊 Санхүүгийн үзүүлэлт':'📞 Холбоо барих'}
                         </h4>
-                        {Object.entries(siteConfig[group] || {}).filter(([key]) => key !== 'contact_image').map(([key, obj]) => (
+                        {group === 'hero' && (
+                          <div className="space-y-2 rounded-xl border bg-slate-50 p-4">
+                            <label className="text-xs font-bold text-gray-400 uppercase">Slider солигдох хугацаа</label>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                              {[3, 15, 30, 60].map(sec => (
+                                <button
+                                  key={sec}
+                                  onClick={() => setConfigEdits(p => ({ ...p, hero_slider_interval: sec }))}
+                                  className={`px-4 py-2 rounded-lg border text-sm font-bold transition ${Number(configEdits.hero_slider_interval ?? siteConfig.hero?.hero_slider_interval?.value ?? 15) === sec ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-gray-600 hover:border-[#003B5C]'}`}
+                                >
+                                  {sec} сек
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {Object.entries(siteConfig[group] || {}).filter(([key]) => key !== 'contact_image' && key !== 'hero_slider_interval').map(([key, obj]) => (
                           <div key={key} className="space-y-1">
                             <label className="text-xs font-bold text-gray-400 uppercase">{obj.label}</label>
                             {(obj.value?.length||0) > 80 ? (
