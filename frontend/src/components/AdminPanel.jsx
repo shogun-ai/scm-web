@@ -110,6 +110,8 @@ const AdminPanel = ({ user, token, onLogout }) => {
   const [blogPosts, setBlogPosts] = useState([]);
   const [newBlog, setNewBlog] = useState({ title: '', contentSnippet: '', imageUrl: '', link: '' });
   const [editingBlog, setEditingBlog] = useState(null);
+  const [promoSlides, setPromoSlides] = useState([]);
+  const [editingPromo, setEditingPromo] = useState(null);
   const [cmsSaving, setCmsSaving] = useState(false);
 
   // API URL
@@ -372,13 +374,14 @@ const AdminPanel = ({ user, token, onLogout }) => {
   // 🗄️ CMS FUNCTIONS
   // ============================================================
   const fetchCMSData = async () => {
-    const [cfgRes, prodRes, teamRes, loanFormRes, trustFormRes, blogRes] = await Promise.allSettled([
+    const [cfgRes, prodRes, teamRes, loanFormRes, trustFormRes, blogRes, promoRes] = await Promise.allSettled([
       axios.get(`${API_URL}/api/config`),
       axios.get(`${API_URL}/api/products/content`),
       axios.get(`${API_URL}/api/team/all`),
       axios.get(`${API_URL}/api/form-config/loan`),
       axios.get(`${API_URL}/api/form-config/trust`),
       axios.get(`${API_URL}/api/blogs?isCustom=true`),
+      axios.get(`${API_URL}/api/promotions?all=true`),
     ]);
     if (cfgRes.status === 'fulfilled') {
       setSiteConfig(cfgRes.value.data);
@@ -393,6 +396,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
     if (loanFormRes.status === 'fulfilled' && trustFormRes.status === 'fulfilled')
       setFormConfigs({ loan: loanFormRes.value.data, trust: trustFormRes.value.data });
     if (blogRes.status === 'fulfilled') setBlogPosts(blogRes.value.data || []);
+    if (promoRes.status === 'fulfilled') setPromoSlides(promoRes.value.data || []);
   };
 
   useEffect(() => {
@@ -421,6 +425,50 @@ const AdminPanel = ({ user, token, onLogout }) => {
       await axios.delete(`${API_URL}/api/blogs/${id}`);
       setBlogPosts(prev => prev.filter(b => b._id !== id));
     } catch (e) { alert('Алдаа гарлаа'); }
+  };
+
+  const createEmptyPromo = () => ({
+    title: '',
+    subtitle: 'Шинэ мэдээ',
+    excerpt: '',
+    body: '',
+    slug: '',
+    backgroundImageUrl: '',
+    ctaLabel: 'Дэлгэрэнгүй',
+    isActive: true,
+    order: promoSlides.length + 1,
+    widgets: []
+  });
+
+  const savePromo = async () => {
+    if (!editingPromo?.title) return alert('Гарчиг оруулна уу');
+    setCmsSaving(true);
+    try {
+      if (editingPromo._id) {
+        await axios.put(`${API_URL}/api/promotions/${editingPromo._id}`, editingPromo);
+      } else {
+        await axios.post(`${API_URL}/api/promotions`, editingPromo);
+      }
+      setEditingPromo(null);
+      fetchCMSData();
+    } catch (e) { alert(e.response?.data?.message || 'Алдаа гарлаа'); }
+    finally { setCmsSaving(false); }
+  };
+
+  const deletePromo = async (id) => {
+    if (!window.confirm('Устгах уу?')) return;
+    try {
+      await axios.delete(`${API_URL}/api/promotions/${id}`);
+      setPromoSlides(prev => prev.filter(p => p._id !== id));
+      setEditingPromo(null);
+    } catch (e) { alert('Алдаа гарлаа'); }
+  };
+
+  const updatePromoWidget = (idx, field, value) => {
+    setEditingPromo(p => ({
+      ...p,
+      widgets: (p.widgets || []).map((w, i) => i === idx ? { ...w, [field]: value } : w)
+    }));
   };
 
   const saveBulkConfig = async (group) => {
@@ -1024,6 +1072,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
                     {t.label}
                   </button>
                 ))}
+                <button onClick={() => setCmsSubTab('promotions')}
+                  className={`text-left px-4 py-2.5 rounded-xl text-xs font-bold transition ${cmsSubTab === 'promotions' ? 'bg-[#003B5C] text-white' : 'text-gray-500 hover:bg-slate-100'}`}>
+                  Маркетинг slider
+                </button>
               </div>
 
               {/* CMS CONTENT PANEL */}
@@ -1084,6 +1136,112 @@ const AdminPanel = ({ user, token, onLogout }) => {
                 )}
 
                 {/* 2. БИД ХЭН БЭ */}
+                {cmsSubTab === 'promotions' && (
+                  <div className="space-y-5 max-w-5xl">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <h3 className="font-bold text-lg text-[#003B5C]">Маркетинг slider</h3>
+                        <p className="text-xs text-gray-400 mt-1">Нүүр дээр хажуу тийш солигдох хуудас. Хамгийн ихдээ 5.</p>
+                      </div>
+                      <button onClick={() => promoSlides.length >= 5 ? alert('Хамгийн ихдээ 5 хуудас нэмнэ.') : setEditingPromo(createEmptyPromo())}
+                        className="flex items-center gap-2 bg-[#003B5C] text-white px-5 py-3 rounded-xl font-bold text-sm">
+                        <Plus size={16}/> Нэмэх
+                      </button>
+                    </div>
+
+                    {!editingPromo ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {promoSlides.map(p => (
+                          <div key={p._id} className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+                            <div className="h-36 bg-slate-100 bg-cover bg-center" style={{ backgroundImage: `url(${p.backgroundImageUrl})` }} />
+                            <div className="p-5 flex justify-between gap-4">
+                              <div>
+                                <p className="font-bold text-[#003B5C]">{p.title}</p>
+                                <p className="text-xs text-gray-400 mt-1 line-clamp-2">{p.excerpt}</p>
+                                <p className="text-[11px] text-gray-400 mt-2">/{p.slug} - {p.isActive ? 'Идэвхтэй' : 'Нуусан'}</p>
+                              </div>
+                              <button onClick={() => setEditingPromo({ ...p })} className="p-2 bg-slate-100 rounded-lg hover:bg-[#003B5C] hover:text-white transition h-fit">
+                                <Pencil size={16}/>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {promoSlides.length === 0 && <p className="text-sm text-gray-400">Одоогоор slider хуудас алга.</p>}
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-2xl border shadow-sm p-6 space-y-5">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-[#003B5C]">{editingPromo._id ? 'Хуудас засах' : 'Шинэ хуудас'}</h4>
+                          <button onClick={() => setEditingPromo(null)} className="text-gray-400 hover:text-red-500"><X size={22}/></button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {[
+                            ['title','Гарчиг'], ['subtitle','Дээд жижиг текст'], ['slug','URL slug'], ['ctaLabel','Товчны текст']
+                          ].map(([field, label]) => (
+                            <div key={field} className="space-y-1">
+                              <label className="text-xs font-bold text-gray-400 uppercase">{label}</label>
+                              <input value={editingPromo[field] || ''} onChange={e => setEditingPromo(p => ({ ...p, [field]: e.target.value }))}
+                                className="w-full p-3 border rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C]"/>
+                            </div>
+                          ))}
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-gray-400 uppercase">Дараалал</label>
+                            <input type="number" value={editingPromo.order || 1} onChange={e => setEditingPromo(p => ({ ...p, order: Number(e.target.value) }))}
+                              className="w-full p-3 border rounded-xl text-sm bg-slate-50"/>
+                          </div>
+                          <label className="flex items-center gap-2 mt-7 text-sm font-bold text-gray-600">
+                            <input type="checkbox" checked={editingPromo.isActive !== false} onChange={e => setEditingPromo(p => ({ ...p, isActive: e.target.checked }))} className="h-4 w-4 accent-[#003B5C]"/>
+                            Нүүр дээр харуулах
+                          </label>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-gray-400 uppercase">Суурь дэвсгэр зураг</label>
+                          {editingPromo.backgroundImageUrl && <img src={editingPromo.backgroundImageUrl} alt="" className="h-40 w-full rounded-xl object-cover border"/>}
+                          <div className="flex gap-2">
+                            <input value={editingPromo.backgroundImageUrl || ''} onChange={e => setEditingPromo(p => ({ ...p, backgroundImageUrl: e.target.value }))}
+                              placeholder="URL эсвэл зураг upload" className="flex-1 p-3 border rounded-xl text-sm bg-slate-50"/>
+                            <label className="cursor-pointer bg-slate-100 hover:bg-[#003B5C] hover:text-white text-[#003B5C] px-4 py-3 rounded-xl text-xs font-bold transition flex items-center">
+                              Зураг
+                              <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                                if (!e.target.files[0]) return;
+                                try { const url = await uploadImage(e.target.files[0]); setEditingPromo(p => ({ ...p, backgroundImageUrl: url })); }
+                                catch { alert('Upload алдаа'); }
+                              }}/>
+                            </label>
+                          </div>
+                        </div>
+                        <textarea rows={2} value={editingPromo.excerpt || ''} onChange={e => setEditingPromo(p => ({ ...p, excerpt: e.target.value }))}
+                          placeholder="Нүүр дээр харагдах богино тайлбар" className="w-full p-3 border rounded-xl text-sm bg-slate-50 resize-none"/>
+                        <textarea rows={7} value={editingPromo.body || ''} onChange={e => setEditingPromo(p => ({ ...p, body: e.target.value }))}
+                          placeholder="Дэлгэрэнгүй хуудсанд харагдах үндсэн мэдээлэл" className="w-full p-3 border rounded-xl text-sm bg-slate-50 resize-none"/>
+                        <div className="space-y-3 border-t pt-5">
+                          <div className="flex items-center justify-between">
+                            <p className="font-bold text-sm text-[#003B5C]">Widget-үүд</p>
+                            <button onClick={() => setEditingPromo(p => ({ ...p, widgets: [...(p.widgets || []), { type: 'text', title: '', content: '', meta: '' }] }))}
+                              className="text-xs font-bold text-[#003B5C] flex items-center gap-1"><Plus size={14}/> Widget нэмэх</button>
+                          </div>
+                          {(editingPromo.widgets || []).map((w, idx) => (
+                            <div key={idx} className="grid grid-cols-1 md:grid-cols-[120px_1fr_1fr_auto] gap-2 bg-slate-50 border rounded-xl p-3">
+                              <select value={w.type || 'text'} onChange={e => updatePromoWidget(idx, 'type', e.target.value)} className="p-2 border rounded-lg text-sm bg-white">
+                                <option value="text">Text</option>
+                                <option value="stat">Stat</option>
+                                <option value="quote">Quote</option>
+                              </select>
+                              <input value={w.title || ''} onChange={e => updatePromoWidget(idx, 'title', e.target.value)} placeholder="Гарчиг" className="p-2 border rounded-lg text-sm"/>
+                              <input value={w.content || ''} onChange={e => updatePromoWidget(idx, 'content', e.target.value)} placeholder="Агуулга" className="p-2 border rounded-lg text-sm"/>
+                              <button onClick={() => setEditingPromo(p => ({ ...p, widgets: (p.widgets || []).filter((_, i) => i !== idx) }))} className="text-red-500 px-2"><Trash2 size={16}/></button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex gap-3">
+                          <button onClick={savePromo} disabled={cmsSaving} className="bg-[#003B5C] text-white px-8 py-3 rounded-xl font-bold text-sm">{cmsSaving ? 'Хадгалж байна...' : 'Хадгалах'}</button>
+                          {editingPromo._id && <button onClick={() => deletePromo(editingPromo._id)} className="bg-red-50 text-red-600 px-8 py-3 rounded-xl font-bold text-sm">Устгах</button>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {cmsSubTab === 'about' && (
                   <div className="bg-white rounded-2xl border shadow-sm p-8 space-y-5 max-w-2xl">
                     <h3 className="font-bold text-lg text-[#003B5C] border-b pb-3">🏢 Бид хэн бэ?</h3>

@@ -407,6 +407,73 @@ const ScrollDownArrow = ({ targetId, color = "text-white/70" }) => {
         </div>
     );
 };
+
+const PromotionSlider = ({ promotions, fallbackBg, onOpen }) => {
+    const slides = promotions.length ? promotions : [{
+        title: 'Солонго Капитал',
+        subtitle: 'Санхүүгийн шийдэл',
+        excerpt: 'Итгэлд суурилсан, уян хатан санхүүгийн үйлчилгээ.',
+        backgroundImageUrl: fallbackBg,
+        ctaLabel: 'Бүтээгдэхүүн үзэх',
+        fallbackTarget: 'products'
+    }];
+    const [active, setActive] = useState(0);
+    const current = slides[active] || slides[0];
+
+    useEffect(() => {
+        if (slides.length <= 1) return undefined;
+        const timer = window.setInterval(() => setActive(prev => (prev + 1) % slides.length), 6500);
+        return () => window.clearInterval(timer);
+    }, [slides.length]);
+
+    const go = (direction) => setActive(prev => (prev + direction + slides.length) % slides.length);
+
+    return (
+        <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute inset-0 flex transition-transform duration-700 ease-out" style={{ transform: `translateX(-${active * 100}%)` }}>
+                {slides.map((slide, idx) => (
+                    <div
+                        key={slide._id || slide.slug || idx}
+                        className="min-w-full h-full bg-cover bg-center"
+                        style={{ backgroundImage: `url(${slide.backgroundImageUrl || fallbackBg})` }}
+                    />
+                ))}
+            </div>
+            <div className="absolute inset-0 sc-overlay-70"></div>
+            <div className="relative z-10 h-full flex items-center">
+                <div className="max-w-7xl mx-auto px-4 md:px-6 w-full pt-20 pb-24">
+                    <div className="max-w-3xl text-white animate-fade-in-up">
+                        <span className="text-[#D4AF37] font-sans font-bold uppercase tracking-[0.25em] text-xs mb-5 block">{current.subtitle || 'Шинэ мэдээ'}</span>
+                        <h1 className="font-display font-bold text-4xl md:text-7xl leading-tight mb-6 drop-shadow-xl">{current.title}</h1>
+                        <p className="font-sans text-lg md:text-2xl text-white/85 leading-relaxed max-w-2xl mb-10 font-light">{current.excerpt}</p>
+                        <button
+                            onClick={() => current.fallbackTarget ? document.getElementById(current.fallbackTarget)?.scrollIntoView({ behavior: 'smooth' }) : onOpen(current)}
+                            className="inline-flex items-center gap-3 px-7 py-3.5 bg-[#D4AF37] text-[#003B5C] rounded-full font-display font-bold uppercase tracking-wider text-xs hover:bg-white transition shadow-xl"
+                        >
+                            {current.ctaLabel || 'Дэлгэрэнгүй'} <ArrowRight size={16}/>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {slides.length > 1 && (
+                <div className="absolute left-4 right-4 md:left-auto md:right-10 bottom-24 z-20 flex items-center justify-between md:justify-end gap-4">
+                    <button onClick={() => go(-1)} className="w-11 h-11 rounded-full border border-white/30 bg-black/20 text-white grid place-items-center hover:bg-white hover:text-[#003B5C] transition"><ChevronLeft size={20}/></button>
+                    <div className="flex gap-2">
+                        {slides.map((slide, idx) => (
+                            <button
+                                key={slide._id || slide.slug || idx}
+                                onClick={() => setActive(idx)}
+                                className={`h-2 rounded-full transition-all ${idx === active ? 'w-8 bg-[#D4AF37]' : 'w-2 bg-white/45 hover:bg-white'}`}
+                                aria-label={`Slide ${idx + 1}`}
+                            />
+                        ))}
+                    </div>
+                    <button onClick={() => go(1)} className="w-11 h-11 rounded-full border border-white/30 bg-black/20 text-white grid place-items-center hover:bg-white hover:text-[#003B5C] transition"><ArrowRight size={20}/></button>
+                </div>
+            )}
+        </div>
+    );
+};
 // ======================================================================
 // 10. КОМПОНЕНТУУД (UI)
 // ======================================================================
@@ -477,6 +544,42 @@ const GovernanceDetail = ({ item, onBack }) => {
 
                     {!item.component && <p className="text-white/40 text-sm italic mt-8">Дэлгэрэнгүй мэдээлэл удахгүй шинэчлэгдэнэ...</p>}
                 </div>
+            </div>
+        </div>
+    );
+};
+
+const PromotionDetail = ({ promotion, onBack }) => {
+    useEffect(() => window.scrollTo(0, 0), []);
+    const widgets = promotion?.widgets || [];
+    const bg = promotion?.backgroundImageUrl || BACKGROUNDS.detail_page;
+
+    return (
+        <div className="min-h-screen relative text-white bg-[#07111f]">
+            <div className="relative min-h-[58vh] flex items-end px-4 md:px-6 pb-16 pt-28 bg-cover bg-center" style={{ backgroundImage: `url(${bg})` }}>
+                <div className="absolute inset-0 sc-overlay-80"></div>
+                <BackButton onClick={onBack} />
+                <div className="relative z-10 max-w-6xl mx-auto w-full">
+                    <span className="text-[#D4AF37] font-bold uppercase tracking-[0.25em] text-xs mb-5 block">{promotion?.subtitle || 'Мэдээлэл'}</span>
+                    <h1 className="font-display font-bold text-4xl md:text-6xl leading-tight max-w-4xl">{promotion?.title}</h1>
+                    {promotion?.excerpt && <p className="text-white/80 text-lg md:text-2xl mt-6 max-w-3xl leading-relaxed">{promotion.excerpt}</p>}
+                </div>
+            </div>
+            <div className="relative z-10 max-w-6xl mx-auto px-4 md:px-6 py-16 grid grid-cols-1 lg:grid-cols-[1.4fr_0.8fr] gap-10">
+                <article className="prose prose-invert max-w-none">
+                    {(promotion?.body || '').split('\n').filter(Boolean).map((para, idx) => (
+                        <p key={idx} className="text-white/80 text-lg leading-8 mb-6">{para}</p>
+                    ))}
+                </article>
+                <aside className="space-y-4">
+                    {widgets.map((widget, idx) => (
+                        <div key={idx} className="border border-white/10 bg-white/[0.06] rounded-2xl p-6 backdrop-blur-sm">
+                            {widget.meta && <span className="text-[#D4AF37] text-[11px] font-bold uppercase tracking-widest">{widget.meta}</span>}
+                            <h3 className="font-display font-bold text-xl text-white mt-2 mb-3">{widget.title}</h3>
+                            <p className={`text-white/75 leading-relaxed ${widget.type === 'stat' ? 'text-2xl font-bold text-[#D4AF37]' : ''}`}>{widget.content}</p>
+                        </div>
+                    ))}
+                </aside>
             </div>
         </div>
     );
@@ -792,6 +895,7 @@ function App() {
   const [cfg, setCfg] = useState({});
   const [financialStats, setFinancialStats] = useState([]);
   const [products, setProducts] = useState(productsData);
+  const [promotions, setPromotions] = useState([]);
 
   const PRODUCT_KEY_MAP = { 1: 'biz_loan', 2: 'car_loan', 3: 'cons_loan', 4: 'trust', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' };
 
@@ -805,12 +909,14 @@ function App() {
   const getPath = (view, item) => {
     if (view === 'product_detail' && (item?.productKey || item?.id))
       return `/products/${item.productKey || item.id}`;
+    if (view === 'promotion_detail' && item?.slug)
+      return `/promo/${item.slug}`;
     if (view === 'governance_detail' && item?.slug)
       return `/governance/${item.slug}`;
     return VIEW_PATHS[view] || '/';
   };
 
-  const pathToState = (pathname, hash, prods) => {
+  const pathToState = (pathname, hash, prods, promos) => {
     if (pathname === '/' || pathname === '') {
       if (hash && hash !== '#home') return { view: 'home', item: null, governance: null, scrollTo: hash.replace('#', '') };
       return { view: 'home', item: null, governance: null, scrollTo: null };
@@ -819,6 +925,11 @@ function App() {
       const key = pathname.replace('/products/', '');
       const item = prods.find(p => p.productKey === key || String(p.id) === key);
       return { view: item ? 'product_detail' : 'home', item: item || null, governance: null, scrollTo: null };
+    }
+    if (pathname.startsWith('/promo/')) {
+      const slug = pathname.replace('/promo/', '');
+      const item = promos.find(p => p.slug === slug);
+      return { view: item ? 'promotion_detail' : 'home', item: item || null, governance: null, scrollTo: null };
     }
     if (pathname.startsWith('/governance/')) {
       const slug = pathname.replace('/governance/', '');
@@ -898,6 +1009,7 @@ function App() {
           }));
         setProducts([...mapped, ...newProds]);
       }).catch(() => {});
+    fetch(`${API_URL}/api/promotions`).then(r => r.json()).then(d => setPromotions(d || [])).catch(() => {});
   }, []);
 
   const navigateTo = (view, item = null, govItem = null) => {
@@ -913,7 +1025,7 @@ function App() {
 
   useEffect(() => {
     const { pathname, hash } = window.location;
-    const s = pathToState(pathname, hash, products);
+    const s = pathToState(pathname, hash, products, promotions);
     if (pathname !== '/' || hash) {
       setCurrentView(s.view);
       setSelectedItem(s.item);
@@ -926,7 +1038,7 @@ function App() {
     }
     const handlePop = () => {
       const { pathname, hash } = window.location;
-      const s = pathToState(pathname, hash, products);
+      const s = pathToState(pathname, hash, products, promotions);
       setCurrentView(s.view);
       setSelectedItem(s.item);
       if (s.governance) setSelectedGovernance(s.governance);
@@ -940,7 +1052,7 @@ function App() {
     };
     window.addEventListener('popstate', handlePop);
     return () => window.removeEventListener('popstate', handlePop);
-  }, [products]);
+  }, [products, promotions]);
 
   const handleLoginSuccess = (user, token) => {
     localStorage.setItem('scm_auth', JSON.stringify({ user, token }));
@@ -1052,6 +1164,7 @@ function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap');
         .sc-overlay-60 { background-color: rgba(${overlayRgb}, ${(0.60 * oMul).toFixed(2)}) !important; }
+        .sc-overlay-70 { background-color: rgba(${overlayRgb}, ${(0.70 * oMul).toFixed(2)}) !important; }
         .sc-overlay-80 { background-color: rgba(${overlayRgb}, ${(0.80 * oMul).toFixed(2)}) !important; }
         .sc-overlay-85 { background-color: rgba(${overlayRgb}, ${(0.85 * oMul).toFixed(2)}) !important; }
         .sc-overlay-90 { background-color: rgba(${overlayRgb}, ${(0.90 * oMul).toFixed(2)}) !important; }
@@ -1161,6 +1274,8 @@ function App() {
                 <PoliciesPage onBack={() => navigateTo('home')} />
             ) : currentView === 'governance_detail' && selectedGovernance ? (
                 <GovernanceDetail item={selectedGovernance} onBack={() => navigateTo('home')} />
+            ) : currentView === 'promotion_detail' && selectedItem ? (
+                <PromotionDetail promotion={selectedItem} onBack={() => navigateTo('home')} />
             ) : currentView === 'login' ? (
                 <Login 
                     onBack={() => navigateTo('home')} 
@@ -1180,9 +1295,15 @@ function App() {
                 <ShogunStudio onBack={() => navigateTo('home')} />
             ) : (
                   <>
-                    <section id="home" className="relative h-screen flex items-center justify-center text-center px-4" style={getSectionBackgroundStyle('home', BACKGROUNDS.hero, { fixed: false })}>
-                      <div className="absolute inset-0 sc-overlay-80 mix-blend-multiply"></div>
-                      <div className="relative z-10 max-w-5xl space-y-8 text-white animate-fade-in-up px-4 flex flex-col items-center">
+                    <section id="home" className="relative h-screen text-left">
+                      <PromotionSlider promotions={promotions} fallbackBg={BACKGROUNDS.hero} onOpen={(item) => navigateTo('promotion_detail', item)} />
+                      <img
+                        src={IS_VERTICAL_HERO_LOGO ? (USE_GOLD_LOGO ? logoGoldVertical : logoWhiteVertical) : logoWhite}
+                        alt="Solongo Capital Logo"
+                        className="absolute top-28 right-6 md:right-14 z-20 h-24 md:h-36 object-contain opacity-90 hidden sm:block"
+                      />
+                      <div className="hidden absolute inset-0 sc-overlay-80 mix-blend-multiply"></div>
+                      <div className="hidden relative z-10 max-w-5xl space-y-8 text-white animate-fade-in-up px-4 flex-col items-center">
                         <img 
                           src={
                             IS_VERTICAL_HERO_LOGO 

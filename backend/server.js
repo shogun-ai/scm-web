@@ -116,6 +116,27 @@ const BlogSchema = new mongoose.Schema({
 });
 const Blog = mongoose.models.Blog || mongoose.model('Blog', BlogSchema);
 
+const PromoSlideSchema = new mongoose.Schema({
+    title: { type: String, required: true },
+    subtitle: { type: String, default: '' },
+    excerpt: { type: String, default: '' },
+    body: { type: String, default: '' },
+    slug: { type: String, required: true, unique: true },
+    backgroundImageUrl: { type: String, default: '' },
+    ctaLabel: { type: String, default: 'Дэлгэрэнгүй' },
+    isActive: { type: Boolean, default: true },
+    order: { type: Number, default: 99 },
+    widgets: [{
+        type: { type: String, default: 'text' },
+        title: { type: String, default: '' },
+        content: { type: String, default: '' },
+        meta: { type: String, default: '' }
+    }],
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now }
+});
+const PromoSlide = mongoose.models.PromoSlide || mongoose.model('PromoSlide', PromoSlideSchema);
+
 const LoanRequestSchema = new mongoose.Schema({
     selectedProduct: String, amount: Number, term: Number, userType: String,
     lastname: String, firstname: String, regNo: String, phone: String, email: String,
@@ -4609,6 +4630,60 @@ app.delete('/api/blogs/:id', authenticateUser, requireAdmin, async (req, res) =>
     } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+const promoSort = { order: 1, createdAt: -1 };
+const normalizeSlug = (value = '') => String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+
+app.get('/api/promotions', async (req, res) => {
+    try {
+        const query = req.query.all === 'true' ? {} : { isActive: true };
+        res.json(await PromoSlide.find(query).sort(promoSort));
+    } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+app.get('/api/promotions/:slug', async (req, res) => {
+    try {
+        const promo = await PromoSlide.findOne({ slug: req.params.slug, isActive: true });
+        if (!promo) return res.status(404).json({ message: 'Мэдээлэл олдсонгүй' });
+        res.json(promo);
+    } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+app.post('/api/promotions', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+        const count = await PromoSlide.countDocuments();
+        if (count >= 5) return res.status(400).json({ message: 'Хамгийн ихдээ 5 хуудас нэмэх боломжтой.' });
+        const slug = normalizeSlug(req.body.slug || req.body.title || `promo-${Date.now()}`);
+        const promo = new PromoSlide({ ...req.body, slug, updatedAt: new Date() });
+        await promo.save();
+        res.status(201).json(promo);
+    } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+app.put('/api/promotions/:id', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+        const slug = normalizeSlug(req.body.slug || req.body.title || req.params.id);
+        const updated = await PromoSlide.findByIdAndUpdate(
+            req.params.id,
+            { ...req.body, slug, updatedAt: new Date() },
+            { new: true, runValidators: true }
+        );
+        if (!updated) return res.status(404).json({ message: 'Мэдээлэл олдсонгүй' });
+        res.json(updated);
+    } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+app.delete('/api/promotions/:id', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+        await PromoSlide.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Устгагдлаа' });
+    } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 // --- 1. Ð¡ÐÐÐ¥Ò®Ò®Ð“Ð˜Ð™Ð Ò®Ð—Ò®Ò®Ð›Ð­Ð›Ð¢ API ---
 // Ð‘Ò¯Ñ… Ñ‚Ð¾Ð¾Ð³ Ð±Ð°Ð°Ð·Ð°Ð°Ñ Ð°Ð²Ð°Ñ… (ÐÒ¯Ò¯Ñ€ Ñ…ÑƒÑƒÐ´ÑÐ°Ð½Ð´ Ñ…Ð°Ñ€ÑƒÑƒÐ»Ð°Ñ…)
 app.get('/api/stats', async (req, res) => {
@@ -4914,6 +4989,27 @@ const seedStats = async () => {
     console.log('Stat seed done.');
 };
 
+const seedPromoSlides = async () => {
+    const count = await PromoSlide.countDocuments();
+    if (count > 0) return;
+    await PromoSlide.create({
+        title: 'Солонго Капитал бонд гаргалаа',
+        subtitle: 'Шинэ мэдээ',
+        excerpt: 'Хөрөнгө оруулагчдад зориулсан шинэ боломж, компанийн өсөлтийн дараагийн шат.',
+        body: 'Солонго Капитал ББСБ нь санхүүжилтийн эх үүсвэрээ төрөлжүүлэх, харилцагчдад хүрэх бүтээгдэхүүн үйлчилгээгээ өргөжүүлэх зорилгоор бонд гаргалаа. Энэхүү хуудас нь админ панелаас бүрэн засагдах бөгөөд нөхцөл, хугацаа, давуу тал зэрэг мэдээллийг widget хэлбэрээр нэмэх боломжтой.',
+        slug: 'bond-announcement',
+        backgroundImageUrl: 'https://images.unsplash.com/photo-1560472355-536de3962603?auto=format&fit=crop&w=1950&q=80',
+        ctaLabel: 'Дэлгэрэнгүй',
+        order: 1,
+        widgets: [
+            { type: 'stat', title: 'Зорилго', content: 'Санхүүжилтийн эх үүсвэр төрөлжүүлэх', meta: 'Бонд' },
+            { type: 'text', title: 'Хэнд зориулсан бэ?', content: 'Тогтвортой өгөөж, ил тод мэдээлэл хайж буй хөрөнгө оруулагчдад зориулсан мэдээллийн хуудас.' },
+            { type: 'quote', title: 'Онцлох', content: 'Дэлгэрэнгүй нөхцөл, холбогдох баримт бичгийг эндээс нэг дор харуулна.' }
+        ]
+    });
+    console.log('Promotion slide seed done.');
+};
+
 const seedAdmin = async () => {
     const count = await User.countDocuments();
     if (count === 0) {
@@ -4938,6 +5034,7 @@ mongoose.connect(MONGO_URI).then(async () => {
     await seedProductContent();
     await seedFormConfig();
     await seedStats();
+    await seedPromoSlides();
     // Force-update financial_date to current period value
     await SiteConfig.findOneAndUpdate(
         { key: 'financial_date' },
