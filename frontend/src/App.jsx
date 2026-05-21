@@ -408,21 +408,14 @@ const ScrollDownArrow = ({ targetId, color = "text-white/70" }) => {
     );
 };
 
-const PromotionSlider = ({ promotions, fallbackBg, onOpen }) => {
-    const slides = promotions.length ? promotions : [{
-        title: 'Солонго Капитал',
-        subtitle: 'Санхүүгийн шийдэл',
-        excerpt: 'Итгэлд суурилсан, уян хатан санхүүгийн үйлчилгээ.',
-        backgroundImageUrl: fallbackBg,
-        ctaLabel: 'Бүтээгдэхүүн үзэх',
-        fallbackTarget: 'products'
-    }];
+const PromotionSlider = ({ promotions, fallbackBg, homeSlide, onOpen, onProducts }) => {
+    const slides = [homeSlide, ...promotions];
     const [active, setActive] = useState(0);
     const current = slides[active] || slides[0];
 
     useEffect(() => {
         if (slides.length <= 1) return undefined;
-        const timer = window.setInterval(() => setActive(prev => (prev + 1) % slides.length), 6500);
+        const timer = window.setInterval(() => setActive(prev => (prev + 1) % slides.length), 2500);
         return () => window.clearInterval(timer);
     }, [slides.length]);
 
@@ -433,35 +426,62 @@ const PromotionSlider = ({ promotions, fallbackBg, onOpen }) => {
             <div className="absolute inset-0 flex transition-transform duration-700 ease-out" style={{ transform: `translateX(-${active * 100}%)` }}>
                 {slides.map((slide, idx) => (
                     <div
-                        key={slide._id || slide.slug || idx}
+                        key={slide._id || slide.slug || slide.kind || idx}
                         className="min-w-full h-full bg-cover bg-center"
                         style={{ backgroundImage: `url(${slide.backgroundImageUrl || fallbackBg})` }}
                     />
                 ))}
             </div>
-            <div className="absolute inset-0 sc-overlay-70"></div>
-            <div className="relative z-10 h-full flex items-center">
-                <div className="max-w-7xl mx-auto px-4 md:px-6 w-full pt-20 pb-24">
-                    <div className="max-w-3xl text-white animate-fade-in-up">
-                        <span className="text-[#D4AF37] font-sans font-bold uppercase tracking-[0.25em] text-xs mb-5 block">{current.subtitle || 'Шинэ мэдээ'}</span>
-                        <h1 className="font-display font-bold text-4xl md:text-7xl leading-tight mb-6 drop-shadow-xl">{current.title}</h1>
-                        <p className="font-sans text-lg md:text-2xl text-white/85 leading-relaxed max-w-2xl mb-10 font-light">{current.excerpt}</p>
-                        <button
-                            onClick={() => current.fallbackTarget ? document.getElementById(current.fallbackTarget)?.scrollIntoView({ behavior: 'smooth' }) : onOpen(current)}
-                            className="inline-flex items-center gap-3 px-7 py-3.5 bg-[#D4AF37] text-[#003B5C] rounded-full font-display font-bold uppercase tracking-wider text-xs hover:bg-white transition shadow-xl"
-                        >
-                            {current.ctaLabel || 'Дэлгэрэнгүй'} <ArrowRight size={16}/>
-                        </button>
+            <div className={`absolute inset-0 ${current?.kind === 'home' ? 'sc-overlay-80 mix-blend-multiply' : 'sc-overlay-70'}`}></div>
+            {current?.kind === 'home' ? (
+                <div className="relative z-10 h-full flex items-center justify-center text-center px-4">
+                    <div className="max-w-5xl space-y-8 text-white animate-fade-in-up px-4 flex flex-col items-center">
+                        <img
+                            src={current.logo}
+                            alt="Solongo Capital Logo"
+                            className={current.logoClassName}
+                        />
+                        <h1 className="font-display font-bold text-4xl md:text-5xl lg:text-7xl leading-[1.1] tracking-tight">
+                            {current.line1} <br/>
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00A651] to-emerald-400">{current.highlight}</span> {current.line2}
+                        </h1>
+                        <p className="font-sans font-normal text-base md:text-lg lg:text-xl text-blue-100 max-w-2xl mx-auto leading-relaxed opacity-90">
+                            {current.description}
+                        </p>
+                        <div className="pt-8">
+                            <button
+                                onClick={onProducts}
+                                className="px-10 py-4 bg-transparent border border-white/40 text-white font-sans font-semibold rounded-full transition-all duration-300 hover:bg-white/10 hover:border-white uppercase tracking-widest text-xs"
+                            >
+                                {current.button}
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div>
+            ) : (
+                <div className="relative z-10 h-full flex items-center">
+                    <div className="max-w-7xl mx-auto px-4 md:px-6 w-full pt-20 pb-24">
+                        <div className="max-w-3xl text-white animate-fade-in-up">
+                            <span className="text-[#D4AF37] font-sans font-bold uppercase tracking-[0.25em] text-xs mb-5 block">{current.subtitle || 'Шинэ мэдээ'}</span>
+                            <h1 className="font-display font-bold text-4xl md:text-7xl leading-tight mb-6 drop-shadow-xl">{current.title}</h1>
+                            <p className="font-sans text-lg md:text-2xl text-white/85 leading-relaxed max-w-2xl mb-10 font-light">{current.excerpt}</p>
+                            <button
+                                onClick={() => onOpen(current)}
+                                className="inline-flex items-center gap-3 px-7 py-3.5 bg-[#D4AF37] text-[#003B5C] rounded-full font-display font-bold uppercase tracking-wider text-xs hover:bg-white transition shadow-xl"
+                            >
+                                {current.ctaLabel || 'Дэлгэрэнгүй'} <ArrowRight size={16}/>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {slides.length > 1 && (
                 <div className="absolute left-4 right-4 md:left-auto md:right-10 bottom-24 z-20 flex items-center justify-between md:justify-end gap-4">
                     <button onClick={() => go(-1)} className="w-11 h-11 rounded-full border border-white/30 bg-black/20 text-white grid place-items-center hover:bg-white hover:text-[#003B5C] transition"><ChevronLeft size={20}/></button>
                     <div className="flex gap-2">
                         {slides.map((slide, idx) => (
                             <button
-                                key={slide._id || slide.slug || idx}
+                                key={slide._id || slide.slug || slide.kind || idx}
                                 onClick={() => setActive(idx)}
                                 className={`h-2 rounded-full transition-all ${idx === active ? 'w-8 bg-[#D4AF37]' : 'w-2 bg-white/45 hover:bg-white'}`}
                                 aria-label={`Slide ${idx + 1}`}
@@ -1296,11 +1316,27 @@ function App() {
             ) : (
                   <>
                     <section id="home" className="relative h-screen text-left">
-                      <PromotionSlider promotions={promotions} fallbackBg={BACKGROUNDS.hero} onOpen={(item) => navigateTo('promotion_detail', item)} />
+                      <PromotionSlider
+                        promotions={promotions}
+                        fallbackBg={BACKGROUNDS.hero}
+                        onOpen={(item) => navigateTo('promotion_detail', item)}
+                        onProducts={() => scrollToSection('products')}
+                        homeSlide={{
+                          kind: 'home',
+                          backgroundImageUrl: BACKGROUNDS.hero,
+                          logo: IS_VERTICAL_HERO_LOGO ? (USE_GOLD_LOGO ? logoGoldVertical : logoWhiteVertical) : logoWhite,
+                          logoClassName: `${IS_VERTICAL_HERO_LOGO ? 'h-32 md:h-40 lg:h-52' : 'h-24 md:h-32'} object-contain mb-4 opacity-90`,
+                          line1: cfg.hero_line1 || 'Ð‘Ð¸Ð·Ð½ÐµÑÐ¸Ð¹Ð½',
+                          highlight: cfg.hero_highlight || 'Ó¨ÑÓ©Ð»Ñ‚Ð¸Ð¹Ð³',
+                          line2: cfg.hero_line2 || 'Ð”ÑÐ¼Ð¶Ð¸Ð½Ñ',
+                          description: cfg.hero_description || 'Ð‘Ð¸Ð´ Ñ‚Ð°Ð½Ð´ Ð·Ð°Ñ… Ð·ÑÑÐ»Ð¸Ð¹Ð½ Ñ…Ð°Ð¼Ð³Ð¸Ð¹Ð½ ÑƒÑÐ½ Ñ…Ð°Ñ‚Ð°Ð½ Ð½Ó©Ñ…Ñ†Ó©Ð»Ð¸Ð¹Ð³ ÑÐ°Ð½Ð°Ð» Ð±Ð¾Ð»Ð³Ð¾Ð¶, Ñ‚Ð°Ð½Ñ‹ ÑÐ°Ð½Ñ…Ò¯Ò¯Ð³Ð¸Ð¹Ð½ Ð½Ð°Ð¹Ð´Ð²Ð°Ñ€Ñ‚Ð°Ð¹ Ñ‚Ò¯Ð½Ñˆ Ð±Ð°Ð¹Ñ… Ð±Ð¾Ð»Ð½Ð¾.',
+                          button: cfg.hero_button || 'Ð‘Ò¯Ñ‚ÑÑÐ³Ð´ÑÑ…Ò¯Ò¯Ð½ Ò¯Ð·ÑÑ…'
+                        }}
+                      />
                       <img
                         src={IS_VERTICAL_HERO_LOGO ? (USE_GOLD_LOGO ? logoGoldVertical : logoWhiteVertical) : logoWhite}
                         alt="Solongo Capital Logo"
-                        className="absolute top-28 right-6 md:right-14 z-20 h-24 md:h-36 object-contain opacity-90 hidden sm:block"
+                        className="hidden"
                       />
                       <div className="hidden absolute inset-0 sc-overlay-80 mix-blend-multiply"></div>
                       <div className="hidden relative z-10 max-w-5xl space-y-8 text-white animate-fade-in-up px-4 flex-col items-center">
