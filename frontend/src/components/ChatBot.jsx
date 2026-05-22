@@ -17,6 +17,7 @@ const createSessionId = () => (
 
 const isLocal = window.location.hostname === 'localhost';
 const API_BASE_URL = isLocal ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com';
+const WEB_BASE_URL = isLocal ? 'http://localhost:5173' : 'https://www.scm.mn';
 
 const OPTION_COMMANDS = {
   Зээл: 'loan',
@@ -40,6 +41,14 @@ const OPTION_COMMANDS = {
   'Онлайн хүсэлт өгөх': 'online_request',
   Буцах: 'back',
   Үгүй: 'no'
+};
+
+const toAbsoluteUrl = (url = '') => {
+  const value = String(url || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith('/')) return `${WEB_BASE_URL}${value}`;
+  return `${WEB_BASE_URL}/${value}`;
 };
 
 const ChatBot = () => {
@@ -86,6 +95,18 @@ const ChatBot = () => {
     setIsOpen(false);
   };
 
+  const navigateToProduct = (productUrl) => {
+    const target = toAbsoluteUrl(productUrl);
+    const path = target.startsWith(WEB_BASE_URL) ? target.replace(WEB_BASE_URL, '') || '/' : target;
+    if (/^https?:\/\//i.test(path)) {
+      window.open(path, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    window.history.pushState({ path }, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { path } }));
+    setIsOpen(false);
+  };
+
   const sendMessage = async (textToSend = input, displayText = textToSend) => {
     const messageText = String(textToSend || '').trim();
     if (!messageText || isLoading) return;
@@ -129,7 +150,7 @@ const ChatBot = () => {
         ? optionsMatch[1].split(',').map((option) => option.trim()).filter(Boolean)
         : [];
 
-      setMessages((prev) => [...prev, { role: 'ai', text: cleanText, options }]);
+      setMessages((prev) => [...prev, { role: 'ai', text: cleanText, options, productCard: res.data?.productCard || null }]);
 
       if (actionMatch?.[1]?.trim() === 'loan_request') {
         setTimeout(navigateToLoanRequest, 300);
@@ -234,6 +255,49 @@ const ChatBot = () => {
                       </p>
                     ))}
                   </div>
+
+                  {message.role === 'ai' && message.productCard && (
+                    <div className="mt-3 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+                      {message.productCard.imageUrl && (
+                        <img
+                          src={toAbsoluteUrl(message.productCard.imageUrl)}
+                          alt={message.productCard.title || 'Солонго Капитал'}
+                          className="h-28 w-full object-cover"
+                          loading="lazy"
+                        />
+                      )}
+                      <div className="space-y-3 p-3">
+                        <div>
+                          <h4 className="text-[13px] font-bold text-[#003B5C]">{message.productCard.title}</h4>
+                          {message.productCard.subtitle && (
+                            <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-600">
+                              {message.productCard.subtitle.replace(/\*\*/g, '')}
+                            </p>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            onClick={() => sendMessage('documents', 'Материал')}
+                            className="rounded-xl border border-[#00A651] px-2 py-2 text-[10px] font-bold text-[#00A651] transition hover:bg-[#00A651] hover:text-white"
+                          >
+                            Материал
+                          </button>
+                          <button
+                            onClick={navigateToLoanRequest}
+                            className="rounded-xl bg-[#00A651] px-2 py-2 text-[10px] font-bold text-white transition hover:bg-[#008f45]"
+                          >
+                            Хүсэлт
+                          </button>
+                          <button
+                            onClick={() => navigateToProduct(message.productCard.productUrl)}
+                            className="rounded-xl border border-[#003B5C] px-2 py-2 text-[10px] font-bold text-[#003B5C] transition hover:bg-[#003B5C] hover:text-white"
+                          >
+                            Дэлгэрэнгүй
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {message.role === 'ai' && message.options?.length > 0 && (
                     <div className="mt-3 ml-1 flex flex-wrap gap-2">

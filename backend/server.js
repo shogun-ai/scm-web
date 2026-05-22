@@ -1601,7 +1601,7 @@ setInterval(() => {
 app.post('/api/chat', async (req, res) => {
     try {
         const chat = await getChat();
-        const { CONTACT_INFO, PRODUCT_INFO, PRODUCT_DOCS, loan_rate_default, dti_individual, dti_org, trust_rate } = chat;
+        const { CONTACT_INFO, PRODUCT_INFO, PRODUCT_DOCS, PRODUCT_CARDS, loan_rate_default, dti_individual, dti_org, trust_rate } = chat;
         const sessionId = req.body?.sessionId || `anon_${req.headers['user-agent']}`;
 
         if (!sessions.has(sessionId)) {
@@ -1647,14 +1647,16 @@ app.post('/api/chat', async (req, res) => {
 
             s.data.productKey = productKey;
             s.state = ['хэрэглээний зээл', 'шугмын зээл', 'cons_loan', 'line_loan'].includes(productKey) ? 'PRODUCT_OPTIONS' : 'TYPE_SELECT';
+            const productCard = PRODUCT_CARDS?.[productKey] || null;
 
             if (s.state === 'TYPE_SELECT') {
                 return res.json({
-                    reply: chatReply(`${productText}\n\nТа Иргэн эсвэл Байгууллагаар сонирхож байна уу?`, ['Иргэн', 'Байгууллага', 'Буцах', 'Үндсэн цэс'])
+                    reply: chatReply(`${productText}\n\nТа Иргэн эсвэл Байгууллагаар сонирхож байна уу?`, ['Иргэн', 'Байгууллага', 'Буцах', 'Үндсэн цэс']),
+                    productCard
                 });
             }
 
-            return res.json({ reply: chatReply(productText, PRODUCT_MENU_OPTIONS) });
+            return res.json({ reply: chatReply(productText, PRODUCT_MENU_OPTIONS), productCard });
         };
 
         const replyWithDocuments = (productKey) => {
