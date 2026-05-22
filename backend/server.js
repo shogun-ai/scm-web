@@ -1867,6 +1867,116 @@ app.post('/api/chat', async (req, res) => {
         res.status(500).json({ message: 'Error' });
     }
 });
+
+// ============================================================
+// Facebook Messenger webhook
+// ============================================================
+const FB_GRAPH_VERSION = process.env.FB_GRAPH_VERSION || 'v20.0';
+const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || process.env.MESSENGER_VERIFY_TOKEN;
+const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN || process.env.MESSENGER_PAGE_ACCESS_TOKEN;
+
+function stripChatControlTokens(reply = '') {
+    const optionsMatch = String(reply).match(/\[OPTIONS:\s*(.*?)\]/i);
+    const actionMatch = String(reply).match(/\[ACTION:\s*(.*?)\]/i);
+    const cleanText = [optionsMatch?.[0], actionMatch?.[0]]
+        .filter(Boolean)
+        .reduce((text, token) => text.replace(token, ''), String(reply))
+        .trim();
+    const options = optionsMatch
+        ? optionsMatch[1].split(',').map(option => option.trim()).filter(Boolean)
+        : [];
+    return { cleanText, options, action: actionMatch?.[1]?.trim() || '' };
+}
+
+function buildMessengerQuickReplies(options = []) {
+    return options.slice(0, 11).map(option => ({
+        content_type: 'text',
+        title: String(option).slice(0, 20),
+        payload: String(option).slice(0, 1000)
+    }));
+}
+
+async function sendMessengerText(recipientId, text, options = []) {
+    if (!FB_PAGE_ACCESS_TOKEN) {
+        console.warn('FB_PAGE_ACCESS_TOKEN is not configured; Messenger reply skipped.');
+        return;
+    }
+
+    const payload = {
+        recipient: { id: recipientId },
+        messaging_type: 'RESPONSE',
+        message: {
+            text: String(text || 'Уучлаарай, хариу бэлтгэхэд алдаа гарлаа.').slice(0, 1900)
+        }
+    };
+
+    const quickReplies = buildMessengerQuickReplies(options);
+    if (quickReplies.length) payload.message.quick_replies = quickReplies;
+
+    await axios.post(
+        `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messages`,
+        payload,
+        { params: { access_token: FB_PAGE_ACCESS_TOKEN } }
+    );
+}
+
+async function getChatbotReplyForMessenger(req, senderId, messageText) {
+    const baseUrl = process.env.PUBLIC_API_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const response = await axios.post(`${baseUrl}/api/chat`, {
+        sessionId: `fb_${senderId}`,
+        message: messageText,
+        history: []
+    }, {
+        headers: { 'x-session-id': `fb_${senderId}` },
+        timeout: 30000
+    });
+    return response.data?.reply || '';
+}
+
+app.get('/api/messenger/webhook', (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    if (mode === 'subscribe' && token && token === FB_VERIFY_TOKEN) {
+        return res.status(200).send(challenge);
+    }
+
+    return res.sendStatus(403);
+});
+
+app.post('/api/messenger/webhook', async (req, res) => {
+    if (req.body?.object !== 'page') return res.sendStatus(404);
+
+    res.sendStatus(200);
+
+    const entries = Array.isArray(req.body.entry) ? req.body.entry : [];
+    for (const entry of entries) {
+        const events = Array.isArray(entry.messaging) ? entry.messaging : [];
+        for (const event of events) {
+            const senderId = event.sender?.id;
+            const messageText = event.message?.text || event.postback?.payload;
+
+            if (!senderId || !messageText || event.message?.is_echo) continue;
+
+            try {
+                const reply = await getChatbotReplyForMessenger(req, senderId, messageText);
+                const { cleanText, options, action } = stripChatControlTokens(reply);
+                const actionText = action === 'loan_request'
+                    ? '\n\nЗээлийн хүсэлт: https://www.scm.mn/loan-request'
+                    : '';
+                await sendMessengerText(senderId, `${cleanText}${actionText}`.trim(), options);
+            } catch (error) {
+                console.error('Messenger webhook error:', error.response?.data || error.message);
+                try {
+                    await sendMessengerText(senderId, 'Уучлаарай, чатбот түр саатлаа. Та дахин бичнэ үү эсвэл 7599-1919 дугаараар холбогдоно уу.');
+                } catch (sendError) {
+                    console.error('Messenger fallback send error:', sendError.response?.data || sendError.message);
+                }
+            }
+        }
+    }
+});
 // ðŸ” AUTH & 2FA & ADMIN ROUTES
 // ============================================================
 
