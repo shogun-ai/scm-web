@@ -2065,6 +2065,68 @@ async function sendMessengerProductCard(recipientId, card, summaryText = '') {
     );
 }
 
+function buildMessengerCardButtons(card = {}) {
+    if (card.productUrl) return buildMessengerProductButtons(card);
+
+    return [{
+        type: 'postback',
+        title: 'Сонгох',
+        payload: String(card.command || card.title || 'menu').slice(0, 1000)
+    }];
+}
+
+async function sendMessengerCardCarousel(recipientId, cards = [], summaryText = '') {
+    if (!FB_PAGE_ACCESS_TOKEN) {
+        console.warn('FB_PAGE_ACCESS_TOKEN is not configured; Messenger card carousel skipped.');
+        return;
+    }
+
+    const elements = cards
+        .filter(card => card?.title && (card.command || card.productUrl))
+        .slice(0, 10)
+        .map(card => {
+            const productUrl = toAbsoluteScmUrl(card.productUrl || '');
+            const element = {
+                title: compactMessengerText(card.title || 'Солонго Капитал', 80),
+                image_url: toAbsoluteScmUrl(card.imageUrl),
+                subtitle: compactMessengerText(card.subtitle || summaryText, 80),
+                buttons: buildMessengerCardButtons(card)
+            };
+            if (productUrl) {
+                element.default_action = {
+                    type: 'web_url',
+                    url: productUrl,
+                    webview_height_ratio: 'full'
+                };
+            }
+            if (!element.image_url) delete element.image_url;
+            return element;
+        });
+
+    if (!elements.length) {
+        await sendMessengerText(recipientId, summaryText || 'Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.');
+        return;
+    }
+
+    await axios.post(
+        `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messages`,
+        {
+            recipient: { id: recipientId },
+            messaging_type: 'RESPONSE',
+            message: {
+                attachment: {
+                    type: 'template',
+                    payload: {
+                        template_type: 'generic',
+                        elements
+                    }
+                }
+            }
+        },
+        { params: { access_token: FB_PAGE_ACCESS_TOKEN } }
+    );
+}
+
 async function sendMessengerText(recipientId, text, options = []) {
     if (!FB_PAGE_ACCESS_TOKEN) {
         console.warn('FB_PAGE_ACCESS_TOKEN is not configured; Messenger reply skipped.');
@@ -2099,7 +2161,7 @@ async function getChatbotReplyForMessenger(req, senderId, messageText) {
         headers: { 'x-session-id': `fb_${senderId}` },
         timeout: 30000
     });
-    return response.data?.reply || '';
+    return response.data || { reply: '' };
 }
 
 app.get('/api/messenger/webhook', (req, res) => {
@@ -2129,13 +2191,16 @@ app.post('/api/messenger/webhook', async (req, res) => {
             if (!senderId || !messageText || event.message?.is_echo) continue;
 
             try {
-                const reply = await getChatbotReplyForMessenger(req, senderId, messageText);
-                const { cleanText, options, action } = stripChatControlTokens(reply);
-                const chat = await getChat();
-                const productKey = getMatchedProductKey(normalizeChatText(messageText));
-                const productCard = productKey ? chat.PRODUCT_CARDS?.[productKey] : null;
+                const chatResponse = await getChatbotReplyForMessenger(req, senderId, messageText);
+                const { cleanText, options, action } = stripChatControlTokens(chatResponse.reply || '');
+                const productCard = chatResponse.productCard;
                 if (productCard) {
                     await sendMessengerProductCard(senderId, productCard, cleanText);
+                    continue;
+                }
+                if (Array.isArray(chatResponse.cards) && chatResponse.cards.length) {
+                    if (cleanText) await sendMessengerText(senderId, cleanText);
+                    await sendMessengerCardCarousel(senderId, chatResponse.cards, cleanText);
                     continue;
                 }
                 const actionText = action === 'loan_request'
