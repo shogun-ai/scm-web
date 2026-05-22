@@ -1246,6 +1246,7 @@ const buildChatbotCache = async () => {
 
         const PRODUCT_INFO = {};
         const PRODUCT_DOCS = {};
+        const PRODUCT_CARDS = {};
         const PRODUCT_CONTEXT = [];
         const keyMap = {
             biz_loan: 'бизнесийн зээл',
@@ -1266,6 +1267,16 @@ const buildChatbotCache = async () => {
             };
             if (key) PRODUCT_DOCS[key] = docs;
             if (p.productKey) PRODUCT_DOCS[p.productKey] = docs;
+            const card = {
+                productKey: p.productKey,
+                title: p.title,
+                subtitle: p.shortDesc || p.description || p.chatbotText || '',
+                imageUrl: p.headerImageUrl || p.bgImageUrl || '',
+                productUrl: `https://www.scm.mn/products/${p.productKey}`,
+                hasUserTypeDocs: Boolean(docs.individual.length || docs.company.length)
+            };
+            if (key) PRODUCT_CARDS[key] = card;
+            if (p.productKey) PRODUCT_CARDS[p.productKey] = card;
             PRODUCT_CONTEXT.push({
                 productKey: p.productKey,
                 title: p.title,
@@ -1289,6 +1300,7 @@ const buildChatbotCache = async () => {
             CONTACT_INFO,
             PRODUCT_INFO,
             PRODUCT_DOCS,
+            PRODUCT_CARDS,
             PRODUCT_CONTEXT,
             loan_rate_default: cfg.loan_rate_default || 3.2,
             dti_individual: (cfg.dti_individual || 55) / 100,
@@ -1756,6 +1768,10 @@ app.post('/api/chat', async (req, res) => {
                 return res.json({ reply: chatReply('Манай зээлийн бүтээгдэхүүнүүдээс сонгоно уу.', LOAN_MENU_OPTIONS) });
 
             case 'TYPE_SELECT':
+                if (msg === 'documents' || msg.includes('бүрдүүлэх') || msg.includes('материал')) {
+                    s.data.pendingAction = 'documents';
+                    return res.json({ reply: chatReply('Иргэн эсвэл Байгууллагаар бүрдүүлэх баримт бичиг харах уу?', ['Иргэн', 'Байгууллага', 'Буцах', 'Үндсэн цэс']) });
+                }
                 if (includesAny(msg, ['individual', 'иргэн', 'хувь хүн'])) {
                     s.data.userType = 'individual';
                     if (s.data.pendingAction === 'documents' && s.data.productKey) {
@@ -1924,6 +1940,89 @@ function buildMessengerQuickReplies(options = []) {
     }));
 }
 
+function toAbsoluteScmUrl(url = '') {
+    const value = String(url || '').trim();
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith('/')) return `https://www.scm.mn${value}`;
+    return `https://www.scm.mn/${value}`;
+}
+
+function compactMessengerText(text = '', limit = 80) {
+    return String(text || '')
+        .replace(/\[OPTIONS:\s*.*?\]/gi, '')
+        .replace(/\[ACTION:\s*.*?\]/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, limit);
+}
+
+function buildMessengerProductButtons(card = {}) {
+    const buttons = [
+        {
+            type: 'web_url',
+            title: 'Хүсэлт өгөх',
+            url: 'https://www.scm.mn/loan-request',
+            webview_height_ratio: 'full'
+        },
+        {
+            type: 'web_url',
+            title: 'Дэлгэрэнгүй',
+            url: toAbsoluteScmUrl(card.productUrl),
+            webview_height_ratio: 'full'
+        }
+    ];
+
+    if (card.hasUserTypeDocs) {
+        buttons.unshift({ type: 'postback', title: 'Материал', payload: 'documents' });
+    } else {
+        buttons.unshift({ type: 'postback', title: 'Тооцоолол', payload: 'Тооцоолол' });
+    }
+
+    return buttons.slice(0, 3);
+}
+
+async function sendMessengerProductCard(recipientId, card, summaryText = '') {
+    if (!FB_PAGE_ACCESS_TOKEN) {
+        console.warn('FB_PAGE_ACCESS_TOKEN is not configured; Messenger product card skipped.');
+        return;
+    }
+
+    const payload = {
+        recipient: { id: recipientId },
+        messaging_type: 'RESPONSE',
+        message: {
+            attachment: {
+                type: 'template',
+                payload: {
+                    template_type: 'generic',
+                    elements: [{
+                        title: compactMessengerText(card.title || 'Солонго Капитал', 80),
+                        image_url: toAbsoluteScmUrl(card.imageUrl),
+                        subtitle: compactMessengerText(summaryText || card.subtitle, 80),
+                        default_action: {
+                            type: 'web_url',
+                            url: toAbsoluteScmUrl(card.productUrl),
+                            webview_height_ratio: 'full'
+                        },
+                        buttons: buildMessengerProductButtons(card)
+                    }]
+                }
+            }
+        }
+    };
+
+    if (!payload.message.attachment.payload.elements[0].image_url) {
+        delete payload.message.attachment.payload.elements[0].image_url;
+    }
+
+    await axios.post(
+        `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messages`,
+        payload,
+        { params: { access_token: FB_PAGE_ACCESS_TOKEN } }
+    );
+}
+
 async function sendMessengerText(recipientId, text, options = []) {
     if (!FB_PAGE_ACCESS_TOKEN) {
         console.warn('FB_PAGE_ACCESS_TOKEN is not configured; Messenger reply skipped.');
@@ -1983,13 +2082,20 @@ app.post('/api/messenger/webhook', async (req, res) => {
         const events = Array.isArray(entry.messaging) ? entry.messaging : [];
         for (const event of events) {
             const senderId = event.sender?.id;
-            const messageText = event.message?.text || event.postback?.payload;
+            const messageText = event.message?.quick_reply?.payload || event.message?.text || event.postback?.payload;
 
             if (!senderId || !messageText || event.message?.is_echo) continue;
 
             try {
                 const reply = await getChatbotReplyForMessenger(req, senderId, messageText);
                 const { cleanText, options, action } = stripChatControlTokens(reply);
+                const chat = await getChat();
+                const productKey = getMatchedProductKey(normalizeChatText(messageText));
+                const productCard = productKey ? chat.PRODUCT_CARDS?.[productKey] : null;
+                if (productCard) {
+                    await sendMessengerProductCard(senderId, productCard, cleanText);
+                    continue;
+                }
                 const actionText = action === 'loan_request'
                     ? '\n\nЗээлийн хүсэлт: https://www.scm.mn/loan-request'
                     : '';
