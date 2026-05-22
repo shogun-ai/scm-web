@@ -1313,8 +1313,36 @@ function parseMoneyMNT(msg) {
     return isNaN(value) ? null : value;
 }
 
+const CHAT_COMMAND_ALIASES = {
+    'зээл': 'loan',
+    'итгэлцэл': 'trust',
+    'тооцоолуур': 'calculator',
+    'зээлийн тооцоолуур': 'loan_calc',
+    'итгэлцлийн тооцоолуур': 'trust_calc',
+    'автомашины зээл': 'car_loan',
+    'хэрэглээний зээл': 'consumer_loan',
+    'хэрэглэлийн зээл': 'consumer_loan',
+    'кредит карт': 'credit_card',
+    'бизнесийн зээл': 'business_loan',
+    'үл хөдлөх барьцаалсан зээл': 'real_estate_loan',
+    'шугмын зээл': 'line_loan',
+    'шугамын зээл': 'line_loan',
+    'бүрдүүлэх баримт бичиг': 'documents',
+    'тооцоолол': 'calculate',
+    'тооцоолол хийх': 'calculate',
+    'онлайн хүсэлт өгөх': 'online_request',
+    'зээлийн хүсэлт нээх': 'online_request',
+    'холбоо барих': 'contact',
+    'үндсэн цэс': 'menu',
+    'иргэн': 'individual',
+    'байгууллага': 'company',
+    'буцах': 'back',
+    'үгүй': 'no'
+};
+
 function normalizeChatText(msg) {
-    return String(msg || '').trim().toLowerCase();
+    const normalized = String(msg || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return CHAT_COMMAND_ALIASES[normalized] || normalized;
 }
 
 function includesAny(msg, variants) {
@@ -1337,10 +1365,10 @@ function getMatchedProductKey(msg) {
     if (productCommandMap[msg]) return productCommandMap[msg];
 
     const productSynonyms = [
-        { key: 'car_loan', variants: ['автомашины зээл', 'машины зээл', 'машин', 'авто'] },
-        { key: 'cons_loan', variants: ['хэрэглээний зээл', 'цалингийн зээл', 'хэрэглээ'] },
+        { key: 'car_loan', variants: ['автомашины зээл', 'машины зээл', 'машин', 'авто', 'car loan'] },
+        { key: 'cons_loan', variants: ['хэрэглээний зээл', 'хэрэглэлийн зээл', 'цалингийн зээл', 'хэрэглээ', 'consumer loan'] },
         { key: 'credit_card', variants: ['кредит карт', 'карт', 'mastercard', 'master card'] },
-        { key: 'biz_loan', variants: ['бизнесийн зээл', 'бизнес', 'аж ахуйн зээл'] },
+        { key: 'biz_loan', variants: ['бизнесийн зээл', 'бизнес', 'аж ахуйн зээл', 'байгууллагын зээл'] },
         { key: 're_loan', variants: ['үл хөдлөх', 'орон сууц барьцаалсан', 'барьцаалсан зээл', 'үл хөдлөх барьцаалсан зээл'] },
         { key: 'line_loan', variants: ['шугмын зээл', 'шугамын зээл', 'эргэлтийн зээл'] },
         { key: 'trust', variants: ['итгэлцэл', 'хадгаламж шиг', 'хөрөнгө өсгөх'] },
@@ -1359,7 +1387,7 @@ function chatReply(text, options = []) {
 }
 
 function isGreetingIntent(msg) {
-    return includesAny(msg, ['hi', 'hello', 'сайн байна уу', 'сайн уу', 'байна уу', 'мэнд', 'хш']);
+    return includesAny(msg, ['hi', 'hello', 'sain baina uu', 'sain uu', 'сайн байна уу', 'сайн бн уу', 'сайн уу', 'байна уу', 'мэнд', 'хш']);
 }
 
 function isResetIntent(msg) {
