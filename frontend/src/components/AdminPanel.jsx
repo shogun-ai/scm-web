@@ -41,6 +41,14 @@ const PRODUCT_NAMES = {
   'line_loan': 'Шугмын зээл'
 };
 
+const DEFAULT_CHATBOT_CARDS = [
+  { id: 'products', parentId: 'root', title: 'Бүтээгдэхүүн', subtitle: 'Зээл, итгэлцэл болон бусад үйлчилгээ', imageUrl: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=900&q=80', command: 'products', order: 1, isActive: true },
+  { id: 'repayment', parentId: 'root', title: 'Эргэн төлөлт', subtitle: 'Зээлийн тооцоолол болон төлөлтийн мэдээлэл', imageUrl: 'https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&w=900&q=80', command: 'repayment', order: 2, isActive: true },
+  { id: 'contact', parentId: 'root', title: 'Холбоо барих', subtitle: 'Утас, имэйл, байршлын мэдээлэл', imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80', command: 'contact', order: 3, isActive: true },
+  { id: 'loan', parentId: 'products', title: 'Зээл', subtitle: 'Манай зээлийн бүтээгдэхүүнүүд', imageUrl: 'https://images.unsplash.com/photo-1560472355-536de3962603?auto=format&fit=crop&w=900&q=80', command: 'loan', order: 1, isActive: true },
+  { id: 'trust', parentId: 'products', title: 'Итгэлцэл', subtitle: 'Хөрөнгөө өсгөх үйлчилгээ', imageUrl: 'https://images.unsplash.com/photo-1579621970795-87facc2f976d?auto=format&fit=crop&w=900&q=80', command: 'trust', order: 2, isActive: true }
+];
+
 const AdminPanel = ({ user, token, onLogout }) => {
   const [activeTab, setActiveTab] = useState('los');
   const [requests, setRequests] = useState([]); 
@@ -99,6 +107,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
   const [cmsSubTab, setCmsSubTab] = useState('hero');
   const [siteConfig, setSiteConfig] = useState({});
   const [configEdits, setConfigEdits] = useState({});
+  const [chatbotCards, setChatbotCards] = useState(DEFAULT_CHATBOT_CARDS);
   const [products, setProducts] = useState([]);
   const [editingProduct, setEditingProduct] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
@@ -390,6 +399,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
         Object.entries(group).forEach(([key, obj]) => { flat[key] = obj.value; });
       });
       setConfigEdits(flat);
+      setChatbotCards(Array.isArray(flat.chatbot_cards) && flat.chatbot_cards.length ? flat.chatbot_cards : DEFAULT_CHATBOT_CARDS);
     }
     if (prodRes.status === 'fulfilled') setProducts(prodRes.value.data);
     if (teamRes.status === 'fulfilled') setTeamMembers(teamRes.value.data);
@@ -518,6 +528,14 @@ const AdminPanel = ({ user, token, onLogout }) => {
       chatbotConfigKeys.forEach(key => {
         if (configEdits[key] !== undefined) updates[key] = configEdits[key];
       });
+      updates.chatbot_cards = chatbotCards
+        .map((card, index) => ({
+          ...card,
+          id: card.id || `card_${Date.now()}_${index}`,
+          order: Number(card.order || index + 1),
+          isActive: card.isActive !== false
+        }))
+        .filter(card => card.title && card.command);
 
       await axios.post(`${API_URL}/api/config/bulk`, updates);
       await Promise.all(
@@ -647,6 +665,33 @@ const AdminPanel = ({ user, token, onLogout }) => {
           }
         : product
     )));
+  };
+
+  const updateChatbotCard = (cardId, field, value) => {
+    setChatbotCards(prev => prev.map(card => (
+      card.id === cardId ? { ...card, [field]: value } : card
+    )));
+  };
+
+  const addChatbotCard = (parentId = 'root') => {
+    const nextOrder = chatbotCards.filter(card => card.parentId === parentId).length + 1;
+    setChatbotCards(prev => [
+      ...prev,
+      {
+        id: `card_${Date.now()}`,
+        parentId,
+        title: '',
+        subtitle: '',
+        imageUrl: '',
+        command: '',
+        order: nextOrder,
+        isActive: true
+      }
+    ]);
+  };
+
+  const removeChatbotCard = (cardId) => {
+    setChatbotCards(prev => prev.filter(card => card.id !== cardId));
   };
 
   return (
@@ -2089,6 +2134,67 @@ const AdminPanel = ({ user, token, onLogout }) => {
                         ))}
                       </section>
                     </div>
+
+                    <section className="bg-white rounded-2xl border shadow-sm p-6 space-y-5">
+                      <div className="flex items-start justify-between gap-4 border-b pb-4">
+                        <div>
+                          <h3 className="font-bold text-lg text-[#003B5C]">Чатбот картын бүтэц</h3>
+                          <p className="text-xs text-gray-400 mt-1">Web чат дээр харагдах зурагтай сонголтын картууд. parentId нь root бол эхний цэс, products бол Бүтээгдэхүүн дотор харагдана.</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => addChatbotCard('root')} className="rounded-xl bg-[#003B5C] px-4 py-2 text-xs font-bold text-white">Root карт</button>
+                          <button onClick={() => addChatbotCard('products')} className="rounded-xl bg-[#00A651] px-4 py-2 text-xs font-bold text-white">Product карт</button>
+                        </div>
+                      </div>
+
+                      {['root', 'products'].map(parentId => (
+                        <div key={parentId} className="space-y-3">
+                          <h4 className="text-sm font-bold uppercase text-gray-500">{parentId === 'root' ? 'Эхний цэс' : 'Бүтээгдэхүүн доторх цэс'}</h4>
+                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                            {chatbotCards
+                              .filter(card => card.parentId === parentId)
+                              .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
+                              .map(card => (
+                                <div key={card.id} className="rounded-2xl border bg-slate-50 p-4 space-y-3">
+                                  {card.imageUrl && (
+                                    <img src={card.imageUrl} alt={card.title || 'card'} className="h-28 w-full rounded-xl object-cover" />
+                                  )}
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <input value={card.title || ''} onChange={e => updateChatbotCard(card.id, 'title', e.target.value)} placeholder="Гарчиг" className="p-2 border rounded-lg text-sm" />
+                                    <input value={card.command || ''} onChange={e => updateChatbotCard(card.id, 'command', e.target.value)} placeholder="command: products, loan, contact" className="p-2 border rounded-lg text-sm" />
+                                  </div>
+                                  <textarea value={card.subtitle || ''} onChange={e => updateChatbotCard(card.id, 'subtitle', e.target.value)} placeholder="Тайлбар" rows={2} className="w-full p-2 border rounded-lg text-sm resize-none" />
+                                  <div className="grid grid-cols-[1fr_auto] gap-2">
+                                    <input value={card.imageUrl || ''} onChange={e => updateChatbotCard(card.id, 'imageUrl', e.target.value)} placeholder="Зургийн URL" className="p-2 border rounded-lg text-sm" />
+                                    <label className="cursor-pointer rounded-lg bg-white px-3 py-2 text-xs font-bold text-[#003B5C] border">
+                                      Upload
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={async e => {
+                                          const file = e.target.files?.[0];
+                                          if (!file) return;
+                                          const url = await uploadImage(file);
+                                          updateChatbotCard(card.id, 'imageUrl', url);
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-3">
+                                    <input type="number" value={card.order || 0} onChange={e => updateChatbotCard(card.id, 'order', Number(e.target.value))} className="w-24 p-2 border rounded-lg text-sm" />
+                                    <label className="flex items-center gap-2 text-xs font-bold text-gray-500">
+                                      <input type="checkbox" checked={card.isActive !== false} onChange={e => updateChatbotCard(card.id, 'isActive', e.target.checked)} />
+                                      Идэвхтэй
+                                    </label>
+                                    <button onClick={() => removeChatbotCard(card.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      ))}
+                    </section>
 
                     <section className="bg-white rounded-2xl border shadow-sm p-6 space-y-5">
                       <div className="flex items-start justify-between gap-4 border-b pb-4">

@@ -1236,7 +1236,7 @@ const buildProductDocs = (product, docType) => {
 const buildChatbotCache = async () => {
     try {
         const [cfgDocs, prodDocs] = await Promise.all([
-            SiteConfig.find({ group: { $in: ['contact', 'rates'] } }),
+            SiteConfig.find({ group: { $in: ['contact', 'rates', 'chatbot'] } }),
             ProductContent.find({ isActive: true })
         ]);
         const cfg = {};
@@ -1248,6 +1248,7 @@ const buildChatbotCache = async () => {
         const PRODUCT_DOCS = {};
         const PRODUCT_CARDS = {};
         const PRODUCT_CONTEXT = [];
+        const CHATBOT_MENU_CARDS = Array.isArray(cfg.chatbot_cards) ? cfg.chatbot_cards : [];
         const keyMap = {
             biz_loan: 'бизнесийн зээл',
             car_loan: 'автомашины зээл',
@@ -1273,6 +1274,7 @@ const buildChatbotCache = async () => {
                 subtitle: p.shortDesc || p.description || p.chatbotText || '',
                 imageUrl: p.headerImageUrl || p.bgImageUrl || '',
                 productUrl: `https://www.scm.mn/products/${p.productKey}`,
+                command: p.productKey,
                 hasUserTypeDocs: Boolean(docs.individual.length || docs.company.length)
             };
             if (key) PRODUCT_CARDS[key] = card;
@@ -1302,6 +1304,7 @@ const buildChatbotCache = async () => {
             PRODUCT_DOCS,
             PRODUCT_CARDS,
             PRODUCT_CONTEXT,
+            CHATBOT_MENU_CARDS,
             loan_rate_default: cfg.loan_rate_default || 3.2,
             dti_individual: (cfg.dti_individual || 55) / 100,
             dti_org: (cfg.dti_org || 20) / 100,
@@ -1396,6 +1399,26 @@ function getMatchedProductKey(msg) {
 
 function chatReply(text, options = []) {
     return options.length ? `${text}\n\n[OPTIONS: ${options.join(', ')}]` : text;
+}
+
+function normalizeChatbotCard(card = {}) {
+    return {
+        id: String(card.id || '').trim(),
+        parentId: String(card.parentId || 'root').trim() || 'root',
+        title: String(card.title || '').trim(),
+        subtitle: String(card.subtitle || '').trim(),
+        imageUrl: String(card.imageUrl || '').trim(),
+        command: String(card.command || '').trim(),
+        order: Number(card.order || 0),
+        isActive: card.isActive !== false
+    };
+}
+
+function getConfiguredChatbotCards(chat, parentId = 'root') {
+    return (chat.CHATBOT_MENU_CARDS || [])
+        .map(normalizeChatbotCard)
+        .filter(card => card.isActive && card.parentId === parentId && card.title && card.command)
+        .sort((a, b) => a.order - b.order);
 }
 
 function isGreetingIntent(msg) {
@@ -1601,7 +1624,7 @@ setInterval(() => {
 app.post('/api/chat', async (req, res) => {
     try {
         const chat = await getChat();
-        const { CONTACT_INFO, PRODUCT_INFO, PRODUCT_DOCS, PRODUCT_CARDS, loan_rate_default, dti_individual, dti_org, trust_rate } = chat;
+        const { CONTACT_INFO, PRODUCT_INFO, PRODUCT_DOCS, PRODUCT_CARDS, PRODUCT_CONTEXT, loan_rate_default, dti_individual, dti_org, trust_rate } = chat;
         const sessionId = req.body?.sessionId || `anon_${req.headers['user-agent']}`;
 
         if (!sessions.has(sessionId)) {
@@ -1614,23 +1637,37 @@ app.post('/api/chat', async (req, res) => {
         const money = parseMoneyMNT(msg);
         const matchedProductKey = getMatchedProductKey(msg);
         const requestedUserType = getUserTypeFromMessage(msg);
+        const buildLoanCards = () => PRODUCT_CONTEXT
+            .filter(product => product.productKey && product.productKey !== 'trust')
+            .map((product, index) => PRODUCT_CARDS?.[product.productKey] ? {
+                ...PRODUCT_CARDS[product.productKey],
+                command: product.productKey,
+                order: index + 1
+            } : null)
+            .filter(Boolean);
 
         const openMainMenu = (text = 'Сайн байна уу? Би Солонго Капитал ББСБ-ийн санхүүгийн зөвлөх чатбот байна. Та доорх сонголтуудаас сонгоно уу.') => {
             s.state = 'START';
             s.data = {};
-            return res.json({ reply: chatReply(text, MAIN_MENU_OPTIONS) });
+            return res.json({ reply: text, cards: getConfiguredChatbotCards(chat, 'root') });
         };
 
         const openLoanMenu = (text = 'Манай зээлийн бүтээгдэхүүнүүдээс сонгоно уу.') => {
             s.state = 'LOAN_MENU';
             s.data = {};
-            return res.json({ reply: chatReply(text, LOAN_MENU_OPTIONS) });
+            return res.json({ reply: text, cards: buildLoanCards() });
+        };
+
+        const openProductMenu = (text = 'Бүтээгдэхүүнээ сонгоно уу.') => {
+            s.state = 'PRODUCT_CATEGORY';
+            s.data = {};
+            return res.json({ reply: text, cards: getConfiguredChatbotCards(chat, 'products') });
         };
 
         const openTrustMenu = (text = 'Итгэлцэл нь таны хөрөнгийг өсгөх үйлчилгээ юм. Дараах сонголтуудаас үргэлжлүүлнэ үү.') => {
             s.state = 'TRUST_INFO';
             s.data = {};
-            return res.json({ reply: chatReply(text, TRUST_MENU_OPTIONS) });
+            return res.json({ reply: chatReply(text, TRUST_MENU_OPTIONS), productCard: PRODUCT_CARDS?.trust || null });
         };
 
         const openCalculatorMenu = () => {
@@ -1715,6 +1752,14 @@ app.post('/api/chat', async (req, res) => {
             return res.json({ reply: chatReply(CONTACT_INFO, ['Залгах', 'Имэйл илгээх', 'Газрын зураг', 'Үндсэн цэс']) });
         }
 
+        if (msg === 'products' || msg === 'бүтээгдэхүүн') {
+            return openProductMenu('Бүтээгдэхүүнээ сонгоно уу.');
+        }
+
+        if (msg === 'repayment' || msg.includes('эргэн төл')) {
+            return openCalculatorMenu();
+        }
+
         if (msg === 'loan_calc' || msg === 'зээлийн тооцоолуур') {
             return openLoanMenu('Зээлийн тооцоолол хийхийн тулд бүтээгдэхүүнээ сонгоно уу.');
         }
@@ -1750,9 +1795,14 @@ app.post('/api/chat', async (req, res) => {
         switch (s.state) {
             case 'START':
                 if (isGreetingIntent(msg)) {
-                    return openMainMenu('Сайн байна уу? Танд юугаар туслах вэ?');
+                    return openMainMenu('Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.');
                 }
-                break;
+                return openMainMenu('Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.');
+
+            case 'PRODUCT_CATEGORY':
+                if (msg === 'loan' || isLoanIntent(msg)) return openLoanMenu();
+                if (msg === 'trust' || isTrustIntent(msg)) return openTrustMenu();
+                return openProductMenu();
 
             case 'CALCULATOR_MENU':
                 if (msg === 'loan_calc' || msg === 'зээлийн тооцоолуур') {
@@ -1767,7 +1817,7 @@ app.post('/api/chat', async (req, res) => {
                 if (matchedProductKey) {
                     return openProductInfo(matchedProductKey);
                 }
-                return res.json({ reply: chatReply('Манай зээлийн бүтээгдэхүүнүүдээс сонгоно уу.', LOAN_MENU_OPTIONS) });
+                return openLoanMenu('Манай зээлийн бүтээгдэхүүнүүдээс сонгоно уу.');
 
             case 'TYPE_SELECT':
                 if (msg === 'documents' || msg.includes('бүрдүүлэх') || msg.includes('материал')) {
@@ -1897,17 +1947,7 @@ app.post('/api/chat', async (req, res) => {
                 break;
         }
 
-        const aiReply = await getGuardedAiReply({
-            chat,
-            message: req.body?.message || '',
-            state: s.state,
-            sessionData: s.data
-        });
-        if (aiReply) {
-            return res.json({ reply: chatReply(aiReply, MAIN_MENU_OPTIONS) });
-        }
-
-        return openMainMenu('Таны асуултыг ойлгосонгүй. Доорх сонголтуудаас үргэлжлүүлнэ үү.');
+        return openMainMenu('Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.');
     } catch (e) {
         console.error('Chat error:', e);
         res.status(500).json({ message: 'Error' });
@@ -5071,6 +5111,18 @@ const seedSiteConfig = async () => {
         { key: "trust_rate", value: 1.8, label: "Итгэлцлийн хүү (сарын, %)", group: "rates" },
         { key: "dti_individual", value: 55, label: "ӨОХ харьцаа — Иргэн (%)", group: "rates" },
         { key: "dti_org", value: 20, label: "ӨОХ харьцаа — Байгууллага (%)", group: "rates" },
+        {
+            key: "chatbot_cards",
+            value: [
+                { id: "products", parentId: "root", title: "Бүтээгдэхүүн", subtitle: "Зээл, итгэлцэл болон бусад үйлчилгээ", imageUrl: "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=900&q=80", command: "products", order: 1, isActive: true },
+                { id: "repayment", parentId: "root", title: "Эргэн төлөлт", subtitle: "Зээлийн тооцоолол болон төлөлтийн мэдээлэл", imageUrl: "https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&w=900&q=80", command: "repayment", order: 2, isActive: true },
+                { id: "contact", parentId: "root", title: "Холбоо барих", subtitle: "Утас, имэйл, байршлын мэдээлэл", imageUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80", command: "contact", order: 3, isActive: true },
+                { id: "loan", parentId: "products", title: "Зээл", subtitle: "Манай зээлийн бүтээгдэхүүнүүд", imageUrl: "https://images.unsplash.com/photo-1560472355-536de3962603?auto=format&fit=crop&w=900&q=80", command: "loan", order: 1, isActive: true },
+                { id: "trust", parentId: "products", title: "Итгэлцэл", subtitle: "Хөрөнгөө өсгөх үйлчилгээ", imageUrl: "https://images.unsplash.com/photo-1579621970795-87facc2f976d?auto=format&fit=crop&w=900&q=80", command: "trust", order: 2, isActive: true }
+            ],
+            label: "Чатбот картууд",
+            group: "chatbot"
+        },
         { key: "ceo_name", value: "Б.Золбоо", label: "Захирлын нэр", group: "ceo" },
         { key: "ceo_title", value: "Гүйцэтгэх захирал", label: "Захирлын албан тушаал", group: "ceo" },
         { key: "ceo_image", value: "/board/zolboo.jpg", label: "Захирлын зургийн зам", group: "ceo" },
@@ -5332,6 +5384,7 @@ const KEY_GROUP_MAP = {
     theme_image_governance: 'theme', theme_image_products: 'theme', theme_image_blog: 'theme',
     theme_image_contact: 'theme',
     contact_image: 'contact',
+    chatbot_cards: 'chatbot',
 };
 
 app.post('/api/config/bulk', authenticateUser, requireAdmin, async (req, res) => {

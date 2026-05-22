@@ -2,11 +2,35 @@
 import axios from 'axios';
 
 const INITIAL_OPTIONS = ['Зээл', 'Итгэлцэл', 'Тооцоолуур', 'Холбоо барих'];
+const DEFAULT_MENU_CARDS = [
+  {
+    id: 'products',
+    title: 'Бүтээгдэхүүн',
+    subtitle: 'Зээл, итгэлцэл болон бусад үйлчилгээ',
+    imageUrl: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=900&q=80',
+    command: 'products'
+  },
+  {
+    id: 'repayment',
+    title: 'Эргэн төлөлт',
+    subtitle: 'Зээлийн тооцоолол болон төлөлтийн мэдээлэл',
+    imageUrl: 'https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&w=900&q=80',
+    command: 'repayment'
+  },
+  {
+    id: 'contact',
+    title: 'Холбоо барих',
+    subtitle: 'Утас, имэйл, байршлын мэдээлэл',
+    imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80',
+    command: 'contact'
+  }
+];
 
 const createInitialMessage = () => ({
   role: 'ai',
-  text: 'Сайн байна уу? Би Солонго Капитал ББСБ-ийн санхүүгийн зөвлөх чатбот байна. Та доорх сонголтуудаас нэгийг дарж эсвэл асуултаа шууд бичиж болно.',
-  options: INITIAL_OPTIONS
+  text: 'Сайн байна уу? Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.',
+  options: [],
+  cards: DEFAULT_MENU_CARDS
 });
 
 const createSessionId = () => (
@@ -74,6 +98,29 @@ const ChatBot = () => {
   useEffect(() => {
     ensureSessionId();
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const loadCards = async () => {
+      try {
+        const sid = ensureSessionId();
+        const res = await axios.post(
+          `${API_BASE_URL}/api/chat`,
+          { sessionId: sid, message: 'menu', history: [] },
+          { headers: { 'x-session-id': sid } }
+        );
+        setMessages([{
+          role: 'ai',
+          text: res.data?.reply || createInitialMessage().text,
+          options: [],
+          cards: res.data?.cards?.length ? res.data.cards : DEFAULT_MENU_CARDS
+        }]);
+      } catch (error) {
+        console.warn('ChatBot menu load failed:', error?.message);
+      }
+    };
+    if (messages.length === 1 && messages[0]?.cards?.length) loadCards();
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -150,7 +197,13 @@ const ChatBot = () => {
         ? optionsMatch[1].split(',').map((option) => option.trim()).filter(Boolean)
         : [];
 
-      setMessages((prev) => [...prev, { role: 'ai', text: cleanText, options, productCard: res.data?.productCard || null }]);
+      setMessages((prev) => [...prev, {
+        role: 'ai',
+        text: cleanText,
+        options,
+        cards: res.data?.cards || [],
+        productCard: res.data?.productCard || null
+      }]);
 
       if (actionMatch?.[1]?.trim() === 'loan_request') {
         setTimeout(navigateToLoanRequest, 300);
@@ -186,6 +239,19 @@ const ChatBot = () => {
     }
 
     sendMessage(OPTION_COMMANDS[option] || option, option);
+  };
+
+  const handleCardClick = (card) => {
+    if (!card) return;
+    if (card.command === 'online_request') {
+      navigateToLoanRequest();
+      return;
+    }
+    if (card.productUrl && !card.command) {
+      navigateToProduct(card.productUrl);
+      return;
+    }
+    sendMessage(card.command || card.title, card.title);
   };
 
   return (
@@ -256,6 +322,35 @@ const ChatBot = () => {
                     ))}
                   </div>
 
+                  {message.role === 'ai' && message.cards?.length > 0 && (
+                    <div className="mt-3 -mr-10 flex max-w-[300px] gap-3 overflow-x-auto pb-2 pr-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:max-w-[350px]">
+                      {message.cards.map((card, cardIndex) => (
+                        <button
+                          key={card.id || `${card.title}-${cardIndex}`}
+                          onClick={() => handleCardClick(card)}
+                          className="min-w-[185px] overflow-hidden rounded-2xl border border-gray-100 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
+                        >
+                          {card.imageUrl && (
+                            <img
+                              src={toAbsoluteUrl(card.imageUrl)}
+                              alt={card.title || 'Сонголт'}
+                              className="h-24 w-full object-cover"
+                              loading="lazy"
+                            />
+                          )}
+                          <div className="p-3">
+                            <h4 className="text-[13px] font-bold text-[#003B5C]">{card.title}</h4>
+                            {card.subtitle && (
+                              <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-600">
+                                {String(card.subtitle).replace(/\*\*/g, '')}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {message.role === 'ai' && message.productCard && (
                     <div className="mt-3 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
                       {message.productCard.imageUrl && (
@@ -299,7 +394,7 @@ const ChatBot = () => {
                     </div>
                   )}
 
-                  {message.role === 'ai' && message.options?.length > 0 && (
+                  {message.role === 'ai' && !message.cards?.length && message.options?.length > 0 && (
                     <div className="mt-3 ml-1 flex flex-wrap gap-2">
                       {message.options.map((option, optionIndex) => (
                         <button
