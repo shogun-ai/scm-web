@@ -243,6 +243,19 @@ const ChatBot = () => {
 
   const handleCardClick = (card) => {
     if (!card) return;
+    const command = card.command || card.title;
+    if (command === 'call') {
+      window.location.href = 'tel:75991919';
+      return;
+    }
+    if (command === 'email') {
+      window.location.href = 'mailto:info@scm.mn';
+      return;
+    }
+    if (command === 'map') {
+      window.open('https://maps.google.com/?q=Misheel+City+M3+Tower', '_blank', 'noopener,noreferrer');
+      return;
+    }
     if (card.command === 'online_request') {
       navigateToLoanRequest();
       return;
@@ -251,7 +264,7 @@ const ChatBot = () => {
       navigateToProduct(card.productUrl);
       return;
     }
-    sendMessage(card.command || card.title, card.title);
+    sendMessage(command, card.title);
   };
 
   return (
@@ -325,28 +338,44 @@ const ChatBot = () => {
                   {message.role === 'ai' && message.cards?.length > 0 && (
                     <div className="mt-3 -mr-10 flex max-w-[300px] gap-3 overflow-x-auto pb-2 pr-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:max-w-[350px]">
                       {message.cards.map((card, cardIndex) => (
-                        <button
+                        <div
                           key={card.id || `${card.title}-${cardIndex}`}
-                          onClick={() => handleCardClick(card)}
                           className="min-w-[185px] overflow-hidden rounded-2xl border border-gray-100 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
                         >
-                          {card.imageUrl && (
-                            <img
-                              src={toAbsoluteUrl(card.imageUrl)}
-                              alt={card.title || 'Сонголт'}
-                              className="h-24 w-full object-cover"
-                              loading="lazy"
-                            />
-                          )}
-                          <div className="p-3">
+                          <button onClick={() => handleCardClick(card)} className="w-full text-left">
+                            {card.imageUrl && (
+                              <img
+                                src={toAbsoluteUrl(card.imageUrl)}
+                                alt={card.title || 'Сонголт'}
+                                className="h-24 w-full object-cover"
+                                loading="lazy"
+                              />
+                            )}
+                          </button>
+                          <div className="space-y-3 p-3">
+                            <button onClick={() => handleCardClick(card)} className="w-full text-left">
                             <h4 className="text-[13px] font-bold text-[#003B5C]">{card.title}</h4>
                             {card.subtitle && (
                               <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-600">
                                 {String(card.subtitle).replace(/\*\*/g, '')}
                               </p>
                             )}
+                            </button>
+                            {card.buttons?.length > 0 && (
+                              <div className="grid gap-2">
+                                {card.buttons.slice(0, 3).map((button, buttonIndex) => (
+                                  <button
+                                    key={`${button.title}-${buttonIndex}`}
+                                    onClick={() => handleCardClick({ ...button, title: button.title })}
+                                    className="rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-bold text-[#003B5C] transition hover:bg-[#003B5C] hover:text-white"
+                                  >
+                                    {button.title}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        </button>
+                        </div>
                       ))}
                     </div>
                   )}

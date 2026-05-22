@@ -1243,6 +1243,17 @@ const buildChatbotCache = async () => {
         cfgDocs.forEach(d => { cfg[d.key] = d.value; });
 
         const CONTACT_INFO = `Утас: ${cfg.contact_phone || '75991919'}\nИмэйл: ${cfg.contact_email || 'info@scm.mn'}\nХаяг: ${cfg.contact_address || ''}`;
+        const CONTACT_CARD = {
+            id: 'contact_details',
+            title: 'Холбоо барих',
+            subtitle: `${cfg.contact_phone || '75991919'} • ${cfg.contact_email || 'info@scm.mn'}`,
+            imageUrl: cfg.contact_image || 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80',
+            buttons: [
+                { title: 'Залгах', command: 'call' },
+                { title: 'Имэйл', command: 'email' },
+                { title: 'Газрын зураг', command: 'map' }
+            ]
+        };
 
         const PRODUCT_INFO = {};
         const PRODUCT_DOCS = {};
@@ -1300,6 +1311,7 @@ const buildChatbotCache = async () => {
 
         chatbotCache = {
             CONTACT_INFO,
+            CONTACT_CARD,
             PRODUCT_INFO,
             PRODUCT_DOCS,
             PRODUCT_CARDS,
@@ -1435,6 +1447,18 @@ function isBackIntent(msg) {
 
 function isContactIntent(msg) {
     return includesAny(msg, ['contact', 'холбоо', 'холбогдох', 'утас', 'и-мэйл', 'имэйл', 'email', 'mail', 'хаяг', 'байршил']);
+}
+
+function isCallIntent(msg) {
+    return includesAny(msg, ['call', 'залгах', 'утасдах']);
+}
+
+function isEmailIntent(msg) {
+    return includesAny(msg, ['email', 'mail', 'имэйл', 'и-мэйл']);
+}
+
+function isMapIntent(msg) {
+    return includesAny(msg, ['map', 'газрын зураг', 'байршил', 'хаяг']);
 }
 
 function isDocumentIntent(msg) {
@@ -1624,7 +1648,7 @@ setInterval(() => {
 app.post('/api/chat', async (req, res) => {
     try {
         const chat = await getChat();
-        const { CONTACT_INFO, PRODUCT_INFO, PRODUCT_DOCS, PRODUCT_CARDS, PRODUCT_CONTEXT, loan_rate_default, dti_individual, dti_org, trust_rate } = chat;
+        const { CONTACT_INFO, CONTACT_CARD, PRODUCT_INFO, PRODUCT_DOCS, PRODUCT_CARDS, PRODUCT_CONTEXT, loan_rate_default, dti_individual, dti_org, trust_rate } = chat;
         const sessionId = req.body?.sessionId || `anon_${req.headers['user-agent']}`;
 
         if (!sessions.has(sessionId)) {
@@ -1748,8 +1772,20 @@ app.post('/api/chat', async (req, res) => {
             return openMainMenu('Сонголтоо хийнэ үү.');
         }
 
+        if (isCallIntent(msg)) {
+            return res.json({ reply: `Утас: ${CONTACT_INFO.match(/Утас:\s*(.*)/)?.[1] || '75991919'}` });
+        }
+
+        if (isEmailIntent(msg)) {
+            return res.json({ reply: `Имэйл: ${CONTACT_INFO.match(/Имэйл:\s*(.*)/)?.[1] || 'info@scm.mn'}` });
+        }
+
+        if (isMapIntent(msg)) {
+            return res.json({ reply: 'Газрын зураг: https://maps.google.com/?q=Misheel+City+M3+Tower' });
+        }
+
         if (isContactIntent(msg)) {
-            return res.json({ reply: chatReply(CONTACT_INFO, ['Залгах', 'Имэйл илгээх', 'Газрын зураг', 'Үндсэн цэс']) });
+            return res.json({ reply: CONTACT_INFO, cards: [CONTACT_CARD] });
         }
 
         if (msg === 'products' || msg === 'бүтээгдэхүүн') {
@@ -1961,6 +1997,31 @@ const FB_GRAPH_VERSION = process.env.FB_GRAPH_VERSION || 'v20.0';
 const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || process.env.MESSENGER_VERIFY_TOKEN;
 const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN || process.env.MESSENGER_PAGE_ACCESS_TOKEN;
 
+async function configureMessengerProfile() {
+    if (!FB_PAGE_ACCESS_TOKEN) return;
+    try {
+        await axios.post(
+            `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messenger_profile`,
+            {
+                get_started: { payload: 'menu' },
+                persistent_menu: [{
+                    locale: 'default',
+                    composer_input_disabled: false,
+                    call_to_actions: [
+                        { type: 'postback', title: 'Буцах', payload: 'back' },
+                        { type: 'postback', title: 'Үндсэн цэс', payload: 'menu' },
+                        { type: 'postback', title: 'Холбоо барих', payload: 'contact' }
+                    ]
+                }]
+            },
+            { params: { access_token: FB_PAGE_ACCESS_TOKEN } }
+        );
+        console.log('Messenger persistent menu configured.');
+    } catch (error) {
+        console.warn('Messenger profile configure skipped:', error.response?.data || error.message);
+    }
+}
+
 function stripChatControlTokens(reply = '') {
     const optionsMatch = String(reply).match(/\[OPTIONS:\s*(.*?)\]/i);
     const actionMatch = String(reply).match(/\[ACTION:\s*(.*?)\]/i);
@@ -2067,6 +2128,13 @@ async function sendMessengerProductCard(recipientId, card, summaryText = '') {
 
 function buildMessengerCardButtons(card = {}) {
     if (card.productUrl) return buildMessengerProductButtons(card);
+    if (Array.isArray(card.buttons) && card.buttons.length) {
+        return card.buttons.slice(0, 3).map(button => ({
+            type: 'postback',
+            title: String(button.title || 'Сонгох').slice(0, 20),
+            payload: String(button.command || button.title || 'menu').slice(0, 1000)
+        }));
+    }
 
     return [{
         type: 'postback',
@@ -5399,6 +5467,7 @@ mongoose.connect(MONGO_URI).then(async () => {
     await seedFormConfig();
     await seedStats();
     await seedPromoSlides();
+    await configureMessengerProfile();
     // Force-update financial_date to current period value
     await SiteConfig.findOneAndUpdate(
         { key: 'financial_date' },
