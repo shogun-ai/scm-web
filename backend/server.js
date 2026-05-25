@@ -1690,6 +1690,7 @@ app.post('/api/chat', async (req, res) => {
             .map((product, index) => PRODUCT_CARDS?.[product.productKey] ? {
                 ...PRODUCT_CARDS[product.productKey],
                 command: product.productKey,
+                navigationOnly: true,
                 order: index + 1
             } : null)
             .filter(Boolean);
@@ -1878,7 +1879,7 @@ app.post('/api/chat', async (req, res) => {
                 if (isConditionIntent(msg)) {
                     return res.json({
                         reply: PRODUCT_INFO[s.data.productKey] || 'Үйлчилгээний нөхцөл одоогоор бүртгэгдээгүй байна.',
-                        productCard: PRODUCT_CARDS?.[s.data.productKey] || null
+                        cards: buildLoanActionCards().filter(card => card.command !== 'conditions')
                     });
                 }
                 if (isDocumentIntent(msg)) {
@@ -2165,6 +2166,13 @@ async function sendMessengerProductCard(recipientId, card, summaryText = '') {
 }
 
 function buildMessengerCardButtons(card = {}) {
+    if (card.navigationOnly) {
+        return [{
+            type: 'postback',
+            title: 'Сонгох',
+            payload: String(card.command || card.title || 'menu').slice(0, 1000)
+        }];
+    }
     if (card.productUrl) return buildMessengerProductButtons(card);
     if (Array.isArray(card.buttons) && card.buttons.length) {
         return card.buttons.slice(0, 3).map(button => ({
@@ -2191,7 +2199,7 @@ async function sendMessengerCardCarousel(recipientId, cards = [], summaryText = 
         .filter(card => card?.title && (card.command || card.productUrl || card.buttons?.length))
         .slice(0, 10)
         .map(card => {
-            const productUrl = toAbsoluteScmUrl(card.productUrl || '');
+            const productUrl = card.navigationOnly ? '' : toAbsoluteScmUrl(card.productUrl || '');
             const element = {
                 title: compactMessengerText(card.title || 'Солонго Капитал', 80),
                 image_url: toAbsoluteScmUrl(card.imageUrl),
@@ -2233,7 +2241,7 @@ async function sendMessengerCardCarousel(recipientId, cards = [], summaryText = 
     );
 }
 
-async function sendMessengerText(recipientId, text, options = []) {
+async function sendMessengerText(recipientId, text) {
     if (!FB_PAGE_ACCESS_TOKEN) {
         console.warn('FB_PAGE_ACCESS_TOKEN is not configured; Messenger reply skipped.');
         return;
@@ -2246,9 +2254,6 @@ async function sendMessengerText(recipientId, text, options = []) {
             text: String(text || 'Уучлаарай, хариу бэлтгэхэд алдаа гарлаа.').slice(0, 1900)
         }
     };
-
-    const quickReplies = buildMessengerQuickReplies(options);
-    if (quickReplies.length) payload.message.quick_replies = quickReplies;
 
     await axios.post(
         `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messages`,
@@ -2298,7 +2303,7 @@ app.post('/api/messenger/webhook', async (req, res) => {
 
             try {
                 const chatResponse = await getChatbotReplyForMessenger(req, senderId, messageText);
-                const { cleanText, options, action } = stripChatControlTokens(chatResponse.reply || '');
+                const { cleanText, action } = stripChatControlTokens(chatResponse.reply || '');
                 const productCard = chatResponse.productCard;
                 if (productCard) {
                     await sendMessengerProductCard(senderId, productCard, cleanText);
@@ -2312,7 +2317,7 @@ app.post('/api/messenger/webhook', async (req, res) => {
                 const actionText = action === 'loan_request'
                     ? '\n\nЗээлийн хүсэлт: https://www.scm.mn/loan-request'
                     : '';
-                await sendMessengerText(senderId, `${cleanText}${actionText}`.trim(), options);
+                await sendMessengerText(senderId, `${cleanText}${actionText}`.trim());
             } catch (error) {
                 console.error('Messenger webhook error:', error.response?.data || error.message);
                 try {
