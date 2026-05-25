@@ -785,7 +785,7 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
     );
 };
 
-const ChatInfoDetail = ({ product, section, onBack }) => {
+const ChatInfoDetail = ({ product, section, audience, onBack }) => {
     useEffect(() => window.scrollTo(0, 0), []);
     const isDocuments = section === 'documents';
     const field = isDocuments ? 'requirements' : 'conditions';
@@ -808,7 +808,9 @@ const ChatInfoDetail = ({ product, section, onBack }) => {
     const sections = [
         { key: 'individual', label: 'Иргэн' },
         { key: 'organization', label: 'Байгууллага' }
-    ].map(item => ({ ...item, groups: collectGroups(item.key) })).filter(item => item.groups.length);
+    ].filter(item => !audience || item.key === audience)
+      .map(item => ({ ...item, groups: collectGroups(item.key) }))
+      .filter(item => item.groups.length);
 
     return (
         <div className="min-h-screen bg-slate-50 pb-14 text-slate-800">
@@ -1016,9 +1018,9 @@ function App() {
       return { view: item ? 'product_detail' : 'home', item: item || null, governance: null, scrollTo: null };
     }
     if (pathname.startsWith('/chat-info/')) {
-      const [, , key, section] = pathname.split('/');
+      const [, , key, section, audience] = pathname.split('/');
       const item = prods.find(p => p.productKey === key || String(p.id) === key);
-      return { view: item ? 'chat_info' : 'home', item: item ? { product: item, section } : null, governance: null, scrollTo: null };
+      return { view: item ? 'chat_info' : 'home', item: item ? { product: item, section, audience } : null, governance: null, scrollTo: null };
     }
     if (pathname.startsWith('/promo/')) {
       const slug = pathname.replace('/promo/', '');
@@ -1358,7 +1360,7 @@ function App() {
             </nav>
 
             {currentView === 'chat_info' && selectedItem?.product ? (
-                <ChatInfoDetail product={selectedItem.product} section={selectedItem.section} onBack={() => navigateTo('home')} />
+                <ChatInfoDetail product={selectedItem.product} section={selectedItem.section} audience={selectedItem.audience} onBack={() => navigateTo('home')} />
             ) : currentView === 'product_detail' && selectedItem ? (
                 <ProductDetail 
                   product={selectedItem} 

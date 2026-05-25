@@ -2270,6 +2270,39 @@ const AdminPanel = ({ user, token, onLogout }) => {
                               <p className="font-bold text-[#003B5C]">{product.title || PRODUCT_NAMES[product.productKey] || product.productKey}</p>
                               <p className="text-[11px] text-gray-400 font-mono">{product.productKey}</p>
                             </div>
+                            <div className="rounded-xl border bg-white p-3 space-y-3">
+                              <p className="text-xs font-bold text-[#003B5C]">Бүтээгдэхүүний card зураг</p>
+                              {(product.headerImageUrl || product.bgImageUrl) && (
+                                <img src={product.headerImageUrl || product.bgImageUrl} alt={product.title || ''} className="h-32 w-full rounded-lg object-cover" />
+                              )}
+                              <div className="grid grid-cols-[1fr_auto] gap-2">
+                                <input
+                                  value={product.headerImageUrl || ''}
+                                  onChange={e => setProducts(prev => prev.map(item => (
+                                    item.productKey === product.productKey ? { ...item, headerImageUrl: e.target.value } : item
+                                  )))}
+                                  placeholder="Card зургийн URL"
+                                  className="p-2 border rounded-lg text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C]"
+                                />
+                                <label className="cursor-pointer rounded-lg border bg-white px-3 py-2 text-xs font-bold text-[#003B5C]">
+                                  Upload
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={async e => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      const url = await uploadImage(file);
+                                      setProducts(prev => prev.map(item => (
+                                        item.productKey === product.productKey ? { ...item, headerImageUrl: url } : item
+                                      )));
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                              <p className="text-[11px] text-gray-400">Tier 3 дахь бүтээгдэхүүний card болон мэдээллийн дэлгэцийн толгой зураг.</p>
+                            </div>
                             <textarea
                               rows={4}
                               value={product.chatbotText || ''}

@@ -1708,6 +1708,7 @@ app.post('/api/chat', async (req, res) => {
         const buildLoanActionCards = () => getConfiguredChatbotCards(chat, 'loan_actions');
         const buildDetailCards = (productKey, section, detailGroups) => {
             const productCard = PRODUCT_CARDS?.[productKey] || {};
+            const sectionCard = buildLoanActionCards().find(card => card.command === section) || {};
             const labels = { individual: 'Иргэн', company: 'Байгууллага' };
             return ['individual', 'company']
                 .filter(type => detailGroups?.[type]?.length)
@@ -1715,9 +1716,9 @@ app.post('/api/chat', async (req, res) => {
                     id: `${productKey}_${section}_${type}`,
                     title: `${labels[type]} - ${section === 'documents' ? 'Бүрдүүлэх баримт бичиг' : 'Үйлчилгээний нөхцөл'}`,
                     subtitle: `${detailGroups[type].length} мэдээлэл. ${detailGroups[type][0]}`,
-                    imageUrl: productCard.imageUrl,
-                    linkUrl: `https://www.scm.mn/chat-info/${productKey}/${section}`,
-                    buttons: [{ title: 'Бүрэн харах', url: `https://www.scm.mn/chat-info/${productKey}/${section}` }]
+                    imageUrl: sectionCard.imageUrl || productCard.imageUrl,
+                    linkUrl: `https://www.scm.mn/chat-info/${productKey}/${section}/${type}`,
+                    buttons: [{ title: 'Бүрэн харах', url: `https://www.scm.mn/chat-info/${productKey}/${section}/${type}` }]
                 }));
         };
 
