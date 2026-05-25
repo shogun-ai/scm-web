@@ -785,6 +785,71 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
     );
 };
 
+const ChatInfoDetail = ({ product, section, onBack }) => {
+    useEffect(() => window.scrollTo(0, 0), []);
+    const isDocuments = section === 'documents';
+    const field = isDocuments ? 'requirements' : 'conditions';
+    const title = isDocuments ? 'Бүрдүүлэх баримт бичиг' : 'Үйлчилгээний нөхцөл';
+    const headerBg = product.headerImage || product.bgImage || BACKGROUNDS.detail_page;
+
+    const collectGroups = (type) => {
+        const groups = [];
+        const baseItems = product?.[type]?.[field] || [];
+        if (baseItems.length) groups.push({ label: null, items: baseItems });
+        if (product?.purchase?.[type]?.[field]?.length) {
+            groups.push({ label: product.purchase.label || 'Автомашины зээл', items: product.purchase[type][field] });
+        }
+        if (product?.collateral?.[type]?.[field]?.length) {
+            groups.push({ label: product.collateral.label || 'Автомашин барьцаалсан зээл', items: product.collateral[type][field] });
+        }
+        return groups;
+    };
+
+    const sections = [
+        { key: 'individual', label: 'Иргэн' },
+        { key: 'organization', label: 'Байгууллага' }
+    ].map(item => ({ ...item, groups: collectGroups(item.key) })).filter(item => item.groups.length);
+
+    return (
+        <div className="min-h-screen bg-slate-50 pb-14 text-slate-800">
+            <div className="relative h-56 bg-cover bg-center" style={{ backgroundImage: `url(${headerBg})` }}>
+                <div className="absolute inset-0 bg-[#003B5C]/75"></div>
+                <button onClick={onBack} className="absolute left-4 top-5 z-10 rounded-full bg-white/15 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm">Буцах</button>
+                <div className="absolute inset-x-0 bottom-0 z-10 p-5 text-white">
+                    <p className="text-xs font-semibold uppercase text-[#D4AF37]">Солонго Капитал</p>
+                    <h1 className="mt-2 text-2xl font-bold">{product.title}</h1>
+                    <p className="mt-2 text-sm text-white/85">{title}</p>
+                </div>
+            </div>
+            <main className="mx-auto max-w-xl space-y-4 px-4 py-5">
+                {sections.map(sectionItem => (
+                    <section key={sectionItem.key} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div className="border-b border-slate-100 bg-[#003B5C] px-4 py-3 text-sm font-bold text-white">{sectionItem.label}</div>
+                        <div className="space-y-4 p-4">
+                            {sectionItem.groups.map((group, groupIndex) => (
+                                <div key={`${sectionItem.key}-${groupIndex}`}>
+                                    {group.label && <h3 className="mb-2 text-sm font-bold text-[#003B5C]">{group.label}</h3>}
+                                    <ul className="space-y-2">
+                                        {group.items.map((item, index) => (
+                                            <li key={index} className="flex gap-3 rounded-md bg-slate-50 px-3 py-2.5 text-sm leading-relaxed text-slate-700">
+                                                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#00A651] text-xs font-bold text-white">{index + 1}</span>
+                                                <span>{item}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                ))}
+                {!sections.length && (
+                    <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500">Мэдээлэл одоогоор бүртгэгдээгүй байна.</div>
+                )}
+            </main>
+        </div>
+    );
+};
+
 const FinancialReportsPage = ({ onBack }) => {
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -915,7 +980,10 @@ function App() {
   // CMS state
   const [cfg, setCfg] = useState({});
   const [financialStats, setFinancialStats] = useState([]);
-  const [products, setProducts] = useState(productsData);
+  const [products, setProducts] = useState(() => productsData.map(product => ({
+    ...product,
+    productKey: ({ 1: 'biz_loan', 2: 'car_loan', 3: 'cons_loan', 4: 'trust', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' })[product.id] || product.productKey
+  })));
   const [promotions, setPromotions] = useState([]);
 
   const PRODUCT_KEY_MAP = { 1: 'biz_loan', 2: 'car_loan', 3: 'cons_loan', 4: 'trust', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' };
@@ -946,6 +1014,11 @@ function App() {
       const key = pathname.replace('/products/', '');
       const item = prods.find(p => p.productKey === key || String(p.id) === key);
       return { view: item ? 'product_detail' : 'home', item: item || null, governance: null, scrollTo: null };
+    }
+    if (pathname.startsWith('/chat-info/')) {
+      const [, , key, section] = pathname.split('/');
+      const item = prods.find(p => p.productKey === key || String(p.id) === key);
+      return { view: item ? 'chat_info' : 'home', item: item ? { product: item, section } : null, governance: null, scrollTo: null };
     }
     if (pathname.startsWith('/promo/')) {
       const slug = pathname.replace('/promo/', '');
@@ -1002,6 +1075,7 @@ function App() {
           if (!db) return p;
           return {
             ...p,
+            productKey: key,
             title: db.title || p.title,
             shortDesc: db.shortDesc || p.shortDesc,
             description: db.description || p.description,
@@ -1283,7 +1357,9 @@ function App() {
               )}
             </nav>
 
-            {currentView === 'product_detail' && selectedItem ? (
+            {currentView === 'chat_info' && selectedItem?.product ? (
+                <ChatInfoDetail product={selectedItem.product} section={selectedItem.section} onBack={() => navigateTo('home')} />
+            ) : currentView === 'product_detail' && selectedItem ? (
                 <ProductDetail 
                   product={selectedItem} 
                   onBack={() => navigateTo('home')} 

@@ -243,6 +243,10 @@ const ChatBot = () => {
 
   const handleCardClick = (card) => {
     if (!card) return;
+    if (card.url || card.linkUrl) {
+      navigateToProduct(card.url || card.linkUrl);
+      return;
+    }
     const command = card.command || card.title;
     if (command === 'call') {
       window.location.href = 'tel:75991919';

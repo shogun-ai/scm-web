@@ -2289,6 +2289,29 @@ const AdminPanel = ({ user, token, onLogout }) => {
                               ].map(({ type, label }) => (
                                 <div key={type} className="bg-white border rounded-2xl p-4 space-y-3">
                                   <p className="font-bold text-sm text-gray-600">{label}</p>
+                                  <p className="text-xs font-bold text-[#003B5C]">Үйлчилгээний нөхцөл</p>
+                                  {(product[type]?.conditions || []).map((item, idx) => (
+                                    <div key={`condition-${idx}`} className="flex gap-2">
+                                      <input
+                                        value={item}
+                                        onChange={e => updateChatbotProductList(product.productKey, type, 'conditions', idx, e.target.value)}
+                                        className="flex-1 p-2 border rounded-lg text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C]"
+                                      />
+                                      <button
+                                        onClick={() => removeChatbotProductListItem(product.productKey, type, 'conditions', idx)}
+                                        className="text-red-400 hover:text-red-600"
+                                      >
+                                        <X size={16}/>
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <button
+                                    onClick={() => addChatbotProductListItem(product.productKey, type, 'conditions')}
+                                    className="flex items-center gap-1 text-xs text-[#003B5C] font-bold hover:underline"
+                                  >
+                                    <Plus size={14}/> Нөхцөл нэмэх
+                                  </button>
+                                  <p className="border-t pt-3 text-xs font-bold text-[#003B5C]">Бүрдүүлэх баримт бичиг</p>
                                   {(product[type]?.requirements || []).map((item, idx) => (
                                     <div key={idx} className="flex gap-2">
                                       <input

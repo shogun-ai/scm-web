@@ -1209,12 +1209,12 @@ const uniqueList = (items = []) => [...new Set(asCleanList(items))];
 
 const userTypeField = (docType) => (docType === 'company' ? 'organization' : 'individual');
 
-const buildProductDocs = (product, docType) => {
+const buildProductDetails = (product, docType, detailField) => {
     const field = userTypeField(docType);
     const groups = [
-        { label: null, items: product?.[field]?.requirements },
-        { label: product?.purchase?.label || 'Автомашин худалдан авах', items: product?.purchase?.[field]?.requirements },
-        { label: product?.collateral?.label || 'Автомашин барьцаалсан зээл', items: product?.collateral?.[field]?.requirements },
+        { label: null, items: product?.[field]?.[detailField] },
+        { label: product?.purchase?.label || 'Автомашин худалдан авах', items: product?.purchase?.[field]?.[detailField] },
+        { label: product?.collateral?.label || 'Автомашин барьцаалсан зээл', items: product?.collateral?.[field]?.[detailField] },
     ];
 
     const hasSubProducts = Boolean(product?.purchase || product?.collateral);
@@ -1232,6 +1232,9 @@ const buildProductDocs = (product, docType) => {
 
     return uniqueList(docs);
 };
+
+const buildProductDocs = (product, docType) => buildProductDetails(product, docType, 'requirements');
+const buildProductConditions = (product, docType) => buildProductDetails(product, docType, 'conditions');
 
 const buildChatbotCache = async () => {
     try {
@@ -1265,6 +1268,7 @@ const buildChatbotCache = async () => {
 
         const PRODUCT_INFO = {};
         const PRODUCT_DOCS = {};
+        const PRODUCT_CONDITIONS = {};
         const PRODUCT_CARDS = {};
         const PRODUCT_CONTEXT = [];
         const CHATBOT_MENU_CARDS = Array.isArray(cfg.chatbot_cards) ? cfg.chatbot_cards : [];
@@ -1285,8 +1289,14 @@ const buildChatbotCache = async () => {
                 individual: buildProductDocs(p, 'individual'),
                 company: buildProductDocs(p, 'company')
             };
+            const conditions = {
+                individual: buildProductConditions(p, 'individual'),
+                company: buildProductConditions(p, 'company')
+            };
             if (key) PRODUCT_DOCS[key] = docs;
             if (p.productKey) PRODUCT_DOCS[p.productKey] = docs;
+            if (key) PRODUCT_CONDITIONS[key] = conditions;
+            if (p.productKey) PRODUCT_CONDITIONS[p.productKey] = conditions;
             const card = {
                 productKey: p.productKey,
                 title: p.title,
@@ -1324,6 +1334,7 @@ const buildChatbotCache = async () => {
             REPAYMENT_CARD,
             PRODUCT_INFO,
             PRODUCT_DOCS,
+            PRODUCT_CONDITIONS,
             PRODUCT_CARDS,
             PRODUCT_CONTEXT,
             CHATBOT_MENU_CARDS,
@@ -1672,7 +1683,7 @@ setInterval(() => {
 app.post('/api/chat', async (req, res) => {
     try {
         const chat = await getChat();
-        const { CONTACT_INFO, CONTACT_CARD, REPAYMENT_INFO, REPAYMENT_CARD, PRODUCT_INFO, PRODUCT_DOCS, PRODUCT_CARDS, PRODUCT_CONTEXT, loan_rate_default, dti_individual, dti_org, trust_rate } = chat;
+        const { CONTACT_INFO, CONTACT_CARD, REPAYMENT_INFO, REPAYMENT_CARD, PRODUCT_INFO, PRODUCT_DOCS, PRODUCT_CONDITIONS, PRODUCT_CARDS, PRODUCT_CONTEXT, loan_rate_default, dti_individual, dti_org, trust_rate } = chat;
         const sessionId = req.body?.sessionId || `anon_${req.headers['user-agent']}`;
 
         if (!sessions.has(sessionId)) {
@@ -1695,6 +1706,20 @@ app.post('/api/chat', async (req, res) => {
             } : null)
             .filter(Boolean);
         const buildLoanActionCards = () => getConfiguredChatbotCards(chat, 'loan_actions');
+        const buildDetailCards = (productKey, section, detailGroups) => {
+            const productCard = PRODUCT_CARDS?.[productKey] || {};
+            const labels = { individual: 'Иргэн', company: 'Байгууллага' };
+            return ['individual', 'company']
+                .filter(type => detailGroups?.[type]?.length)
+                .map(type => ({
+                    id: `${productKey}_${section}_${type}`,
+                    title: `${labels[type]} - ${section === 'documents' ? 'Бүрдүүлэх баримт бичиг' : 'Үйлчилгээний нөхцөл'}`,
+                    subtitle: `${detailGroups[type].length} мэдээлэл. ${detailGroups[type][0]}`,
+                    imageUrl: productCard.imageUrl,
+                    linkUrl: `https://www.scm.mn/chat-info/${productKey}/${section}`,
+                    buttons: [{ title: 'Бүрэн харах', url: `https://www.scm.mn/chat-info/${productKey}/${section}` }]
+                }));
+        };
 
         const openMainMenu = (text = 'Сайн байна уу? Би Солонго Капитал ББСБ-ийн санхүүгийн зөвлөх чатбот байна. Та доорх сонголтуудаас сонгоно уу.') => {
             s.state = 'START';
@@ -1742,27 +1767,11 @@ app.post('/api/chat', async (req, res) => {
 
         const replyWithDocuments = (productKey) => {
             const docsByType = PRODUCT_DOCS?.[productKey] || {};
-            const docType = requestedUserType
-                || s.data.userType
-                || (docsByType.individual?.length && !docsByType.company?.length ? 'individual' : null)
-                || (docsByType.company?.length && !docsByType.individual?.length ? 'company' : null);
-
             s.data.productKey = productKey;
-
-            if (!docType && (docsByType.individual?.length || docsByType.company?.length)) {
-                s.state = 'TYPE_SELECT';
-                s.data.pendingAction = 'documents';
-                return res.json({ reply: chatReply('Иргэн эсвэл Байгууллагаар бүрдүүлэх баримт бичиг харах уу?', ['Иргэн', 'Байгууллага', 'Буцах', 'Үндсэн цэс']) });
-            }
-
-            const resolvedDocType = docType || 'individual';
-            s.data.userType = resolvedDocType;
-            delete s.data.pendingAction;
-            s.state = 'PRODUCT_OPTIONS';
-
-            const docs = docsByType[resolvedDocType] || [];
+            s.state = 'PRODUCT_ACTIONS';
             return res.json({
-                reply: chatReply(formatDocumentMaterials(docs), ['Тооцоолол', 'Онлайн хүсэлт өгөх', 'Холбоо барих', 'Буцах', 'Үндсэн цэс'])
+                reply: 'Бүрдүүлэх баримт бичиг',
+                cards: buildDetailCards(productKey, 'documents', docsByType)
             });
         };
 
@@ -1878,8 +1887,8 @@ app.post('/api/chat', async (req, res) => {
             case 'PRODUCT_ACTIONS':
                 if (isConditionIntent(msg)) {
                     return res.json({
-                        reply: PRODUCT_INFO[s.data.productKey] || 'Үйлчилгээний нөхцөл одоогоор бүртгэгдээгүй байна.',
-                        cards: buildLoanActionCards().filter(card => card.command !== 'conditions')
+                        reply: 'Үйлчилгээний нөхцөл',
+                        cards: buildDetailCards(s.data.productKey, 'conditions', PRODUCT_CONDITIONS?.[s.data.productKey] || {})
                     });
                 }
                 if (isDocumentIntent(msg)) {
@@ -2175,11 +2184,20 @@ function buildMessengerCardButtons(card = {}) {
     }
     if (card.productUrl) return buildMessengerProductButtons(card);
     if (Array.isArray(card.buttons) && card.buttons.length) {
-        return card.buttons.slice(0, 3).map(button => ({
-            type: 'postback',
-            title: String(button.title || 'Сонгох').slice(0, 20),
-            payload: String(button.command || button.title || 'menu').slice(0, 1000)
-        }));
+        return card.buttons.slice(0, 3).map(button => (
+            button.url
+                ? {
+                    type: 'web_url',
+                    title: String(button.title || 'Харах').slice(0, 20),
+                    url: toAbsoluteScmUrl(button.url),
+                    webview_height_ratio: 'full'
+                }
+                : {
+                    type: 'postback',
+                    title: String(button.title || 'Сонгох').slice(0, 20),
+                    payload: String(button.command || button.title || 'menu').slice(0, 1000)
+                }
+        ));
     }
 
     return [{
@@ -2196,10 +2214,10 @@ async function sendMessengerCardCarousel(recipientId, cards = [], summaryText = 
     }
 
     const elements = cards
-        .filter(card => card?.title && (card.command || card.productUrl || card.buttons?.length))
+        .filter(card => card?.title && (card.command || card.productUrl || card.linkUrl || card.buttons?.length))
         .slice(0, 10)
         .map(card => {
-            const productUrl = card.navigationOnly ? '' : toAbsoluteScmUrl(card.productUrl || '');
+            const productUrl = card.navigationOnly ? '' : toAbsoluteScmUrl(card.linkUrl || card.productUrl || '');
             const element = {
                 title: compactMessengerText(card.title || 'Солонго Капитал', 80),
                 image_url: toAbsoluteScmUrl(card.imageUrl),
