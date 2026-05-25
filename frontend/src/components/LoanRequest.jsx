@@ -18,6 +18,7 @@ import {
 } from '@shared/loanFormSchema';
 
 const PRODUCT_ID_MAP = { 1: 'biz_loan', 2: 'car_purchase_loan', 3: 'cons_loan', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' };
+const CHATBOT_PRODUCT_MAP = { car_loan: 'car_purchase_loan' };
 
 const STEPS = [
   { n: 1, label: 'Бүтээгдэхүүн' },
@@ -99,8 +100,10 @@ const LoanRequest = ({ onBack, initialProduct }) => {
 
   // ─── Initialise product from props ───────────────────────────────────────
   useEffect(() => {
-    if (!initialProduct) return;
-    const code = PRODUCT_ID_MAP[initialProduct.id] || initialProduct.id;
+    const queryProduct = new URLSearchParams(window.location.search).get('product');
+    const initialCode = initialProduct && (PRODUCT_ID_MAP[initialProduct.id] || initialProduct.productKey || initialProduct.id);
+    const code = CHATBOT_PRODUCT_MAP[queryProduct] || queryProduct || initialCode;
+    if (!code) return;
     setFormData(p => ({
       ...p,
       selectedProduct: code,

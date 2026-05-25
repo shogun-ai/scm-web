@@ -1705,7 +1705,17 @@ app.post('/api/chat', async (req, res) => {
                 order: index + 1
             } : null)
             .filter(Boolean);
-        const buildLoanActionCards = () => getConfiguredChatbotCards(chat, 'loan_actions');
+        const buildLoanActionCards = (productKey = s.data.productKey) => getConfiguredChatbotCards(chat, 'loan_actions')
+            .map(card => {
+                const webviewUrl = card.command === 'calculate'
+                    ? 'https://www.scm.mn/calculator'
+                    : card.command === 'online_request'
+                        ? `https://www.scm.mn/loan-request?product=${encodeURIComponent(productKey || '')}`
+                        : '';
+                return webviewUrl
+                    ? { ...card, linkUrl: webviewUrl, buttons: [{ title: 'Нээх', url: webviewUrl }] }
+                    : card;
+            });
         const buildDetailCards = (productKey, section, detailGroups) => {
             const productCard = PRODUCT_CARDS?.[productKey] || {};
             const sectionCard = buildLoanActionCards().find(card => card.command === section) || {};
