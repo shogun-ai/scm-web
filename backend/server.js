@@ -1254,6 +1254,14 @@ const buildChatbotCache = async () => {
                 { title: 'Газрын зураг', command: 'map' }
             ]
         };
+        const REPAYMENT_INFO = cfg.chatbot_repayment_text || 'Эргэн төлөлт хийх дансны мэдээллийг энд оруулна уу.';
+        const REPAYMENT_CARD = {
+            id: 'repayment_details',
+            title: cfg.chatbot_repayment_title || 'Эргэн төлөлт хийх данс',
+            subtitle: REPAYMENT_INFO,
+            imageUrl: cfg.chatbot_repayment_image || 'https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&w=900&q=80',
+            buttons: [{ title: 'Үндсэн цэс', command: 'menu' }]
+        };
 
         const PRODUCT_INFO = {};
         const PRODUCT_DOCS = {};
@@ -1312,6 +1320,8 @@ const buildChatbotCache = async () => {
         chatbotCache = {
             CONTACT_INFO,
             CONTACT_CARD,
+            REPAYMENT_INFO,
+            REPAYMENT_CARD,
             PRODUCT_INFO,
             PRODUCT_DOCS,
             PRODUCT_CARDS,
@@ -1359,6 +1369,7 @@ const CHAT_COMMAND_ALIASES = {
     'тооцоолол хийх': 'calculate',
     'онлайн хүсэлт өгөх': 'online_request',
     'зээлийн хүсэлт нээх': 'online_request',
+    'үйлчилгээний нөхцөл': 'conditions',
     'холбоо барих': 'contact',
     'үндсэн цэс': 'menu',
     'иргэн': 'individual',
@@ -1427,10 +1438,19 @@ function normalizeChatbotCard(card = {}) {
 }
 
 function getConfiguredChatbotCards(chat, parentId = 'root') {
-    return (chat.CHATBOT_MENU_CARDS || [])
+    const cards = (chat.CHATBOT_MENU_CARDS || [])
         .map(normalizeChatbotCard)
         .filter(card => card.isActive && card.parentId === parentId && card.title && card.command)
         .sort((a, b) => a.order - b.order);
+
+    if (cards.length || parentId !== 'loan_actions') return cards;
+
+    return [
+        { id: 'conditions', parentId, title: 'Үйлчилгээний нөхцөл', subtitle: 'Хүү, хугацаа, үндсэн нөхцөл', imageUrl: 'https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=900&q=80', command: 'conditions', order: 1, isActive: true },
+        { id: 'documents', parentId, title: 'Бүрдүүлэх баримт бичиг', subtitle: 'Шаардлагатай материалын жагсаалт', imageUrl: 'https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&w=900&q=80', command: 'documents', order: 2, isActive: true },
+        { id: 'calculate', parentId, title: 'Тооцоолуур', subtitle: 'Зээлийн жишээ төлөлт тооцох', imageUrl: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=900&q=80', command: 'calculate', order: 3, isActive: true },
+        { id: 'online_request', parentId, title: 'Хүсэлт өгөх', subtitle: 'Онлайнаар хүсэлт илгээх', imageUrl: 'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=900&q=80', command: 'online_request', order: 4, isActive: true }
+    ];
 }
 
 function isGreetingIntent(msg) {
@@ -1463,6 +1483,10 @@ function isMapIntent(msg) {
 
 function isDocumentIntent(msg) {
     return includesAny(msg, ['documents', 'баримт', 'бүрдүүлэх', 'материал', 'шаардлагатай бичиг']);
+}
+
+function isConditionIntent(msg) {
+    return includesAny(msg, ['conditions', 'нөхцөл', 'үйлчилгээний нөхцөл', 'хүү хугацаа']);
 }
 
 function getUserTypeFromMessage(msg) {
@@ -1648,7 +1672,7 @@ setInterval(() => {
 app.post('/api/chat', async (req, res) => {
     try {
         const chat = await getChat();
-        const { CONTACT_INFO, CONTACT_CARD, PRODUCT_INFO, PRODUCT_DOCS, PRODUCT_CARDS, PRODUCT_CONTEXT, loan_rate_default, dti_individual, dti_org, trust_rate } = chat;
+        const { CONTACT_INFO, CONTACT_CARD, REPAYMENT_INFO, REPAYMENT_CARD, PRODUCT_INFO, PRODUCT_DOCS, PRODUCT_CARDS, PRODUCT_CONTEXT, loan_rate_default, dti_individual, dti_org, trust_rate } = chat;
         const sessionId = req.body?.sessionId || `anon_${req.headers['user-agent']}`;
 
         if (!sessions.has(sessionId)) {
@@ -1669,6 +1693,7 @@ app.post('/api/chat', async (req, res) => {
                 order: index + 1
             } : null)
             .filter(Boolean);
+        const buildLoanActionCards = () => getConfiguredChatbotCards(chat, 'loan_actions');
 
         const openMainMenu = (text = 'Сайн байна уу? Би Солонго Капитал ББСБ-ийн санхүүгийн зөвлөх чатбот байна. Та доорх сонголтуудаас сонгоно уу.') => {
             s.state = 'START';
@@ -1707,17 +1732,11 @@ app.post('/api/chat', async (req, res) => {
             }
 
             s.data.productKey = productKey;
-            s.state = ['хэрэглээний зээл', 'шугмын зээл', 'cons_loan', 'line_loan'].includes(productKey) ? 'PRODUCT_OPTIONS' : 'TYPE_SELECT';
-            const productCard = PRODUCT_CARDS?.[productKey] || null;
-
-            if (s.state === 'TYPE_SELECT') {
-                return res.json({
-                    reply: chatReply(`${productText}\n\nТа Иргэн эсвэл Байгууллагаар сонирхож байна уу?`, ['Иргэн', 'Байгууллага', 'Буцах', 'Үндсэн цэс']),
-                    productCard
-                });
-            }
-
-            return res.json({ reply: chatReply(productText, PRODUCT_MENU_OPTIONS), productCard });
+            s.state = 'PRODUCT_ACTIONS';
+            return res.json({
+                reply: `${PRODUCT_CARDS?.[productKey]?.title || 'Үйлчилгээ'} - сонголтоо хийнэ үү.`,
+                cards: buildLoanActionCards()
+            });
         };
 
         const replyWithDocuments = (productKey) => {
@@ -1761,7 +1780,7 @@ app.post('/api/chat', async (req, res) => {
                 return res.json({ reply: chatReply('Итгэлцлийн талаар дараах сонголтуудаас үргэлжлүүлнэ үү.', TRUST_MENU_OPTIONS) });
             }
 
-            if (s.state === 'PRODUCT_OPTIONS' || s.state === 'TYPE_SELECT') {
+            if (s.state === 'PRODUCT_ACTIONS' || s.state === 'PRODUCT_OPTIONS' || s.state === 'TYPE_SELECT') {
                 return openLoanMenu();
             }
 
@@ -1793,7 +1812,7 @@ app.post('/api/chat', async (req, res) => {
         }
 
         if (msg === 'repayment' || msg.includes('эргэн төл')) {
-            return openCalculatorMenu();
+            return res.json({ reply: REPAYMENT_INFO, cards: [REPAYMENT_CARD] });
         }
 
         if (msg === 'loan_calc' || msg === 'зээлийн тооцоолуур') {
@@ -1854,6 +1873,25 @@ app.post('/api/chat', async (req, res) => {
                     return openProductInfo(matchedProductKey);
                 }
                 return openLoanMenu('Манай зээлийн бүтээгдэхүүнүүдээс сонгоно уу.');
+
+            case 'PRODUCT_ACTIONS':
+                if (isConditionIntent(msg)) {
+                    return res.json({
+                        reply: PRODUCT_INFO[s.data.productKey] || 'Үйлчилгээний нөхцөл одоогоор бүртгэгдээгүй байна.',
+                        productCard: PRODUCT_CARDS?.[s.data.productKey] || null
+                    });
+                }
+                if (isDocumentIntent(msg)) {
+                    return replyWithDocuments(s.data.productKey);
+                }
+                if (msg === 'calculate' || msg.includes('тооцоолол')) {
+                    s.state = 'CALC_AMOUNT';
+                    return res.json({ reply: 'Зээлийн дүнгээ зөвхөн тоогоор оруулна уу. Жишээ нь: 50000000' });
+                }
+                if (isLoanRequestIntent(msg)) {
+                    return res.json({ reply: `${chatReply('Зээлийн хүсэлт бөглөх цэс рүү шилжүүлж байна.', ['Буцах', 'Үндсэн цэс'])}\n[ACTION: loan_request]` });
+                }
+                return res.json({ reply: 'Үйлчилгээний сонголтоо хийнэ үү.', cards: buildLoanActionCards() });
 
             case 'TYPE_SELECT':
                 if (msg === 'documents' || msg.includes('бүрдүүлэх') || msg.includes('материал')) {
@@ -2150,7 +2188,7 @@ async function sendMessengerCardCarousel(recipientId, cards = [], summaryText = 
     }
 
     const elements = cards
-        .filter(card => card?.title && (card.command || card.productUrl))
+        .filter(card => card?.title && (card.command || card.productUrl || card.buttons?.length))
         .slice(0, 10)
         .map(card => {
             const productUrl = toAbsoluteScmUrl(card.productUrl || '');
@@ -5244,6 +5282,9 @@ const seedSiteConfig = async () => {
         { key: "trust_rate", value: 1.8, label: "Итгэлцлийн хүү (сарын, %)", group: "rates" },
         { key: "dti_individual", value: 55, label: "ӨОХ харьцаа — Иргэн (%)", group: "rates" },
         { key: "dti_org", value: 20, label: "ӨОХ харьцаа — Байгууллага (%)", group: "rates" },
+        { key: "chatbot_repayment_title", value: "Эргэн төлөлт хийх данс", label: "Эргэн төлөлтийн картын гарчиг", group: "chatbot" },
+        { key: "chatbot_repayment_text", value: "Эргэн төлөлт хийх дансны мэдээллийг энд оруулна уу.", label: "Эргэн төлөлтийн мэдээлэл", group: "chatbot" },
+        { key: "chatbot_repayment_image", value: "https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&w=900&q=80", label: "Эргэн төлөлтийн картын зураг", group: "chatbot" },
         {
             key: "chatbot_cards",
             value: [
@@ -5251,7 +5292,11 @@ const seedSiteConfig = async () => {
                 { id: "repayment", parentId: "root", title: "Эргэн төлөлт", subtitle: "Зээлийн тооцоолол болон төлөлтийн мэдээлэл", imageUrl: "https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&w=900&q=80", command: "repayment", order: 2, isActive: true },
                 { id: "contact", parentId: "root", title: "Холбоо барих", subtitle: "Утас, имэйл, байршлын мэдээлэл", imageUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80", command: "contact", order: 3, isActive: true },
                 { id: "loan", parentId: "products", title: "Зээл", subtitle: "Манай зээлийн бүтээгдэхүүнүүд", imageUrl: "https://images.unsplash.com/photo-1560472355-536de3962603?auto=format&fit=crop&w=900&q=80", command: "loan", order: 1, isActive: true },
-                { id: "trust", parentId: "products", title: "Итгэлцэл", subtitle: "Хөрөнгөө өсгөх үйлчилгээ", imageUrl: "https://images.unsplash.com/photo-1579621970795-87facc2f976d?auto=format&fit=crop&w=900&q=80", command: "trust", order: 2, isActive: true }
+                { id: "trust", parentId: "products", title: "Итгэлцэл", subtitle: "Хөрөнгөө өсгөх үйлчилгээ", imageUrl: "https://images.unsplash.com/photo-1579621970795-87facc2f976d?auto=format&fit=crop&w=900&q=80", command: "trust", order: 2, isActive: true },
+                { id: "conditions", parentId: "loan_actions", title: "Үйлчилгээний нөхцөл", subtitle: "Хүү, хугацаа, үндсэн нөхцөл", imageUrl: "https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=900&q=80", command: "conditions", order: 1, isActive: true },
+                { id: "documents", parentId: "loan_actions", title: "Бүрдүүлэх баримт бичиг", subtitle: "Шаардлагатай материалын жагсаалт", imageUrl: "https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&w=900&q=80", command: "documents", order: 2, isActive: true },
+                { id: "calculate", parentId: "loan_actions", title: "Тооцоолуур", subtitle: "Зээлийн жишээ төлөлт тооцох", imageUrl: "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=900&q=80", command: "calculate", order: 3, isActive: true },
+                { id: "online_request", parentId: "loan_actions", title: "Хүсэлт өгөх", subtitle: "Онлайнаар хүсэлт илгээх", imageUrl: "https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=900&q=80", command: "online_request", order: 4, isActive: true }
             ],
             label: "Чатбот картууд",
             group: "chatbot"
@@ -5519,6 +5564,9 @@ const KEY_GROUP_MAP = {
     theme_image_contact: 'theme',
     contact_image: 'contact',
     chatbot_cards: 'chatbot',
+    chatbot_repayment_title: 'chatbot',
+    chatbot_repayment_text: 'chatbot',
+    chatbot_repayment_image: 'chatbot',
 };
 
 app.post('/api/config/bulk', authenticateUser, requireAdmin, async (req, res) => {

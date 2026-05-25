@@ -46,8 +46,18 @@ const DEFAULT_CHATBOT_CARDS = [
   { id: 'repayment', parentId: 'root', title: 'Эргэн төлөлт', subtitle: 'Зээлийн тооцоолол болон төлөлтийн мэдээлэл', imageUrl: 'https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&w=900&q=80', command: 'repayment', order: 2, isActive: true },
   { id: 'contact', parentId: 'root', title: 'Холбоо барих', subtitle: 'Утас, имэйл, байршлын мэдээлэл', imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80', command: 'contact', order: 3, isActive: true },
   { id: 'loan', parentId: 'products', title: 'Зээл', subtitle: 'Манай зээлийн бүтээгдэхүүнүүд', imageUrl: 'https://images.unsplash.com/photo-1560472355-536de3962603?auto=format&fit=crop&w=900&q=80', command: 'loan', order: 1, isActive: true },
-  { id: 'trust', parentId: 'products', title: 'Итгэлцэл', subtitle: 'Хөрөнгөө өсгөх үйлчилгээ', imageUrl: 'https://images.unsplash.com/photo-1579621970795-87facc2f976d?auto=format&fit=crop&w=900&q=80', command: 'trust', order: 2, isActive: true }
+  { id: 'trust', parentId: 'products', title: 'Итгэлцэл', subtitle: 'Хөрөнгөө өсгөх үйлчилгээ', imageUrl: 'https://images.unsplash.com/photo-1579621970795-87facc2f976d?auto=format&fit=crop&w=900&q=80', command: 'trust', order: 2, isActive: true },
+  { id: 'conditions', parentId: 'loan_actions', title: 'Үйлчилгээний нөхцөл', subtitle: 'Хүү, хугацаа, үндсэн нөхцөл', imageUrl: 'https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=900&q=80', command: 'conditions', order: 1, isActive: true },
+  { id: 'documents', parentId: 'loan_actions', title: 'Бүрдүүлэх баримт бичиг', subtitle: 'Шаардлагатай материалын жагсаалт', imageUrl: 'https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&w=900&q=80', command: 'documents', order: 2, isActive: true },
+  { id: 'calculate', parentId: 'loan_actions', title: 'Тооцоолуур', subtitle: 'Зээлийн жишээ төлөлт тооцох', imageUrl: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=900&q=80', command: 'calculate', order: 3, isActive: true },
+  { id: 'online_request', parentId: 'loan_actions', title: 'Хүсэлт өгөх', subtitle: 'Онлайнаар хүсэлт илгээх', imageUrl: 'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=900&q=80', command: 'online_request', order: 4, isActive: true }
 ];
+
+const withDefaultChatbotCards = (cards = []) => {
+  const savedCards = Array.isArray(cards) ? cards : [];
+  const savedIds = new Set(savedCards.map(card => card.id));
+  return [...savedCards, ...DEFAULT_CHATBOT_CARDS.filter(card => !savedIds.has(card.id))];
+};
 
 const AdminPanel = ({ user, token, onLogout }) => {
   const [activeTab, setActiveTab] = useState('los');
@@ -399,7 +409,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
         Object.entries(group).forEach(([key, obj]) => { flat[key] = obj.value; });
       });
       setConfigEdits(flat);
-      setChatbotCards(Array.isArray(flat.chatbot_cards) && flat.chatbot_cards.length ? flat.chatbot_cards : DEFAULT_CHATBOT_CARDS);
+      setChatbotCards(withDefaultChatbotCards(flat.chatbot_cards));
     }
     if (prodRes.status === 'fulfilled') setProducts(prodRes.value.data);
     if (teamRes.status === 'fulfilled') setTeamMembers(teamRes.value.data);
@@ -522,7 +532,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
         'loan_rate_default',
         'trust_rate',
         'dti_individual',
-        'dti_org'
+        'dti_org',
+        'chatbot_repayment_title',
+        'chatbot_repayment_text',
+        'chatbot_repayment_image'
       ];
       const updates = {};
       chatbotConfigKeys.forEach(key => {
@@ -2135,6 +2148,48 @@ const AdminPanel = ({ user, token, onLogout }) => {
                       </section>
                     </div>
 
+                    <section className="bg-white rounded-2xl border shadow-sm p-6 space-y-4">
+                      <h3 className="font-bold text-lg text-[#003B5C] border-b pb-3">Эргэн төлөлтийн мэдээллийн карт</h3>
+                      <input
+                        value={configEdits.chatbot_repayment_title ?? siteConfig.chatbot?.chatbot_repayment_title?.value ?? ''}
+                        onChange={e => setConfigEdits(prev => ({ ...prev, chatbot_repayment_title: e.target.value }))}
+                        placeholder="Картын гарчиг"
+                        className="w-full p-3 border rounded-xl text-sm bg-slate-50"
+                      />
+                      <textarea
+                        rows={4}
+                        value={configEdits.chatbot_repayment_text ?? siteConfig.chatbot?.chatbot_repayment_text?.value ?? ''}
+                        onChange={e => setConfigEdits(prev => ({ ...prev, chatbot_repayment_text: e.target.value }))}
+                        placeholder="Банк, дансны дугаар, дансны нэр зэрэг мэдээлэл"
+                        className="w-full p-3 border rounded-xl text-sm bg-slate-50 resize-none"
+                      />
+                      {(configEdits.chatbot_repayment_image ?? siteConfig.chatbot?.chatbot_repayment_image?.value) && (
+                        <img src={configEdits.chatbot_repayment_image ?? siteConfig.chatbot?.chatbot_repayment_image?.value} alt="" className="h-40 w-full rounded-xl object-cover border" />
+                      )}
+                      <div className="grid grid-cols-[1fr_auto] gap-2">
+                        <input
+                          value={configEdits.chatbot_repayment_image ?? siteConfig.chatbot?.chatbot_repayment_image?.value ?? ''}
+                          onChange={e => setConfigEdits(prev => ({ ...prev, chatbot_repayment_image: e.target.value }))}
+                          placeholder="Зургийн URL"
+                          className="p-3 border rounded-xl text-sm bg-slate-50"
+                        />
+                        <label className="cursor-pointer rounded-xl border bg-white px-4 py-3 text-sm font-bold text-[#003B5C]">
+                          Upload
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async e => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const url = await uploadImage(file);
+                              setConfigEdits(prev => ({ ...prev, chatbot_repayment_image: url }));
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </section>
+
                     <section className="bg-white rounded-2xl border shadow-sm p-6 space-y-5">
                       <div className="flex items-start justify-between gap-4 border-b pb-4">
                         <div>
@@ -2144,12 +2199,15 @@ const AdminPanel = ({ user, token, onLogout }) => {
                         <div className="flex gap-2">
                           <button onClick={() => addChatbotCard('root')} className="rounded-xl bg-[#003B5C] px-4 py-2 text-xs font-bold text-white">Root карт</button>
                           <button onClick={() => addChatbotCard('products')} className="rounded-xl bg-[#00A651] px-4 py-2 text-xs font-bold text-white">Product карт</button>
+                          <button onClick={() => addChatbotCard('loan_actions')} className="rounded-xl bg-slate-600 px-4 py-2 text-xs font-bold text-white">Action карт</button>
                         </div>
                       </div>
 
-                      {['root', 'products'].map(parentId => (
+                      {['root', 'products', 'loan_actions'].map(parentId => (
                         <div key={parentId} className="space-y-3">
-                          <h4 className="text-sm font-bold uppercase text-gray-500">{parentId === 'root' ? 'Эхний цэс' : 'Бүтээгдэхүүн доторх цэс'}</h4>
+                          <h4 className="text-sm font-bold uppercase text-gray-500">
+                            {parentId === 'root' ? 'Эхний цэс' : parentId === 'products' ? 'Бүтээгдэхүүн доторх цэс' : 'Зээлийн үйлчилгээний action цэс'}
+                          </h4>
                           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                             {chatbotCards
                               .filter(card => card.parentId === parentId)
