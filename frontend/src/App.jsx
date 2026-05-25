@@ -791,6 +791,7 @@ const ChatInfoDetail = ({ product, section, audience, onBack }) => {
     const field = isDocuments ? 'requirements' : 'conditions';
     const title = isDocuments ? 'Бүрдүүлэх баримт бичиг' : 'Үйлчилгээний нөхцөл';
     const headerBg = product.headerImage || product.bgImage || BACKGROUNDS.detail_page;
+    const productIntro = !isDocuments ? (product.chatbotText || product.description || product.shortDesc || '') : '';
 
     const collectGroups = (type) => {
         const groups = [];
@@ -824,6 +825,16 @@ const ChatInfoDetail = ({ product, section, audience, onBack }) => {
                 </div>
             </div>
             <main className="mx-auto max-w-xl space-y-4 px-4 py-5">
+                {productIntro && (
+                    <section className="rounded-lg border border-[#003B5C]/10 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-bold uppercase tracking-wide text-[#00A651]">Товч танилцуулга</p>
+                        <div className="mt-3 space-y-1 text-sm leading-relaxed text-slate-700">
+                            {productIntro.split('\n').filter(Boolean).map((line, index) => (
+                                <p key={index}>{line.replace(/\*\*/g, '')}</p>
+                            ))}
+                        </div>
+                    </section>
+                )}
                 {sections.map(sectionItem => (
                     <section key={sectionItem.key} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                         <div className="border-b border-slate-100 bg-[#003B5C] px-4 py-3 text-sm font-bold text-white">{sectionItem.label}</div>
@@ -1081,6 +1092,7 @@ function App() {
             title: db.title || p.title,
             shortDesc: db.shortDesc || p.shortDesc,
             description: db.description || p.description,
+            chatbotText: db.chatbotText || p.description || p.shortDesc,
             bgImage: db.bgImageUrl ? db.bgImageUrl : p.bgImage,
             headerImage: db.headerImageUrl ? db.headerImageUrl : p.headerImage,
             ...(db.individual?.conditions?.length > 0 ? { individual: db.individual } : {}),

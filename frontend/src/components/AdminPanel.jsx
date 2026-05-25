@@ -2303,6 +2303,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                               </div>
                               <p className="text-[11px] text-gray-400">Tier 3 дахь бүтээгдэхүүний card болон мэдээллийн дэлгэцийн толгой зураг.</p>
                             </div>
+                            <p className="text-xs font-bold text-[#003B5C]">Үйлчилгээний нөхцөл дээр харагдах товч танилцуулга</p>
                             <textarea
                               rows={4}
                               value={product.chatbotText || ''}
