@@ -3686,7 +3686,7 @@ const scrubLoanFalsePositives = (analysis = {}) => {
 
 const normalizeStatementAnalysis = (analysis = {}) => {
     analysis = scrubLoanFalsePositives(analysis);
-    const currency = String(analysis.frontSheet?.currency || 'MNT').trim().toUpperCase() || 'MNT';
+    const currency = String(analysis.frontSheet?.currency || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN';
     const months = Array.isArray(analysis.monthlySummary) ? analysis.monthlySummary : [];
     const sortedMonths = months
         .map(item => ({
@@ -3858,6 +3858,7 @@ const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) 
 ВАЛЮТ ТАНИХ ДҮРЭМ — ЧУХАЛ:
 - frontSheet.currency-д дансны хуулгын үндсэн валютыг ISO 4217 гурван үсгийн кодоор оруул (жишээ: MNT, USD, EUR, CNY, KRW, JPY)
 - Statement/account currency, currency code, тэмдэглэгээ, банкны толгой мэдээллийг нэн түрүүнд ашигла
+- "$" эсвэл "US$" тэмдэг байвал USD, "₮" эсвэл "MNT" байвал MNT, "€" байвал EUR гэж заавал тань
 - Валют тодорхой олдохгүй бол "UNKNOWN" гэж буцаа; МНТ гэж таамаглаж болохгүй
 - Бүх мөнгөн дүнг баримт дээрх эх валютаар нь буцаа; өөр валютад, тэр дундаа төгрөгт хөрвүүлж болохгүй
 
@@ -4774,6 +4775,7 @@ const analyzeFinancialStatementsWithAI = async ({ files = [], fileUrls = [], bor
                 'Баланс, санхүүгийн байдлын тайлан, орлогын тайлан, ашиг алдагдлын тайланг PDF, зураг, spreadsheet эсвэл янз бүрийн хэлбэрээс уншина.',
                 'Нэр, регистр, тайлант огноо, тайлант хугацаа, валют, масштаб (unit/thousand/million)-ыг эх баримтаас яг тань.',
                 'currency-г ISO 4217 гурван үсгийн кодоор бич (MNT, USD, EUR, CNY, KRW гэх мэт). Тодорхойгүй бол UNKNOWN гэж бич; MNT гэж таамаглахгүй.',
+                'Валютын тэмдэглэгээг заавал ашигла: "$" эсвэл "US$" = USD, "₮" = MNT, "€" = EUR; "$" харагдаж байвал UNKNOWN гэж буцааж болохгүй.',
                 'Бүх мөнгөн дүнг эх баримтын валют ба масштабаар нь тоогоор буцаа. Өөр валютад хөрвүүлэхгүй.',
                 'Баланс болон орлогын тайлан тусдаа файлд байвал нэг байгууллага, нэг тайлант хугацааны нэгдсэн анализ болго.',
                 'Олдохгүй зүйлд 0 эсвэл хоосон мөр хэрэглэ; зохиож бөглөхгүй.',

@@ -16,8 +16,8 @@ const fmtNum = (v) => {
   return n ? Number(n).toLocaleString('mn-MN') : '';
 };
 const parseFmtNum = (v) => Number(String(v).replace(/[^0-9]/g, '')) || '';
-const formatStatementMoney = (value, currency = 'MNT') => {
-  const code = String(currency || 'MNT').trim().toUpperCase() || 'MNT';
+const formatStatementMoney = (value, currency = 'UNKNOWN') => {
+  const code = String(currency || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN';
   const amount = Number(value || 0).toLocaleString('mn-MN', { maximumFractionDigits: 2 });
   return code === 'MNT' ? `${amount} ₮` : `${amount} ${code}`;
 };
@@ -1415,6 +1415,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
             {/* Fields (AI result, editable) */}
             {hasFields && item.type === 'bank_statement' && (() => {
               const fs = item.fields.frontSheet || {};
+              const currency = String(fs.currency || 'UNKNOWN').toUpperCase();
               const months = Array.isArray(item.fields.monthlySummary) ? item.fields.monthlySummary : [];
               const warnings = Array.isArray(item.fields.warnings) ? item.fields.warnings : (item.fields.warnings ? [item.fields.warnings] : []);
               const cfb = item.fields.cashFlowBehaviour || {};
@@ -1426,7 +1427,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
                   {/* Identity */}
                   <div className="grid grid-cols-3 gap-2">
                     {[['customerName','Эзэмшигч'], ['bankName','Банк'], ['accountNumber','Дансны дугаар'],
-                      ['periodStart','Хугацаа эхлэл'], ['periodEnd','Хугацаа дуусгавар'], ['coveredMonths','Сарын тоо']
+                      ['currency','Валют'], ['periodStart','Хугацаа эхлэл'], ['periodEnd','Хугацаа дуусгавар'], ['coveredMonths','Сарын тоо']
                     ].map(([k, lbl]) => fs[k] !== undefined && fs[k] !== '' && (
                       <div key={k} className="group">
                         <p className="text-[10px] text-slate-400 uppercase font-bold">{lbl}</p>
@@ -1446,7 +1447,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
                     ].map(([lbl, val, cls]) => val !== undefined && (
                       <div key={lbl}>
                         <p className="text-[10px] text-slate-400 uppercase font-bold">{lbl}</p>
-                        <p className={`text-xs font-bold ${cls}`}>₮{Number(val || 0).toLocaleString('mn-MN')}</p>
+                        <p className={`text-xs font-bold ${cls}`}>{formatStatementMoney(val, currency)}</p>
                       </div>
                     ))}
                   </div>
@@ -1484,9 +1485,9 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
                           {months.map((m, mi) => (
                             <tr key={mi} className="border-t border-slate-100">
                               <td className="py-0.5 font-semibold text-slate-600">{m.month}</td>
-                              <td className="text-right text-green-600">₮{Number(m.income || 0).toLocaleString('mn-MN')}</td>
-                              <td className="text-right text-red-500">₮{Number(m.expense || 0).toLocaleString('mn-MN')}</td>
-                              <td className={`text-right font-bold ${m.netCashFlow >= 0 ? 'text-green-600' : 'text-red-500'}`}>₮{Number(m.netCashFlow || 0).toLocaleString('mn-MN')}</td>
+                              <td className="text-right text-green-600">{formatStatementMoney(m.income, currency)}</td>
+                              <td className="text-right text-red-500">{formatStatementMoney(m.expense, currency)}</td>
+                              <td className={`text-right font-bold ${m.netCashFlow >= 0 ? 'text-green-600' : 'text-red-500'}`}>{formatStatementMoney(m.netCashFlow, currency)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1672,6 +1673,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
 // ─────────────────────────────────────────────
 const BankStatementCard = ({ bs, index, onRemove }) => {
   const fs = bs?.frontSheet || {};
+  const currency = String(fs.currency || 'UNKNOWN').toUpperCase();
   const months = Array.isArray(bs?.monthlySummary) ? bs.monthlySummary : [];
   const warnings = Array.isArray(bs?.warnings) ? bs.warnings : [];
   return (
@@ -1687,7 +1689,7 @@ const BankStatementCard = ({ bs, index, onRemove }) => {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
         {[['customerName','Эзэмшигч'],['bankName','Банк'],['accountNumber','Дансны дугаар'],
-          ['periodStart','Эхлэх'],['periodEnd','Дуусах'],['coveredMonths','Сарын тоо']
+          ['currency','Валют'],['periodStart','Эхлэх'],['periodEnd','Дуусах'],['coveredMonths','Сарын тоо']
         ].map(([k, lbl]) => fs[k] != null && fs[k] !== '' && (
           <div key={k}><p className="text-[10px] text-slate-400 uppercase font-bold">{lbl}</p>
           <p className="text-xs font-semibold text-slate-700">{String(fs[k])}</p></div>
@@ -1703,7 +1705,7 @@ const BankStatementCard = ({ bs, index, onRemove }) => {
           ['Цэвэр гүйлгээ', fs.netCashFlow, (fs.netCashFlow||0)>=0?'text-green-600':'text-red-500'],
         ].map(([lbl, val, cls]) => val != null && (
           <div key={lbl}><p className="text-[10px] text-slate-400 uppercase font-bold">{lbl}</p>
-          <p className={`text-xs font-bold ${cls}`}>₮{Number(val||0).toLocaleString('mn-MN')}</p></div>
+          <p className={`text-xs font-bold ${cls}`}>{formatStatementMoney(val, currency)}</p></div>
         ))}
       </div>
       {months.length > 0 && (
@@ -1721,9 +1723,9 @@ const BankStatementCard = ({ bs, index, onRemove }) => {
                 {months.map((m, mi) => (
                   <tr key={mi} className="border-t border-slate-100">
                     <td className="py-0.5 font-semibold text-slate-600">{m.month}</td>
-                    <td className="text-right text-green-600">₮{Number(m.income||0).toLocaleString('mn-MN')}</td>
-                    <td className="text-right text-red-500">₮{Number(m.expense||0).toLocaleString('mn-MN')}</td>
-                    <td className={`text-right font-bold ${(m.netCashFlow||0)>=0?'text-green-600':'text-red-500'}`}>₮{Number(m.netCashFlow||0).toLocaleString('mn-MN')}</td>
+                    <td className="text-right text-green-600">{formatStatementMoney(m.income, currency)}</td>
+                    <td className="text-right text-red-500">{formatStatementMoney(m.expense, currency)}</td>
+                    <td className={`text-right font-bold ${(m.netCashFlow||0)>=0?'text-green-600':'text-red-500'}`}>{formatStatementMoney(m.netCashFlow, currency)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -2083,7 +2085,7 @@ const FinancialReportsSection = ({ data = {}, onChange, apiUrl, showToast, exist
   const [analyzing, setAnalyzing] = useState(false);
   const [exchangeRate, setExchangeRate] = useState(data.exchangeRate || '');
   const analysis = data.analysis;
-  const currency = String(analysis?.currency || 'MNT').toUpperCase();
+  const currency = String(analysis?.currency || 'UNKNOWN').toUpperCase();
   const conversionRate = Number(data.exchangeRate || 0);
   const balance = analysis?.balanceSheet || {};
   const income = analysis?.incomeStatement || {};
@@ -2148,6 +2150,24 @@ const FinancialReportsSection = ({ data = {}, onChange, apiUrl, showToast, exist
                 {analysis.periodStart || analysis.reportingDate || '—'}{analysis.periodEnd ? ` - ${analysis.periodEnd}` : ''} · {currency} · {analysis.scale || 'unknown'}
               </p>
             </div>
+            <label className="space-y-1">
+              <span className="block text-[10px] font-bold text-slate-500">Валют</span>
+              <select
+                value={currency}
+                onChange={(event) => {
+                  setExchangeRate('');
+                  onChange({ ...data, analysis: { ...analysis, currency: event.target.value }, exchangeRate: '' });
+                }}
+                className="p-2 border rounded-lg text-xs bg-white"
+              >
+                <option value="UNKNOWN">Тодорхойгүй</option>
+                <option value="MNT">MNT (₮)</option>
+                <option value="USD">USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="CNY">CNY (¥)</option>
+                <option value="KRW">KRW (₩)</option>
+              </select>
+            </label>
             {currency !== 'MNT' && currency !== 'UNKNOWN' && (
               <div className="flex items-end gap-2">
                 <label className="space-y-1">
