@@ -605,7 +605,7 @@ const buildAmortizationRows = (principal, months, monthlyRatePercent, startDateS
 };
 
 const buildOutputs = (form, context = {}) => {
-  const { hasCreditRef = false, hasStatementAnalysis = false, hasSocialInsurance = false } = context;
+  const { hasCreditRef = false, hasStatementAnalysis = false, hasSocialInsurance = false, financialAnalysis = null } = context;
   const requestedAmount = parseNumber(form.requestedAmount);
   const termMonths = parseNumber(form.termMonths);
   const income = parseNumber(form.averageMonthlyIncome);
@@ -660,8 +660,13 @@ const buildOutputs = (form, context = {}) => {
   const debtPart = otherLoanBalance > requestedAmount ? 4 : 10;
   const collateralPart = combinedCollateralCoverage >= 1.5 ? 10 : combinedCollateralCoverage >= 1.0 ? 6 : combinedCollateralCoverage > 0 ? 3 : 0;
   const guarantorPart = totalGuarantorIncome >= monthlyPayment ? 5 : totalGuarantorIncome > 0 ? 2 : 0;
+  const financialPart = financialAnalysis
+    ? (Number(financialAnalysis.incomeStatement?.netProfit || 0) > 0 && Number(financialAnalysis.ratios?.currentRatio || 0) >= 1
+      ? 5
+      : (Number(financialAnalysis.incomeStatement?.netProfit || 0) < 0 || Number(financialAnalysis.ratios?.debtToEquity || 0) > 3 ? -8 : 0))
+    : 0;
 
-  const rawScore = scorePart + dtiPart + cashPart + debtPart + collateralPart + guarantorPart - classificationPenalty;
+  const rawScore = scorePart + dtiPart + cashPart + debtPart + collateralPart + guarantorPart + financialPart - classificationPenalty;
   const score = Math.max(0, Math.min(100, Math.round(rawScore)));
 
   const scoreBreakdown = [
@@ -677,6 +682,10 @@ const buildOutputs = (form, context = {}) => {
       reason: combinedCollateralValue > 0 ? `Барьцааны хамрагдац ${(combinedCollateralCoverage * 100).toFixed(0)}% — оноо: ${Math.round(collateralPart)}/10` : 'Барьцаа хөрөнгө байхгүй' },
     { label: 'Батлан даагч', value: Math.round(guarantorPart), max: 5, color: 'bg-lime-500',
       reason: totalGuarantorIncome > 0 ? `Батлан даагчийн нийт орлого ${formatMoney(totalGuarantorIncome)} — ${totalGuarantorIncome >= monthlyPayment ? 'сарын төлбөрийг хангана' : 'сарын төлбөрийг хангахгүй'}` : 'Батлан даагч байхгүй' },
+      { label: 'Санхүүгийн тайлан', value: Math.round(financialPart), max: financialPart < 0 ? 0 : 5, color: 'bg-emerald-500',
+        reason: financialAnalysis
+        ? `Цэвэр ашиг ${formatNativeMoney(financialAnalysis.incomeStatement?.netProfit, financialAnalysis.currency)}, current ratio ${Number(financialAnalysis.ratios?.currentRatio || 0).toFixed(2)} — нөлөө: ${financialPart >= 0 ? '+' : ''}${financialPart}`
+        : 'Баланс болон орлогын тайлан шинжлээгүй' },
     { label: 'Ангиллын хасалт', value: -Math.round(classificationPenalty), max: 0, color: 'bg-red-400',
       reason: classificationPenalty > 0 ? `Ангилал: ${classificationLabels[form.classification] || form.classification} — хасалт: -${Math.round(classificationPenalty)} оноо` : 'Хэвийн ангилал — хасалт байхгүй' },
   ];
@@ -761,6 +770,12 @@ const buildOutputs = (form, context = {}) => {
       reasons.push('Орлогын мэдээлэл оруулаагүй — тооцоолол хийх боломжгүй байна.');
       if (!hasSocialInsurance) docs.push('Цалингийн тодорхойлолт / Нийгмийн даатгалын лавлагаа');
       if (!hasStatementAnalysis) docs.push('Дансны хуулга (сүүлийн 3–6 сар)');
+    }
+    if (form.borrowerType === 'organization' && !financialAnalysis) {
+      reasons.push('Байгууллагын баланс болон орлогын тайлан шинжлэгдээгүй байна.');
+      docs.push('Баланс, орлогын тайлан (хамгийн сүүлийн тайлант хугацаа)');
+    } else if (financialAnalysis?.riskFlags?.length) {
+      reasons.push(...financialAnalysis.riskFlags.slice(0, 2));
     }
 
     return { reasons, docs: [...new Set(docs)] };
@@ -861,6 +876,7 @@ const buildOutputs = (form, context = {}) => {
       decisionRationale,
     },
     behavior,
+    financialStatementAnalysis: financialAnalysis,
   };
 };
 
@@ -896,6 +912,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   const [statementError, setStatementError] = useState('');
   const [statementExchangeRate, setStatementExchangeRate] = useState('');
   const [statementConversion, setStatementConversion] = useState(null);
+  const [financialAnalysis, setFinancialAnalysis] = useState(null);
+  const [financialExchangeRate, setFinancialExchangeRate] = useState('');
+  const [financialConversion, setFinancialConversion] = useState(null);
   // Амортизацийн хуваарь дэлгэх/хураах
   const [showFullAmortization, setShowFullAmortization] = useState(false);
   // Toast notification
@@ -922,13 +941,15 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     hasCreditRef: !!creditRefAnalysis,
     hasStatementAnalysis: !!(statementAnalysis?.frontSheet?.totalIncome),
     hasSocialInsurance: !!(siAnalysis?.averageSalary > 0),
-  }), [form, creditRefAnalysis, statementAnalysis, siAnalysis]);
+    financialAnalysis,
+  }), [form, creditRefAnalysis, statementAnalysis, siAnalysis, financialAnalysis]);
   const outputsWithAnalysis = useMemo(() => ({
     ...outputs,
     statementAnalysis,
     statementAnalysisItems,
     statementConversion,
-  }), [outputs, statementAnalysis, statementAnalysisItems, statementConversion]);
+    financialConversion,
+  }), [outputs, statementAnalysis, statementAnalysisItems, statementConversion, financialConversion]);
   const sortedStudyRequests = useMemo(() => (
     [...studyRequests].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
   ), [studyRequests]);
@@ -954,12 +975,20 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   const displayedForm = selectedResearch?.borrower || form;
   const displayedStatementConversion = selectedResearch?.outputs?.statementConversion || statementConversion;
   const displayedStatementCurrency = normalizeCurrency(displayedStatementAnalysis?.frontSheet?.currency);
+  const displayedFinancialAnalysis = selectedResearch?.outputs?.financialStatementAnalysis || financialAnalysis;
+  const displayedFinancialConversion = selectedResearch?.outputs?.financialConversion || financialConversion;
+  const displayedFinancialCurrency = normalizeCurrency(displayedFinancialAnalysis?.currency);
   const canConvertStatement = !isMntCurrency(displayedStatementCurrency) && displayedStatementCurrency !== 'MIXED' && displayedStatementCurrency !== 'UNKNOWN';
   const formatStatementMoney = (value, currency = displayedStatementCurrency) => {
     const code = normalizeCurrency(currency);
     const native = formatNativeMoney(value, code);
     if (!displayedStatementConversion?.rate || normalizeCurrency(displayedStatementConversion.currency) !== code) return native;
     return `${native} / ${formatMoney(Number(value || 0) * displayedStatementConversion.rate)}`;
+  };
+  const formatFinancialMoney = (value) => {
+    const native = formatNativeMoney(value, displayedFinancialCurrency);
+    if (!displayedFinancialConversion?.rate) return native;
+    return `${native} / ${formatMoney(Number(value || 0) * displayedFinancialConversion.rate)}`;
   };
 
   const showToast = (message, type = 'success') => {
@@ -1145,6 +1174,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     setStatementError('');
     setStatementExchangeRate('');
     setStatementConversion(null);
+    setFinancialExchangeRate('');
+    setFinancialConversion(null);
     setCreditRefError('');
 
     // Auto-populate bank statement analysis from incomeResearch (new) or legacy collaterals
@@ -1186,6 +1217,14 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     // Нийгмийн даатгалын лавлагаа
     const siData = appData.incomeResearch?.socialInsuranceAnalysis;
     setSiAnalysis(siData?.totalInsuranceMonths > 0 ? siData : null);
+    const financialReport = appData.financialReports || {};
+    const savedFinancialRate = Number(financialReport.exchangeRate || 0);
+    const savedFinancialCurrency = normalizeCurrency(financialReport.analysis?.currency);
+    setFinancialAnalysis(financialReport.analysis || null);
+    if (financialReport.analysis && savedFinancialRate > 0 && !isMntCurrency(savedFinancialCurrency)) {
+      setFinancialExchangeRate(String(savedFinancialRate));
+      setFinancialConversion({ currency: savedFinancialCurrency, rate: savedFinancialRate });
+    }
 
     setViewMode('detail');
     setResearchTab('profile');
@@ -1375,6 +1414,17 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     showToast(`${displayedStatementCurrency} дүнг төгрөгөөр тооцоонд ашиглаж эхэллээ.`);
   };
 
+  const applyFinancialExchangeRate = () => {
+    const rate = Number(financialExchangeRate);
+    if (!displayedFinancialAnalysis || isMntCurrency(displayedFinancialCurrency) || !(rate > 0)) {
+      showToast('Тайлангийн валютын ханшийг зөв оруулна уу.', 'error');
+      return;
+    }
+    setSelectedId(null);
+    setFinancialConversion({ currency: displayedFinancialCurrency, rate });
+    showToast(`${displayedFinancialCurrency} тайлангийн дүнг төгрөгөөр давхар харуулж байна.`);
+  };
+
   const addOtherLoan = (loan = {}) => {
     setSelectedId(null);
     setForm((prev) => ({
@@ -1534,6 +1584,10 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     const cbRef = creditRefAnalysis || null;
     const cbLoans = cbRef?.primaryLoans || cbRef?.loans || [];
     const si = siAnalysis || null;
+    const fin = displayedFinancialAnalysis || null;
+    const finBs = fin?.balanceSheet || {};
+    const finInc = fin?.incomeStatement || {};
+    const finRatios = fin?.ratios || {};
     const ie = displayedOutputs.incomeExpense || {};
     const cs = displayedOutputs.creditScore || {};
     const fs = displayedOutputs.frontSheet || {};
@@ -1752,9 +1806,34 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           </tbody></table>
           </div>` : ''}
 
+          ${fin ? `
+          ${sectionTitle('3', 'Санхүүгийн тайлангийн шинжилгээ')}
+          <div class="no-break">
+          <table><tbody>
+            <tr>
+              <td class="label-cell">Байгууллага</td><td>${esc(fin.entityName || '—')}</td>
+              <td class="label-cell">Хугацаа / Валют</td><td>${esc(fin.periodStart || fin.reportingDate || '—')} ${fin.periodEnd ? '— ' + esc(fin.periodEnd) : ''} · ${esc(fin.currency || 'MNT')}</td>
+            </tr>
+            <tr>
+              <td class="label-cell">Нийт хөрөнгө</td><td>${formatFinancialMoney(finBs.totalAssets)}</td>
+              <td class="label-cell">Нийт өр төлбөр</td><td>${formatFinancialMoney(finBs.totalLiabilities)}</td>
+            </tr>
+            <tr>
+              <td class="label-cell">Эздийн өмч</td><td>${formatFinancialMoney(finBs.equity)}</td>
+              <td class="label-cell">Цэвэр ашиг</td><td>${formatFinancialMoney(finInc.netProfit)}</td>
+            </tr>
+            <tr>
+              <td class="label-cell">Current ratio</td><td>${Number(finRatios.currentRatio || 0).toFixed(2)}</td>
+              <td class="label-cell">Debt / Equity</td><td>${Number(finRatios.debtToEquity || 0).toFixed(2)}</td>
+            </tr>
+          </tbody></table>
+          ${fin.analysis ? `<div style="margin-top:8px;padding:10px;background:#f8fafc;border-radius:8px;font-size:11px;line-height:1.5">${esc(fin.analysis)}</div>` : ''}
+          ${(fin.riskFlags || []).length ? `<div style="margin-top:8px;padding:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:11px;color:#b91c1c">${fin.riskFlags.map(r => `• ${esc(r)}`).join('<br>')}</div>` : ''}
+          </div>` : ''}
+
           <!-- ══════════════ 3. ЗЭЭЛИЙН МЭД. ЛАВЛАГАА ══════════════ -->
           ${cbRef ? `
-          ${sectionTitle('3', 'Зээлийн мэдээллийн сангийн лавлагаа')}
+          ${sectionTitle(fin ? '4' : '3', 'Зээлийн мэдээллийн сангийн лавлагаа')}
           <div class="no-break">
           <table><tbody>
             <tr>
@@ -1951,6 +2030,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     { key: 'profile', label: 'Зээлдэгчийн профайл', icon: FileText },
     { key: 'guarantors', label: 'Батлан даагч / Хамтран', icon: Users },
     { key: 'loan_history', label: 'Зээлийн мэдээлэл', icon: Shield },
+    { key: 'financial', label: 'Тайлан', icon: TrendingUp },
     { key: 'loan_calc', label: 'Зээлийн тооцоолол', icon: Calculator },
     { key: 'income', label: 'Орлогын мэдээлэл', icon: TrendingUp },
     { key: 'collateral', label: 'Барьцааны мэдээлэл', icon: Home },
@@ -2564,6 +2644,92 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                   )}
                 </section>
               )}
+            </div>
+          )}
+
+          {/* ===== TAB: financial ===== */}
+          {researchTab === 'financial' && (
+            <div className="space-y-6">
+              {!displayedFinancialAnalysis ? (
+                <section className="bg-white border rounded-2xl shadow-sm p-8 text-center text-slate-400">
+                  <TrendingUp size={34} className="mx-auto mb-3" />
+                  <p className="font-bold text-slate-600">Санхүүгийн тайлангийн шинжилгээ байхгүй байна.</p>
+                  <p className="text-sm mt-1">Аппликэйшн хэсгийн Тайлан табаас баланс, орлогын тайлан уншуулна.</p>
+                </section>
+              ) : (() => {
+                const bs = displayedFinancialAnalysis.balanceSheet || {};
+                const inc = displayedFinancialAnalysis.incomeStatement || {};
+                const ratios = displayedFinancialAnalysis.ratios || {};
+                return (
+                  <>
+                    <section className="bg-white border rounded-2xl shadow-sm p-5 space-y-4">
+                      <div className="flex flex-wrap justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-bold uppercase text-slate-400">Санхүүгийн тайлан</p>
+                          <h3 className="text-lg font-black text-[#003B5C]">{displayedFinancialAnalysis.entityName || 'Байгууллага'}</h3>
+                          <p className="text-sm text-slate-500">
+                            {displayedFinancialAnalysis.periodStart || displayedFinancialAnalysis.reportingDate || '—'}
+                            {displayedFinancialAnalysis.periodEnd ? ` - ${displayedFinancialAnalysis.periodEnd}` : ''}
+                            {' · '}{displayedFinancialCurrency} · {displayedFinancialAnalysis.scale}
+                          </p>
+                        </div>
+                        {!isMntCurrency(displayedFinancialCurrency) && displayedFinancialCurrency !== 'UNKNOWN' && !selectedResearch && (
+                          <div className="flex items-end gap-2 bg-slate-50 border rounded-xl p-3">
+                            <label className="space-y-1">
+                              <span className="block text-[11px] font-bold text-slate-500">1 {displayedFinancialCurrency} = хэдэн ₮</span>
+                              <input type="number" min="0" step="0.01" value={financialExchangeRate} onChange={e => setFinancialExchangeRate(e.target.value)} className={`${textInput} w-40`} />
+                            </label>
+                            <button type="button" onClick={applyFinancialExchangeRate} className="px-4 py-3 rounded-lg bg-[#003B5C] text-white text-sm font-bold">Төгрөгөөр харуулах</button>
+                          </div>
+                        )}
+                      </div>
+                      {displayedFinancialConversion?.rate && (
+                        <p className="text-xs text-green-700 font-bold bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                          Хөрвүүлэлт: 1 {displayedFinancialCurrency} = {formatMoney(displayedFinancialConversion.rate)}
+                        </p>
+                      )}
+                    </section>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <section className="bg-white border rounded-2xl shadow-sm p-5 space-y-3">
+                        <h4 className="font-bold text-[#003B5C]">Баланс</h4>
+                        {[['Нийт хөрөнгө', bs.totalAssets], ['Эргэлтийн хөрөнгө', bs.currentAssets], ['Мөнгөн хөрөнгө', bs.cash], ['Авлага', bs.receivables], ['Нийт өр төлбөр', bs.totalLiabilities], ['Эздийн өмч', bs.equity]].map(([label, amount]) => (
+                          <div key={label} className="flex justify-between gap-3 border-b border-slate-100 py-2 text-sm">
+                            <span className="text-slate-500">{label}</span>
+                            <span className="font-bold text-slate-700 text-right">{formatFinancialMoney(amount)}</span>
+                          </div>
+                        ))}
+                      </section>
+                      <section className="bg-white border rounded-2xl shadow-sm p-5 space-y-3">
+                        <h4 className="font-bold text-[#003B5C]">Орлогын тайлан</h4>
+                        {[['Борлуулалтын орлого', inc.revenue], ['Борлуулалтын өртөг', inc.costOfSales], ['Нийт ашиг', inc.grossProfit], ['Үйл ажиллагааны ашиг', inc.operatingProfit], ['Санхүүгийн зардал', inc.financeCosts], ['Цэвэр ашиг', inc.netProfit]].map(([label, amount]) => (
+                          <div key={label} className="flex justify-between gap-3 border-b border-slate-100 py-2 text-sm">
+                            <span className="text-slate-500">{label}</span>
+                            <span className={`font-bold text-right ${label === 'Цэвэр ашиг' && Number(amount) < 0 ? 'text-red-700' : 'text-slate-700'}`}>{formatFinancialMoney(amount)}</span>
+                          </div>
+                        ))}
+                      </section>
+                    </div>
+                    <section className="bg-white border rounded-2xl shadow-sm p-5 space-y-4">
+                      <h4 className="font-bold text-[#003B5C]">Санхүүгийн үзүүлэлт ба AI дүгнэлт</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                        {[['Current ratio', ratios.currentRatio], ['Debt / Equity', ratios.debtToEquity], ['Өр / Хөрөнгө', ratios.liabilityToAsset], ['Gross margin', ratios.grossMargin], ['Net margin', ratios.netMargin]].map(([label, value]) => (
+                          <div key={label} className="bg-slate-50 rounded-xl p-3 text-center">
+                            <p className="text-[10px] text-slate-400 uppercase font-bold">{label}</p>
+                            <p className="font-black text-[#003B5C]">{Number(value || 0).toFixed(2)}{label.includes('margin') || label === 'Өр / Хөрөнгө' ? '%' : ''}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {displayedFinancialAnalysis.analysis && <p className="text-sm text-slate-700 leading-relaxed">{displayedFinancialAnalysis.analysis}</p>}
+                      {displayedFinancialAnalysis.riskFlags?.length > 0 && (
+                        <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                          <p className="text-xs font-bold text-red-700 mb-2">Эрсдэлийн дохио</p>
+                          {displayedFinancialAnalysis.riskFlags.map((risk, index) => <p key={index} className="text-xs text-red-700">• {risk}</p>)}
+                        </div>
+                      )}
+                    </section>
+                  </>
+                );
+              })()}
             </div>
           )}
 

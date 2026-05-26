@@ -824,6 +824,115 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId })
 };
 
 // ─────────────────────────────────────────────
+// FINANCIAL REPORTS: BALANCE SHEET + INCOME STATEMENT
+// ─────────────────────────────────────────────
+const FinancialReportsSection = ({ data = {}, onChange, apiUrl, showToast }) => {
+  const [files, setFiles] = useState([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState(data.exchangeRate || '');
+  const analysis = data.analysis;
+  const currency = String(analysis?.currency || 'MNT').toUpperCase();
+  const conversionRate = Number(data.exchangeRate || 0);
+  const bs = analysis?.balanceSheet || {};
+  const income = analysis?.incomeStatement || {};
+  const ratios = analysis?.ratios || {};
+  const money = (value) => {
+    const native = formatStatementMoney(value, currency);
+    return conversionRate > 0 && currency !== 'MNT'
+      ? `${native} / ${formatStatementMoney(Number(value || 0) * conversionRate, 'MNT')}`
+      : native;
+  };
+
+  const analyzeFiles = async (selectedFiles) => {
+    if (!selectedFiles?.length) return;
+    setAnalyzing(true);
+    try {
+      const fd = new FormData();
+      selectedFiles.forEach((file) => fd.append('bankStatements', file));
+      const res = await axios.post(`${apiUrl}/api/loans/analyze-financial-statements`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
+      });
+      onChange({ ...data, analysis: res.data, exchangeRate: '' });
+      setExchangeRate('');
+      showToast('Баланс болон орлогын тайлан уншигдлаа.');
+    } catch (error) {
+      showToast(error.response?.data?.message || 'Санхүүгийн тайлан унших алдаа', 'error');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const applyExchangeRate = () => {
+    const rate = Number(exchangeRate);
+    if (!(rate > 0)) {
+      showToast('Валютын ханшийг зөв оруулна уу.', 'error');
+      return;
+    }
+    onChange({ ...data, exchangeRate: rate });
+    showToast('Тайлангийн дүнг төгрөгөөр давхар харуулж байна.');
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="p-3 bg-slate-50 rounded-xl border space-y-2">
+        <p className="text-xs font-bold text-slate-600">Баланс болон орлогын тайлан</p>
+        <p className="text-[11px] text-slate-400">PDF, зураг, Excel хэлбэрийн тайланг хамтад нь оруулж AI уншуулна.</p>
+        <FilePickerWithPreview files={files} onChange={setFiles} accept=".pdf,image/*,.xlsx,.xls,.csv" multiple />
+        {files.length > 0 && (
+          <button onClick={() => analyzeFiles(files)} disabled={analyzing}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-[#003B5C] text-white rounded-lg disabled:opacity-50">
+            {analyzing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            {analyzing ? 'AI уншиж байна...' : 'AI шинжлэх'}
+          </button>
+        )}
+      </div>
+      {analysis && (
+        <div className="border rounded-xl bg-white p-4 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-[#003B5C]">{analysis.entityName || 'Санхүүгийн тайлан'}</p>
+              <p className="text-[11px] text-slate-500">{analysis.periodStart || analysis.reportingDate || '—'}{analysis.periodEnd ? ` - ${analysis.periodEnd}` : ''} · {currency} · {analysis.scale}</p>
+            </div>
+            {currency !== 'MNT' && currency !== 'UNKNOWN' && (
+              <div className="flex items-end gap-2">
+                <label className="space-y-1">
+                  <span className="block text-[10px] font-bold text-slate-500">1 {currency} = ₮</span>
+                  <input type="number" min="0" step="0.01" value={exchangeRate} onChange={e => setExchangeRate(e.target.value)} className="p-2 border rounded-lg text-xs w-32" />
+                </label>
+                <button onClick={applyExchangeRate} className="px-3 py-2 bg-[#003B5C] text-white rounded-lg text-xs font-bold">Хөрвүүлэх</button>
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {[['Нийт хөрөнгө', bs.totalAssets], ['Нийт өр төлбөр', bs.totalLiabilities], ['Эздийн өмч', bs.equity], ['Борлуулалт/Орлого', income.revenue], ['Цэвэр ашиг', income.netProfit]].map(([title, value]) => (
+              <div key={title} className="bg-slate-50 rounded-lg p-2.5">
+                <p className="text-[10px] text-slate-400 font-bold uppercase">{title}</p>
+                <p className={`text-xs font-bold ${title === 'Цэвэр ашиг' && Number(value) < 0 ? 'text-red-600' : 'text-[#003B5C]'}`}>{money(value)}</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {[['Current ratio', ratios.currentRatio], ['Debt / Equity', ratios.debtToEquity], ['Өр / Хөрөнгө', ratios.liabilityToAsset], ['Цэвэр ашгийн margin', ratios.netMargin]].map(([title, value]) => (
+              <div key={title} className="border rounded-lg p-2 text-center">
+                <p className="text-[10px] text-slate-400 font-bold">{title}</p>
+                <p className="text-sm font-bold text-slate-700">{Number(value || 0).toFixed(2)}{title.includes('margin') || title === 'Өр / Хөрөнгө' ? '%' : ''}</p>
+              </div>
+            ))}
+          </div>
+          {analysis.analysis && <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 rounded-lg p-3">{analysis.analysis}</p>}
+          {analysis.riskFlags?.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-[10px] font-bold text-red-700 uppercase mb-1">Эрсдэлийн дохио</p>
+              {analysis.riskFlags.map((risk, index) => <p key={index} className="text-xs text-red-700">• {risk}</p>)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────
 // FIELD LABEL MAP (AI result keys → Mongolian)
 // ─────────────────────────────────────────────
 const FIELD_LABELS = {
@@ -1773,6 +1882,9 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
         socialInsuranceAnalysis: null,
       },
 
+      // Financial statements (balance sheet + income statement AI)
+      financialReports: saved.financialReports || { analysis: null, exchangeRate: '' },
+
       // Other docs notes
       otherDocsNotes: saved.otherDocsNotes || '',
     };
@@ -1807,6 +1919,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
         term: loan.term ? String(loan.term) : prev.loanRequest?.term || '',
         purpose: loan.purpose || prev.loanRequest?.purpose || '',
       },
+      financialReports: saved.financialReports || { analysis: null, exchangeRate: '' },
     }));
   }, [loan?._id]);
 
@@ -1970,6 +2083,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                 { key: 'income',     label: 'Орлогын байдал',   icon: TrendingUp },
                 { key: 'collateral', label: 'Барьцаа хөрөнгө',  icon: Home },
                 { key: 'other',      label: 'Зээлийн мэдээллийн лавлагаа', icon: FileText },
+                { key: 'financial',  label: 'Тайлан', icon: BarChart3 },
               ].map(t => {
                 const Icon = t.icon;
                 const isActive = borrowerSubTab === t.key;
@@ -2118,6 +2232,18 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                 <p className={sectionHdr + ' mb-4'}><FileText size={15} /> Бусад баримт бичгийн тэмдэглэл</p>
                 <textarea value={appData.otherDocsNotes} onChange={e => set('otherDocsNotes', e.target.value)} rows={4} className={inp + ' resize-none'} placeholder="Бусад баримт, тэмдэглэл..." />
               </div>
+            </div>
+          )}
+
+          {borrowerSubTab === 'financial' && (
+            <div className="bg-white border rounded-2xl p-5 space-y-4">
+              <p className={sectionHdr}><BarChart3 size={15} /> Санхүүгийн тайлангийн шинжилгээ</p>
+              <FinancialReportsSection
+                data={appData.financialReports || {}}
+                onChange={value => set('financialReports', value)}
+                apiUrl={apiUrl}
+                showToast={showToast}
+              />
             </div>
           )}
         </div>

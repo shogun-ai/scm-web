@@ -615,6 +615,18 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
   const cs = outputs.creditScore || {};
   const ie = outputs.incomeExpense || {};
   const col = outputs.collateral || {};
+  const financial = outputs.financialStatementAnalysis || null;
+  const financialBalance = financial?.balanceSheet || {};
+  const financialIncome = financial?.incomeStatement || {};
+  const financialRatios = financial?.ratios || {};
+  const financialCurrency = String(financial?.currency || 'MNT').toUpperCase();
+  const financialConversion = outputs.financialConversion || null;
+  const formatFinancialAmount = value => {
+    const native = `${nfmt(value)} ${financialCurrency === 'MNT' ? '₮' : financialCurrency}`;
+    return financialConversion?.rate && financialCurrency !== 'MNT'
+      ? `${native} / ${nfmt(Number(value || 0) * financialConversion.rate)} ₮`
+      : native;
+  };
   const collaterals = b.collaterals || [];
   const guarantors = b.guarantors || [];
   const riskFlags = b.riskFlags || b.analystRisks || [];
@@ -635,6 +647,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     { detail: 'Debt-to-Income', label: 'DTI', display: `${(ie.dti || 0).toFixed(1)}%`, pass: (ie.dti || 0) <= 55 },
     { detail: 'Free Cash Flow', label: 'Чөлөөт урсгал', display: nfmt(ie.freeCashFlow) + ' ₮', pass: (ie.freeCashFlow || 0) > 0 },
     { detail: 'Loan-to-Value', label: 'LTV', display: col.ltvRatio != null ? `${col.ltvRatio.toFixed(1)}%` : '—', pass: col.ltvRatio == null || col.ltvRatio <= 80 },
+    ...(financial ? [{ detail: 'Financial Report', label: 'Цэвэр ашиг', display: formatFinancialAmount(financialIncome.netProfit), pass: Number(financialIncome.netProfit || 0) >= 0 && Number(financialRatios.currentRatio || 0) >= 1 }] : []),
   ];
   const passCount = kpis.filter(k => k.pass).length;
   const autoVerdict = passCount >= 4 ? 'approve' : passCount >= 2 ? 'conditional' : 'reject';
@@ -710,6 +723,18 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     const rfHtml = riskFlags.length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
       ${riskFlags.map(r=>`<span style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px">⚠ ${esc(r)}</span>`).join('')}
     </div>` : '<p style="font-size:11px;color:#94a3b8">Тэмдэглэгдсэн эрсдэл байхгүй</p>';
+    const financialHtml = financial ? `<div class="section">
+      <div class="section-title">Санхүүгийн тайлангийн шинжилгээ</div>
+      <table><tbody>
+        <tr><td style="padding:8px 10px;color:#64748b">Тайлант хугацаа / Валют</td><td style="padding:8px 10px;font-weight:700">${esc(financial.periodStart || financial.reportingDate || '—')} ${financial.periodEnd ? '- ' + esc(financial.periodEnd) : ''} · ${esc(financial.currency || 'MNT')}</td>
+        <td style="padding:8px 10px;color:#64748b">Цэвэр ашиг</td><td style="padding:8px 10px;font-weight:800;color:${Number(financialIncome.netProfit || 0) >= 0 ? '#15803d' : '#dc2626'}">${esc(formatFinancialAmount(financialIncome.netProfit))}</td></tr>
+        <tr><td style="padding:8px 10px;color:#64748b">Нийт хөрөнгө</td><td style="padding:8px 10px;font-weight:700">${esc(formatFinancialAmount(financialBalance.totalAssets))}</td>
+        <td style="padding:8px 10px;color:#64748b">Нийт өр төлбөр</td><td style="padding:8px 10px;font-weight:700">${esc(formatFinancialAmount(financialBalance.totalLiabilities))}</td></tr>
+        <tr><td style="padding:8px 10px;color:#64748b">Current ratio</td><td style="padding:8px 10px;font-weight:700">${Number(financialRatios.currentRatio || 0).toFixed(2)}</td>
+        <td style="padding:8px 10px;color:#64748b">Debt / Equity</td><td style="padding:8px 10px;font-weight:700">${Number(financialRatios.debtToEquity || 0).toFixed(2)}</td></tr>
+      </tbody></table>
+      ${financial.analysis ? `<div style="margin-top:8px;font-size:11px;line-height:1.55;color:#334155;background:#f8fafc;padding:10px;border-radius:8px">${esc(financial.analysis)}</div>` : ''}
+    </div>` : '';
 
     const decisionHex = ['approved','disbursed'].includes(loan.status)?'#15803d':loan.status==='rejected'?'#dc2626':'#d97706';
     const decisionLabel = ['approved','disbursed'].includes(loan.status)?'ЗӨВШӨӨРӨГДСӨН':loan.status==='rejected'?'ТАТГАЛЗСАН':'НӨХЦӨЛТЭЙ ЗӨВШӨӨРӨВ';
@@ -726,7 +751,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       .section-title{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#64748b;border-bottom:2px solid #e2e8f0;padding-bottom:5px;margin-bottom:12px}
       table{width:100%;border-collapse:collapse}
       th{background:#f8fafc;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;padding:8px 10px;text-align:left;border-bottom:2px solid #e2e8f0}
-      .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:6px}
+      .kpi-grid{display:grid;grid-template-columns:repeat(${kpis.length},1fr);gap:8px;margin-bottom:6px}
       .verdict{display:inline-block;padding:4px 14px;border-radius:99px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;border:2px solid ${decisionHex};color:${decisionHex};background:${ ['approved','disbursed'].includes(loan.status)?'#f0fdf4':loan.status==='rejected'?'#fff1f2':'#fffbeb'}}
     </style></head><body><div class="page">
 
@@ -788,6 +813,9 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
         </div>`).join('')}
       </div>
     </div>
+
+    <!-- FINANCIAL STATEMENTS -->
+    ${financialHtml}
 
     <!-- COLLATERAL -->
     <div class="section">
@@ -900,7 +928,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       </div>
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className={`grid grid-cols-2 ${financial ? 'md:grid-cols-6' : 'md:grid-cols-5'} gap-3`}>
         {kpis.map(k => (
           <div key={k.detail} className={`border-2 rounded-2xl p-4 text-center flex flex-col items-center gap-1 ${k.pass ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}`}>
             <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wide">{k.detail}</p>
@@ -980,6 +1008,37 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
           )}
         </div>
       </div>
+
+      {financial && (
+        <div className="bg-white border rounded-2xl p-5 space-y-3">
+          <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-2">
+            <BarChart2 size={13} /> Санхүүгийн тайлангийн шинжилгээ
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+            {[
+              ['Нийт хөрөнгө', financialBalance.totalAssets],
+              ['Нийт өр төлбөр', financialBalance.totalLiabilities],
+              ['Эздийн өмч', financialBalance.equity],
+              ['Цэвэр ашиг', financialIncome.netProfit],
+            ].map(([label, value]) => (
+              <div key={label} className="border rounded-xl p-3 bg-slate-50">
+                <p className="text-[10px] text-slate-400 uppercase font-bold">{label}</p>
+                <p className={`text-sm font-black ${label === 'Цэвэр ашиг' && Number(value) < 0 ? 'text-red-600' : 'text-[#003B5C]'}`}>
+                  {formatFinancialAmount(value)}
+                </p>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-600">
+            Current ratio: <b>{Number(financialRatios.currentRatio || 0).toFixed(2)}</b> · Debt / Equity: <b>{Number(financialRatios.debtToEquity || 0).toFixed(2)}</b>
+          </p>
+          {financial.riskFlags?.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {financial.riskFlags.map((risk, index) => <span key={index} className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-2.5 py-1 text-xs font-semibold">{risk}</span>)}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Score breakdown */}
       {scoreBreakdown.length > 0 && (

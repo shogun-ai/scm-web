@@ -198,7 +198,7 @@ const LoanResearchSchema = new mongoose.Schema({
 });
 const LoanResearch = mongoose.models.LoanResearch || mongoose.model('LoanResearch', LoanResearchSchema);
 
-const AI_LOAN_OFFICER_VERSION = '2026-05-04';
+const AI_LOAN_OFFICER_VERSION = '2026-05-26';
 
 function buildAiLoanOfficerStatus(status, note = '') {
     return {
@@ -288,6 +288,7 @@ function getLoanOfficerInput(loanDoc) {
             })),
             socialInsuranceAnalysis: compact(incomeResearch.socialInsuranceAnalysis || null),
         },
+        financialReports: compact(appData.financialReports || null),
         fileSummary: {
             total: (loan.fileDetails || []).length,
             fields: (loan.fileDetails || []).map(f => f.fieldName).filter(Boolean),
@@ -325,6 +326,19 @@ function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules', policySo
     if (!input.creditBureau || !Object.keys(input.creditBureau).length) conditions.push('Зээлийн мэдээллийн лавлагаа/FICO үр дүнг баталгаажуулах.');
     const approvalReasons = [];
     const rejectionReasons = [];
+    const financialAnalysis = input.financialReports?.analysis;
+    if (input.borrowerType === 'organization' && !financialAnalysis) {
+        conditions.push('Баланс болон орлогын тайланг AI уншилтаар баталгаажуулах.');
+    }
+    if (financialAnalysis?.riskFlags?.length) {
+        flags.push(...financialAnalysis.riskFlags.slice(0, 2));
+    }
+    if (financialAnalysis?.incomeStatement?.netProfit > 0) {
+        approvalReasons.push('Санхүүгийн тайланд цэвэр ашиг эерэг байна.');
+    }
+    if (financialAnalysis?.incomeStatement?.netProfit < 0) {
+        flags.push('Санхүүгийн тайланд цэвэр алдагдал илэрсэн байна.');
+    }
 
     if (amount) approvalReasons.push(`Хүссэн зээлийн дүн ${amount.toLocaleString('mn-MN')} ₮ бүртгэгдсэн.`);
     if (term) approvalReasons.push(`Зээлийн хугацаа ${term} сар гэж тодорхойлогдсон.`);
@@ -757,6 +771,7 @@ function getComplianceInput(loanDoc) {
             fields: c.fields,
         })),
         guarantors,
+        financialReports: compact(appData.financialReports || null),
         aiLoanOfficer: loan.aiLoanOfficer || null,
         createdAt: loan.createdAt,
     });
@@ -4649,10 +4664,157 @@ app.post('/api/loans/analyze-social-insurance', authenticateUser, (req, res) => 
     });
 });
 
-const AUTO_INTAKE_VERSION = '2026-05-12';
+// ============================================================
+// САНХҮҮГИЙН ТАЙЛАН: БАЛАНС + ОРЛОГЫН ТАЙЛАН AI
+// ============================================================
+const financialStatementSchema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['entityName', 'registrationNumber', 'statementType', 'reportingDate', 'periodStart', 'periodEnd', 'currency', 'scale', 'balanceSheet', 'incomeStatement', 'ratios', 'analysis', 'riskFlags', 'strengths', 'recommendation'],
+    properties: {
+        entityName: { type: 'string' },
+        registrationNumber: { type: 'string' },
+        statementType: { type: 'string', enum: ['balance_sheet', 'income_statement', 'combined', 'unknown'] },
+        reportingDate: { type: 'string' },
+        periodStart: { type: 'string' },
+        periodEnd: { type: 'string' },
+        currency: { type: 'string' },
+        scale: { type: 'string', enum: ['unit', 'thousand', 'million', 'unknown'] },
+        balanceSheet: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['totalAssets', 'currentAssets', 'cash', 'receivables', 'inventory', 'nonCurrentAssets', 'fixedAssets', 'totalLiabilities', 'currentLiabilities', 'nonCurrentLiabilities', 'totalDebt', 'equity', 'lineItems'],
+            properties: {
+                totalAssets: { type: 'number' },
+                currentAssets: { type: 'number' },
+                cash: { type: 'number' },
+                receivables: { type: 'number' },
+                inventory: { type: 'number' },
+                nonCurrentAssets: { type: 'number' },
+                fixedAssets: { type: 'number' },
+                totalLiabilities: { type: 'number' },
+                currentLiabilities: { type: 'number' },
+                nonCurrentLiabilities: { type: 'number' },
+                totalDebt: { type: 'number' },
+                equity: { type: 'number' },
+                lineItems: {
+                    type: 'array',
+                    items: {
+                        type: 'object', additionalProperties: false,
+                        required: ['category', 'label', 'amount'],
+                        properties: { category: { type: 'string' }, label: { type: 'string' }, amount: { type: 'number' } }
+                    }
+                }
+            }
+        },
+        incomeStatement: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['revenue', 'costOfSales', 'grossProfit', 'operatingExpenses', 'operatingProfit', 'financeCosts', 'profitBeforeTax', 'taxExpense', 'netProfit', 'lineItems'],
+            properties: {
+                revenue: { type: 'number' },
+                costOfSales: { type: 'number' },
+                grossProfit: { type: 'number' },
+                operatingExpenses: { type: 'number' },
+                operatingProfit: { type: 'number' },
+                financeCosts: { type: 'number' },
+                profitBeforeTax: { type: 'number' },
+                taxExpense: { type: 'number' },
+                netProfit: { type: 'number' },
+                lineItems: {
+                    type: 'array',
+                    items: {
+                        type: 'object', additionalProperties: false,
+                        required: ['category', 'label', 'amount'],
+                        properties: { category: { type: 'string' }, label: { type: 'string' }, amount: { type: 'number' } }
+                    }
+                }
+            }
+        },
+        ratios: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['currentRatio', 'debtToEquity', 'liabilityToAsset', 'grossMargin', 'netMargin'],
+            properties: {
+                currentRatio: { type: 'number' },
+                debtToEquity: { type: 'number' },
+                liabilityToAsset: { type: 'number' },
+                grossMargin: { type: 'number' },
+                netMargin: { type: 'number' }
+            }
+        },
+        analysis: { type: 'string' },
+        riskFlags: { type: 'array', items: { type: 'string' } },
+        strengths: { type: 'array', items: { type: 'string' } },
+        recommendation: { type: 'string' }
+    }
+};
+
+const normalizeFinancialAnalysis = (analysis = {}) => ({
+    ...analysis,
+    currency: String(analysis.currency || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN',
+    scale: analysis.scale || 'unknown',
+    balanceSheet: analysis.balanceSheet || {},
+    incomeStatement: analysis.incomeStatement || {},
+    ratios: analysis.ratios || {},
+    riskFlags: safeList(analysis.riskFlags),
+    strengths: safeList(analysis.strengths),
+});
+
+const analyzeFinancialStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) => {
+    if (!openai) { const e = new Error('OPENAI_API_KEY is not configured'); e.statusCode = 503; throw e; }
+    if (!files.length && !fileUrls.length) { const e = new Error('No financial statement files uploaded'); e.statusCode = 400; throw e; }
+    const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
+    try {
+        const response = await openai.responses.create({
+            model: process.env.OPENAI_STATEMENT_MODEL || 'gpt-4.1-mini',
+            temperature: 0,
+            instructions: [
+                'Та бол байгууллагын зээлийн санхүүгийн шинжээч.',
+                'Баланс, санхүүгийн байдлын тайлан, орлогын тайлан, ашиг алдагдлын тайланг PDF, зураг, spreadsheet эсвэл янз бүрийн хэлбэрээс уншина.',
+                'Нэр, регистр, тайлант огноо, тайлант хугацаа, валют, масштаб (unit/thousand/million)-ыг эх баримтаас яг тань.',
+                'currency-г ISO 4217 гурван үсгийн кодоор бич (MNT, USD, EUR, CNY, KRW гэх мэт). Тодорхойгүй бол UNKNOWN гэж бич; MNT гэж таамаглахгүй.',
+                'Бүх мөнгөн дүнг эх баримтын валют ба масштабаар нь тоогоор буцаа. Өөр валютад хөрвүүлэхгүй.',
+                'Баланс болон орлогын тайлан тусдаа файлд байвал нэг байгууллага, нэг тайлант хугацааны нэгдсэн анализ болго.',
+                'Олдохгүй зүйлд 0 эсвэл хоосон мөр хэрэглэ; зохиож бөглөхгүй.',
+                'ratios: боломжтой өгөгдлөөс тооц. currentRatio=currentAssets/currentLiabilities, debtToEquity=totalLiabilities/equity, liabilityToAsset=totalLiabilities/totalAssets, grossMargin=grossProfit/revenue*100, netMargin=netProfit/revenue*100.',
+                'analysis, riskFlags, strengths, recommendation-г зээлийн шийдвэрт ашиглахуйц монгол хэлээр тодорхой бич.'
+            ].join(' '),
+            input: [{
+                role: 'user',
+                content: [
+                    { type: 'input_text', text: `Зээлдэгчийн мэдээлэл: ${JSON.stringify(borrower || {})}\nБаланс болон орлогын тайлангийн бүх зүйл ангийг уншиж, зээлийн чадварын санхүүгийн дүгнэлт гарга.` },
+                    ...blocks
+                ]
+            }],
+            text: { format: { type: 'json_schema', name: 'financial_statement_analysis', schema: financialStatementSchema, strict: true } }
+        });
+        return normalizeFinancialAnalysis(parseAiJson(response.output_text));
+    } finally {
+        Promise.allSettled(uploadedIds.map(id => openai.files.delete(id))).catch(() => {});
+    }
+};
+
+app.post('/api/loans/analyze-financial-statements', authenticateUser, (req, res) => {
+    analyzeUpload(req, res, async (err) => {
+        if (err) return res.status(400).json({ message: err.message });
+        try {
+            const borrower = parseJsonField(req.body.borrower);
+            const fileUrls = requestRemoteFiles(req);
+            const result = await analyzeFinancialStatementsWithAI({ files: req.files || [], fileUrls, borrower });
+            res.json(result);
+        } catch (e) {
+            console.error('Financial statement AI error:', e.message);
+            res.status(e.statusCode || 500).json({ message: e.message || 'Financial statement analysis failed' });
+        }
+    });
+});
+
+const AUTO_INTAKE_VERSION = '2026-05-26';
 const FIELD_GROUPS = {
     id: ['file_id', 'file_address'],
-    org: ['file_org_cert', 'file_charter', 'file_finance'],
+    org: ['file_org_cert', 'file_charter'],
+    financial: ['file_finance'],
     bank: ['file_bank', 'file_org_bank'],
     social: ['file_social'],
     vehicle: ['file_car_cert', 'file_car_photos'],
@@ -4900,6 +5062,15 @@ async function autoExtractSubmittedFiles(loanDoc) {
     ]);
     const creditResult = await run('credit_reference', () => creditUrls.length ? analyzeCreditReferenceWithAI({ fileUrls: creditUrls, borrower: applicationData.borrower || applicationData.org || {} }) : null);
     if (creditResult) applicationData.creditBureau = creditResult;
+
+    const financialUrls = fileUrlsOf(filesByFields(fileDetails, FIELD_GROUPS.financial));
+    const financialResult = await run('financial_statements', () => financialUrls.length ? analyzeFinancialStatementsWithAI({ fileUrls: financialUrls, borrower: applicationData.borrower || applicationData.org || {} }) : null);
+    if (financialResult) {
+        applicationData.financialReports = {
+            ...(applicationData.financialReports || {}),
+            analysis: financialResult,
+        };
+    }
 
     return { applicationData, extracted, errors };
 }
