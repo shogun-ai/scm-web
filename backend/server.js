@@ -3361,6 +3361,7 @@ const statementAnalysisSchema = {
                 'customerName',
                 'accountNumber',
                 'bankName',
+                'currency',
                 'periodStart',
                 'periodEnd',
                 'coveredMonths',
@@ -3388,6 +3389,7 @@ const statementAnalysisSchema = {
                 customerName: { type: 'string' },
                 accountNumber: { type: 'string' },
                 bankName: { type: 'string' },
+                currency: { type: 'string' },
                 periodStart: { type: 'string' },
                 periodEnd: { type: 'string' },
                 coveredMonths: { type: 'number' },
@@ -3669,6 +3671,7 @@ const scrubLoanFalsePositives = (analysis = {}) => {
 
 const normalizeStatementAnalysis = (analysis = {}) => {
     analysis = scrubLoanFalsePositives(analysis);
+    const currency = String(analysis.frontSheet?.currency || 'MNT').trim().toUpperCase() || 'MNT';
     const months = Array.isArray(analysis.monthlySummary) ? analysis.monthlySummary : [];
     const sortedMonths = months
         .map(item => ({
@@ -3691,6 +3694,7 @@ const normalizeStatementAnalysis = (analysis = {}) => {
         ...analysis,
         frontSheet: {
             ...(analysis.frontSheet || {}),
+            currency,
             coveredMonths,
             totalIncome: Number(analysis.frontSheet?.totalIncome || totalIncome),
             totalExpense: Number(analysis.frontSheet?.totalExpense || totalExpense),
@@ -3836,6 +3840,12 @@ const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) 
 - repaymentSource: орлогын тогтвортой эх үүсвэрийг тодорхой нэрлэ
 - incomeStability: "high"/"medium"/"low"/"unknown" утгуудаас аль нэгийг сонго
 
+ВАЛЮТ ТАНИХ ДҮРЭМ — ЧУХАЛ:
+- frontSheet.currency-д дансны хуулгын үндсэн валютыг ISO 4217 гурван үсгийн кодоор оруул (жишээ: MNT, USD, EUR, CNY, KRW, JPY)
+- Statement/account currency, currency code, тэмдэглэгээ, банкны толгой мэдээллийг нэн түрүүнд ашигла
+- Валют тодорхой олдохгүй бол "UNKNOWN" гэж буцаа; МНТ гэж таамаглаж болохгүй
+- Бүх мөнгөн дүнг баримт дээрх эх валютаар нь буцаа; өөр валютад, тэр дундаа төгрөгт хөрвүүлж болохгүй
+
 ЗАН ТӨЛӨВИЙН ДҮГНЭЛТ — шинэ талбарууд:
 - spendingBehavior: зарлагын ерөнхий зан төлөвийг монголоор 1-2 өгүүлбэрээр тайлбарла (хэрэглээний хэв маяг, зарлагын тогтвортой байдал, хуримтлалын зан)
 - avgTransactionsPerMonth: transactions массиваас сарын дундаж гүйлгээний тоог тооцоол (нийт гүйлгээний тоо ÷ coveredMonths)
@@ -3873,9 +3883,9 @@ const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) 
 
 1. summaryRows — Үзүүлэлтийн хүснэгт (label/value хос). Дараах мөрүүдийг дарааллаар бөглө:
    "Харилцагчийн нэр", "Дансны дугаар", "Банкны хуулгын хамрах хугацаа" (periodStart–periodEnd),
-   "Шинжилгээний нийт хугацаа" (X сар), "Эхний үлдэгдэл" (₮), "Эцсийн үлдэгдэл" (₮),
-   "Нийт орлого" (₮), "Нийт зарлага" (₮), "Цэвэр мөнгөн урсгал" (₮),
-   "Сарын дундаж орлого" (₮), "Сарын дундаж зарлага" (₮), "Сарын дундаж цэвэр урсгал" (₮),
+   "Шинжилгээний нийт хугацаа" (X сар), "Валют" (currency code), "Эхний үлдэгдэл", "Эцсийн үлдэгдэл",
+   "Нийт орлого", "Нийт зарлага", "Цэвэр мөнгөн урсгал",
+   "Сарын дундаж орлого", "Сарын дундаж зарлага", "Сарын дундаж цэвэр урсгал",
    "Гол орлогын эх үүсвэр", "Гол зарлагын бүтэц", "Мөнгөн урсгалын хэв шинж",
    "Орлогын тогтвортой байдал", "Мөнгөн урсгалын сахилга бат", "Эргэн төлөлтийн эх үүсвэр", "Гол анхаарах эрсдэл"
 
@@ -3920,7 +3930,7 @@ const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) 
 
 ТЕХНИК ДҮРЭМ:
 - Бүх тайлбар монгол хэлээр бич
-- Мөнгөн дүнг МНТ-ээр тоогоор буцаа (тэмдэгтгүй)
+- Мөнгөн дүнг эх валютаар нь тоогоор буцаа (тэмдэгтгүй); frontSheet.currency талбарт валютын кодыг заавал бөглө
 - Давхардсан гүйлгээг нэг удаа тооц
 - Сар бүрийг тусдаа мөр болгон monthlySummary-д гарга
 - Олдохгүй утгыг зохиомоор бүү бөглө — 0 эсвэл хоосон буцаа
@@ -3930,7 +3940,7 @@ const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) 
             content: [
                 {
                     type: 'input_text',
-                    text: `Зээлдэгчийн мэдээлэл: ${JSON.stringify(borrower || {})}\nФайлын тоо: ${files.length + fileUrls.length}\nФайлын нэрс: ${JSON.stringify(fileLabels)}\n\nДараах хуулгыг шинжил:\n1. Гүйлгээний хүснэгтийн ЭХНИЙ болон СҮҮЛИЙН мөрийн БОДИТ огноог periodStart/periodEnd-д тавь\n2. Гүйлгээний хүснэгтийн БҮГДИЙГ transactions-д оруул — орлого болон зарлагыг тус тусад нь\n3. totalIncome = бүх income гүйлгээний нийлбэр, totalExpense = бүх expense гүйлгээний нийлбэр\n4. Хэрэв баримтад "Нийт орлого / Нийт зарлага" хураангуй байвал тэрийг баталгаажуулахад ашигла\n5. Орлого бүрийг зээлийн чадвар тооцоход авч үзэх эсэхийг дүгнэ\n6. Эрсдэлийн дохионуудыг keyRisks болон warnings-д тодорхой бич\n7. cashFlowBehaviour.conclusion-д зээл олгох эцсийн санал бич\n8. spendingBehavior, avgTransactionsPerMonth, cashWithdrawalFrequency, hasLoanRepayments, loanRepaymentDetails талбаруудыг дүрмийн дагуу бөглө\n9. Анхаарал татах бүх гүйлгээг notableTransactions-д оруул\n10. analysisReport-ийн 6 хэсгийг (summaryRows, incomeScoring, incomeClassification, expenseClassification, behaviorPatterns, creditScoring) дүрмийн дагуу монгол хэлээр бөглө`
+                    text: `Зээлдэгчийн мэдээлэл: ${JSON.stringify(borrower || {})}\nФайлын тоо: ${files.length + fileUrls.length}\nФайлын нэрс: ${JSON.stringify(fileLabels)}\n\nДараах хуулгыг шинжил:\n1. Гүйлгээний хүснэгтийн ЭХНИЙ болон СҮҮЛИЙН мөрийн БОДИТ огноог periodStart/periodEnd-д тавь\n2. Гүйлгээний хүснэгтийн БҮГДИЙГ transactions-д оруул — орлого болон зарлагыг тус тусад нь\n3. totalIncome = бүх income гүйлгээний нийлбэр, totalExpense = бүх expense гүйлгээний нийлбэр\n4. Хэрэв баримтад "Нийт орлого / Нийт зарлага" хураангуй байвал тэрийг баталгаажуулахад ашигла\n5. Орлого бүрийг зээлийн чадвар тооцоход авч үзэх эсэхийг дүгнэ\n6. Эрсдэлийн дохионуудыг keyRisks болон warnings-д тодорхой бич\n7. cashFlowBehaviour.conclusion-д зээл олгох эцсийн санал бич\n8. spendingBehavior, avgTransactionsPerMonth, cashWithdrawalFrequency, hasLoanRepayments, loanRepaymentDetails талбаруудыг дүрмийн дагуу бөглө\n9. Анхаарал татах бүх гүйлгээг notableTransactions-д оруул\n10. Валютыг таньж frontSheet.currency-д ISO кодоор бич, бүх мөнгөн дүнг тэр эх валютаар нь үлдээ\n11. analysisReport-ийн 6 хэсгийг (summaryRows, incomeScoring, incomeClassification, expenseClassification, behaviorPatterns, creditScoring) дүрмийн дагуу монгол хэлээр бөглө`
                 },
                 ...uploadedFiles,
                 ...remoteFiles

@@ -16,6 +16,12 @@ const fmtNum = (v) => {
   return n ? Number(n).toLocaleString('mn-MN') : '';
 };
 const parseFmtNum = (v) => Number(String(v).replace(/[^0-9]/g, '')) || '';
+const statementCurrency = (frontSheet = {}) => String(frontSheet.currency || 'MNT').toUpperCase();
+const formatStatementMoney = (value, currency = 'MNT') => {
+  const code = String(currency || 'MNT').toUpperCase();
+  const number = Number(value || 0).toLocaleString('mn-MN', { maximumFractionDigits: 2 });
+  return code === 'MNT' ? `₮${number}` : `${number} ${code}`;
+};
 
 const EMPLOYMENT_TYPES = [
   'Цалинтай ажилтан', 'Хувиараа хөдөлмөр эрхлэгч', 'Бизнес эрхлэгч',
@@ -1045,6 +1051,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast }) => {
             {/* Fields (AI result, editable) */}
             {hasFields && item.type === 'bank_statement' && (() => {
               const fs = item.fields.frontSheet || {};
+              const currency = statementCurrency(fs);
               const months = Array.isArray(item.fields.monthlySummary) ? item.fields.monthlySummary : [];
               const warnings = Array.isArray(item.fields.warnings) ? item.fields.warnings : (item.fields.warnings ? [item.fields.warnings] : []);
               const cfb = item.fields.cashFlowBehaviour || {};
@@ -1056,7 +1063,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast }) => {
                   {/* Identity */}
                   <div className="grid grid-cols-3 gap-2">
                     {[['customerName','Эзэмшигч'], ['bankName','Банк'], ['accountNumber','Дансны дугаар'],
-                      ['periodStart','Хугацаа эхлэл'], ['periodEnd','Хугацаа дуусгавар'], ['coveredMonths','Сарын тоо']
+                      ['currency','Валют'], ['periodStart','Хугацаа эхлэл'], ['periodEnd','Хугацаа дуусгавар'], ['coveredMonths','Сарын тоо']
                     ].map(([k, lbl]) => fs[k] !== undefined && fs[k] !== '' && (
                       <div key={k} className="group">
                         <p className="text-[10px] text-slate-400 uppercase font-bold">{lbl}</p>
@@ -1076,7 +1083,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast }) => {
                     ].map(([lbl, val, cls]) => val !== undefined && (
                       <div key={lbl}>
                         <p className="text-[10px] text-slate-400 uppercase font-bold">{lbl}</p>
-                        <p className={`text-xs font-bold ${cls}`}>₮{Number(val || 0).toLocaleString('mn-MN')}</p>
+                        <p className={`text-xs font-bold ${cls}`}>{formatStatementMoney(val, currency)}</p>
                       </div>
                     ))}
                   </div>
@@ -1114,9 +1121,9 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast }) => {
                           {months.map((m, mi) => (
                             <tr key={mi} className="border-t border-slate-100">
                               <td className="py-0.5 font-semibold text-slate-600">{m.month}</td>
-                              <td className="text-right text-green-600">₮{Number(m.income || 0).toLocaleString('mn-MN')}</td>
-                              <td className="text-right text-red-500">₮{Number(m.expense || 0).toLocaleString('mn-MN')}</td>
-                              <td className={`text-right font-bold ${m.netCashFlow >= 0 ? 'text-green-600' : 'text-red-500'}`}>₮{Number(m.netCashFlow || 0).toLocaleString('mn-MN')}</td>
+                              <td className="text-right text-green-600">{formatStatementMoney(m.income, currency)}</td>
+                              <td className="text-right text-red-500">{formatStatementMoney(m.expense, currency)}</td>
+                              <td className={`text-right font-bold ${m.netCashFlow >= 0 ? 'text-green-600' : 'text-red-500'}`}>{formatStatementMoney(m.netCashFlow, currency)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1302,6 +1309,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast }) => {
 // ─────────────────────────────────────────────
 const BankStatementCard = ({ bs, index, onRemove }) => {
   const fs = bs?.frontSheet || {};
+  const currency = statementCurrency(fs);
   const months = Array.isArray(bs?.monthlySummary) ? bs.monthlySummary : [];
   const warnings = Array.isArray(bs?.warnings) ? bs.warnings : [];
   return (
@@ -1317,7 +1325,7 @@ const BankStatementCard = ({ bs, index, onRemove }) => {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
         {[['customerName','Эзэмшигч'],['bankName','Банк'],['accountNumber','Дансны дугаар'],
-          ['periodStart','Эхлэх'],['periodEnd','Дуусах'],['coveredMonths','Сарын тоо']
+          ['currency','Валют'],['periodStart','Эхлэх'],['periodEnd','Дуусах'],['coveredMonths','Сарын тоо']
         ].map(([k, lbl]) => fs[k] != null && fs[k] !== '' && (
           <div key={k}><p className="text-[10px] text-slate-400 uppercase font-bold">{lbl}</p>
           <p className="text-xs font-semibold text-slate-700">{String(fs[k])}</p></div>
@@ -1333,7 +1341,7 @@ const BankStatementCard = ({ bs, index, onRemove }) => {
           ['Цэвэр гүйлгээ', fs.netCashFlow, (fs.netCashFlow||0)>=0?'text-green-600':'text-red-500'],
         ].map(([lbl, val, cls]) => val != null && (
           <div key={lbl}><p className="text-[10px] text-slate-400 uppercase font-bold">{lbl}</p>
-          <p className={`text-xs font-bold ${cls}`}>₮{Number(val||0).toLocaleString('mn-MN')}</p></div>
+          <p className={`text-xs font-bold ${cls}`}>{formatStatementMoney(val, currency)}</p></div>
         ))}
       </div>
       {months.length > 0 && (
@@ -1351,9 +1359,9 @@ const BankStatementCard = ({ bs, index, onRemove }) => {
                 {months.map((m, mi) => (
                   <tr key={mi} className="border-t border-slate-100">
                     <td className="py-0.5 font-semibold text-slate-600">{m.month}</td>
-                    <td className="text-right text-green-600">₮{Number(m.income||0).toLocaleString('mn-MN')}</td>
-                    <td className="text-right text-red-500">₮{Number(m.expense||0).toLocaleString('mn-MN')}</td>
-                    <td className={`text-right font-bold ${(m.netCashFlow||0)>=0?'text-green-600':'text-red-500'}`}>₮{Number(m.netCashFlow||0).toLocaleString('mn-MN')}</td>
+                    <td className="text-right text-green-600">{formatStatementMoney(m.income, currency)}</td>
+                    <td className="text-right text-red-500">{formatStatementMoney(m.expense, currency)}</td>
+                    <td className={`text-right font-bold ${(m.netCashFlow||0)>=0?'text-green-600':'text-red-500'}`}>{formatStatementMoney(m.netCashFlow, currency)}</td>
                   </tr>
                 ))}
               </tbody>

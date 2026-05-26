@@ -168,6 +168,13 @@ const parseNumber = (value) => {
 };
 
 const formatMoney = (value) => `${Math.round(value || 0).toLocaleString('mn-MN')} ₮`;
+const normalizeCurrency = (value) => String(value || 'MNT').trim().toUpperCase() || 'MNT';
+const isMntCurrency = (value) => normalizeCurrency(value) === 'MNT';
+const formatNativeMoney = (value, currency) => {
+  const code = normalizeCurrency(currency);
+  const number = Number(value || 0).toLocaleString('mn-MN', { maximumFractionDigits: 2 });
+  return code === 'MNT' ? `${number} ₮` : `${number} ${code}`;
+};
 
 const formatPercent = (value) => `${Number(value || 0).toFixed(1)}%`;
 
@@ -278,6 +285,7 @@ const mergeStatementAnalyses = (items = []) => {
         label: item.label,
         accountNumber: item.analysis.frontSheet?.accountNumber || '',
         bankName: item.analysis.frontSheet?.bankName || '',
+        currency: normalizeCurrency(item.analysis.frontSheet?.currency),
         periodStart: item.analysis.frontSheet?.periodStart || '',
         periodEnd: item.analysis.frontSheet?.periodEnd || '',
         coveredMonths: item.analysis.frontSheet?.coveredMonths || '',
@@ -316,6 +324,7 @@ const mergeStatementAnalyses = (items = []) => {
   const netCashFlow = totalIncome - totalExpense;
   const coveredMonths = monthlySummary.length || 1;
   const frontSheets = validItems.map((item) => item.analysis.frontSheet || {});
+  const currencies = [...new Set(frontSheets.map((sheet) => normalizeCurrency(sheet.currency)))];
   const uniqueAccounts = [...new Set(frontSheets.map((sheet) => sheet.accountNumber).filter(Boolean))];
   const uniqueBanks = [...new Set(frontSheets.map((sheet) => sheet.bankName).filter(Boolean))];
   const periodStarts = frontSheets.map((sheet) => sheet.periodStart).filter(Boolean).sort();
@@ -328,6 +337,7 @@ const mergeStatementAnalyses = (items = []) => {
       ...(frontSheets[0] || {}),
       accountNumber: uniqueAccounts.length ? uniqueAccounts.join(', ') : `${validItems.length} данс`,
       bankName: uniqueBanks.join(', '),
+      currency: currencies.length === 1 ? currencies[0] : 'MIXED',
       periodStart: periodStarts[0] || '',
       periodEnd: periodEnds[periodEnds.length - 1] || '',
       coveredMonths,
@@ -379,6 +389,7 @@ const mergeStatementAnalyses = (items = []) => {
       label: item.label,
       accountNumber: item.analysis.frontSheet?.accountNumber || '',
       bankName: item.analysis.frontSheet?.bankName || '',
+      currency: normalizeCurrency(item.analysis.frontSheet?.currency),
       periodStart: item.analysis.frontSheet?.periodStart || '',
       periodEnd: item.analysis.frontSheet?.periodEnd || '',
       coveredMonths: item.analysis.frontSheet?.coveredMonths || '',
@@ -422,8 +433,9 @@ const normalizeLoanRequest = (request) => {
     const bsColl = (appData.collaterals || []).find(c => c.type === 'bank_statement' && c.fields?.frontSheet);
     bsFs = bsColl?.fields?.frontSheet || {};
   }
-  const avgIncome = bsFs.averageMonthlyIncome || borrower.monthlyIncome || '';
-  const avgExpense = bsFs.averageMonthlyExpense || '';
+  const statementIsMnt = isMntCurrency(bsFs.currency);
+  const avgIncome = (statementIsMnt ? bsFs.averageMonthlyIncome : '') || borrower.monthlyIncome || '';
+  const avgExpense = statementIsMnt ? (bsFs.averageMonthlyExpense || '') : '';
   // Social insurance avg salary if available
   const siAvgSalary = appData.incomeResearch?.socialInsuranceAnalysis?.averageSalary || '';
 
@@ -882,6 +894,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   const [statementAnalysis, setStatementAnalysis] = useState(null);
   const [statementAnalysisItems, setStatementAnalysisItems] = useState([]);
   const [statementError, setStatementError] = useState('');
+  const [statementExchangeRate, setStatementExchangeRate] = useState('');
+  const [statementConversion, setStatementConversion] = useState(null);
   // Амортизацийн хуваарь дэлгэх/хураах
   const [showFullAmortization, setShowFullAmortization] = useState(false);
   // Toast notification
@@ -913,7 +927,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     ...outputs,
     statementAnalysis,
     statementAnalysisItems,
-  }), [outputs, statementAnalysis, statementAnalysisItems]);
+    statementConversion,
+  }), [outputs, statementAnalysis, statementAnalysisItems, statementConversion]);
   const sortedStudyRequests = useMemo(() => (
     [...studyRequests].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
   ), [studyRequests]);
@@ -937,6 +952,15 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   const displayedStatementAnalysis = selectedResearch?.outputs?.statementAnalysis || statementAnalysis;
   const displayedStatementItems = selectedResearch?.outputs?.statementAnalysisItems || statementAnalysisItems;
   const displayedForm = selectedResearch?.borrower || form;
+  const displayedStatementConversion = selectedResearch?.outputs?.statementConversion || statementConversion;
+  const displayedStatementCurrency = normalizeCurrency(displayedStatementAnalysis?.frontSheet?.currency);
+  const canConvertStatement = !isMntCurrency(displayedStatementCurrency) && displayedStatementCurrency !== 'MIXED' && displayedStatementCurrency !== 'UNKNOWN';
+  const formatStatementMoney = (value, currency = displayedStatementCurrency) => {
+    const code = normalizeCurrency(currency);
+    const native = formatNativeMoney(value, code);
+    if (!displayedStatementConversion?.rate || normalizeCurrency(displayedStatementConversion.currency) !== code) return native;
+    return `${native} / ${formatMoney(Number(value || 0) * displayedStatementConversion.rate)}`;
+  };
 
   const showToast = (message, type = 'success') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -1119,6 +1143,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     setCreditReference(null);
     setCreditReferenceStatus('Зээлийн хүсэлтээс мэдээлэл автоматаар бөглөгдлөө.');
     setStatementError('');
+    setStatementExchangeRate('');
+    setStatementConversion(null);
     setCreditRefError('');
 
     // Auto-populate bank statement analysis from incomeResearch (new) or legacy collaterals
@@ -1251,10 +1277,13 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       });
       const analysis = res.data;
       setStatementAnalysis(analysis);
+      setStatementExchangeRate('');
+      setStatementConversion(null);
+      const nativeIsMnt = isMntCurrency(analysis.frontSheet?.currency);
       setForm((prev) => ({
         ...prev,
-        averageMonthlyIncome: analysis.frontSheet?.averageMonthlyIncome ? String(Math.round(analysis.frontSheet.averageMonthlyIncome)) : prev.averageMonthlyIncome,
-        averageMonthlyCost: analysis.frontSheet?.averageMonthlyExpense ? String(Math.round(analysis.frontSheet.averageMonthlyExpense)) : prev.averageMonthlyCost,
+        averageMonthlyIncome: nativeIsMnt && analysis.frontSheet?.averageMonthlyIncome ? String(Math.round(analysis.frontSheet.averageMonthlyIncome)) : prev.averageMonthlyIncome,
+        averageMonthlyCost: nativeIsMnt && analysis.frontSheet?.averageMonthlyExpense ? String(Math.round(analysis.frontSheet.averageMonthlyExpense)) : prev.averageMonthlyCost,
         incomeSource: analysis.frontSheet?.mainIncomeSource || prev.incomeSource,
         repaymentSource: analysis.frontSheet?.repaymentSource || prev.repaymentSource,
         comment: analysis.cashFlowBehaviour?.conclusion || prev.comment,
@@ -1267,10 +1296,11 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   };
 
   const applyStatementAnalysisToForm = (analysis) => {
+    const nativeIsMnt = isMntCurrency(analysis?.frontSheet?.currency);
     setForm((prev) => ({
       ...prev,
-      averageMonthlyIncome: analysis?.frontSheet?.averageMonthlyIncome ? String(Math.round(analysis.frontSheet.averageMonthlyIncome)) : prev.averageMonthlyIncome,
-      averageMonthlyCost: analysis?.frontSheet?.averageMonthlyExpense ? String(Math.round(analysis.frontSheet.averageMonthlyExpense)) : prev.averageMonthlyCost,
+      averageMonthlyIncome: nativeIsMnt && analysis?.frontSheet?.averageMonthlyIncome ? String(Math.round(analysis.frontSheet.averageMonthlyIncome)) : prev.averageMonthlyIncome,
+      averageMonthlyCost: nativeIsMnt && analysis?.frontSheet?.averageMonthlyExpense ? String(Math.round(analysis.frontSheet.averageMonthlyExpense)) : prev.averageMonthlyCost,
       incomeSource: analysis?.frontSheet?.mainIncomeSource || prev.incomeSource,
       repaymentSource: analysis?.frontSheet?.repaymentSource || prev.repaymentSource,
       comment: analysis?.cashFlowBehaviour?.conclusion || prev.comment,
@@ -1316,6 +1346,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       const merged = mergeStatementAnalyses(nextItems);
       setStatementAnalysisItems(nextItems);
       setStatementAnalysis(merged);
+      setStatementExchangeRate('');
+      setStatementConversion(null);
       applyStatementAnalysisToForm(merged);
     } catch (error) {
       setStatementError(error.response?.data?.message || 'AI уншилт хийх үед алдаа гарлаа.');
@@ -1323,6 +1355,24 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       setAnalyzingStatement(false);
       setAnalyzingStatementKey('');
     }
+  };
+
+  const applyStatementExchangeRate = () => {
+    const rate = Number(statementExchangeRate);
+    const frontSheet = displayedStatementAnalysis?.frontSheet || {};
+    if (!canConvertStatement || !Number.isFinite(rate) || rate <= 0) {
+      showToast('Валютын ханшийг зөв дүнгээр оруулна уу.', 'error');
+      return;
+    }
+    const conversion = { currency: displayedStatementCurrency, rate };
+    setSelectedId(null);
+    setStatementConversion(conversion);
+    setForm((prev) => ({
+      ...prev,
+      averageMonthlyIncome: frontSheet.averageMonthlyIncome ? String(Math.round(frontSheet.averageMonthlyIncome * rate)) : prev.averageMonthlyIncome,
+      averageMonthlyCost: frontSheet.averageMonthlyExpense ? String(Math.round(frontSheet.averageMonthlyExpense * rate)) : prev.averageMonthlyCost,
+    }));
+    showToast(`${displayedStatementCurrency} дүнг төгрөгөөр тооцоонд ашиглаж эхэллээ.`);
   };
 
   const addOtherLoan = (loan = {}) => {
@@ -1668,8 +1718,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
               <td class="label-cell">Хугацаа</td><td>${esc(stmtFs.periodStart)} — ${esc(stmtFs.periodEnd)} (${stmtFs.coveredMonths || 0} сар)</td>
             </tr>
             <tr>
-              <td class="label-cell">Нийт орлого</td><td class="positive">${formatMoney(stmtFs.totalIncome)}</td>
-              <td class="label-cell">Дундаж/сар</td><td class="positive">${formatMoney(stmtFs.averageMonthlyIncome)}</td>
+              <td class="label-cell">Нийт орлого (${esc(stmtFs.currency || 'MNT')})</td><td class="positive">${formatStatementMoney(stmtFs.totalIncome, stmtFs.currency)}</td>
+              <td class="label-cell">Дундаж/сар</td><td class="positive">${formatStatementMoney(stmtFs.averageMonthlyIncome, stmtFs.currency)}</td>
             </tr>
             <tr>
               <td class="label-cell">Орлогын тогтвортой байдал</td><td>${esc(stmtFs.incomeStability) || '—'}</td>
@@ -1683,9 +1733,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           </tr></thead><tbody>
           ${stmtAccounts.map((a, i) => `<tr style="${rowStyle(i)}">
             <td>${esc(a.accountNumber || a.label || '—')}</td><td>${esc(a.bankName || '—')}</td>
-            <td style="text-align:right" class="positive">${formatMoney(a.totalIncome)}</td>
-            <td style="text-align:right" class="negative">${formatMoney(a.totalExpense)}</td>
-            <td style="text-align:right;font-weight:600;color:${(a.netCashFlow||0)>=0?'#15803d':'#b91c1c'}">${formatMoney(a.netCashFlow)}</td>
+            <td style="text-align:right" class="positive">${formatStatementMoney(a.totalIncome, a.currency || stmtFs.currency)}</td>
+            <td style="text-align:right" class="negative">${formatStatementMoney(a.totalExpense, a.currency || stmtFs.currency)}</td>
+            <td style="text-align:right;font-weight:600;color:${(a.netCashFlow||0)>=0?'#15803d':'#b91c1c'}">${formatStatementMoney(a.netCashFlow, a.currency || stmtFs.currency)}</td>
           </tr>`).join('')}
           </tbody></table>` : ''}
           </div>` : ''}
@@ -3094,6 +3144,48 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                 const stAccounts = displayedStatementAnalysis.accounts || [];
                 return (
                 <div className="space-y-4">
+                  <section className="bg-white border rounded-2xl shadow-sm p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-bold text-slate-500 uppercase">Хуулгын валют</p>
+                        <p className="text-lg font-black text-[#003B5C]">{displayedStatementCurrency}</p>
+                      </div>
+                      {displayedStatementConversion?.rate && (
+                        <p className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                          1 {displayedStatementConversion.currency} = {formatMoney(displayedStatementConversion.rate)}
+                        </p>
+                      )}
+                    </div>
+                    {canConvertStatement && !selectedResearch && (
+                      <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end bg-slate-50 border rounded-xl p-3">
+                        <label className="space-y-1 flex-1">
+                          <span className="text-[11px] font-bold text-slate-500">1 {displayedStatementCurrency} = хэдэн төгрөг</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={statementExchangeRate}
+                            onChange={(event) => setStatementExchangeRate(event.target.value)}
+                            className={textInput}
+                            placeholder="Жишээ: 3450"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={applyStatementExchangeRate}
+                          className="px-4 py-3 rounded-lg bg-[#003B5C] text-white text-sm font-bold hover:bg-[#005082] transition-colors"
+                        >
+                          Төгрөгөөр харуулах
+                        </button>
+                      </div>
+                    )}
+                    {displayedStatementCurrency === 'UNKNOWN' && (
+                      <p className="text-xs text-amber-700">Хуулгаас валют тодорхой танигдсангүй. Файлыг дахин уншуулж эсвэл эх баримтын валютыг шалгана уу.</p>
+                    )}
+                    {displayedStatementCurrency === 'MIXED' && (
+                      <p className="text-xs text-amber-700">Өөр өөр валюттай дансууд нийлсэн тул нэг ханшаар хөрвүүлэх боломжгүй.</p>
+                    )}
+                  </section>
                   {/* Per-account summary when multiple accounts */}
                   {stAccounts.length > 1 && (
                     <section className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-2">
@@ -3119,9 +3211,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                                   {acc.periodStart && acc.periodEnd ? `${acc.periodStart} – ${acc.periodEnd}` : acc.periodStart || acc.periodEnd || '—'}
                                   {acc.coveredMonths ? <span className="ml-1 text-slate-400">({acc.coveredMonths}с)</span> : null}
                                 </td>
-                                <td className="border border-blue-100 px-2 py-1.5 text-right text-green-700 font-semibold">{formatMoney(acc.totalIncome)}</td>
-                                <td className="border border-blue-100 px-2 py-1.5 text-right text-red-700 font-semibold">{formatMoney(acc.totalExpense)}</td>
-                                <td className={`border border-blue-100 px-2 py-1.5 text-right font-bold ${acc.netCashFlow >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatMoney(acc.netCashFlow)}</td>
+                                <td className="border border-blue-100 px-2 py-1.5 text-right text-green-700 font-semibold">{formatStatementMoney(acc.totalIncome, acc.currency)}</td>
+                                <td className="border border-blue-100 px-2 py-1.5 text-right text-red-700 font-semibold">{formatStatementMoney(acc.totalExpense, acc.currency)}</td>
+                                <td className={`border border-blue-100 px-2 py-1.5 text-right font-bold ${acc.netCashFlow >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatStatementMoney(acc.netCashFlow, acc.currency)}</td>
                               </tr>
                             ))}
                             <tr className="bg-blue-100 font-bold">
@@ -3129,9 +3221,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                               <td className="border border-blue-200 px-2 py-1.5 text-slate-500 font-normal text-xs">
                                 {stFs.periodStart && stFs.periodEnd ? `${stFs.periodStart} – ${stFs.periodEnd}` : ''}
                               </td>
-                              <td className="border border-blue-200 px-2 py-1.5 text-right text-green-700">{formatMoney(stFs.totalIncome)}</td>
-                              <td className="border border-blue-200 px-2 py-1.5 text-right text-red-700">{formatMoney(stFs.totalExpense)}</td>
-                              <td className={`border border-blue-200 px-2 py-1.5 text-right ${stFs.netCashFlow >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatMoney(stFs.netCashFlow)}</td>
+                              <td className="border border-blue-200 px-2 py-1.5 text-right text-green-700">{formatStatementMoney(stFs.totalIncome)}</td>
+                              <td className="border border-blue-200 px-2 py-1.5 text-right text-red-700">{formatStatementMoney(stFs.totalExpense)}</td>
+                              <td className={`border border-blue-200 px-2 py-1.5 text-right ${stFs.netCashFlow >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatStatementMoney(stFs.netCashFlow)}</td>
                             </tr>
                           </tbody>
                         </table>
@@ -3205,7 +3297,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                               <tr>
                                 <th className={`${tblHead} w-1/3`}>Орлогын төрөл</th>
                                 <th className={tblHead}>Давтамж</th>
-                                <th className={`${tblHead} text-right`}>Нийт дүн (₮)</th>
+                                <th className={`${tblHead} text-right`}>Нийт дүн ({displayedStatementCurrency})</th>
                                 <th className={`${tblHead} text-right`}>Нийт орлогод эзлэх хувь</th>
                               </tr>
                             </thead>
@@ -3214,13 +3306,13 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                                 <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                                   <td className={tblCell}>{row.type}</td>
                                   <td className={tblCell}>{row.frequency}</td>
-                                  <td className="border border-slate-200 px-2 py-1.5 text-right font-semibold text-green-700">{formatMoney(row.totalAmount)}</td>
+                                  <td className="border border-slate-200 px-2 py-1.5 text-right font-semibold text-green-700">{formatStatementMoney(row.totalAmount)}</td>
                                   <td className="border border-slate-200 px-2 py-1.5 text-right">{row.sharePercent?.toFixed(1)}%</td>
                                 </tr>
                               ))}
                               <tr className="bg-green-50 font-bold">
                                 <td className="border border-slate-200 px-2 py-1.5" colSpan={2}>Нийт</td>
-                                <td className="border border-slate-200 px-2 py-1.5 text-right text-green-700">{formatMoney(report.incomeClassification.reduce((s, r) => s + (r.totalAmount || 0), 0))}</td>
+                                <td className="border border-slate-200 px-2 py-1.5 text-right text-green-700">{formatStatementMoney(report.incomeClassification.reduce((s, r) => s + (r.totalAmount || 0), 0))}</td>
                                 <td className="border border-slate-200 px-2 py-1.5 text-right">100%</td>
                               </tr>
                             </tbody>
@@ -3239,7 +3331,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                               <tr>
                                 <th className={`${tblHead} w-1/3`}>Зардлын ангилал</th>
                                 <th className={tblHead}>Давтамж</th>
-                                <th className={`${tblHead} text-right`}>Нийт дүн (₮)</th>
+                                <th className={`${tblHead} text-right`}>Нийт дүн ({displayedStatementCurrency})</th>
                                 <th className={`${tblHead} text-right`}>Нийт зарлагад эзлэх хувь</th>
                               </tr>
                             </thead>
@@ -3248,13 +3340,13 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                                 <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                                   <td className={tblCell}>{row.category}</td>
                                   <td className={tblCell}>{row.frequency}</td>
-                                  <td className="border border-slate-200 px-2 py-1.5 text-right font-semibold text-red-700">{formatMoney(row.totalAmount)}</td>
+                                  <td className="border border-slate-200 px-2 py-1.5 text-right font-semibold text-red-700">{formatStatementMoney(row.totalAmount)}</td>
                                   <td className="border border-slate-200 px-2 py-1.5 text-right">{row.sharePercent?.toFixed(1)}%</td>
                                 </tr>
                               ))}
                               <tr className="bg-red-50 font-bold">
                                 <td className="border border-slate-200 px-2 py-1.5" colSpan={2}>Нийт</td>
-                                <td className="border border-slate-200 px-2 py-1.5 text-right text-red-700">{formatMoney(report.expenseClassification.reduce((s, r) => s + (r.totalAmount || 0), 0))}</td>
+                                <td className="border border-slate-200 px-2 py-1.5 text-right text-red-700">{formatStatementMoney(report.expenseClassification.reduce((s, r) => s + (r.totalAmount || 0), 0))}</td>
                                 <td className="border border-slate-200 px-2 py-1.5 text-right">100%</td>
                               </tr>
                             </tbody>
@@ -3314,7 +3406,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                                 <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-amber-50/30'}>
                                   <td className="border border-slate-200 px-2 py-1.5 whitespace-nowrap text-slate-600">{nt.date}</td>
                                   <td className="border border-slate-200 px-2 py-1.5 text-slate-700">{nt.description}</td>
-                                  <td className={`border border-slate-200 px-2 py-1.5 text-right font-semibold ${nt.direction === 'income' ? 'text-green-700' : 'text-red-700'}`}>{formatMoney(nt.amount)}</td>
+                                  <td className={`border border-slate-200 px-2 py-1.5 text-right font-semibold ${nt.direction === 'income' ? 'text-green-700' : 'text-red-700'}`}>{formatStatementMoney(nt.amount)}</td>
                                   <td className="border border-slate-200 px-2 py-1.5 text-amber-700">{nt.flagReason}</td>
                                 </tr>
                               ))}
@@ -3377,10 +3469,10 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                             {displayedStatementAnalysis.monthlySummary.map((row, i) => (
                               <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                                 <td className="border px-2 py-1.5 font-semibold">{row.month}</td>
-                                <td className="border px-2 py-1.5 text-right text-green-700">{formatMoney(row.income)}</td>
-                                <td className="border px-2 py-1.5 text-right text-red-700">{formatMoney(row.expense)}</td>
+                                <td className="border px-2 py-1.5 text-right text-green-700">{formatStatementMoney(row.income)}</td>
+                                <td className="border px-2 py-1.5 text-right text-red-700">{formatStatementMoney(row.expense)}</td>
                                 <td className={`border px-2 py-1.5 text-right font-semibold ${(row.income - row.expense) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                                  {formatMoney(row.income - row.expense)}
+                                  {formatStatementMoney(row.income - row.expense)}
                                 </td>
                                 <td className="border px-2 py-1.5 text-right text-slate-600">{row.transactionCount ?? '-'}</td>
                               </tr>
@@ -3839,6 +3931,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                       <div className="space-y-2 border-t pt-2">
                         <p className="text-xs font-semibold text-slate-600">
                           Дансны хуулга — {stFs.bankName || ''} {stFs.periodStart && stFs.periodEnd ? `(${stFs.periodStart} – ${stFs.periodEnd}, ${stFs.coveredMonths} сар)` : ''}
+                          {stFs.currency ? ` · ${stFs.currency}` : ''}
                         </p>
                         {stAccounts.length > 1 ? (
                           <table className="w-full text-xs border-collapse">
@@ -3847,19 +3940,19 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                               {stAccounts.map((acc, i) => (
                                 <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                                   <td className="border px-2 py-1">{acc.accountNumber || acc.label}</td>
-                                  <td className="border px-2 py-1 text-right text-green-700">{formatMoney(acc.totalIncome)}</td>
-                                  <td className="border px-2 py-1 text-right text-red-700">{formatMoney(acc.totalExpense)}</td>
-                                  <td className={`border px-2 py-1 text-right font-semibold ${acc.netCashFlow >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatMoney(acc.netCashFlow)}</td>
+                                  <td className="border px-2 py-1 text-right text-green-700">{formatStatementMoney(acc.totalIncome, acc.currency)}</td>
+                                  <td className="border px-2 py-1 text-right text-red-700">{formatStatementMoney(acc.totalExpense, acc.currency)}</td>
+                                  <td className={`border px-2 py-1 text-right font-semibold ${acc.netCashFlow >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatStatementMoney(acc.netCashFlow, acc.currency)}</td>
                                 </tr>
                               ))}
-                              <tr className="bg-slate-100 font-bold"><td className="border px-2 py-1">Нийт</td><td className="border px-2 py-1 text-right text-green-700">{formatMoney(stFs.totalIncome)}</td><td className="border px-2 py-1 text-right text-red-700">{formatMoney(stFs.totalExpense)}</td><td className={`border px-2 py-1 text-right ${(stFs.netCashFlow||0)>=0?'text-green-700':'text-red-700'}`}>{formatMoney(stFs.netCashFlow)}</td></tr>
+                              <tr className="bg-slate-100 font-bold"><td className="border px-2 py-1">Нийт</td><td className="border px-2 py-1 text-right text-green-700">{formatStatementMoney(stFs.totalIncome)}</td><td className="border px-2 py-1 text-right text-red-700">{formatStatementMoney(stFs.totalExpense)}</td><td className={`border px-2 py-1 text-right ${(stFs.netCashFlow||0)>=0?'text-green-700':'text-red-700'}`}>{formatStatementMoney(stFs.netCashFlow)}</td></tr>
                             </tbody>
                           </table>
                         ) : (
                           <div className="flex flex-wrap gap-4 text-sm">
-                            <span>Нийт орлого: <b className="text-green-700">{formatMoney(stFs.totalIncome)}</b></span>
-                            <span>Нийт зарлага: <b className="text-red-700">{formatMoney(stFs.totalExpense)}</b></span>
-                            <span>Дундаж/сар: <b className="text-[#003B5C]">{formatMoney(stFs.averageMonthlyIncome)}</b></span>
+                            <span>Нийт орлого: <b className="text-green-700">{formatStatementMoney(stFs.totalIncome)}</b></span>
+                            <span>Нийт зарлага: <b className="text-red-700">{formatStatementMoney(stFs.totalExpense)}</b></span>
+                            <span>Дундаж/сар: <b className="text-[#003B5C]">{formatStatementMoney(stFs.averageMonthlyIncome)}</b></span>
                           </div>
                         )}
                         {stFs.keyRisks && <p className="text-xs text-amber-700 mt-1">⚠ {stFs.keyRisks}</p>}
