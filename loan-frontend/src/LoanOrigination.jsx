@@ -1605,6 +1605,18 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
   const cs = outputs.creditScore || {};
   const ie = outputs.incomeExpense || {};
   const col = outputs.collateral || {};
+  const financial = outputs.financialStatementAnalysis || null;
+  const financialBalance = financial?.balanceSheet || {};
+  const financialIncome = financial?.incomeStatement || {};
+  const financialRatios = financial?.ratios || {};
+  const financialCurrency = String(financial?.currency || 'MNT').toUpperCase();
+  const financialConversion = outputs.financialConversion || null;
+  const formatFinancialAmount = value => {
+    const native = `${nfmt(value)} ${financialCurrency === 'MNT' ? '₮' : financialCurrency}`;
+    return financialConversion?.rate && financialCurrency !== 'MNT'
+      ? `${native} / ${nfmt(Number(value || 0) * financialConversion.rate)} ₮`
+      : native;
+  };
   const collaterals = b.collaterals || [];
   const guarantors = b.guarantors || [];
   const riskFlags = b.riskFlags || b.analystRisks || [];
@@ -1625,6 +1637,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     { detail: 'Debt-to-Income', label: 'DTI', display: `${(ie.dti || 0).toFixed(1)}%`, pass: (ie.dti || 0) <= 55 },
     { detail: 'Free Cash Flow', label: 'Чөлөөт урсгал', display: nfmt(ie.freeCashFlow) + ' ₮', pass: (ie.freeCashFlow || 0) > 0 },
     { detail: 'Loan-to-Value', label: 'LTV', display: col.ltvRatio != null ? `${col.ltvRatio.toFixed(1)}%` : '—', pass: col.ltvRatio == null || col.ltvRatio <= 80 },
+    ...(financial ? [{ detail: 'Financial Report', label: 'Цэвэр ашиг', display: formatFinancialAmount(financialIncome.netProfit), pass: Number(financialIncome.netProfit || 0) >= 0 && Number(financialRatios.currentRatio || 0) >= 1 }] : []),
   ];
   const passCount = kpis.filter(k => k.pass).length;
   const failedKpis = kpis.filter(k => !k.pass);
@@ -2254,7 +2267,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       </div>
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className={`grid grid-cols-2 ${financial ? 'md:grid-cols-6' : 'md:grid-cols-5'} gap-3`}>
         {kpis.map(k => (
           <div key={k.detail} className={`border-2 rounded-2xl p-4 text-center flex flex-col items-center gap-1 ${k.pass ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}`}>
             <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wide">{k.detail}</p>
@@ -2435,6 +2448,39 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
           )}
         </div>
       </div>
+
+      {financial && (
+        <div className="bg-white border rounded-2xl p-5 space-y-3">
+          <p className="text-xs font-bold uppercase text-slate-500 flex items-center gap-2">
+            <BarChart2 size={13} /> Санхүүгийн тайлангийн шинжилгээ
+          </p>
+          <p className="text-xs text-slate-500">
+            {financial.entityName || 'Байгууллага'} · {financial.periodStart || financial.reportingDate || '—'}{financial.periodEnd ? ` - ${financial.periodEnd}` : ''} · {financialCurrency}
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+            {[
+              ['Нийт хөрөнгө', financialBalance.totalAssets],
+              ['Нийт өр төлбөр', financialBalance.totalLiabilities],
+              ['Эздийн өмч', financialBalance.equity],
+              ['Цэвэр ашиг', financialIncome.netProfit],
+            ].map(([label, value]) => (
+              <div key={label} className="border rounded-xl p-3 bg-slate-50">
+                <p className="text-[10px] text-slate-400 uppercase font-bold">{label}</p>
+                <p className={`text-sm font-black ${label === 'Цэвэр ашиг' && Number(value) < 0 ? 'text-red-600' : 'text-[#003B5C]'}`}>{formatFinancialAmount(value)}</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-600">
+            Current ratio: <b>{Number(financialRatios.currentRatio || 0).toFixed(2)}</b> · Debt / Equity: <b>{Number(financialRatios.debtToEquity || 0).toFixed(2)}</b>
+          </p>
+          {financial.analysis && <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 rounded-lg p-3">{financial.analysis}</p>}
+          {financial.riskFlags?.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {financial.riskFlags.map((risk, index) => <span key={index} className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-2.5 py-1 text-xs font-semibold">{risk}</span>)}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Score breakdown */}
       {scoreBreakdown.length > 0 && (
