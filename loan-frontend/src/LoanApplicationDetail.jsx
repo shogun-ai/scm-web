@@ -1002,7 +1002,7 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId, e
       const res = await axios.post(`${apiUrl}/api/loan-research/analyze-credit-reference`, fd, {
         headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
       });
-      onChange({ ...data, creditBureauData: res.data });
+      onChange({ ...data, creditBureauData: res.data, creditExchangeRate: '' });
       showToast('Зээлийн мэдээллийн лавлагаа уншигдлаа.');
     } catch (e) {
       showToast(e.response?.data?.message || 'Credit bureau AI алдаа', 'error');
@@ -1018,7 +1018,7 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId, e
       const res = await axios.post(`${apiUrl}/api/loans/analyze-fico-document`, fd, {
         headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${getAuthToken()}` },
       });
-      onChange({ ...data, ficoData: res.data });
+      onChange({ ...data, ficoData: res.data, ficoExchangeRate: '' });
       showToast('Зээлийн оноо уншигдлаа.');
     } catch (e) {
       showToast(e.response?.data?.message || 'FICO унших алдаа', 'error');
@@ -1027,6 +1027,36 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId, e
 
   const cb = data.creditBureauData;
   const fico = data.ficoData;
+  const cbCurrency = String(cb?.currency || 'UNKNOWN').toUpperCase();
+  const ficoCurrency = String(fico?.currency || 'UNKNOWN').toUpperCase();
+  const cbRate = Number(data.creditExchangeRate || 0);
+  const ficoRate = Number(data.ficoExchangeRate || 0);
+  const money = (value, currency, rate) => {
+    const native = formatStatementMoney(value, currency);
+    return rate > 0 && !['MNT', 'UNKNOWN'].includes(currency)
+      ? `${native} / ${formatStatementMoney(Number(value || 0) * rate, 'MNT')}`
+      : native;
+  };
+  const currencyControl = (currency, rate, rateKey, analysisKey) => (
+    <div className="flex flex-wrap items-end gap-2">
+      <label className="space-y-1">
+        <span className="block text-[10px] font-bold text-slate-500">Валют</span>
+        <select value={currency} onChange={(event) => onChange({ ...data, [analysisKey]: { ...data[analysisKey], currency: event.target.value }, [rateKey]: '' })} className="p-2 border rounded-lg text-xs bg-white">
+          <option value="UNKNOWN">Тодорхойгүй</option>
+          <option value="MNT">MNT (₮)</option>
+          <option value="USD">USD ($)</option>
+          <option value="EUR">EUR (€)</option>
+          <option value="CNY">CNY (¥)</option>
+        </select>
+      </label>
+      {!['MNT', 'UNKNOWN'].includes(currency) && (
+        <label className="space-y-1">
+          <span className="block text-[10px] font-bold text-slate-500">1 {currency} = ₮</span>
+          <input type="number" min="0" step="0.01" value={rate || ''} onChange={(event) => onChange({ ...data, [rateKey]: event.target.value })} className="p-2 border rounded-lg text-xs w-32" placeholder="Ханш" />
+        </label>
+      )}
+    </div>
+  );
   const ratingColor = {
     'МАШ САЙН': 'text-emerald-600 bg-emerald-50',
     'САЙН': 'text-green-600 bg-green-50',
@@ -1055,14 +1085,21 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId, e
 
       {cb && (
         <div className="space-y-3">
+          <div className="flex flex-wrap justify-between gap-3 items-end">
+            <div className="text-xs text-slate-500">
+              <p className="font-bold text-[#003B5C]">{cb.bureauName || 'Credit bureau report'}</p>
+              <p>{cb.reportType || 'credit_report'} · {cb.reportDate || '—'}</p>
+            </div>
+            {currencyControl(cbCurrency, data.creditExchangeRate, 'creditExchangeRate', 'creditBureauData')}
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-slate-50 rounded-xl p-3">
               <p className="text-[11px] text-slate-500 font-bold uppercase">Нийт үлдэгдэл</p>
-              <p className="font-bold text-[#003B5C]">{Number(cb.summary?.totalBalance || 0).toLocaleString('mn-MN')} ₮</p>
+              <p className="font-bold text-[#003B5C]">{money(cb.summary?.totalBalance, cbCurrency, cbRate)}</p>
             </div>
             <div className="bg-slate-50 rounded-xl p-3">
               <p className="text-[11px] text-slate-500 font-bold uppercase">Сарын нийт төлбөр</p>
-              <p className="font-bold text-[#003B5C]">{Number(cb.summary?.estimatedMonthlyPayment || 0).toLocaleString('mn-MN')} ₮</p>
+              <p className="font-bold text-[#003B5C]">{money(cb.summary?.estimatedMonthlyPayment, cbCurrency, cbRate)}</p>
             </div>
             <div className="bg-slate-50 rounded-xl p-3">
               <p className="text-[11px] text-slate-500 font-bold uppercase">Идэвхтэй зээл</p>
@@ -1085,6 +1122,20 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId, e
             <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-bold ${ratingColor[cb.finalRating] || 'text-slate-600 bg-slate-50'}`}>
               Эцсийн үнэлгээ: {cb.finalRating}
               {cb.creditBureauScore && <span className="text-xs font-normal ml-1">| Скор: {cb.creditBureauScore}</span>}
+            </div>
+          )}
+          {(cb.hardInquiries > 0 || cb.revolvingUtilization != null || cb.publicRecords > 0) && (
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                ['Hard inquiries', cb.hardInquiries],
+                ['Utilization', cb.revolvingUtilization == null ? '—' : `${cb.revolvingUtilization}%`],
+                ['Public records', cb.publicRecords],
+              ].map(([label, value]) => (
+                <div key={label} className="bg-slate-50 rounded-lg p-2 text-center">
+                  <p className="text-[10px] uppercase font-bold text-slate-400">{label}</p>
+                  <p className="text-sm font-bold text-slate-700">{value}</p>
+                </div>
+              ))}
             </div>
           )}
 
@@ -1118,6 +1169,13 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId, e
 
         {fico && (
           <div className="space-y-3">
+            <div className="flex flex-wrap justify-between gap-3 items-end">
+              <div className="text-xs text-slate-500">
+                <p className="font-bold text-[#003B5C]">{fico.bureauName || 'Credit score report'}</p>
+                <p>{fico.scoreModel || 'FICO / Sainscore'} · {fico.reportDate || '—'}</p>
+              </div>
+              {currencyControl(ficoCurrency, data.ficoExchangeRate, 'ficoExchangeRate', 'ficoData')}
+            </div>
             <div className="flex items-center gap-4 flex-wrap">
               {fico.ficoScore != null && (
                 <div className={`text-center px-5 py-3 rounded-2xl border-2 ${fico.ficoScore >= 700 ? 'border-green-400 bg-green-50' : fico.ficoScore >= 500 ? 'border-amber-400 bg-amber-50' : 'border-red-400 bg-red-50'}`}>
@@ -1146,6 +1204,9 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId, e
                 ['Хаагдсан зээл', fico.closedLoansCount],
                 ['90 хоног хэтрэлт', fico.overdueCount90],
                 ['90+ хоног хэтрэлт', fico.overdueCount90Plus],
+                ['Hard inquiries', fico.hardInquiries],
+                ['Utilization', fico.utilizationPercent == null ? '—' : `${fico.utilizationPercent}%`],
+                ['Collections', fico.collectionsCount],
               ].map(([lbl, val]) => (
                 <div key={lbl} className="bg-slate-50 rounded-lg p-2.5 text-center">
                   <p className="text-[10px] text-slate-400 uppercase font-bold">{lbl}</p>
@@ -1156,7 +1217,7 @@ const CreditBureauSection = ({ data = {}, onChange, apiUrl, showToast, loanId, e
             {fico.totalActiveBalance > 0 && (
               <div className="bg-slate-50 rounded-lg px-3 py-2 flex items-center justify-between">
                 <span className="text-xs text-slate-500 font-bold">Нийт идэвхтэй үлдэгдэл</span>
-                <span className="text-sm font-bold text-[#003B5C]">₮{Number(fico.totalActiveBalance).toLocaleString('mn-MN')}</span>
+                <span className="text-sm font-bold text-[#003B5C]">{money(fico.totalActiveBalance, ficoCurrency, ficoRate)}</span>
               </div>
             )}
             {Array.isArray(fico.scoreReasons) && fico.scoreReasons.length > 0 && (

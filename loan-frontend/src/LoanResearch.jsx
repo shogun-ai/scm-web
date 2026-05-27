@@ -445,14 +445,18 @@ const normalizeLoanRequest = (request) => {
 
   // Credit bureau — active loans + score
   const cbData = appData.creditBureau?.creditBureauData || {};
+  const cbCurrency = normalizeCurrency(cbData.currency);
+  const cbRate = Number(appData.creditBureau?.creditExchangeRate || 0);
+  const cbAmountMultiplier = isMntCurrency(cbCurrency) ? 1 : (cbRate > 0 ? cbRate : 0);
   const activeLoans = (cbData.primaryLoans || [])
     .filter(l => l.balance > 0)
+    .filter(() => cbAmountMultiplier > 0)
     .map(l => ({
       lender: l.institution || '',
       product: l.loanType || '',
-      amount: String(Math.round(l.originalAmount || 0)),
-      balance: String(Math.round(l.balance || 0)),
-      monthlyPayment: String(Math.round(l.estimatedMonthlyPayment || 0)),
+      amount: String(Math.round(Number(l.originalAmount || 0) * cbAmountMultiplier)),
+      balance: String(Math.round(Number(l.balance || 0) * cbAmountMultiplier)),
+      monthlyPayment: String(Math.round(Number(l.estimatedMonthlyPayment || 0) * cbAmountMultiplier)),
       classification: l.isOverdue ? (l.overdueDays > 90 ? 'doubtful' : 'substandard') : 'normal',
     }));
 
@@ -577,8 +581,10 @@ const normalizeLoanRequest = (request) => {
     requestFiles,
     averageMonthlyIncome: avgIncome ? String(Math.round(Number(avgIncome))) : (siAvgSalary ? String(Math.round(Number(siAvgSalary))) : ''),
     averageMonthlyCost: avgExpense ? String(Math.round(Number(avgExpense))) : '',
-    monthlyDebtPayment: cbData.summary?.estimatedMonthlyPayment
-      ? String(Math.round(cbData.summary.estimatedMonthlyPayment)) : '',
+    monthlyDebtPayment: activeLoans.length
+      ? ''
+      : (cbAmountMultiplier > 0 && cbData.summary?.estimatedMonthlyPayment
+        ? String(Math.round(cbData.summary.estimatedMonthlyPayment * cbAmountMultiplier)) : ''),
     creditScore: appData.creditBureau?.ficoData?.ficoScore != null
       ? String(Math.round(appData.creditBureau.ficoData.ficoScore))
       : (cbData.creditBureauScore ? String(Math.round(cbData.creditBureauScore)) : ''),
@@ -1104,8 +1110,11 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   const [creditRefAnalysis, setCreditRefAnalysis] = useState(null);
   const [analyzingCreditRef, setAnalyzingCreditRef] = useState(false);
   const [creditRefError, setCreditRefError] = useState('');
+  const [creditExchangeRate, setCreditExchangeRate] = useState('');
+  const [creditConversion, setCreditConversion] = useState(null);
   // FICO / Sainscore дүн
   const [ficoAnalysis, setFicoAnalysis] = useState(null);
+  const [ficoConversion, setFicoConversion] = useState(null);
   // Нийгмийн даатгалын лавлагаа
   const [siAnalysis, setSiAnalysis] = useState(null);
   // View mode: 'list' = show request list, 'detail' = show tab layout
@@ -1130,7 +1139,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     statementAnalysisItems,
     statementConversion,
     financialConversion,
-  }), [outputs, statementAnalysis, statementAnalysisItems, statementConversion, financialConversion]);
+    creditConversion,
+    ficoConversion,
+  }), [outputs, statementAnalysis, statementAnalysisItems, statementConversion, financialConversion, creditConversion, ficoConversion]);
   const sortedStudyRequests = useMemo(() => (
     [...studyRequests].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
   ), [studyRequests]);
@@ -1158,6 +1169,10 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   const displayedFinancialAnalysis = selectedResearch?.outputs?.financialStatementAnalysis || financialAnalysis;
   const displayedFinancialConversion = selectedResearch?.outputs?.financialConversion || financialConversion;
   const displayedFinancialCurrency = normalizeCurrency(displayedFinancialAnalysis?.currency);
+  const displayedCreditConversion = selectedResearch?.outputs?.creditConversion || creditConversion;
+  const displayedCreditCurrency = normalizeCurrency(creditRefAnalysis?.currency);
+  const displayedFicoConversion = selectedResearch?.outputs?.ficoConversion || ficoConversion;
+  const displayedFicoCurrency = normalizeCurrency(ficoAnalysis?.currency);
   const displayedForm = selectedResearch?.borrower || form;
   const formatStatementMoney = (value, currency = displayedStatementCurrency) => {
     const code = normalizeCurrency(currency);
@@ -1170,6 +1185,18 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     const native = formatNativeMoney(value, displayedFinancialCurrency);
     return displayedFinancialConversion?.rate && !isMntCurrency(displayedFinancialCurrency)
       ? `${native} / ${formatMoney(Number(value || 0) * displayedFinancialConversion.rate)}`
+      : native;
+  };
+  const formatCreditMoney = (value, currency = displayedCreditCurrency) => {
+    const native = formatNativeMoney(value, currency);
+    return displayedCreditConversion?.rate && normalizeCurrency(displayedCreditConversion.currency) === normalizeCurrency(currency)
+      ? `${native} / ${formatMoney(Number(value || 0) * displayedCreditConversion.rate)}`
+      : native;
+  };
+  const formatFicoMoney = (value) => {
+    const native = formatNativeMoney(value, displayedFicoCurrency);
+    return displayedFicoConversion?.rate && !isMntCurrency(displayedFicoCurrency)
+      ? `${native} / ${formatMoney(Number(value || 0) * displayedFicoConversion.rate)}`
       : native;
   };
 
@@ -1297,8 +1324,11 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       });
       const analysis = res.data;
       setCreditRefAnalysis(analysis);
+      setCreditExchangeRate('');
+      setCreditConversion(null);
 
       // Auto-fill: идэвхтэй зээлүүдийг otherLoans-д нэмнэ
+      const nativeIsMnt = isMntCurrency(analysis.currency);
       const activeLoans = (analysis.primaryLoans || [])
         .filter((loan) => loan.balance > 0)
         .map((loan) => ({
@@ -1310,7 +1340,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           classification: loan.isOverdue ? (loan.overdueDays > 90 ? 'doubtful' : 'substandard') : 'normal',
         }));
 
-      if (activeLoans.length > 0) {
+      if (activeLoans.length > 0 && nativeIsMnt) {
         setForm((prev) => ({
           ...prev,
           otherLoans: activeLoans,
@@ -1320,6 +1350,12 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
             : prev.creditScore,
         }));
         showToast(`${activeLoans.length} идэвхтэй зээл "Бусад зээл" хэсэгт бөглөгдлөө.`);
+      } else if (activeLoans.length > 0) {
+        setForm((prev) => ({
+          ...prev,
+          creditScore: analysis.creditBureauScore ? String(Math.round(analysis.creditBureauScore)) : prev.creditScore,
+        }));
+        showToast(`${normalizeCurrency(analysis.currency)} өр танигдлаа. Ханш оруулаад судалгааны тооцоонд ашиглана уу.`);
       } else {
         showToast('Идэвхтэй үлдэгдэлтэй зээл олдсонгүй.');
       }
@@ -1382,6 +1418,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     setStatementExchangeRate('');
     setStatementConversion(null);
     setCreditRefError('');
+    setCreditExchangeRate('');
+    setCreditConversion(null);
+    setFicoConversion(null);
     setFinancialExchangeRate('');
     setFinancialConversion(null);
 
@@ -1413,6 +1452,12 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     const cbData = appData.creditBureau?.creditBureauData;
     if (cbData && (cbData.primaryLoans?.length || cbData.registrationNumber)) {
       setCreditRefAnalysis(cbData);
+      const savedCreditRate = Number(appData.creditBureau?.creditExchangeRate || 0);
+      const savedCreditCurrency = normalizeCurrency(cbData.currency);
+      if (savedCreditRate > 0 && !isMntCurrency(savedCreditCurrency)) {
+        setCreditExchangeRate(String(savedCreditRate));
+        setCreditConversion({ currency: savedCreditCurrency, rate: savedCreditRate });
+      }
     } else {
       setCreditRefAnalysis(null);
     }
@@ -1420,6 +1465,11 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     // FICO / Sainscore
     const ficoData = appData.creditBureau?.ficoData;
     setFicoAnalysis(ficoData?.ficoScore != null ? ficoData : null);
+    const savedFicoRate = Number(appData.creditBureau?.ficoExchangeRate || 0);
+    const savedFicoCurrency = normalizeCurrency(ficoData?.currency);
+    if (ficoData && savedFicoRate > 0 && !isMntCurrency(savedFicoCurrency)) {
+      setFicoConversion({ currency: savedFicoCurrency, rate: savedFicoRate });
+    }
 
     // Нийгмийн даатгалын лавлагаа
     const siData = appData.incomeResearch?.socialInsuranceAnalysis;
@@ -1583,6 +1633,39 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       repaymentSource: analysis?.frontSheet?.repaymentSource || prev.repaymentSource,
       comment: analysis?.cashFlowBehaviour?.conclusion || prev.comment,
     }));
+  };
+
+  const applyCreditExchangeRate = () => {
+    const rate = Number(creditExchangeRate);
+    if (!creditRefAnalysis || !(rate > 0) || isMntCurrency(displayedCreditCurrency) || ['UNKNOWN', 'MIXED'].includes(displayedCreditCurrency)) {
+      showToast('Credit report-ийн валютын ханшийг зөв оруулна уу.', 'error');
+      return;
+    }
+    const activeLoans = (creditRefAnalysis.primaryLoans || [])
+      .filter((loan) => Number(loan.balance || 0) > 0)
+      .map((loan) => ({
+        lender: loan.institution || '',
+        product: loan.loanType || '',
+        amount: String(Math.round(Number(loan.originalAmount || 0) * rate)),
+        balance: String(Math.round(Number(loan.balance || 0) * rate)),
+        monthlyPayment: String(Math.round(Number(loan.estimatedMonthlyPayment || 0) * rate)),
+        classification: loan.isOverdue ? (loan.overdueDays > 90 ? 'doubtful' : 'substandard') : 'normal',
+      }));
+    setSelectedId(null);
+    setCreditConversion({ currency: displayedCreditCurrency, rate });
+    setForm((prev) => ({
+      ...prev,
+      otherLoans: activeLoans,
+      monthlyDebtPayment: activeLoans.length
+        ? ''
+        : creditRefAnalysis.summary?.estimatedMonthlyPayment
+        ? String(Math.round(Number(creditRefAnalysis.summary.estimatedMonthlyPayment) * rate))
+        : prev.monthlyDebtPayment,
+      creditScore: creditRefAnalysis.creditBureauScore
+        ? String(Math.round(creditRefAnalysis.creditBureauScore))
+        : prev.creditScore,
+    }));
+    showToast(`${displayedCreditCurrency} өрийг төгрөгт хөрвүүлж судалгааны тооцоонд ашиглаж байна.`);
   };
 
   const applyStatementExchangeRate = () => {
@@ -1997,7 +2080,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           </tr>` : ''}
           ${ficoAnalysis ? `<tr>
             <td class="label-cell">FICO/Sainscore</td><td style="font-weight:700;color:#003B5C">${esc(ficoAnalysis.ficoScore || ficoAnalysis.score || '—')} ${ficoAnalysis.scoreCategory ? '· ' + esc(ficoAnalysis.scoreCategory) : ''}</td>
-            <td class="label-cell">Идэвхтэй үлдэгдэл</td><td>${ficoAnalysis.totalActiveBalance ? formatMoney(ficoAnalysis.totalActiveBalance) : '—'}</td>
+            <td class="label-cell">Идэвхтэй үлдэгдэл</td><td>${ficoAnalysis.totalActiveBalance ? formatFicoMoney(ficoAnalysis.totalActiveBalance) : '—'}</td>
           </tr>` : ''}
           ${ficoAnalysis?.scoreReasons?.length ? `<tr><td class="label-cell">Score reasons</td><td colspan="3">${listHtml(ficoAnalysis.scoreReasons)}</td></tr>` : ''}
           ${requestFiles.length || requestFileUrls.length ? `<tr><td class="label-cell">Хавсаргасан файлууд</td><td colspan="3">${listHtml([...requestFiles, ...requestFileUrls].map(fileNameOf))}</td></tr>` : ''}
@@ -2261,14 +2344,14 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           <table><tbody>
             <tr>
               <td class="label-cell">Идэвхтэй зээл</td><td>${cbRef.summary?.activeLoansCount || 0}</td>
-              <td class="label-cell">Нийт үлдэгдэл</td><td style="font-weight:700">${formatMoney(cbRef.summary?.totalBalance)}</td>
+              <td class="label-cell">Нийт үлдэгдэл</td><td style="font-weight:700">${formatCreditMoney(cbRef.summary?.totalBalance, cbRef.currency)}</td>
             </tr>
             <tr>
               <td class="label-cell">Хугацаа хэтрэлт</td>
               <td style="font-weight:700;color:${cbRef.summary?.hasOverdue ? '#b91c1c' : '#15803d'}">${cbRef.summary?.hasOverdue ? '⚠ Тийм · ' + (cbRef.summary?.maxOverdueDays || 0) + ' хоног' : '✓ Үгүй'}</td>
               ${cbRef.creditBureauScore ? `<td class="label-cell">Кредит скор</td><td style="font-weight:700">${esc(cbRef.creditBureauScore)}</td>` : `<td class="label-cell">Байгууллагын дүн</td><td>${esc(cbRef.summary?.institutionSummary)}</td>`}
             </tr>
-            ${cbRef.finalRating ? `<tr><td class="label-cell">Эцсийн үнэлгээ</td><td colspan="3" style="font-weight:700">${esc(cbRef.finalRating)}</td></tr>` : ''}
+            ${cbRef.finalRating ? `<tr><td class="label-cell">Эцсийн үнэлгээ</td><td colspan="3" style="font-weight:700">${esc(cbRef.finalRating)} · ${esc(cbRef.bureauName || 'Credit bureau')} · ${esc(cbRef.currency || 'UNKNOWN')}</td></tr>` : ''}
           </tbody></table>
           ${cbLoans.length > 0 ? `
           <table style="margin-top:6px"><thead><tr>
@@ -2277,8 +2360,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           ${cbLoans.slice(0, 15).map((l, i) => `<tr style="${rowStyle(i)}">
             <td>${esc(l.institution || l.lender || '—')}</td>
             <td>${esc(l.productType || l.product || '—')}</td>
-            <td style="text-align:right">${formatMoney(parseNumber(l.approvedAmount || l.amount))}</td>
-            <td style="text-align:right;font-weight:600">${formatMoney(parseNumber(l.currentBalance || l.balance))}</td>
+            <td style="text-align:right">${formatCreditMoney(parseNumber(l.originalAmount || l.approvedAmount || l.amount), l.currency || cbRef.currency)}</td>
+            <td style="text-align:right;font-weight:600">${formatCreditMoney(parseNumber(l.balance || l.currentBalance), l.currency || cbRef.currency)}</td>
             <td style="color:${l.classification === 'normal' ? '#15803d' : l.classification === 'attention' ? '#92400e' : '#b91c1c'}">${esc(classificationLabels[l.classification] || l.classification || '—')}</td>
             <td style="text-align:right;${(parseNumber(l.overdueDays) > 0) ? 'color:#b91c1c;font-weight:600' : ''}">${parseNumber(l.overdueDays) > 0 ? l.overdueDays + ' хоног' : '—'}</td>
           </tr>`).join('')}
@@ -2949,7 +3032,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                         </div>
                         <div className="bg-white rounded-lg p-2">
                           <span className="text-slate-500 block">Нийт үлдэгдэл</span>
-                          <span className="font-black text-slate-700">{formatMoney(creditRefAnalysis.summary?.totalBalance)}</span>
+                          <span className="font-black text-slate-700">{formatCreditMoney(creditRefAnalysis.summary?.totalBalance)}</span>
                         </div>
                         <div className={`bg-white rounded-lg p-2 ${creditRefAnalysis.summary?.hasOverdue ? 'border border-red-300' : ''}`}>
                           <span className="text-slate-500 block">Хугацаа хэтэрсэн</span>
@@ -2961,6 +3044,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                       {creditRefAnalysis.creditBureauScore && (
                         <p className="text-xs text-slate-600">Кредит бюрогийн скор: <b className="text-[#003B5C]">{creditRefAnalysis.creditBureauScore}</b></p>
                       )}
+                      <p className="text-xs text-slate-600">
+                        {creditRefAnalysis.bureauName || 'Credit bureau'} · Валют: <b className="text-[#003B5C]">{displayedCreditCurrency}</b>
+                      </p>
                       {creditRefAnalysis.summary?.institutionSummary && (
                         <p className="text-xs text-slate-500">{creditRefAnalysis.summary.institutionSummary}</p>
                       )}
@@ -2972,7 +3058,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                 {ficoAnalysis && (
                   <div className="border rounded-xl p-4 bg-blue-50 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 uppercase">FICO / Sainscore</span>
+                      <span className="text-xs font-bold text-slate-500 uppercase">{ficoAnalysis.bureauName || 'FICO / Sainscore'} · {displayedFicoCurrency}</span>
                       <span className={`text-lg font-black ${ficoAnalysis.ficoScore >= 700 ? 'text-green-600' : ficoAnalysis.ficoScore >= 550 ? 'text-amber-600' : 'text-red-600'}`}>{ficoAnalysis.ficoScore}</span>
                     </div>
                     {ficoAnalysis.scoreCategory && (
@@ -2984,7 +3070,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                       <span className="text-slate-500">Нээлттэй зээл: <b>{ficoAnalysis.openLoansCount ?? '-'}</b></span>
                       <span className="text-slate-500">Хаагдсан: <b>{ficoAnalysis.closedLoansCount ?? '-'}</b></span>
                       <span className="text-slate-500">90+ хоног: <b className={ficoAnalysis.overdueCount90Plus > 0 ? 'text-red-600' : ''}>{ficoAnalysis.overdueCount90Plus ?? '-'}</b></span>
-                      <span className="text-slate-500">Идэвхтэй үлдэгдэл: <b>{ficoAnalysis.totalActiveBalance ? formatMoney(ficoAnalysis.totalActiveBalance) : '-'}</b></span>
+                      <span className="text-slate-500">Идэвхтэй үлдэгдэл: <b>{ficoAnalysis.totalActiveBalance ? formatFicoMoney(ficoAnalysis.totalActiveBalance) : '-'}</b></span>
+                      <span className="text-slate-500">Hard inquiries: <b>{ficoAnalysis.hardInquiries ?? '-'}</b></span>
+                      <span className="text-slate-500">Utilization: <b>{ficoAnalysis.utilizationPercent == null ? '-' : `${ficoAnalysis.utilizationPercent}%`}</b></span>
                     </div>
                     {(ficoAnalysis.scoreReasons || []).map((r, i) => (
                       <p key={i} className="text-xs text-slate-600 flex gap-1.5"><span className="text-amber-500">•</span>{r}</p>
@@ -3035,11 +3123,26 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                       )}
                     </div>
                   </div>
+                  <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border bg-slate-50 p-3">
+                    <div className="text-xs text-slate-600">
+                      <p className="font-bold text-[#003B5C]">{creditRefAnalysis.bureauName || 'Credit bureau report'}</p>
+                      <p>{creditRefAnalysis.reportType || 'credit_report'} · Валют: <b>{displayedCreditCurrency}</b></p>
+                    </div>
+                    {!isMntCurrency(displayedCreditCurrency) && !['UNKNOWN', 'MIXED'].includes(displayedCreditCurrency) && !selectedResearch && (
+                      <div className="flex items-end gap-2">
+                        <label className="space-y-1">
+                          <span className="block text-[10px] font-bold text-slate-500">1 {displayedCreditCurrency} = ₮</span>
+                          <input type="number" min="0" step="0.01" value={creditExchangeRate} onChange={(event) => setCreditExchangeRate(event.target.value)} className="p-2 border rounded-lg text-xs w-36 bg-white" />
+                        </label>
+                        <button type="button" onClick={applyCreditExchangeRate} className="px-3 py-2 bg-[#003B5C] text-white rounded-lg text-xs font-bold">Төгрөгөөр тооцох</button>
+                      </div>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
                       ['Нийт идэвхтэй зээл', creditRefAnalysis.summary?.activeLoansCount ?? (creditRefAnalysis.primaryLoans || []).filter((l) => l.balance > 0).length, ''],
-                      ['Нийт үлдэгдэл', formatMoney(creditRefAnalysis.summary?.totalBalance), 'text-[#003B5C]'],
-                      ['Сарын нийт төлөлт', formatMoney(creditRefAnalysis.summary?.estimatedMonthlyPayment), 'text-amber-700'],
+                      ['Нийт үлдэгдэл', formatCreditMoney(creditRefAnalysis.summary?.totalBalance), 'text-[#003B5C]'],
+                      ['Сарын нийт төлөлт', formatCreditMoney(creditRefAnalysis.summary?.estimatedMonthlyPayment), 'text-amber-700'],
                       ['Байгууллага', creditRefAnalysis.summary?.institutionSummary || '-', 'text-slate-600 text-xs'],
                     ].map(([label, value, cls]) => (
                       <div key={label} className="border rounded-xl p-3 bg-slate-50">
@@ -3048,6 +3151,20 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                       </div>
                     ))}
                   </div>
+                  {(creditRefAnalysis.hardInquiries > 0 || creditRefAnalysis.revolvingUtilization != null || creditRefAnalysis.publicRecords > 0) && (
+                    <div className="grid grid-cols-3 gap-3">
+                      {[
+                        ['Hard inquiries', creditRefAnalysis.hardInquiries],
+                        ['Utilization', creditRefAnalysis.revolvingUtilization == null ? '—' : `${creditRefAnalysis.revolvingUtilization}%`],
+                        ['Public records', creditRefAnalysis.publicRecords],
+                      ].map(([label, value]) => (
+                        <div key={label} className="border rounded-xl p-3 bg-slate-50 text-center">
+                          <p className="text-[11px] font-bold uppercase text-slate-400">{label}</p>
+                          <p className="font-black text-sm text-slate-700">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {(creditRefAnalysis.primaryLoans || []).length > 0 && (
                     <div className="overflow-x-auto">
                       <p className="text-xs font-bold uppercase text-slate-500 mb-2">Үндсэн зээлдэгчээр орсон зээлүүд</p>
@@ -3067,9 +3184,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                             <tr key={idx} className={loan.isOverdue ? 'bg-red-50' : loan.balance <= 0 ? 'opacity-50' : ''}>
                               <td className="p-2 font-semibold">{loan.institution || '-'}</td>
                               <td className="p-2">{loan.loanType || '-'}</td>
-                              <td className="p-2 text-right">{formatMoney(loan.originalAmount)}</td>
-                              <td className={`p-2 text-right font-bold ${loan.balance > 0 ? 'text-[#003B5C]' : 'text-slate-400'}`}>{formatMoney(loan.balance)}</td>
-                              <td className="p-2 text-right">{loan.estimatedMonthlyPayment > 0 ? formatMoney(loan.estimatedMonthlyPayment) : '-'}</td>
+                              <td className="p-2 text-right">{formatCreditMoney(loan.originalAmount, loan.currency || displayedCreditCurrency)}</td>
+                              <td className={`p-2 text-right font-bold ${loan.balance > 0 ? 'text-[#003B5C]' : 'text-slate-400'}`}>{formatCreditMoney(loan.balance, loan.currency || displayedCreditCurrency)}</td>
+                              <td className="p-2 text-right">{loan.estimatedMonthlyPayment > 0 ? formatCreditMoney(loan.estimatedMonthlyPayment, loan.currency || displayedCreditCurrency) : '-'}</td>
                               <td className="p-2 text-center">
                                 {loan.isOverdue
                                   ? <span className="bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded">{loan.overdueDays}өдөр</span>
@@ -3087,7 +3204,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         {creditRefAnalysis.coLoans.map((loan, idx) => (
                           <div key={idx} className={`border rounded-lg p-2 text-xs ${loan.isOverdue ? 'bg-red-50 border-red-200' : 'bg-slate-50'}`}>
-                            <span className="font-bold">{loan.institution}</span> · {loan.loanType} · <span className="text-[#003B5C] font-bold">{formatMoney(loan.balance)}</span>
+                            <span className="font-bold">{loan.institution}</span> · {loan.loanType} · <span className="text-[#003B5C] font-bold">{formatCreditMoney(loan.balance, loan.currency || displayedCreditCurrency)}</span>
                             {loan.primaryBorrower && <span className="text-slate-500"> (Үндсэн: {loan.primaryBorrower})</span>}
                             {loan.isOverdue && <span className="ml-2 text-red-600 font-bold">{loan.overdueDays}өдөр</span>}
                           </div>
@@ -4446,8 +4563,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                                   <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                                     <td className="border px-2 py-1">{(hasCBData ? loan.institution : loan.lender) || '—'}</td>
                                     <td className="border px-2 py-1">{(hasCBData ? loan.loanType : loan.product) || '—'}</td>
-                                    <td className="border px-2 py-1 text-right">{formatMoney(hasCBData ? loan.originalAmount : parseNumber(loan.amount))}</td>
-                                    <td className="border px-2 py-1 text-right font-semibold">{formatMoney(hasCBData ? loan.balance : parseNumber(loan.balance))}</td>
+                                    <td className="border px-2 py-1 text-right">{hasCBData ? formatCreditMoney(loan.originalAmount, loan.currency || displayedCreditCurrency) : formatMoney(parseNumber(loan.amount))}</td>
+                                    <td className="border px-2 py-1 text-right font-semibold">{hasCBData ? formatCreditMoney(loan.balance, loan.currency || displayedCreditCurrency) : formatMoney(parseNumber(loan.balance))}</td>
                                     <td className="border px-2 py-1 text-center">
                                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                                         cls === 'normal' ? 'bg-green-100 text-green-700' :
@@ -4465,7 +4582,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                               <tr className="bg-slate-100 font-bold">
                                 <td className="border px-2 py-1" colSpan={3}>Нийт үлдэгдэл</td>
                                 <td className="border px-2 py-1 text-right">
-                                  {formatMoney(activeLoansFromCB.reduce((s, l) => s + (hasCBData ? (l.balance || 0) : parseNumber(l.balance)), 0))}
+                                  {hasCBData
+                                    ? formatCreditMoney(activeLoansFromCB.reduce((s, l) => s + Number(l.balance || 0), 0))
+                                    : formatMoney(activeLoansFromCB.reduce((s, l) => s + parseNumber(l.balance), 0))}
                                 </td>
                                 <td className="border px-2 py-1" colSpan={hasCBData ? 3 : 1}></td>
                               </tr>

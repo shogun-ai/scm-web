@@ -4303,11 +4303,17 @@ app.post('/api/loans/analyze-property-document', authenticateUser, (req, res) =>
 // ============================================================
 const creditReferenceSchema = {
     type: 'object', additionalProperties: false,
-    required: ['registrationNumber','reportDate','creditBureauScore','primaryLoans','coLoans','summary','analysis','finalRating'],
+    required: ['registrationNumber','reportDate','currency','bureauName','reportType','creditBureauScore','hardInquiries','revolvingUtilization','publicRecords','primaryLoans','coLoans','summary','analysis','finalRating'],
     properties: {
         registrationNumber: { type: 'string' },
         reportDate: { type: 'string' },
+        currency: { type: 'string' },
+        bureauName: { type: 'string' },
+        reportType: { type: 'string' },
         creditBureauScore: { type: ['number','null'] },
+        hardInquiries: { type: 'number' },
+        revolvingUtilization: { type: ['number','null'] },
+        publicRecords: { type: 'number' },
         primaryLoans: {
             type: 'array',
             items: {
@@ -4383,9 +4389,13 @@ const analyzeCreditReferenceWithAI = async ({ files = [], fileUrls = [], borrowe
     const response = await openai.responses.create({
         model: process.env.OPENAI_STATEMENT_MODEL || 'gpt-4.1-mini',
         temperature: 0,
-        instructions: `Та бол Монголын зээлийн эрсдэлийн мэргэжилтэн. Зээлийн мэдээллийн сангийн лавлагааг (Зээлийн мэдээллийн лавлагаа) нарийвчлан шинжилж бүрэн дүн шинжилгээ хий.
+        instructions: `Та бол олон улсын зээлийн эрсдэлийн мэргэжилтэн. Монголын зээлийн мэдээллийн сангийн лавлагаа болон АНУ-ын Experian, Equifax, TransUnion credit report / FICO report-ийг нарийвчлан шинжилж бүрэн дүн шинжилгээ хий.
 
 МЭДЭЭЛЭЛ ГАРГАХ ДҮРЭМ:
+- currency-д баримтын үндсэн валютыг ISO 4217 кодоор бич. "$" эсвэл "USD" тэмдэгтэй АНУ-ын тайлан бол заавал USD гэж бич. Дүнг MNT рүү хөрвүүлж болохгүй
+- bureauName-д Experian, Equifax, TransUnion, Sainscore эсвэл баримтын эх сурвалжийг бич
+- reportType-д credit_report, credit_score_report, credit_bureau_reference гэсэн утгын аль тохирохыг бич
+- АНУ-ын тайланд hard inquiries, revolving utilization %, public records/collections мэдээлэл байвал тусгай талбарт гарга; олдохгүй бол 0 эсвэл null хэрэглэ
 - primaryLoans: Үндсэн зээлдэгчээр орсон хүснэгтийн БҮХ мөрийг гарга
 - coLoans: Хамтран зээлдэгчээр орсон хүснэгтийн БҮХ мөрийг гарга
 - Идэвхтэй зээл: үлдэгдэл > 0 ЭСВЭЛ төлөгдсөн огноо хоосон/null
@@ -4435,7 +4445,7 @@ finalRating: МАШ САЙН (хугацаа хэтрэлтгүй, бага ач
         input: [{
             role: 'user',
             content: [
-                { type: 'input_text', text: `Зээлдэгч: ${JSON.stringify(borrower || {})}\n\nДараах зээлийн мэдээллийн сангийн лавлагааг шинжилж бүх зээлийн мөрүүдийг гарга. Өрийн нийт ачааллыг зөв тооцоол. Хугацаа хэтрэлт болон эрсдэлийн дохионуудыг institutionSummary-д тусгайлан дурд.` },
+                { type: 'input_text', text: `Зээлдэгч: ${JSON.stringify(borrower || {})}\n\nДараах credit bureau/credit score лавлагааг шинжил. Хэрэв АНУ-ын тайлан болон $ тэмдэгтэй бол валютыг USD гэж гарга, мөнгөн дүнг эх валютаар нь үлдээ. Бүх credit account/tradeline мөрүүдийг гарга. Өрийн нийт ачааллыг зөв тооцоол. Хугацаа хэтрэлт болон эрсдэлийн дохионуудыг institutionSummary-д тусгайлан дурд.` },
                 ...uploadedFiles, ...remoteFiles
             ]
         }],
@@ -4469,14 +4479,16 @@ app.post('/api/loan-research/analyze-credit-reference', authenticateUser, (req, 
 // ============================================================
 const ficoScoreSchema = {
     type: 'object', additionalProperties: false,
-    required: ['customerName','regNo','reportDate','reportNumber','ficoScore','scoreCategory','openLoansCount','closedLoansCount','overdueCount90','overdueCount90Plus','totalActiveBalance','scoreReasons'],
+    required: ['customerName','regNo','reportDate','reportNumber','currency','bureauName','scoreModel','ficoScore','scoreCategory','openLoansCount','closedLoansCount','overdueCount90','overdueCount90Plus','totalActiveBalance','hardInquiries','utilizationPercent','collectionsCount','scoreReasons'],
     properties: {
         customerName: { type: 'string' }, regNo: { type: 'string' },
         reportDate: { type: 'string' }, reportNumber: { type: 'string' },
+        currency: { type: 'string' }, bureauName: { type: 'string' }, scoreModel: { type: 'string' },
         ficoScore: { type: ['number','null'] }, scoreCategory: { type: 'string' },
         openLoansCount: { type: 'number' }, closedLoansCount: { type: 'number' },
         overdueCount90: { type: 'number' }, overdueCount90Plus: { type: 'number' },
         totalActiveBalance: { type: 'number' },
+        hardInquiries: { type: 'number' }, utilizationPercent: { type: ['number','null'] }, collectionsCount: { type: 'number' },
         scoreReasons: { type: 'array', items: { type: 'string' } }
     }
 };
@@ -4493,8 +4505,8 @@ app.post('/api/loans/analyze-fico-document', authenticateUser, (req, res) => {
             const response = await openai.responses.create({
                 model: process.env.OPENAI_STATEMENT_MODEL || 'gpt-4.1-mini',
                 temperature: 0,
-                instructions: 'You are a Mongolian credit analyst. Read the FICO/Sainscore credit score report. Extract the numerical credit score, score category (МАШ САЙН/САЙН/ДУНД/МУУ/МАШ МУУ or similar), open and closed loan counts, overdue counts at 90 days and 90+ days, total active balance, and score reason codes. Use 0 for missing numbers, empty string for missing text, null for missing score.',
-                input: [{ role: 'user', content: [{ type: 'input_text', text: 'Extract FICO/Sainscore credit score data from this document.' }, ...blocks] }],
+                instructions: 'You are an international credit analyst. Read FICO, VantageScore, Sainscore, Experian, Equifax, or TransUnion credit score reports. Extract score, score model, bureau name, category/risk band, open and closed account counts, overdue/delinquent counts, total active balance, hard inquiries, revolving utilization percent, collections/public-record count, and score reason codes. Identify currency using ISO 4217: if the report is from the United States or uses $/USD, currency must be USD. Keep monetary amounts in the source currency and never convert to MNT. Use 0 for missing numbers, empty string for missing text, null for missing score or utilization.',
+                input: [{ role: 'user', content: [{ type: 'input_text', text: 'Extract credit score and risk data from this document. Treat $ amounts in a United States report as USD.' }, ...blocks] }],
                 text: { format: { type: 'json_schema', name: 'fico_score', schema: ficoScoreSchema, strict: true } }
             });
             const result = parseAiJson(response.output_text);
