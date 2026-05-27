@@ -486,6 +486,18 @@ const normalizeLoanRequest = (request) => {
       const rate = Number(c.valuation?.coverageRate || 100);
       const coveredAmt = oAmt * rate / 100;
       const f = c.fields || {};
+      const revenueCurrency = normalizeCurrency(f.currency);
+      const revenueRate = Number(f.exchangeRate || 0);
+      const revenueBaseMnt = revenueCurrency === 'MNT'
+        ? Number(f.threeYearTotalInflow || 0)
+        : (revenueCurrency !== 'UNKNOWN' && revenueRate > 0 ? Number(f.threeYearTotalInflow || 0) * revenueRate : 0);
+      const revenueDecision = c.revenueAcceptance?.decision || '';
+      const revenueAcceptedPercent = revenueDecision === 'full'
+        ? 100
+        : revenueDecision === 'partial'
+          ? Math.min(100, Math.max(0, Number(c.revenueAcceptance?.percent || 0)))
+          : 0;
+      const revenueAcceptedMnt = revenueBaseMnt * revenueAcceptedPercent / 100;
       const desc = c.type === 'account_revenue'
         ? `${f.entityName || 'Байгууллага'} - 3 жилийн дансны орлогын төлөвлөгөө`
         : [f.propertyType || f.make, f.ownerName].filter(Boolean).join(' — ');
@@ -493,13 +505,16 @@ const normalizeLoanRequest = (request) => {
       return {
         collateralType: c.type === 'real_estate' ? 'real_estate' : c.type === 'vehicle' ? 'vehicle' : c.type === 'account_revenue' ? 'account_revenue' : 'other',
         description: desc || c.type,
-        estimatedValue: String(coveredAmt || oAmt || ''),
+        estimatedValue: String(c.type === 'account_revenue' ? revenueAcceptedMnt : (coveredAmt || oAmt || '')),
         ownerName: f.ownerName || '',
         ownerRelation: c.ownerRelation || '',
         hasPlate: c.hasPlate || (plateNum ? 'yes' : 'no'),
         plateNumber: plateNum,
         projectedRevenueAnalysis: c.type === 'account_revenue' ? f : null,
         projectedRevenueExchangeRate: c.type === 'account_revenue' ? (f.exchangeRate || '') : '',
+        projectedRevenueAcceptance: c.type === 'account_revenue'
+          ? { ...(c.revenueAcceptance || {}), percent: revenueAcceptedPercent, baseMnt: revenueBaseMnt, acceptedMnt: revenueAcceptedMnt }
+          : null,
       };
     });
 
@@ -1274,6 +1289,13 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       collaterals: (prev.collaterals || []).map((c, i) => i === index ? { ...c, [key]: value } : c),
     }));
   };
+  const patchCollateral = (index, patch) => {
+    setSelectedId(null);
+    setForm((prev) => ({
+      ...prev,
+      collaterals: (prev.collaterals || []).map((c, i) => i === index ? { ...c, ...patch } : c),
+    }));
+  };
   const removeCollateral = (index) => {
     setSelectedId(null);
     setForm((prev) => ({ ...prev, collaterals: (prev.collaterals || []).filter((_, i) => i !== index) }));
@@ -1938,6 +1960,13 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
         ? `${native} / ${formatMoney(Number(value || 0) * rate)}`
         : native;
     };
+    const formatProjectedAcceptance = (collateral) => {
+      const acceptance = collateral.projectedRevenueAcceptance || {};
+      if (acceptance.decision === 'full') return 'Бүрэн зөвшөөрсөн (100%)';
+      if (acceptance.decision === 'partial') return `Хувиар зөвшөөрсөн (${Number(acceptance.percent || 0)}%)`;
+      if (acceptance.decision === 'reject') return 'Татгалзсан';
+      return 'Шийдвэр бүртгэгдээгүй';
+    };
 
     const kpiCard = (label, value, color = '#0f172a', sub = '') =>
       `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;text-align:center">
@@ -2458,6 +2487,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
               return `<table style="margin-bottom:8px"><tbody>
                 <tr><td class="label-cell">Байгууллага / Валют</td><td colspan="3">${esc(plan.entityName || '—')} · ${esc(plan.currency || 'UNKNOWN')}${rate > 0 ? ` · 1 ${esc(plan.currency)} = ${formatMoney(rate)}` : ''}</td></tr>
                 <tr><td class="label-cell">3 жилийн нийт урсгал</td><td class="positive">${formatProjectedRevenueMoney(c, plan.threeYearTotalInflow)}</td><td class="label-cell">Сарын дундаж</td><td class="positive">${formatProjectedRevenueMoney(c, plan.averageMonthlyInflow)}</td></tr>
+                <tr><td class="label-cell">Барьцааны шийдвэр</td><td>${esc(formatProjectedAcceptance(c))}</td><td class="label-cell">Хүлээн зөвшөөрсөн дүн</td><td class="positive">${formatMoney(parseNumber(c.estimatedValue))}</td></tr>
               </tbody></table>
               ${years.length ? `<table style="margin-bottom:8px"><thead><tr><th>Он</th><th style="text-align:right">Борлуулалт</th><th style="text-align:right">Цэвэр ашиг</th><th style="text-align:right">Дансаар орох урсгал</th></tr></thead><tbody>${years.map((year, yearIndex) => `<tr style="${rowStyle(yearIndex)}"><td>${esc(year.year || '—')}</td><td style="text-align:right">${formatProjectedRevenueMoney(c, year.revenue)}</td><td style="text-align:right">${formatProjectedRevenueMoney(c, year.netProfit)}</td><td style="text-align:right;font-weight:700;color:#15803d">${formatProjectedRevenueMoney(c, year.bankAccountInflow)}</td></tr>`).join('')}</tbody></table>` : ''}
               ${plan.analysis ? `<div style="padding:8px;background:#f8fafc;border-radius:8px;font-size:11px;line-height:1.5">${esc(plan.analysis)}</div>` : ''}`;
@@ -3675,13 +3705,13 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                             <input value={col.description} onChange={(e) => updateCollateral(index, 'description', e.target.value)} placeholder="Хаяг, марк, тоо..." className={textInput} />
                           </Field>
                         )}
-                        <Field label="Үнэлгээний дүн ₮">
+                        {col.collateralType !== 'account_revenue' && <Field label="Үнэлгээний дүн ₮">
                           <input value={formatNumberInput(col.estimatedValue)} onChange={(e) => updateCollateral(index, 'estimatedValue', formatNumberInput(e.target.value))} placeholder="0" className={textInput} inputMode="numeric" />
-                        </Field>
-                        <Field label="Эзэмшигчийн нэр">
+                        </Field>}
+                        {col.collateralType !== 'account_revenue' && <Field label="Эзэмшигчийн нэр">
                           <input value={col.ownerName} onChange={(e) => updateCollateral(index, 'ownerName', e.target.value)} className={textInput} />
-                        </Field>
-                        <Field label="Өмчлөлийн хамаарал">
+                        </Field>}
+                        {col.collateralType !== 'account_revenue' && <Field label="Өмчлөлийн хамаарал">
                           <select value={col.ownerRelation || ''} onChange={(e) => updateCollateral(index, 'ownerRelation', e.target.value)} className={textInput}>
                             <option value="">— Сонгох —</option>
                             {col.collateralType === 'vehicle' ? (
@@ -3698,7 +3728,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                               </>
                             )}
                           </select>
-                        </Field>
+                        </Field>}
                         {parseNumber(col.estimatedValue) > 0 && (
                           <div className="flex items-end">
                             <div className="w-full">
@@ -3721,6 +3751,40 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                         const currency = normalizeCurrency(plan.currency);
                         const rate = Number(col.projectedRevenueExchangeRate || 0);
                         const planYears = Array.isArray(plan.planYears) ? plan.planYears : [];
+                        const acceptance = col.projectedRevenueAcceptance || {};
+                        const baseMnt = isMntCurrency(currency)
+                          ? Number(plan.threeYearTotalInflow || 0)
+                          : (currency !== 'UNKNOWN' && rate > 0 ? Number(plan.threeYearTotalInflow || 0) * rate : 0);
+                        const acceptedPercent = acceptance.decision === 'full'
+                          ? 100
+                          : acceptance.decision === 'partial'
+                            ? Math.min(100, Math.max(0, Number(acceptance.percent || 0)))
+                            : 0;
+                        const acceptedMnt = baseMnt * acceptedPercent / 100;
+                        const applyAcceptance = (nextAcceptance) => {
+                          const pct = nextAcceptance.decision === 'full'
+                            ? 100
+                            : nextAcceptance.decision === 'partial'
+                              ? Math.min(100, Math.max(0, Number(nextAcceptance.percent || 0)))
+                              : 0;
+                          const amount = baseMnt * pct / 100;
+                          patchCollateral(index, {
+                            estimatedValue: String(amount),
+                            projectedRevenueAcceptance: { ...nextAcceptance, percent: pct, baseMnt, acceptedMnt: amount },
+                          });
+                        };
+                        const applyExchangeRate = (value) => {
+                          const nextRate = Number(value || 0);
+                          const nextBase = isMntCurrency(currency)
+                            ? Number(plan.threeYearTotalInflow || 0)
+                            : (currency !== 'UNKNOWN' && nextRate > 0 ? Number(plan.threeYearTotalInflow || 0) * nextRate : 0);
+                          const amount = nextBase * acceptedPercent / 100;
+                          patchCollateral(index, {
+                            projectedRevenueExchangeRate: value,
+                            estimatedValue: String(amount),
+                            projectedRevenueAcceptance: { ...acceptance, percent: acceptedPercent, baseMnt: nextBase, acceptedMnt: amount },
+                          });
+                        };
                         const money = (value) => {
                           const native = formatNativeMoney(value, currency);
                           return rate > 0 && !isMntCurrency(currency) && currency !== 'UNKNOWN'
@@ -3737,9 +3801,30 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                               {!isMntCurrency(currency) && currency !== 'UNKNOWN' && (
                                 <label className="space-y-1">
                                   <span className="block text-[11px] font-bold text-slate-500">1 {currency} = хэдэн ₮</span>
-                                  <input type="number" min="0" step="0.01" value={col.projectedRevenueExchangeRate || ''} onChange={(event) => updateCollateral(index, 'projectedRevenueExchangeRate', event.target.value)} className={`${textInput} w-40`} placeholder="0" />
+                                  <input type="number" min="0" step="0.01" value={col.projectedRevenueExchangeRate || ''} onChange={(event) => applyExchangeRate(event.target.value)} className={`${textInput} w-40`} placeholder="0" />
                                 </label>
                               )}
+                            </div>
+                            <div className="bg-white border rounded-xl p-3 space-y-3">
+                              <p className="text-xs font-bold text-slate-600">Ирээдүйн орлогыг барьцаанд зөвшөөрөх шийдвэр</p>
+                              <div className="grid grid-cols-3 gap-2">
+                                {[['full', 'Бүрэн зөвшөөрөх'], ['partial', 'Хувиар зөвшөөрөх'], ['reject', 'Татгалзах']].map(([value, title]) => (
+                                  <button key={value} type="button" onClick={() => applyAcceptance({ ...acceptance, decision: value, percent: value === 'full' ? 100 : value === 'reject' ? 0 : acceptance.percent })}
+                                    className={`py-2 rounded-lg text-xs font-bold border ${acceptance.decision === value ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'text-slate-600 border-slate-200'}`}>
+                                    {title}
+                                  </button>
+                                ))}
+                              </div>
+                              {acceptance.decision === 'partial' && (
+                                <input type="number" min="0" max="100" step="0.1" value={acceptance.percent || ''} onChange={(event) => applyAcceptance({ ...acceptance, decision: 'partial', percent: event.target.value })} className={`${textInput} w-40`} placeholder="Зөвшөөрөх %" />
+                              )}
+                              {!isMntCurrency(currency) && currency !== 'UNKNOWN' && !rate && (
+                                <p className="text-xs font-bold text-amber-700">Ханш оруулаагүй үед барьцааны дүн тооцогдохгүй.</p>
+                              )}
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="bg-slate-50 rounded-lg border p-2">Суурь дүн: <b>{formatMoney(baseMnt)}</b></div>
+                                <div className="bg-green-50 rounded-lg border border-green-200 p-2">Зөвшөөрсөн: <b className="text-green-700">{formatMoney(acceptedMnt)}</b></div>
+                              </div>
                             </div>
                             {rate > 0 && !isMntCurrency(currency) && currency !== 'UNKNOWN' && (
                               <p className="text-xs text-green-700 font-bold bg-green-50 border border-green-200 rounded-lg px-3 py-2">
@@ -4878,6 +4963,14 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                         const plan = collateral.projectedRevenueAnalysis || {};
                         const currency = normalizeCurrency(plan.currency);
                         const rate = Number(collateral.projectedRevenueExchangeRate || 0);
+                        const acceptance = collateral.projectedRevenueAcceptance || {};
+                        const decisionLabel = acceptance.decision === 'full'
+                          ? 'Бүрэн зөвшөөрсөн (100%)'
+                          : acceptance.decision === 'partial'
+                            ? `Хувиар зөвшөөрсөн (${Number(acceptance.percent || 0)}%)`
+                            : acceptance.decision === 'reject'
+                              ? 'Татгалзсан'
+                              : 'Шийдвэр бүртгэгдээгүй';
                         const money = (value) => {
                           const native = formatNativeMoney(value, currency);
                           return rate > 0 && !isMntCurrency(currency) && currency !== 'UNKNOWN'
@@ -4887,6 +4980,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                         return (
                           <div key={index} className="border rounded-xl p-4 space-y-3 bg-slate-50">
                             <p className="text-xs font-bold text-slate-600">{plan.entityName || 'Байгууллага'} · {currency}{rate > 0 ? ` · 1 ${currency} = ${formatMoney(rate)}` : ''}</p>
+                            <p className="text-xs text-slate-600">Барьцааны шийдвэр: <b className="text-[#003B5C]">{decisionLabel}</b> · Хүлээн зөвшөөрсөн дүн: <b className="text-green-700">{formatMoney(parseNumber(collateral.estimatedValue))}</b></p>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                               {[['3 жилийн нийт урсгал', plan.threeYearTotalInflow], ['Жилийн дундаж', plan.averageAnnualInflow], ['Сарын дундаж', plan.averageMonthlyInflow], ['Доод жилийн урсгал', plan.minimumAnnualInflow]].map(([label, value]) => (
                                 <div key={label} className="bg-white border rounded-lg p-2">

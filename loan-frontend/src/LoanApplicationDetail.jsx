@@ -1293,7 +1293,40 @@ const EditFieldModal = ({ fieldKey, currentValue, onConfirm, onClose }) => {
 // ─────────────────────────────────────────────
 // COLLATERAL SECTION
 // ─────────────────────────────────────────────
-const VALUATION_TYPES = ['real_estate', 'vehicle', 'account_revenue', 'contract'];
+const VALUATION_TYPES = ['real_estate', 'vehicle', 'contract'];
+const REVENUE_ACCEPTANCE_LABELS = {
+  full: 'Бүрэн зөвшөөрсөн',
+  partial: 'Хувиар зөвшөөрсөн',
+  reject: 'Татгалзсан',
+};
+
+const calculateRevenueAcceptanceCoverage = (item = {}) => {
+  const fields = item.fields || {};
+  const currency = String(fields.currency || 'UNKNOWN').toUpperCase();
+  const exchangeRate = Number(fields.exchangeRate || 0);
+  const nativeTotal = Number(fields.threeYearTotalInflow || 0);
+  const baseMnt = currency === 'MNT'
+    ? nativeTotal
+    : (!['UNKNOWN', 'MNT'].includes(currency) && exchangeRate > 0 ? nativeTotal * exchangeRate : 0);
+  const acceptance = item.revenueAcceptance || {};
+  const decision = acceptance.decision || '';
+  const percent = decision === 'full'
+    ? 100
+    : decision === 'partial'
+      ? Math.min(100, Math.max(0, Number(acceptance.percent || 0)))
+      : 0;
+  return { currency, nativeTotal, exchangeRate, baseMnt, decision, percent, acceptedMnt: baseMnt * percent / 100 };
+};
+
+const calculateCollateralCoverage = (item = {}) => {
+  if (item.type === 'account_revenue') {
+    const result = calculateRevenueAcceptanceCoverage(item);
+    return { sourceAmount: result.baseMnt, coveredAmount: result.acceptedMnt, rate: result.percent, decision: result.decision };
+  }
+  const sourceAmount = Number(item.valuation?.officerAmount || 0);
+  const rate = Number(item.valuation?.coverageRate || 0);
+  return { sourceAmount, coveredAmount: sourceAmount * rate / 100, rate, decision: '' };
+};
 
 const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFilesByType = {} }) => {
   const [analyzing, setAnalyzing] = useState('');
@@ -1301,7 +1334,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
   const [auditOpen, setAuditOpen] = useState({});
   const existingCollateralFiles = Object.values(existingFilesByType).flat();
 
-  const emptyItem = (type) => ({ type, files: [], aiData: null, fields: {}, auditLog: [], hasPlate: 'yes', plateNumber: '', ownerRelation: '', valuation: { borrowerAmount: '', officerAmount: '', date: '', sourceFiles: [], sourceLink: '', sourceNotes: '', coverageRate: '', notes: '' }, notes: '' });
+  const emptyItem = (type) => ({ type, files: [], aiData: null, fields: {}, auditLog: [], hasPlate: 'yes', plateNumber: '', ownerRelation: '', revenueAcceptance: { decision: '', percent: '', notes: '' }, valuation: { borrowerAmount: '', officerAmount: '', date: '', sourceFiles: [], sourceLink: '', sourceNotes: '', coverageRate: '', notes: '' }, notes: '' });
   const addItem = (type) => onChange([...items, emptyItem(type)]);
   const removeItem = (idx) => onChange(items.filter((_, i) => i !== idx));
   const updateItem = (idx, patch) => onChange(items.map((it, i) => i === idx ? { ...it, ...patch } : it));
@@ -1731,6 +1764,57 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
                 </div>
               </div>
             )}
+
+            {item.type === 'account_revenue' && (() => {
+              const acceptance = item.revenueAcceptance || {};
+              const coverage = calculateRevenueAcceptanceCoverage(item);
+              const updateAcceptance = (patch) => updateItem(idx, { revenueAcceptance: { ...acceptance, ...patch } });
+              const needsRate = !['MNT', 'UNKNOWN'].includes(coverage.currency) && !coverage.exchangeRate;
+              return (
+                <div className="bg-white rounded-xl border p-3 space-y-4">
+                  <p className="text-xs font-bold text-slate-500 flex items-center gap-1.5"><BadgeDollarSign size={13} /> Ирээдүйн орлогыг барьцаанд зөвшөөрөх шийдвэр</p>
+                  <p className="text-xs text-slate-500">Суурь дүн нь AI-аар уншсан 3 жилийн дансаар орох нийт урсгал байна.</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      ['full', 'Бүрэн зөвшөөрөх'],
+                      ['partial', 'Хувиар зөвшөөрөх'],
+                      ['reject', 'Татгалзах'],
+                    ].map(([value, title]) => (
+                      <button key={value} type="button" onClick={() => updateAcceptance({ decision: value, percent: value === 'full' ? '100' : value === 'reject' ? '0' : acceptance.percent })}
+                        className={`py-2 rounded-lg text-xs font-bold border transition-all ${acceptance.decision === value ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#003B5C]'}`}>
+                        {title}
+                      </button>
+                    ))}
+                  </div>
+                  {acceptance.decision === 'partial' && (
+                    <label className="block space-y-1 max-w-xs">
+                      <span className="text-xs font-bold text-slate-600">Зөвшөөрөх хувь (%)</span>
+                      <input type="number" min="0" max="100" step="0.1" value={acceptance.percent || ''} onChange={e => updateAcceptance({ percent: e.target.value })} className={inp} placeholder="0-100" />
+                    </label>
+                  )}
+                  {needsRate && (
+                    <p className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      Төгрөгөөр барьцаанд тооцохын өмнө {coverage.currency} валютын ханшийг дээр оруулна уу.
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-slate-50 border p-3">
+                      <p className="text-[10px] uppercase font-bold text-slate-400">Зөвшөөрөх суурь дүн (3 жил)</p>
+                      <p className="text-sm font-bold text-[#003B5C] mt-1">₮{coverage.baseMnt.toLocaleString('mn-MN')}</p>
+                    </div>
+                    <div className="rounded-lg bg-green-50 border border-green-200 p-3">
+                      <p className="text-[10px] uppercase font-bold text-green-600">Барьцаанд хүлээн зөвшөөрсөн дүн</p>
+                      <p className="text-sm font-bold text-green-700 mt-1">₮{coverage.acceptedMnt.toLocaleString('mn-MN')}</p>
+                      {coverage.decision && <p className="text-[11px] text-green-700 mt-1">{REVENUE_ACCEPTANCE_LABELS[coverage.decision]}{coverage.decision === 'partial' ? ` (${coverage.percent}%)` : ''}</p>}
+                    </div>
+                  </div>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-bold text-slate-600">Шийдвэрийн тайлбар</span>
+                    <textarea rows={2} value={acceptance.notes || ''} onChange={e => updateAcceptance({ notes: e.target.value })} className={inp + ' resize-none'} placeholder="Зөвшөөрсөн эсвэл татгалзсан үндэслэл..." />
+                  </label>
+                </div>
+              );
+            })()}
 
             {/* Valuation */}
             {hasValuation && (() => {
@@ -3112,8 +3196,8 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                 const loanAmt = parseFmtNum(appData.loanRequest?.amount) || 0;
                 const rows = appData.collaterals.filter(c => ['real_estate','vehicle','account_revenue','contract'].includes(c.type));
                 if (!rows.length) return null;
-                const totalOfficer = rows.reduce((s, c) => s + (Number(c.valuation?.officerAmount) || 0), 0);
-                const totalCovered = rows.reduce((s, c) => { const a = Number(c.valuation?.officerAmount) || 0; const r = Number(c.valuation?.coverageRate) || 0; return s + a * r / 100; }, 0);
+                const totalOfficer = rows.reduce((s, c) => s + calculateCollateralCoverage(c).sourceAmount, 0);
+                const totalCovered = rows.reduce((s, c) => s + calculateCollateralCoverage(c).coveredAmount, 0);
                 const coverPct = loanAmt > 0 ? (totalCovered / loanAmt * 100).toFixed(1) : null;
                 const ok = Number(coverPct) >= 100;
                 return (
@@ -3126,11 +3210,11 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
                         {coverPct !== null ? <p className={`text-sm font-bold ${ok ? 'text-green-600' : 'text-red-500'}`}>{coverPct}%</p> : <p className="text-xs text-slate-400">Зээлийн дүн оруулна уу</p>}
                       </div>
                     </div>
-                    {rows.map((c, i) => { const meta = COLLATERAL_TYPES.find(x => x.key === c.type); const oAmt = Number(c.valuation?.officerAmount) || 0; const rate = Number(c.valuation?.coverageRate) || 0; const cov = oAmt * rate / 100; return (
+                    {rows.map((c, i) => { const meta = COLLATERAL_TYPES.find(x => x.key === c.type); const result = calculateCollateralCoverage(c); const oAmt = result.sourceAmount; const rate = result.rate; const cov = result.coveredAmount; return (
                       <div key={i} className="flex items-center justify-between text-xs text-slate-600 border-t pt-2">
                         <span className="font-semibold">{meta?.label || c.type} {i + 1}</span>
-                        <span>Ажилтны үнэлгээ: ₮{oAmt.toLocaleString('mn-MN')}</span>
-                        <span>{rate}% → ₮{cov.toLocaleString('mn-MN')}</span>
+                        <span>{c.type === 'account_revenue' ? '3 жилийн орлогын суурь' : 'Ажилтны үнэлгээ'}: ₮{oAmt.toLocaleString('mn-MN')}</span>
+                        <span>{c.type === 'account_revenue' && result.decision ? `${REVENUE_ACCEPTANCE_LABELS[result.decision]} · ` : ''}{rate}% → ₮{cov.toLocaleString('mn-MN')}</span>
                       </div>
                     ); })}
                   </div>

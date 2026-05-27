@@ -1628,6 +1628,13 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       ? `${native} / ${nfmt(Number(value || 0) * rate)} ₮`
       : native;
   };
+  const formatRevenueAcceptance = (collateral) => {
+    const acceptance = collateral.projectedRevenueAcceptance || {};
+    if (acceptance.decision === 'full') return 'Бүрэн зөвшөөрсөн (100%)';
+    if (acceptance.decision === 'partial') return `Хувиар зөвшөөрсөн (${Number(acceptance.percent || 0)}%)`;
+    if (acceptance.decision === 'reject') return 'Татгалзсан';
+    return 'Шийдвэр бүртгэгдээгүй';
+  };
   const guarantors = b.guarantors || [];
   const riskFlags = b.riskFlags || b.analystRisks || [];
   const scoreBreakdown = cs.scoreBreakdown || [];
@@ -1858,6 +1865,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
           return `<div style="font-size:10.5px;color:#334155;margin-bottom:6px">
             <strong>${esc(plan.entityName || 'Байгууллага')}</strong> · ${esc(plan.currency || 'UNKNOWN')}${rate > 0 ? ` · 1 ${esc(plan.currency)} = ${nfmt(rate)} ₮` : ''}
             <div style="margin-top:3px">3 жилийн нийт урсгал: <strong style="color:#15803d">${esc(formatProjectedRevenueAmount(c, plan.threeYearTotalInflow))}</strong> · Сарын дундаж: <strong>${esc(formatProjectedRevenueAmount(c, plan.averageMonthlyInflow))}</strong></div>
+            <div style="margin-top:3px">Барьцааны шийдвэр: <strong>${esc(formatRevenueAcceptance(c))}</strong> · Хүлээн зөвшөөрсөн дүн: <strong style="color:#15803d">${nfmt(c.estimatedValue)} ₮</strong></div>
           </div>`;
         }).join('')}
       </div>` : '';
@@ -2455,6 +2463,8 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
                     <div className="mt-2 border-t pt-2 space-y-1 text-slate-600">
                       <p>3 жилийн нийт урсгал: <b className="text-green-700">{formatProjectedRevenueAmount(c, c.projectedRevenueAnalysis.threeYearTotalInflow)}</b></p>
                       <p>Сарын дундаж: <b>{formatProjectedRevenueAmount(c, c.projectedRevenueAnalysis.averageMonthlyInflow)}</b></p>
+                      <p>Барьцааны шийдвэр: <b className="text-[#003B5C]">{formatRevenueAcceptance(c)}</b></p>
+                      <p>Хүлээн зөвшөөрсөн дүн: <b className="text-green-700">{nfmt(c.estimatedValue)} ₮</b></p>
                       {Number(c.projectedRevenueExchangeRate || 0) > 0 && <p>Ханш: 1 {c.projectedRevenueAnalysis.currency} = {nfmt(c.projectedRevenueExchangeRate)} ₮</p>}
                       {Array.isArray(c.projectedRevenueAnalysis.planYears) && c.projectedRevenueAnalysis.planYears.length > 0 && (
                         <table className="w-full mt-2 text-[11px]">

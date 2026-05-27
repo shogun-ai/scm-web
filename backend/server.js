@@ -266,6 +266,7 @@ function getLoanOfficerInput(loanDoc) {
             ownerRelation: c.ownerRelation,
             officerAmount: toNumber(c.valuation?.officerAmount),
             coverageRate: toNumber(c.valuation?.coverageRate),
+            revenueAcceptance: compact(c.revenueAcceptance || {}),
             hasFiles: Boolean(c.files?.length),
             fields: compact(c.fields || {}),
         })),
@@ -303,7 +304,18 @@ function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules', policySo
     const term = input.loanRequest.term;
     const monthlyIncome = toNumber(input.borrower.monthlyIncome);
     const collateralCovered = (input.collaterals || []).reduce((sum, c) => {
-        return sum + (toNumber(c.officerAmount) * toNumber(c.coverageRate) / 100);
+        if (c.type !== 'account_revenue') return sum + (toNumber(c.officerAmount) * toNumber(c.coverageRate) / 100);
+        const currency = String(c.fields?.currency || 'UNKNOWN').toUpperCase();
+        const rate = toNumber(c.fields?.exchangeRate);
+        const total = toNumber(c.fields?.threeYearTotalInflow);
+        const baseMnt = currency === 'MNT' ? total : (!['UNKNOWN', 'MNT'].includes(currency) && rate > 0 ? total * rate : 0);
+        const decision = c.revenueAcceptance?.decision || '';
+        const percent = decision === 'full'
+            ? 100
+            : decision === 'partial'
+                ? Math.min(100, Math.max(0, toNumber(c.revenueAcceptance?.percent)))
+                : 0;
+        return sum + (baseMnt * percent / 100);
     }, 0);
     const coverageRatio = amount > 0 ? collateralCovered / amount : 0;
     const flags = [];
@@ -345,6 +357,12 @@ function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules', policySo
         const projectedCurrency = String(projectedRevenueCollateral.fields?.currency || 'UNKNOWN').toUpperCase();
         const projectedRate = toNumber(projectedRevenueCollateral.fields?.exchangeRate);
         const projectedMonthly = toNumber(projectedRevenueCollateral.fields?.averageMonthlyInflow);
+        const revenueDecision = projectedRevenueCollateral.revenueAcceptance?.decision || '';
+        const revenuePercent = revenueDecision === 'full'
+            ? 100
+            : revenueDecision === 'partial'
+                ? Math.min(100, Math.max(0, toNumber(projectedRevenueCollateral.revenueAcceptance?.percent)))
+                : 0;
         if (!plannedYears.length) {
             conditions.push('Дансны орлогын 3 жилийн төлөвлөгөөний AI шинжилгээг баталгаажуулах.');
         } else {
@@ -354,6 +372,13 @@ function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules', policySo
             conditions.push(`Дансны орлогын төлөвлөгөө ${projectedCurrency} валютаар байгаа тул төгрөгийн ханш оруулж баталгаажуулах.`);
         } else if (projectedMonthly > 0 && projectedRate > 0 && projectedCurrency !== 'MNT') {
             approvalReasons.push(`Төлөвлөгөөт дансны сарын дундаж орлого ${(projectedMonthly * projectedRate).toLocaleString('mn-MN')} ₮-өөр тооцогдсон.`);
+        }
+        if (!revenueDecision) {
+            conditions.push('Төлөвлөгөөт дансны орлогыг барьцаанд зөвшөөрөх эсэх шийдвэрийг бүртгэх.');
+        } else if (revenueDecision === 'reject') {
+            flags.push('Төлөвлөгөөт дансны орлогыг барьцаанд хүлээн зөвшөөрөөгүй.');
+        } else {
+            approvalReasons.push(`Төлөвлөгөөт дансны орлогыг барьцаанд ${revenuePercent}% хэмжээгээр хүлээн зөвшөөрсөн.`);
         }
         if (projectedRevenueCollateral.fields?.riskFlags?.length) {
             flags.push(...projectedRevenueCollateral.fields.riskFlags.slice(0, 2));
@@ -606,7 +631,7 @@ async function buildAiLoanOfficerAssessment(loanDoc) {
                     'policyCompliance.checks бүр дээр policyRef, policyClause, evidence, finding, recommendation бөглө.',
                     'policyClause-д боломжтой бол журмын заалтын дугаар, бүлэг, хэсэг, гарчиг эсвэл хамгийн ойролцоо хэсгийн нэрийг бич.',
                     'finding-д тухайн заалттай нийцэж байна, нийцэхгүй байна, эсвэл мэдээлэл дутуу тул бүрэн тогтоох боломжгүй гэж шууд илэрхийл.',
-                    'account_revenue төрлийн барьцаанд төлөвлөгөөт дансны орлого, валют, exchangeRate байвал төгрөгийн хөрвүүлсэн дүнг үндэслэлд ашигла. Гадаад валюттай мөртлөө exchangeRate байхгүй бол ханш баталгаажуулах нөхцөл заавал оруул.',
+                    'account_revenue төрлийн барьцаанд төлөвлөгөөт дансны орлого, валют, exchangeRate болон revenueAcceptance шийдвэрийг ашигла. Барьцааны хамрах дүнг зөвхөн зөвшөөрсөн хувь дээр үндэслэн тооц. Гадаад валюттай мөртлөө exchangeRate байхгүй бол ханш баталгаажуулах нөхцөл заавал оруул.',
                     'Нөхцөлтэй санал бол яг ямар нөхцөл хангах ёстойг тодорхой бич. Зөвшөөрөх/татгалзах үндэслэлийг тоо болон баримтаар тайлбарла.',
                     'Allowed levels: low, medium, high. Allowed recommendations: approve, conditional, manual_review, reject.'
                 ].join(' '),
@@ -790,6 +815,7 @@ function getComplianceInput(loanDoc) {
             hasFiles: Boolean(c.files?.length),
             valuation: c.valuation,
             fields: c.fields,
+            revenueAcceptance: c.revenueAcceptance,
         })),
         guarantors,
         financialReports: compact(appData.financialReports || null),
@@ -821,6 +847,10 @@ function buildRuleBasedComplianceReview(loanDoc, policySources = [], source = 'r
     if (projectedRevenueCollateral && !['MNT', 'UNKNOWN'].includes(projectedRevenueCurrency) && !toNumber(projectedRevenueCollateral.fields?.exchangeRate)) {
         missingDocuments.push(`Дансны орлогын төлөвлөгөөний ${projectedRevenueCurrency} ханшийн баталгаажуулалт`);
         requiredActions.push('Төлөвлөгөөт дансны орлогын гадаад валютын ханшийг оруулж, төгрөгийн дүнг баталгаажуулах.');
+    }
+    if (projectedRevenueCollateral && !projectedRevenueCollateral.revenueAcceptance?.decision) {
+        missingDocuments.push('Дансны орлогыг барьцаанд зөвшөөрөх шийдвэр');
+        requiredActions.push('Ирээдүйн дансны орлогыг барьцаанд бүрэн, хувиар зөвшөөрөх эсвэл татгалзах шийдвэрийг бүртгэх.');
     }
 
     checks.push({
@@ -977,7 +1007,7 @@ async function buildComplianceReviewAssessment(loanDoc) {
                     'evidence-д тухайн зээлийн хүсэлт дээр ямар мэдээлэл байгаа/байхгүйг тодорхой бич.',
                     'finding болон conflictReason-д тухайн policyClause-тай "нийцэж байна", "нийцэхгүй байна", эсвэл "мэдээлэл дутуу тул нийцлийг бүрэн тогтоох боломжгүй" гэж шууд илэрхийл.',
                     'conflictReason-д "журмын тухайн заалт ингэж шаардсан боловч хүсэлт дээр ингэж байна, тиймээс зөрчил/анхаарах зүйл байна" гэсэн логикоор тайлбарла.',
-                    'account_revenue төрлийн барьцаанд гадаад валютын төлөвлөгөө байгаа бол exchangeRate бүртгэгдсэн эсэх, төгрөгийн дүнгээр баталгаажуулсан эсэхийг баримтын бүрдэлд шалга.',
+                    'account_revenue төрлийн барьцаанд гадаад валютын төлөвлөгөө байгаа бол exchangeRate бүртгэгдсэн эсэх, төгрөгийн дүнгээр баталгаажуулсан эсэх, revenueAcceptance шийдвэрээр хүлээн зөвшөөрсөн хувийг тогтоосон эсэхийг шалга.',
                     'policyRef талбарт ашигласан бодлого/журмын нэрийг товч дурд. Мэдээлэл хангалтгүй бол status-ыг insufficient_information эсвэл needs_review гэж тэмдэглэ.'
                 ].join(' '),
                 input: [{
@@ -5274,6 +5304,7 @@ const generateLoanText = (borrower = {}, outputs = {}) => {
     const revenueMonthlyMnt = revenueRate > 0 && !['MNT', 'UNKNOWN'].includes(revenueCurrency)
         ? toNumber(revenuePlan.averageMonthlyInflow) * revenueRate
         : (revenueCurrency === 'MNT' ? toNumber(revenuePlan.averageMonthlyInflow) : 0);
+    const revenueAcceptance = accountRevenue?.projectedRevenueAcceptance || {};
     const parts = [
         `Төрөл:${borrower.borrowerType || fs.borrowerType || '-'}`,
         `Зориулалт:${borrower.purpose || fs.purpose || '-'}`,
@@ -5293,6 +5324,8 @@ const generateLoanText = (borrower = {}, outputs = {}) => {
         `ДансныОрлогоТөлөвлөгөө:${accountRevenue ? `${safeList(revenuePlan.planYears).length}жил` : '-'}`,
         `ДансныОрлогоВалют:${accountRevenue ? revenueCurrency : '-'}`,
         `ДансныОрлогоСарынMNT:${revenueMonthlyMnt || 0}`,
+        `ДансныОрлогоШийдвэр:${accountRevenue ? (revenueAcceptance.decision || '-') : '-'}`,
+        `ДансныОрлогоЗөвшөөрсөнMNT:${accountRevenue ? toNumber(accountRevenue.estimatedValue) : 0}`,
         `БатланДаагч:${(outputs.guarantorSummary?.items || []).length}ш`,
         `БусадЗээл:${(borrower.otherLoans || []).length}ш`,
         `БусадЗээлҮлдэгдэл:${ie.otherLoanBalance || 0}`,
@@ -5362,6 +5395,7 @@ app.post('/api/loan-research', authenticateUser, (req, res) => {
                                     ...(collateral.fields || {}),
                                     exchangeRate: researchCollateral.projectedRevenueExchangeRate || collateral.fields?.exchangeRate || '',
                                 },
+                                revenueAcceptance: researchCollateral.projectedRevenueAcceptance || collateral.revenueAcceptance || {},
                             };
                         }),
                     };
