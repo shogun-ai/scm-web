@@ -36,5 +36,6 @@ export const GUARANTOR_TYPES = ['Хамтран зээлдэгч', 'Батлан
 export const COLLATERAL_TYPE_KEYS = [
   { key: 'real_estate', label: 'Үл хөдлөх хөрөнгө' },
   { key: 'vehicle',     label: 'Тээврийн хэрэгсэл' },
+  { key: 'account_revenue', label: 'Дансны орлого' },
   { key: 'contract',    label: 'Гэрээ / Бусад' },
 ];

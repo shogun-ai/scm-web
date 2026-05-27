@@ -124,7 +124,7 @@ import {
 const PRODUCTS = PRODUCTS_MAP;
 const COLLATERAL_TYPES = COLLATERAL_TYPE_KEYS.map(ct => ({
   ...ct,
-  icon: { real_estate: Home, vehicle: Car, contract: FileText }[ct.key] || FileText,
+  icon: { real_estate: Home, vehicle: Car, account_revenue: TrendingUp, contract: FileText }[ct.key] || FileText,
 }));
 
 const inp = 'w-full p-2.5 border rounded-lg text-sm font-semibold text-slate-800 placeholder:text-slate-400 bg-white focus:outline-none focus:border-[#003B5C]';
@@ -1293,7 +1293,7 @@ const EditFieldModal = ({ fieldKey, currentValue, onConfirm, onClose }) => {
 // ─────────────────────────────────────────────
 // COLLATERAL SECTION
 // ─────────────────────────────────────────────
-const VALUATION_TYPES = ['real_estate', 'vehicle', 'contract'];
+const VALUATION_TYPES = ['real_estate', 'vehicle', 'account_revenue', 'contract'];
 
 const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFilesByType = {} }) => {
   const [analyzing, setAnalyzing] = useState('');
@@ -1310,7 +1310,9 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
     if (!files?.length) return;
     const endpoint = collType === 'vehicle'
       ? `${apiUrl}/api/loans/analyze-vehicle-document`
-      : `${apiUrl}/api/loans/analyze-property-document`;
+      : collType === 'account_revenue'
+        ? `${apiUrl}/api/loans/analyze-projected-account-revenue`
+        : `${apiUrl}/api/loans/analyze-property-document`;
     setAnalyzing(String(idx));
     try {
       const fd = new FormData();
@@ -1325,7 +1327,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
     } finally { setAnalyzing(''); }
   };
 
-  const canReadAI = (type) => type === 'vehicle' || type === 'real_estate';
+  const canReadAI = (type) => type === 'vehicle' || type === 'real_estate' || type === 'account_revenue';
 
   const handleEditConfirm = (newVal, reason) => {
     const { idx, key, currentValue } = editingField;
@@ -1412,12 +1414,19 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
 
             {/* File upload */}
             <div className="bg-white rounded-xl border p-3 space-y-2">
-              <span className="text-xs font-bold text-slate-500">Баримт бичиг</span>
+              <span className="text-xs font-bold text-slate-500">
+                {item.type === 'account_revenue' ? '3 жилийн төлөвлөгөөт баланс, орлогын тайлан' : 'Баримт бичиг'}
+              </span>
+              {item.type === 'account_revenue' && (
+                <p className="text-xs text-slate-500">
+                  Ирэх 3 жилийн төлөвлөгөөт баланс, орлогын тайлан эсвэл cash flow файлаа оруулна.
+                </p>
+              )}
               <FilePickerWithPreview
                 files={(item.files || []).filter(f => f instanceof File || f instanceof Blob)}
                 existingFiles={(item.files || []).filter(f => filePreviewUrl(f)).length ? (item.files || []).filter(f => filePreviewUrl(f)) : (existingFilesByType[item.type] || [])}
                 onChange={files => updateItem(idx, { files })}
-                accept=".pdf,image/*"
+                accept={item.type === 'account_revenue' ? '.pdf,image/*,.xlsx,.xls,.csv' : '.pdf,image/*'}
                 onAI={canReadAI(item.type) ? (files) => handleAI(idx, files, item.type) : undefined}
                 aiLoading={analyzing === String(idx)}
                 aiLabel="AI унших"
@@ -1425,6 +1434,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
             </div>
 
             {/* Manual fields: plate + ownership relation */}
+            {item.type !== 'account_revenue' && (
             <div className="bg-white rounded-xl border p-3 space-y-3">
               <p className="text-xs font-bold text-slate-500">Барьцааны мэдээлэл</p>
               {item.type === 'vehicle' && (
@@ -1472,6 +1482,7 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
                 </select>
               </div>
             </div>
+            )}
 
             {/* Fields (AI result, editable) */}
             {hasFields && item.type === 'bank_statement' && (() => {
@@ -1573,7 +1584,72 @@ const CollateralSection = ({ items = [], onChange, apiUrl, showToast, existingFi
               );
             })()}
 
-            {hasFields && item.type !== 'bank_statement' && (
+            {hasFields && item.type === 'account_revenue' && (() => {
+              const currency = String(item.fields.currency || 'UNKNOWN').toUpperCase();
+              const years = Array.isArray(item.fields.planYears) ? item.fields.planYears : [];
+              const risks = Array.isArray(item.fields.riskFlags) ? item.fields.riskFlags : [];
+              return (
+                <div className="bg-white rounded-xl border p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold text-[#003B5C]">Дансны орлогын 3 жилийн төлөвлөгөө</p>
+                      <p className="text-xs text-slate-500">
+                        {item.fields.entityName || 'Байгууллага'} · {currency} · {item.fields.scale || 'unit'}
+                      </p>
+                    </div>
+                    <span className="px-2 py-1 rounded-lg bg-blue-50 text-[11px] font-bold text-[#003B5C]">{years.length} жил</span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {[
+                      ['3 жилийн нийт орох урсгал', item.fields.threeYearTotalInflow],
+                      ['Жилийн дундаж', item.fields.averageAnnualInflow],
+                      ['Сарын дундаж', item.fields.averageMonthlyInflow],
+                      ['Доод жилийн урсгал', item.fields.minimumAnnualInflow],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-lg bg-slate-50 border p-2">
+                        <p className="text-[10px] uppercase font-bold text-slate-400">{label}</p>
+                        <p className="text-xs font-bold text-[#003B5C] mt-1">{formatStatementMoney(value, currency)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {years.length > 0 && (
+                    <div className="overflow-x-auto border-t pt-2">
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="text-slate-400">
+                            <th className="text-left py-1">Он</th>
+                            <th className="text-right py-1">Борлуулалт</th>
+                            <th className="text-right py-1">Цэвэр ашиг</th>
+                            <th className="text-right py-1">Дансаар орох урсгал</th>
+                            <th className="text-right py-1">Үйл ажиллагааны мөнгөн урсгал</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {years.map((year, yearIndex) => (
+                            <tr key={`${year.year}-${yearIndex}`} className="border-t border-slate-100">
+                              <td className="py-1 font-semibold text-slate-700">{year.year || '—'}</td>
+                              <td className="py-1 text-right">{formatStatementMoney(year.revenue, currency)}</td>
+                              <td className="py-1 text-right">{formatStatementMoney(year.netProfit, currency)}</td>
+                              <td className="py-1 text-right font-bold text-green-700">{formatStatementMoney(year.bankAccountInflow, currency)}</td>
+                              <td className="py-1 text-right">{formatStatementMoney(year.operatingCashFlow, currency)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {item.fields.analysis && <p className="text-xs text-slate-600 leading-relaxed">{item.fields.analysis}</p>}
+                  {risks.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 space-y-1">
+                      <p className="text-[10px] font-bold uppercase text-amber-700">Анхаарах зүйлс</p>
+                      {risks.map((risk, riskIndex) => <p key={riskIndex} className="text-xs text-amber-700">• {risk}</p>)}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {hasFields && item.type !== 'bank_statement' && item.type !== 'account_revenue' && (
               <div className="bg-white rounded-xl border p-3 space-y-1">
                 <p className="text-xs font-bold text-slate-500 mb-2">Мэдээлэл</p>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -2703,6 +2779,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
   const collateralExistingFiles = {
     vehicle: existingVehicleFiles,
     real_estate: existingPropertyFiles,
+    account_revenue: filesByField('file_projected_account_revenue'),
     contract: filesByField('file_contract'),
   };
 
@@ -3002,7 +3079,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
               <CollateralSection items={appData.collaterals} onChange={v => set('collaterals', v)} apiUrl={apiUrl} showToast={showToast} existingFilesByType={collateralExistingFiles} />
               {(() => {
                 const loanAmt = parseFmtNum(appData.loanRequest?.amount) || 0;
-                const rows = appData.collaterals.filter(c => ['real_estate','vehicle','contract'].includes(c.type));
+                const rows = appData.collaterals.filter(c => ['real_estate','vehicle','account_revenue','contract'].includes(c.type));
                 if (!rows.length) return null;
                 const totalOfficer = rows.reduce((s, c) => s + (Number(c.valuation?.officerAmount) || 0), 0);
                 const totalCovered = rows.reduce((s, c) => { const a = Number(c.valuation?.officerAmount) || 0; const r = Number(c.valuation?.coverageRate) || 0; return s + a * r / 100; }, 0);

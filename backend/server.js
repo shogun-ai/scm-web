@@ -339,6 +339,18 @@ function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules', policySo
     if (financialAnalysis?.incomeStatement?.netProfit < 0) {
         flags.push('Санхүүгийн тайланд цэвэр алдагдал илэрсэн байна.');
     }
+    const projectedRevenueCollateral = (input.collaterals || []).find(c => c.type === 'account_revenue');
+    if (projectedRevenueCollateral) {
+        const plannedYears = projectedRevenueCollateral.fields?.planYears || [];
+        if (!plannedYears.length) {
+            conditions.push('Дансны орлогын 3 жилийн төлөвлөгөөний AI шинжилгээг баталгаажуулах.');
+        } else {
+            approvalReasons.push(`Дансны орлогын ${plannedYears.length} жилийн төлөвлөгөө шинжлэгдсэн.`);
+        }
+        if (projectedRevenueCollateral.fields?.riskFlags?.length) {
+            flags.push(...projectedRevenueCollateral.fields.riskFlags.slice(0, 2));
+        }
+    }
 
     if (amount) approvalReasons.push(`Хүссэн зээлийн дүн ${amount.toLocaleString('mn-MN')} ₮ бүртгэгдсэн.`);
     if (term) approvalReasons.push(`Зээлийн хугацаа ${term} сар гэж тодорхойлогдсон.`);
@@ -4820,6 +4832,105 @@ app.post('/api/loans/analyze-financial-statements', authenticateUser, (req, res)
         } catch (e) {
             console.error('Financial statement AI error:', e.message);
             res.status(e.statusCode || 500).json({ message: e.message || 'Financial statement analysis failed' });
+        }
+    });
+});
+
+// ============================================================
+// БАРЬЦАА: ИРЭХ 3 ЖИЛИЙН ДАНСНЫ ОРЛОГЫН ТӨЛӨВЛӨГӨӨ AI
+// ============================================================
+const projectedAccountRevenueSchema = {
+    type: 'object',
+    additionalProperties: false,
+    required: [
+        'entityName', 'registrationNumber', 'currency', 'scale', 'planYears',
+        'threeYearTotalInflow', 'averageAnnualInflow', 'averageMonthlyInflow',
+        'minimumAnnualInflow', 'growthRate', 'analysis', 'riskFlags', 'recommendation'
+    ],
+    properties: {
+        entityName: { type: 'string' },
+        registrationNumber: { type: 'string' },
+        currency: { type: 'string' },
+        scale: { type: 'string', enum: ['unit', 'thousand', 'million', 'unknown'] },
+        planYears: {
+            type: 'array',
+            items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['year', 'revenue', 'netProfit', 'bankAccountInflow', 'operatingCashFlow', 'closingCash', 'notes'],
+                properties: {
+                    year: { type: 'string' },
+                    revenue: { type: 'number' },
+                    netProfit: { type: 'number' },
+                    bankAccountInflow: { type: 'number' },
+                    operatingCashFlow: { type: 'number' },
+                    closingCash: { type: 'number' },
+                    notes: { type: 'string' }
+                }
+            }
+        },
+        threeYearTotalInflow: { type: 'number' },
+        averageAnnualInflow: { type: 'number' },
+        averageMonthlyInflow: { type: 'number' },
+        minimumAnnualInflow: { type: 'number' },
+        growthRate: { type: 'number' },
+        analysis: { type: 'string' },
+        riskFlags: { type: 'array', items: { type: 'string' } },
+        recommendation: { type: 'string' }
+    }
+};
+
+const normalizeProjectedAccountRevenue = (analysis = {}) => ({
+    ...analysis,
+    currency: String(analysis.currency || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN',
+    scale: analysis.scale || 'unknown',
+    planYears: safeList(analysis.planYears),
+    riskFlags: safeList(analysis.riskFlags),
+});
+
+app.post('/api/loans/analyze-projected-account-revenue', authenticateUser, (req, res) => {
+    analyzeUpload(req, res, async (err) => {
+        if (err) return res.status(400).json({ message: err.message });
+        const files = req.files || [];
+        const fileUrls = requestRemoteFiles(req);
+        if (!files.length && !fileUrls.length) return res.status(400).json({ message: 'Төлөвлөгөөт тайлангийн файл олдсонгүй' });
+        if (!openai) return res.status(503).json({ message: 'OPENAI_API_KEY тохируулагдаагүй' });
+        const { blocks, uploadedIds } = await filesToContentBlocks(files, fileUrls);
+        try {
+            const response = await openai.responses.create({
+                model: process.env.OPENAI_STATEMENT_MODEL || 'gpt-4.1-mini',
+                temperature: 0,
+                instructions: [
+                    'Та бол бизнесийн зээлийн барьцааны шинжээч.',
+                    'Ирэх 3 жилийн төлөвлөгөөний баланс, орлогын тайлан, cash flow болон дансаар дамжих борлуулалтын орлогын төлөвлөгөөг уншина.',
+                    'planYears-д эх баримт дээр байгаа төлөвлөгөөний он бүрийг тусад нь гарга; 3 жил дутуу байвал зохиож нөхөхгүй.',
+                    'bankAccountInflow нь дансаар төвлөрөхөөр төлөвлөсөн collection/cash inflow дүн байна.',
+                    'Хэрэв дансаар төвлөрөх дүн тусгайлан байхгүй бол revenue-г ашиглаж болох боловч үүнийг riskFlags-д тодорхой тэмдэглэ.',
+                    'currency-г ISO кодоор бич. $ эсвэл US$ = USD, ₮ = MNT, € = EUR; валют тодорхойгүй бол UNKNOWN. Өөр валютад хөрвүүлэхгүй.',
+                    'Мөнгөн дүнг эх баримтын масштаб (unit/thousand/million)-аар буцаа.',
+                    'threeYearTotalInflow = planYears дахь bankAccountInflow нийлбэр.',
+                    'averageAnnualInflow = нийлбэрийг байгаа төлөвлөгөөт жилийн тоонд хуваасан дүн.',
+                    'averageMonthlyInflow = нийлбэрийг байгаа төлөвлөгөөт жилийн тоо үржих 12-т хуваасан дүн.',
+                    'minimumAnnualInflow = bankAccountInflow-ийн хамгийн бага жилийн дүн.',
+                    'growthRate = эхний жилээс сүүлийн жилийн bankAccountInflow-ийн өсөлтийн хувь.',
+                    'analysis, riskFlags, recommendation-г төлөвлөгөөт орлогыг барьцаа болгон үнэлэхэд ашиглахуйц монгол хэлээр бич.',
+                    'Олдохгүй мөнгөн дүнг 0 гэж тэмдэглэж болно, гэхдээ зохиож дүн үүсгэж болохгүй.'
+                ].join(' '),
+                input: [{
+                    role: 'user',
+                    content: [
+                        { type: 'input_text', text: '3 жилийн төлөвлөгөөт тайланг уншиж, дансаар орох ирээдүйн орлогын тооцооллыг гарга.' },
+                        ...blocks
+                    ]
+                }],
+                text: { format: { type: 'json_schema', name: 'projected_account_revenue', schema: projectedAccountRevenueSchema, strict: true } }
+            });
+            res.json(normalizeProjectedAccountRevenue(parseAiJson(response.output_text)));
+        } catch (e) {
+            console.error('Projected account revenue AI error:', e.message);
+            res.status(e.statusCode || 500).json({ message: e.message || 'Төлөвлөгөөт дансны орлогын шинжилгээ амжилтгүй' });
+        } finally {
+            Promise.allSettled(uploadedIds.map(id => openai.files.delete(id))).catch(() => {});
         }
     });
 });

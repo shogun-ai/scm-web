@@ -1833,7 +1833,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     const collHtml = collaterals.length ? collaterals.map((c,i)=>`
       <tr style="border-bottom:1px solid #f1f5f9">
         <td style="padding:8px 10px;font-size:11px">${i+1}</td>
-        <td style="padding:8px 10px;font-size:11px;font-weight:600">${esc({'real_estate':'Үл хөдлөх','vehicle':'Тээврийн хэрэгсэл','equipment':'Тоног төхөөрөмж','deposit':'Хадгаламж'}[c.collateralType]||c.collateralType||'-')}</td>
+        <td style="padding:8px 10px;font-size:11px;font-weight:600">${esc({'real_estate':'Үл хөдлөх','vehicle':'Тээврийн хэрэгсэл','account_revenue':'Дансны орлого','equipment':'Тоног төхөөрөмж','deposit':'Хадгаламж'}[c.collateralType]||c.collateralType||'-')}</td>
         <td style="padding:8px 10px;font-size:11px">${esc(c.description||'-')}</td>
         <td style="padding:8px 10px;font-size:11px">${esc(c.plateNumber||'-')}</td>
         <td style="padding:8px 10px;font-size:11px">${esc(c.ownerName||'-')}</td>
@@ -2423,7 +2423,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
                 <div key={i} className="border rounded-xl p-3 bg-slate-50 text-xs space-y-0.5">
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-[#003B5C]">
-                      {{ real_estate: 'Үл хөдлөх', vehicle: 'Тээврийн хэрэгсэл', equipment: 'Тоног төхөөрөмж', deposit: 'Хадгаламж' }[c.collateralType] || c.collateralType || 'Барьцаа'}
+                      {{ real_estate: 'Үл хөдлөх', vehicle: 'Тээврийн хэрэгсэл', account_revenue: 'Дансны орлого', equipment: 'Тоног төхөөрөмж', deposit: 'Хадгаламж' }[c.collateralType] || c.collateralType || 'Барьцаа'}
                     </span>
                     <span className="font-black text-green-700">{nfmt(c.estimatedValue)} ₮</span>
                   </div>

@@ -149,6 +149,7 @@ const emptyGuarantor = {
 const COLLATERAL_TYPES = {
   real_estate: 'Үл хөдлөх хөрөнгө',
   vehicle: 'Тээврийн хэрэгсэл',
+  account_revenue: 'Дансны орлого',
   equipment: 'Тоног төхөөрөмж',
   deposit: 'Хадгаламж',
   livestock: 'Мал аж ахуй',
@@ -477,18 +478,20 @@ const normalizeLoanRequest = (request) => {
   // Social insurance avg salary if available
   const siAvgSalary = appData.incomeResearch?.socialInsuranceAnalysis?.averageSalary || '';
 
-  // Collaterals (real_estate, vehicle, contract) with officer valuation coverage amount
+  // Collaterals with officer valuation coverage amount
   const appCollaterals = (appData.collaterals || [])
-    .filter(c => ['real_estate', 'vehicle', 'contract'].includes(c.type))
+    .filter(c => ['real_estate', 'vehicle', 'account_revenue', 'contract'].includes(c.type))
     .map(c => {
       const oAmt = Number(c.valuation?.officerAmount || 0);
       const rate = Number(c.valuation?.coverageRate || 100);
       const coveredAmt = oAmt * rate / 100;
       const f = c.fields || {};
-      const desc = [f.propertyType || f.make, f.ownerName].filter(Boolean).join(' — ');
+      const desc = c.type === 'account_revenue'
+        ? `${f.entityName || 'Байгууллага'} - 3 жилийн дансны орлогын төлөвлөгөө`
+        : [f.propertyType || f.make, f.ownerName].filter(Boolean).join(' — ');
       const plateNum = c.plateNumber || f.plateNumber || '';
       return {
-        collateralType: c.type === 'real_estate' ? 'real_estate' : c.type === 'vehicle' ? 'vehicle' : 'other',
+        collateralType: c.type === 'real_estate' ? 'real_estate' : c.type === 'vehicle' ? 'vehicle' : c.type === 'account_revenue' ? 'account_revenue' : 'other',
         description: desc || c.type,
         estimatedValue: String(coveredAmt || oAmt || ''),
         ownerName: f.ownerName || '',
