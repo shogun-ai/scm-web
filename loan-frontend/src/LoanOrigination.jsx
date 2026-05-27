@@ -1618,6 +1618,16 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       : native;
   };
   const collaterals = b.collaterals || [];
+  const projectedRevenueCollaterals = collaterals.filter(c => c.collateralType === 'account_revenue' && c.projectedRevenueAnalysis);
+  const formatProjectedRevenueAmount = (collateral, value) => {
+    const plan = collateral.projectedRevenueAnalysis || {};
+    const currency = String(plan.currency || 'UNKNOWN').toUpperCase();
+    const native = `${nfmt(value)} ${currency === 'MNT' ? '₮' : currency}`;
+    const rate = Number(collateral.projectedRevenueExchangeRate || 0);
+    return rate > 0 && currency !== 'MNT' && currency !== 'UNKNOWN'
+      ? `${native} / ${nfmt(Number(value || 0) * rate)} ₮`
+      : native;
+  };
   const guarantors = b.guarantors || [];
   const riskFlags = b.riskFlags || b.analystRisks || [];
   const scoreBreakdown = cs.scoreBreakdown || [];
@@ -1839,6 +1849,18 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
         <td style="padding:8px 10px;font-size:11px">${esc(c.ownerName||'-')}</td>
         <td style="padding:8px 10px;font-size:11px;font-weight:800;color:#15803d;text-align:right">${fmtM(c.estimatedValue)} ₮</td>
       </tr>`).join('') : `<tr><td colspan="6" style="padding:12px;text-align:center;color:#94a3b8;font-size:11px">Барьцаа байхгүй</td></tr>`;
+    const projectedRevenueHtml = projectedRevenueCollaterals.length ? `
+      <div style="margin-top:10px;border:1px solid #bfdbfe;border-radius:10px;background:#eff6ff;padding:10px">
+        <div style="font-size:9px;font-weight:900;color:#003B5C;text-transform:uppercase;margin-bottom:7px">Дансны орлогын 3 жилийн төлөвлөгөө</div>
+        ${projectedRevenueCollaterals.map(c => {
+          const plan = c.projectedRevenueAnalysis || {};
+          const rate = Number(c.projectedRevenueExchangeRate || 0);
+          return `<div style="font-size:10.5px;color:#334155;margin-bottom:6px">
+            <strong>${esc(plan.entityName || 'Байгууллага')}</strong> · ${esc(plan.currency || 'UNKNOWN')}${rate > 0 ? ` · 1 ${esc(plan.currency)} = ${nfmt(rate)} ₮` : ''}
+            <div style="margin-top:3px">3 жилийн нийт урсгал: <strong style="color:#15803d">${esc(formatProjectedRevenueAmount(c, plan.threeYearTotalInflow))}</strong> · Сарын дундаж: <strong>${esc(formatProjectedRevenueAmount(c, plan.averageMonthlyInflow))}</strong></div>
+          </div>`;
+        }).join('')}
+      </div>` : '';
 
     const gHtml = guarantors.length ? guarantors.map((g,i)=>`
       <tr style="border-bottom:1px solid #f1f5f9">
@@ -2151,6 +2173,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
       <table><thead><tr><th>#</th><th>Төрөл</th><th>Тайлбар</th><th>Дугаар</th><th>Өмчлөгч</th><th style="text-align:right">Үнэлгээ</th></tr></thead>
       <tbody>${collHtml}</tbody></table>
       ${col.guarantorCollateralValue ? `<div style="font-size:10.5px;color:#64748b;margin-top:6px">Батлан даагчийн барьцаа: <strong>${fmtM(col.guarantorCollateralValue)} ₮</strong></div>` : ''}
+      ${projectedRevenueHtml}
     </div>
 
     ${guarantors.length?`<!-- GUARANTORS -->
@@ -2428,6 +2451,26 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
                     <span className="font-black text-green-700">{nfmt(c.estimatedValue)} ₮</span>
                   </div>
                   {c.description && <p className="text-slate-500">{c.description}</p>}
+                  {c.collateralType === 'account_revenue' && c.projectedRevenueAnalysis && (
+                    <div className="mt-2 border-t pt-2 space-y-1 text-slate-600">
+                      <p>3 жилийн нийт урсгал: <b className="text-green-700">{formatProjectedRevenueAmount(c, c.projectedRevenueAnalysis.threeYearTotalInflow)}</b></p>
+                      <p>Сарын дундаж: <b>{formatProjectedRevenueAmount(c, c.projectedRevenueAnalysis.averageMonthlyInflow)}</b></p>
+                      {Number(c.projectedRevenueExchangeRate || 0) > 0 && <p>Ханш: 1 {c.projectedRevenueAnalysis.currency} = {nfmt(c.projectedRevenueExchangeRate)} ₮</p>}
+                      {Array.isArray(c.projectedRevenueAnalysis.planYears) && c.projectedRevenueAnalysis.planYears.length > 0 && (
+                        <table className="w-full mt-2 text-[11px]">
+                          <thead><tr className="text-slate-400"><th className="text-left">Он</th><th className="text-right">Дансаар орох урсгал</th></tr></thead>
+                          <tbody>
+                            {c.projectedRevenueAnalysis.planYears.map((year, yearIndex) => (
+                              <tr key={`${year.year}-${yearIndex}`} className="border-t border-slate-200">
+                                <td className="py-1">{year.year || '—'}</td>
+                                <td className="py-1 text-right font-bold text-green-700">{formatProjectedRevenueAmount(c, year.bankAccountInflow)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
                   {c.plateNumber && <p className="text-slate-500">Дугаар: {c.plateNumber}</p>}
                   {c.ownerName && <p className="text-slate-400">Өмчлөгч: {c.ownerName}{c.ownerRelation ? ` (${c.ownerRelation})` : ''}</p>}
                 </div>

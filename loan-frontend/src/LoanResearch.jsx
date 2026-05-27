@@ -498,6 +498,8 @@ const normalizeLoanRequest = (request) => {
         ownerRelation: c.ownerRelation || '',
         hasPlate: c.hasPlate || (plateNum ? 'yes' : 'no'),
         plateNumber: plateNum,
+        projectedRevenueAnalysis: c.type === 'account_revenue' ? f : null,
+        projectedRevenueExchangeRate: c.type === 'account_revenue' ? (f.exchangeRate || '') : '',
       };
     });
 
@@ -1897,6 +1899,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     const requestFileUrls = Array.isArray(f.requestFileUrls) ? f.requestFileUrls : [];
     const isOrg = f.borrowerType === 'organization';
     const colls = displayedOutputs.collateral?.items || [];
+    const projectedRevenueCollaterals = colls.filter(c => c.collateralType === 'account_revenue' && c.projectedRevenueAnalysis);
     const grtrs = (f.guarantors || []);
     const stmtFs = displayedStatementAnalysis?.frontSheet || {};
     const financial = displayedFinancialAnalysis || null;
@@ -1926,6 +1929,15 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     const dtiColor = dti <= 40 ? '#15803d' : dti <= 55 ? '#92400e' : '#b91c1c';
     const fcfColor = fcf >= 0 ? '#15803d' : '#b91c1c';
     const printDate = new Date().toLocaleDateString('mn-MN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    const formatProjectedRevenueMoney = (collateral, value) => {
+      const plan = collateral.projectedRevenueAnalysis || {};
+      const currency = normalizeCurrency(plan.currency);
+      const native = formatNativeMoney(value, currency);
+      const rate = Number(collateral.projectedRevenueExchangeRate || 0);
+      return rate > 0 && !isMntCurrency(currency) && currency !== 'UNKNOWN'
+        ? `${native} / ${formatMoney(Number(value || 0) * rate)}`
+        : native;
+    };
 
     const kpiCard = (label, value, color = '#0f172a', sub = '') =>
       `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;text-align:center">
@@ -2434,6 +2446,22 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
               </div>
             </div>
           </div>
+          </div>` : ''}
+
+          ${projectedRevenueCollaterals.length ? `
+          <div class="no-break" style="margin-top:10px">
+            <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Дансны орлогын 3 жилийн төлөвлөгөө</div>
+            ${projectedRevenueCollaterals.map((c) => {
+              const plan = c.projectedRevenueAnalysis || {};
+              const years = Array.isArray(plan.planYears) ? plan.planYears : [];
+              const rate = Number(c.projectedRevenueExchangeRate || 0);
+              return `<table style="margin-bottom:8px"><tbody>
+                <tr><td class="label-cell">Байгууллага / Валют</td><td colspan="3">${esc(plan.entityName || '—')} · ${esc(plan.currency || 'UNKNOWN')}${rate > 0 ? ` · 1 ${esc(plan.currency)} = ${formatMoney(rate)}` : ''}</td></tr>
+                <tr><td class="label-cell">3 жилийн нийт урсгал</td><td class="positive">${formatProjectedRevenueMoney(c, plan.threeYearTotalInflow)}</td><td class="label-cell">Сарын дундаж</td><td class="positive">${formatProjectedRevenueMoney(c, plan.averageMonthlyInflow)}</td></tr>
+              </tbody></table>
+              ${years.length ? `<table style="margin-bottom:8px"><thead><tr><th>Он</th><th style="text-align:right">Борлуулалт</th><th style="text-align:right">Цэвэр ашиг</th><th style="text-align:right">Дансаар орох урсгал</th></tr></thead><tbody>${years.map((year, yearIndex) => `<tr style="${rowStyle(yearIndex)}"><td>${esc(year.year || '—')}</td><td style="text-align:right">${formatProjectedRevenueMoney(c, year.revenue)}</td><td style="text-align:right">${formatProjectedRevenueMoney(c, year.netProfit)}</td><td style="text-align:right;font-weight:700;color:#15803d">${formatProjectedRevenueMoney(c, year.bankAccountInflow)}</td></tr>`).join('')}</tbody></table>` : ''}
+              ${plan.analysis ? `<div style="padding:8px;background:#f8fafc;border-radius:8px;font-size:11px;line-height:1.5">${esc(plan.analysis)}</div>` : ''}`;
+            }).join('')}
           </div>` : ''}
 
           <!-- ══════════════ 6. КРЕДИТ ОНОО ══════════════ -->
@@ -3688,6 +3716,70 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                           </div>
                         )}
                       </div>
+                      {col.collateralType === 'account_revenue' && col.projectedRevenueAnalysis && (() => {
+                        const plan = col.projectedRevenueAnalysis;
+                        const currency = normalizeCurrency(plan.currency);
+                        const rate = Number(col.projectedRevenueExchangeRate || 0);
+                        const planYears = Array.isArray(plan.planYears) ? plan.planYears : [];
+                        const money = (value) => {
+                          const native = formatNativeMoney(value, currency);
+                          return rate > 0 && !isMntCurrency(currency) && currency !== 'UNKNOWN'
+                            ? `${native} / ${formatMoney(Number(value || 0) * rate)}`
+                            : native;
+                        };
+                        return (
+                          <div className="border border-blue-100 bg-blue-50/30 rounded-xl p-4 space-y-3">
+                            <div className="flex flex-wrap items-end justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-bold text-[#003B5C]">Дансны орлогын 3 жилийн AI төлөвлөгөө</p>
+                                <p className="text-xs text-slate-500">{plan.entityName || 'Байгууллага'} · {currency} · {plan.scale || 'unit'}</p>
+                              </div>
+                              {!isMntCurrency(currency) && currency !== 'UNKNOWN' && (
+                                <label className="space-y-1">
+                                  <span className="block text-[11px] font-bold text-slate-500">1 {currency} = хэдэн ₮</span>
+                                  <input type="number" min="0" step="0.01" value={col.projectedRevenueExchangeRate || ''} onChange={(event) => updateCollateral(index, 'projectedRevenueExchangeRate', event.target.value)} className={`${textInput} w-40`} placeholder="0" />
+                                </label>
+                              )}
+                            </div>
+                            {rate > 0 && !isMntCurrency(currency) && currency !== 'UNKNOWN' && (
+                              <p className="text-xs text-green-700 font-bold bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                                Хөрвүүлэлт: 1 {currency} = {formatMoney(rate)}
+                              </p>
+                            )}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                              {[
+                                ['3 жилийн нийт орох урсгал', plan.threeYearTotalInflow],
+                                ['Жилийн дундаж', plan.averageAnnualInflow],
+                                ['Сарын дундаж', plan.averageMonthlyInflow],
+                                ['Доод жилийн урсгал', plan.minimumAnnualInflow],
+                              ].map(([label, value]) => (
+                                <div key={label} className="rounded-lg border bg-white p-2.5">
+                                  <p className="text-[10px] font-bold uppercase text-slate-400">{label}</p>
+                                  <p className="text-xs font-black text-[#003B5C] mt-1">{money(value)}</p>
+                                </div>
+                              ))}
+                            </div>
+                            {planYears.length > 0 && (
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                  <thead><tr className="text-slate-400">
+                                    <th className="text-left py-1">Он</th><th className="text-right py-1">Борлуулалт</th><th className="text-right py-1">Цэвэр ашиг</th><th className="text-right py-1">Дансаар орох урсгал</th>
+                                  </tr></thead>
+                                  <tbody>{planYears.map((year, yearIndex) => (
+                                    <tr key={`${year.year}-${yearIndex}`} className="border-t">
+                                      <td className="py-1">{year.year || '—'}</td>
+                                      <td className="py-1 text-right">{money(year.revenue)}</td>
+                                      <td className="py-1 text-right">{money(year.netProfit)}</td>
+                                      <td className="py-1 text-right font-bold text-green-700">{money(year.bankAccountInflow)}</td>
+                                    </tr>
+                                  ))}</tbody>
+                                </table>
+                              </div>
+                            )}
+                            {plan.analysis && <p className="text-xs leading-relaxed text-slate-600">{plan.analysis}</p>}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                   {!(form.collaterals || []).length && (
@@ -4775,6 +4867,41 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                     </div>
                   </section>
                 )}
+
+                {(() => {
+                  const projectedItems = (displayedOutputs.collateral?.items || []).filter(c => c.collateralType === 'account_revenue' && c.projectedRevenueAnalysis);
+                  if (!projectedItems.length) return null;
+                  return (
+                    <section className="bg-white border rounded-2xl shadow-sm p-5 space-y-4">
+                      <h5 className="font-bold text-[#003B5C] text-sm pb-2 border-b">Дансны орлогын 3 жилийн төлөвлөгөө</h5>
+                      {projectedItems.map((collateral, index) => {
+                        const plan = collateral.projectedRevenueAnalysis || {};
+                        const currency = normalizeCurrency(plan.currency);
+                        const rate = Number(collateral.projectedRevenueExchangeRate || 0);
+                        const money = (value) => {
+                          const native = formatNativeMoney(value, currency);
+                          return rate > 0 && !isMntCurrency(currency) && currency !== 'UNKNOWN'
+                            ? `${native} / ${formatMoney(Number(value || 0) * rate)}`
+                            : native;
+                        };
+                        return (
+                          <div key={index} className="border rounded-xl p-4 space-y-3 bg-slate-50">
+                            <p className="text-xs font-bold text-slate-600">{plan.entityName || 'Байгууллага'} · {currency}{rate > 0 ? ` · 1 ${currency} = ${formatMoney(rate)}` : ''}</p>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                              {[['3 жилийн нийт урсгал', plan.threeYearTotalInflow], ['Жилийн дундаж', plan.averageAnnualInflow], ['Сарын дундаж', plan.averageMonthlyInflow], ['Доод жилийн урсгал', plan.minimumAnnualInflow]].map(([label, value]) => (
+                                <div key={label} className="bg-white border rounded-lg p-2">
+                                  <p className="text-[10px] text-slate-400 uppercase font-bold">{label}</p>
+                                  <p className="text-xs font-bold text-[#003B5C]">{money(value)}</p>
+                                </div>
+                              ))}
+                            </div>
+                            {plan.analysis && <p className="text-xs text-slate-700 leading-relaxed">{plan.analysis}</p>}
+                          </div>
+                        );
+                      })}
+                    </section>
+                  );
+                })()}
 
                 {/* 8. Score summary */}
                 <section className="bg-white border rounded-2xl shadow-sm p-5">

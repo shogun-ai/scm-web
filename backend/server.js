@@ -198,7 +198,7 @@ const LoanResearchSchema = new mongoose.Schema({
 });
 const LoanResearch = mongoose.models.LoanResearch || mongoose.model('LoanResearch', LoanResearchSchema);
 
-const AI_LOAN_OFFICER_VERSION = '2026-05-26';
+const AI_LOAN_OFFICER_VERSION = '2026-05-27';
 
 function buildAiLoanOfficerStatus(status, note = '') {
     return {
@@ -342,10 +342,18 @@ function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules', policySo
     const projectedRevenueCollateral = (input.collaterals || []).find(c => c.type === 'account_revenue');
     if (projectedRevenueCollateral) {
         const plannedYears = projectedRevenueCollateral.fields?.planYears || [];
+        const projectedCurrency = String(projectedRevenueCollateral.fields?.currency || 'UNKNOWN').toUpperCase();
+        const projectedRate = toNumber(projectedRevenueCollateral.fields?.exchangeRate);
+        const projectedMonthly = toNumber(projectedRevenueCollateral.fields?.averageMonthlyInflow);
         if (!plannedYears.length) {
             conditions.push('Дансны орлогын 3 жилийн төлөвлөгөөний AI шинжилгээг баталгаажуулах.');
         } else {
             approvalReasons.push(`Дансны орлогын ${plannedYears.length} жилийн төлөвлөгөө шинжлэгдсэн.`);
+        }
+        if (!['MNT', 'UNKNOWN'].includes(projectedCurrency) && !projectedRate) {
+            conditions.push(`Дансны орлогын төлөвлөгөө ${projectedCurrency} валютаар байгаа тул төгрөгийн ханш оруулж баталгаажуулах.`);
+        } else if (projectedMonthly > 0 && projectedRate > 0 && projectedCurrency !== 'MNT') {
+            approvalReasons.push(`Төлөвлөгөөт дансны сарын дундаж орлого ${(projectedMonthly * projectedRate).toLocaleString('mn-MN')} ₮-өөр тооцогдсон.`);
         }
         if (projectedRevenueCollateral.fields?.riskFlags?.length) {
             flags.push(...projectedRevenueCollateral.fields.riskFlags.slice(0, 2));
@@ -598,6 +606,7 @@ async function buildAiLoanOfficerAssessment(loanDoc) {
                     'policyCompliance.checks бүр дээр policyRef, policyClause, evidence, finding, recommendation бөглө.',
                     'policyClause-д боломжтой бол журмын заалтын дугаар, бүлэг, хэсэг, гарчиг эсвэл хамгийн ойролцоо хэсгийн нэрийг бич.',
                     'finding-д тухайн заалттай нийцэж байна, нийцэхгүй байна, эсвэл мэдээлэл дутуу тул бүрэн тогтоох боломжгүй гэж шууд илэрхийл.',
+                    'account_revenue төрлийн барьцаанд төлөвлөгөөт дансны орлого, валют, exchangeRate байвал төгрөгийн хөрвүүлсэн дүнг үндэслэлд ашигла. Гадаад валюттай мөртлөө exchangeRate байхгүй бол ханш баталгаажуулах нөхцөл заавал оруул.',
                     'Нөхцөлтэй санал бол яг ямар нөхцөл хангах ёстойг тодорхой бич. Зөвшөөрөх/татгалзах үндэслэлийг тоо болон баримтаар тайлбарла.',
                     'Allowed levels: low, medium, high. Allowed recommendations: approve, conditional, manual_review, reject.'
                 ].join(' '),
@@ -807,6 +816,12 @@ function buildRuleBasedComplianceReview(loanDoc, policySources = [], source = 'r
     if (!hasDoc('bank', 'statement')) missingDocuments.push('Дансны хуулга');
     if (!hasDoc('credit')) missingDocuments.push('Зээлийн мэдээллийн лавлагаа');
     if (input.loanRequest?.amount >= 10000000 && !(input.collaterals || []).length) missingDocuments.push('Барьцааны мэдээлэл');
+    const projectedRevenueCollateral = (input.collaterals || []).find(c => c.type === 'account_revenue');
+    const projectedRevenueCurrency = String(projectedRevenueCollateral?.fields?.currency || 'UNKNOWN').toUpperCase();
+    if (projectedRevenueCollateral && !['MNT', 'UNKNOWN'].includes(projectedRevenueCurrency) && !toNumber(projectedRevenueCollateral.fields?.exchangeRate)) {
+        missingDocuments.push(`Дансны орлогын төлөвлөгөөний ${projectedRevenueCurrency} ханшийн баталгаажуулалт`);
+        requiredActions.push('Төлөвлөгөөт дансны орлогын гадаад валютын ханшийг оруулж, төгрөгийн дүнг баталгаажуулах.');
+    }
 
     checks.push({
         area: 'KYC ба харилцагч таних ажиллагаа',
@@ -962,6 +977,7 @@ async function buildComplianceReviewAssessment(loanDoc) {
                     'evidence-д тухайн зээлийн хүсэлт дээр ямар мэдээлэл байгаа/байхгүйг тодорхой бич.',
                     'finding болон conflictReason-д тухайн policyClause-тай "нийцэж байна", "нийцэхгүй байна", эсвэл "мэдээлэл дутуу тул нийцлийг бүрэн тогтоох боломжгүй" гэж шууд илэрхийл.',
                     'conflictReason-д "журмын тухайн заалт ингэж шаардсан боловч хүсэлт дээр ингэж байна, тиймээс зөрчил/анхаарах зүйл байна" гэсэн логикоор тайлбарла.',
+                    'account_revenue төрлийн барьцаанд гадаад валютын төлөвлөгөө байгаа бол exchangeRate бүртгэгдсэн эсэх, төгрөгийн дүнгээр баталгаажуулсан эсэхийг баримтын бүрдэлд шалга.',
                     'policyRef талбарт ашигласан бодлого/журмын нэрийг товч дурд. Мэдээлэл хангалтгүй бол status-ыг insufficient_information эсвэл needs_review гэж тэмдэглэ.'
                 ].join(' '),
                 input: [{
@@ -5250,6 +5266,14 @@ const generateLoanText = (borrower = {}, outputs = {}) => {
     const ie = outputs.incomeExpense || {};
     const cs = outputs.creditScore || {};
     const fs = outputs.frontSheet || {};
+    const accountRevenue = safeList(outputs.collateral?.items)
+        .find(item => item.collateralType === 'account_revenue' && item.projectedRevenueAnalysis);
+    const revenuePlan = accountRevenue?.projectedRevenueAnalysis || {};
+    const revenueCurrency = String(revenuePlan.currency || 'UNKNOWN').toUpperCase();
+    const revenueRate = toNumber(accountRevenue?.projectedRevenueExchangeRate);
+    const revenueMonthlyMnt = revenueRate > 0 && !['MNT', 'UNKNOWN'].includes(revenueCurrency)
+        ? toNumber(revenuePlan.averageMonthlyInflow) * revenueRate
+        : (revenueCurrency === 'MNT' ? toNumber(revenuePlan.averageMonthlyInflow) : 0);
     const parts = [
         `Төрөл:${borrower.borrowerType || fs.borrowerType || '-'}`,
         `Зориулалт:${borrower.purpose || fs.purpose || '-'}`,
@@ -5266,6 +5290,9 @@ const generateLoanText = (borrower = {}, outputs = {}) => {
         `Шийдвэр:${borrower.analystDecision || '-'}`,
         `Барьцаа:${(outputs.collateral?.items || []).length}ш`,
         `LTV:${outputs.collateral?.ltvRatio != null ? outputs.collateral.ltvRatio.toFixed(1) + '%' : '-'}`,
+        `ДансныОрлогоТөлөвлөгөө:${accountRevenue ? `${safeList(revenuePlan.planYears).length}жил` : '-'}`,
+        `ДансныОрлогоВалют:${accountRevenue ? revenueCurrency : '-'}`,
+        `ДансныОрлогоСарынMNT:${revenueMonthlyMnt || 0}`,
         `БатланДаагч:${(outputs.guarantorSummary?.items || []).length}ш`,
         `БусадЗээл:${(borrower.otherLoans || []).length}ш`,
         `БусадЗээлҮлдэгдэл:${ie.otherLoanBalance || 0}`,
@@ -5315,6 +5342,35 @@ app.post('/api/loan-research', authenticateUser, (req, res) => {
                     role: req.user?.role || ''
                 }
             }).save();
+
+            const sourceRequestId = String(borrower.sourceRequestId || '');
+            const projectedRevenueRows = safeList(borrower.collaterals)
+                .filter(item => item.collateralType === 'account_revenue' && item.projectedRevenueAnalysis);
+            if (sourceRequestId && projectedRevenueRows.length) {
+                const linkedLoan = await LoanRequest.findById(sourceRequestId).lean();
+                if (linkedLoan?.applicationData?.collaterals?.length) {
+                    let projectedIndex = 0;
+                    const applicationData = {
+                        ...linkedLoan.applicationData,
+                        collaterals: linkedLoan.applicationData.collaterals.map(collateral => {
+                            if (collateral.type !== 'account_revenue') return collateral;
+                            const researchCollateral = projectedRevenueRows[projectedIndex++];
+                            if (!researchCollateral) return collateral;
+                            return {
+                                ...collateral,
+                                fields: {
+                                    ...(collateral.fields || {}),
+                                    exchangeRate: researchCollateral.projectedRevenueExchangeRate || collateral.fields?.exchangeRate || '',
+                                },
+                            };
+                        }),
+                    };
+                    await LoanRequest.findByIdAndUpdate(sourceRequestId, { applicationData });
+                    updateLoanOfficerAssessment(sourceRequestId)
+                        .then(updated => updateComplianceReview(updated))
+                        .catch(error => console.error('Research review refresh error:', error.message));
+                }
+            }
 
             await createLog(req.user, 'loan_research_created', `${borrower.borrowerName} - ${borrower.requestedAmount}`);
             res.status(201).json(research);
