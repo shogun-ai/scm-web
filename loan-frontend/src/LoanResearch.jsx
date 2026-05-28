@@ -916,7 +916,7 @@ const buildOutputs = (form, context = {}) => {
       reasons.push('Байгууллагын баланс болон орлогын тайлан шинжлэгдээгүй байна.');
       docs.push('Баланс болон орлогын тайлан');
     } else if (financialAnalysis?.riskFlags?.length) {
-      reasons.push(...financialAnalysis.riskFlags.slice(0, 2));
+      reasons.push(...filterFinancialRiskFlags(financialAnalysis.riskFlags, financialAnalysis.balanceSheet || {}).slice(0, 2));
     }
 
     // Collateral
@@ -2522,10 +2522,10 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                 <div style="font-size:32px;font-weight:900;color:${gradeColor}">Grade ${esc(grade)}</div>
                 <div style="font-size:11px;color:${gradeColor};margin-top:4px">${esc(cs.decision || '—')}</div>
               </div>
-              ${(cs.decisionRationale?.reasons || []).length > 0 ? `
+              ${filterFinancialRiskFlags(cs.decisionRationale?.reasons || [], financialBalance).length > 0 ? `
               <div style="background:#fef9c3;border:1px solid #fcd34d;border-radius:8px;padding:10px">
                 <div style="font-size:10px;font-weight:700;color:#92400e;margin-bottom:6px;text-transform:uppercase">Анхаарах зүйлс</div>
-                ${(cs.decisionRationale.reasons || []).map(r => `<div style="font-size:10px;color:#78350f;margin-bottom:3px">• ${esc(r)}</div>`).join('')}
+                ${filterFinancialRiskFlags(cs.decisionRationale?.reasons || [], financialBalance).map(r => `<div style="font-size:10px;color:#78350f;margin-bottom:3px">• ${esc(r)}</div>`).join('')}
               </div>` : ''}
               ${(cs.decisionRationale?.docs || []).length > 0 ? `
               <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px;margin-top:8px">
@@ -5035,7 +5035,11 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                   </div>
                   {(() => {
                     const d = displayedOutputs.creditScore?.decision;
-                    const rationale = outputs.creditScore?.decisionRationale;
+                    const rawRationale = displayedOutputs.creditScore?.decisionRationale;
+                    const rationale = rawRationale ? {
+                      ...rawRationale,
+                      reasons: filterFinancialRiskFlags(rawRationale.reasons || [], displayedFinancialAnalysis?.balanceSheet || {}),
+                    } : rawRationale;
                     if (!d) return null;
                     const isGood = d === 'Судалгааг үргэлжлүүлэх боломжтой';
                     const isRisk = d === 'Эрсдэл өндөр, дахин үнэлгээ хийх шаардлагатай';

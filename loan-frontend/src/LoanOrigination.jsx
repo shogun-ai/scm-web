@@ -1647,7 +1647,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     return 'Шийдвэр бүртгэгдээгүй';
   };
   const guarantors = b.guarantors || [];
-  const riskFlags = b.riskFlags || b.analystRisks || [];
+  const riskFlags = filterFinancialRiskFlags(b.riskFlags || b.analystRisks || [], financialBalance);
   const scoreBreakdown = cs.scoreBreakdown || [];
 
   const displayName = b.borrowerType === 'organization'

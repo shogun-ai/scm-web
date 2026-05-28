@@ -2342,6 +2342,14 @@ const FinancialReportsSection = ({ data = {}, onChange, apiUrl, showToast, exist
   const balance = analysis?.balanceSheet || {};
   const income = analysis?.incomeStatement || {};
   const ratios = analysis?.ratios || {};
+  const financialRisks = (analysis?.riskFlags || []).filter((risk) => {
+    const text = String(risk || '').toLowerCase();
+    const currentLiabilities = Number(String(balance.currentLiabilities ?? '').replace(/[^0-9.-]/g, '')) || 0;
+    const totalLiabilities = Number(String(balance.totalLiabilities ?? '').replace(/[^0-9.-]/g, '')) || 0;
+    const mentionsNoDebt = text.includes('өр төлбөр байхгүй') || text.includes('одоогийн өр төлбөр байхгүй') || (text.includes('liabilities') && text.includes('no'));
+    const framesAsRisk = text.includes('эрсдэл') || text.includes('risk');
+    return !(mentionsNoDebt && framesAsRisk && currentLiabilities <= 0 && totalLiabilities <= 0);
+  });
   const money = (value) => {
     const native = formatStatementMoney(value, currency);
     return conversionRate > 0 && currency !== 'MNT'
@@ -2453,10 +2461,10 @@ const FinancialReportsSection = ({ data = {}, onChange, apiUrl, showToast, exist
             ))}
           </div>
           {analysis.analysis && <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 rounded-lg p-3">{analysis.analysis}</p>}
-          {analysis.riskFlags?.length > 0 && (
+          {financialRisks.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <p className="text-[10px] font-bold text-red-700 uppercase mb-1">Эрсдэлийн дохио</p>
-              {analysis.riskFlags.map((risk, index) => <p key={index} className="text-xs text-red-700">- {risk}</p>)}
+              {financialRisks.map((risk, index) => <p key={index} className="text-xs text-red-700">- {risk}</p>)}
             </div>
           )}
         </div>
