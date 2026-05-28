@@ -80,7 +80,15 @@ const storage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: { folder: 'scm_uploads', resource_type: 'raw', access_mode: 'public' }
 });
-const upload = multer({ storage: storage }).any();
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 50 * 1024 * 1024,
+        fieldSize: 25 * 1024 * 1024,
+        fields: 100,
+        files: 20,
+    },
+}).any();
 const exposureDiskStorage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, exposureUploadsDir),
     filename: (_req, file, cb) => {
@@ -94,7 +102,7 @@ const exposureUpload = multer({
 }).single('file');
 const analyzeUpload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 50 * 1024 * 1024, files: 5 }
+    limits: { fileSize: 50 * 1024 * 1024, fieldSize: 25 * 1024 * 1024, fields: 50, files: 5 }
 }).array('bankStatements', 5);
 
 // --- ÐœÐžÐ”Ð•Ð›Ò®Ò®Ð” (SCHEMAS) ---
@@ -5349,7 +5357,12 @@ const generateEmbedding = async (text) => {
 
 app.post('/api/loan-research', authenticateUser, (req, res) => {
     upload(req, res, async (err) => {
-        if (err) return res.status(400).json({ message: err.message });
+        if (err) {
+            const message = err.code === 'LIMIT_FIELD_VALUE'
+                ? 'Судалгааны мэдээлэл хэт том байна. Хуудасаа шинэчлээд дахин хадгална уу.'
+                : (err.message || 'Файл эсвэл form мэдээлэл хүлээн авахад алдаа гарлаа.');
+            return res.status(err.code === 'LIMIT_FIELD_VALUE' ? 413 : 400).json({ message });
+        }
         try {
             const borrower = parseJsonField(req.body.borrower);
             const outputs = parseJsonField(req.body.outputs);

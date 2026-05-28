@@ -1333,11 +1333,12 @@ const AiLoanOfficerCard = ({ loan, labels = UI_TEXT.mn.ai, onRun, loading = fals
         </div>
       </div>
 
-      {languageMismatch ? (
+      {languageMismatch && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
           {labels.englishDetected}
         </div>
-      ) : assessment?.status === 'completed' ? (
+      )}
+      {assessment?.status === 'completed' ? (
         <>
           <div className="grid md:grid-cols-3 gap-3">
             <div className="rounded-xl border border-slate-200 p-3 bg-slate-50">
