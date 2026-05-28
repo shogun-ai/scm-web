@@ -351,7 +351,7 @@ function buildRuleBasedLoanOfficerAssessment(loanDoc, source = 'rules', policySo
         conditions.push('Баланс болон орлогын тайланг AI уншилтаар баталгаажуулах.');
     }
     if (financialAnalysis?.riskFlags?.length) {
-        flags.push(...financialAnalysis.riskFlags.slice(0, 2));
+        flags.push(...filterFinancialRiskFlags(financialAnalysis.riskFlags, financialAnalysis.balanceSheet || {}).slice(0, 2));
     }
     if (financialAnalysis?.incomeStatement?.netProfit > 0) {
         approvalReasons.push('Санхүүгийн тайланд цэвэр ашиг эерэг байна.');
@@ -826,6 +826,7 @@ function getComplianceInput(loanDoc) {
             revenueAcceptance: c.revenueAcceptance,
         })),
         guarantors,
+        incomeResearch: compact(appData.incomeResearch || null),
         financialReports: compact(appData.financialReports || null),
         aiLoanOfficer: loan.aiLoanOfficer || null,
         createdAt: loan.createdAt,
@@ -839,6 +840,9 @@ function buildRuleBasedComplianceReview(loanDoc, policySources = [], source = 'r
     const requiredActions = [];
     const docs = input.documents || [];
     const hasDoc = (...names) => docs.some(d => names.some(name => String(d.fieldName || '').includes(name)));
+    const hasBankStatementAnalysis = safeList(input.incomeResearch?.bankStatementAnalyses)
+        .some(item => item?.frontSheet || item?.monthlySummary?.length || item?.analysisReport);
+    const hasBankStatement = hasDoc('bank', 'statement') || hasBankStatementAnalysis;
 
     if (input.borrowerType === 'individual' && !input.borrower?.regNo) {
         missingDocuments.push('Иргэний регистрийн дугаар/КYC мэдээлэл');
@@ -847,7 +851,7 @@ function buildRuleBasedComplianceReview(loanDoc, policySources = [], source = 'r
         missingDocuments.push('Байгууллагын улсын бүртгэлийн мэдээлэл');
     }
     if (!hasDoc('id', 'identity', 'citizen')) missingDocuments.push('Иргэний үнэмлэх эсвэл оршин суугаа газрын лавлагаа');
-    if (!hasDoc('bank', 'statement')) missingDocuments.push('Дансны хуулга');
+    if (!hasBankStatement) missingDocuments.push('Дансны хуулга');
     if (!hasDoc('credit')) missingDocuments.push('Зээлийн мэдээллийн лавлагаа');
     if (input.loanRequest?.amount >= 10000000 && !(input.collaterals || []).length) missingDocuments.push('Барьцааны мэдээлэл');
     const projectedRevenueCollateral = (input.collaterals || []).find(c => c.type === 'account_revenue');
@@ -1015,6 +1019,7 @@ async function buildComplianceReviewAssessment(loanDoc) {
                     'evidence-д тухайн зээлийн хүсэлт дээр ямар мэдээлэл байгаа/байхгүйг тодорхой бич.',
                     'finding болон conflictReason-д тухайн policyClause-тай "нийцэж байна", "нийцэхгүй байна", эсвэл "мэдээлэл дутуу тул нийцлийг бүрэн тогтоох боломжгүй" гэж шууд илэрхийл.',
                     'conflictReason-д "журмын тухайн заалт ингэж шаардсан боловч хүсэлт дээр ингэж байна, тиймээс зөрчил/анхаарах зүйл байна" гэсэн логикоор тайлбарла.',
+                    'incomeResearch.bankStatementAnalyses дотор frontSheet эсвэл monthlySummary байгаа бол дансны хуулга/дансны шинжилгээ бүрдсэн гэж үз; missingDocuments-д "Дансны хуулга" гэж бүү давхар оруул.',
                     'account_revenue төрлийн барьцаанд гадаад валютын төлөвлөгөө байгаа бол exchangeRate бүртгэгдсэн эсэх, төгрөгийн дүнгээр баталгаажуулсан эсэх, revenueAcceptance шийдвэрээр хүлээн зөвшөөрсөн хувийг тогтоосон эсэхийг шалга.',
                     'policyRef талбарт ашигласан бодлого/журмын нэрийг товч дурд. Мэдээлэл хангалтгүй бол status-ыг insufficient_information эсвэл needs_review гэж тэмдэглэ.'
                 ].join(' '),
@@ -4829,16 +4834,34 @@ const financialStatementSchema = {
     }
 };
 
-const normalizeFinancialAnalysis = (analysis = {}) => ({
-    ...analysis,
-    currency: String(analysis.currency || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN',
-    scale: analysis.scale || 'unknown',
-    balanceSheet: analysis.balanceSheet || {},
-    incomeStatement: analysis.incomeStatement || {},
-    ratios: analysis.ratios || {},
-    riskFlags: safeList(analysis.riskFlags),
-    strengths: safeList(analysis.strengths),
-});
+const filterFinancialRiskFlags = (riskFlags = [], balanceSheet = {}) => {
+    const currentLiabilities = toNumber(balanceSheet.currentLiabilities);
+    const totalLiabilities = toNumber(balanceSheet.totalLiabilities);
+    return safeList(riskFlags).filter((flag) => {
+        const text = String(flag || '').toLowerCase();
+        const mentionsNoDebt = (
+            text.includes('өр төлбөр байхгүй') ||
+            text.includes('одоогийн өр төлбөр байхгүй') ||
+            (text.includes('liabilities') && text.includes('no'))
+        );
+        const framesAsRisk = text.includes('эрсдэл') || text.includes('risk');
+        return !(mentionsNoDebt && framesAsRisk && currentLiabilities <= 0 && totalLiabilities <= 0);
+    });
+};
+
+const normalizeFinancialAnalysis = (analysis = {}) => {
+    const balanceSheet = analysis.balanceSheet || {};
+    return {
+        ...analysis,
+        currency: String(analysis.currency || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN',
+        scale: analysis.scale || 'unknown',
+        balanceSheet,
+        incomeStatement: analysis.incomeStatement || {},
+        ratios: analysis.ratios || {},
+        riskFlags: filterFinancialRiskFlags(analysis.riskFlags, balanceSheet),
+        strengths: safeList(analysis.strengths),
+    };
+};
 
 const analyzeFinancialStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) => {
     if (!openai) { const e = new Error('OPENAI_API_KEY is not configured'); e.statusCode = 503; throw e; }
@@ -4858,6 +4881,7 @@ const analyzeFinancialStatementsWithAI = async ({ files = [], fileUrls = [], bor
                 'Баланс болон орлогын тайлан тусдаа файлд байвал нэг байгууллага, нэг тайлант хугацааны нэгдсэн анализ болго.',
                 'Олдохгүй зүйлд 0 эсвэл хоосон мөр хэрэглэ; зохиож бөглөхгүй.',
                 'ratios: боломжтой өгөгдлөөс тооц. currentRatio=currentAssets/currentLiabilities, debtToEquity=totalLiabilities/equity, liabilityToAsset=totalLiabilities/totalAssets, grossMargin=grossProfit/revenue*100, netMargin=netProfit/revenue*100.',
+                'Хэрэв currentLiabilities эсвэл totalLiabilities 0/байхгүй бол үүнийг дангаар нь эрсдэл гэж бүү бич; харин strengths-д "богино хугацааны өр төлбөр бага/байхгүй" гэж эерэг тал болгон дурд. Өргүй байдлыг зөвхөн cash flow, алдагдал, liquidity сул зэрэг бодит сөрөг үзүүлэлттэй хамтад нь тайлбарлаж болно.',
                 'analysis, riskFlags, strengths, recommendation-г зээлийн шийдвэрт ашиглахуйц монгол хэлээр тодорхой бич.'
             ].join(' '),
             input: [{

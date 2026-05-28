@@ -205,6 +205,16 @@ const formatNumberInput = (value, { decimal = false } = {}) => {
 const formatMoney = (value) => `${Math.round(value || 0).toLocaleString('mn-MN')} ₮`;
 const normalizeCurrency = (value) => String(value || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN';
 const isMntCurrency = (value) => normalizeCurrency(value) === 'MNT';
+const filterFinancialRiskFlags = (riskFlags = [], balance = {}) => {
+  const currentLiabilities = parseNumber(balance.currentLiabilities);
+  const totalLiabilities = parseNumber(balance.totalLiabilities);
+  return (riskFlags || []).filter((flag) => {
+    const text = String(flag || '').toLowerCase();
+    const mentionsNoDebt = text.includes('өр төлбөр байхгүй') || text.includes('одоогийн өр төлбөр байхгүй') || (text.includes('liabilities') && text.includes('no'));
+    const framesAsRisk = text.includes('эрсдэл') || text.includes('risk');
+    return !(mentionsNoDebt && framesAsRisk && currentLiabilities <= 0 && totalLiabilities <= 0);
+  });
+};
 const formatNativeMoney = (value, currency = 'UNKNOWN') => {
   const code = normalizeCurrency(currency);
   const amount = Number(value || 0).toLocaleString('mn-MN', { maximumFractionDigits: 2 });
@@ -3348,12 +3358,16 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                         ))}
                       </div>
                       {displayedFinancialAnalysis.analysis && <p className="text-sm text-slate-700 leading-relaxed">{displayedFinancialAnalysis.analysis}</p>}
-                      {displayedFinancialAnalysis.riskFlags?.length > 0 && (
+                      {(() => {
+                        const financialRisks = filterFinancialRiskFlags(displayedFinancialAnalysis.riskFlags, balance);
+                        if (!financialRisks.length) return null;
+                        return (
                         <div className="bg-red-50 border border-red-200 rounded-xl p-3">
                           <p className="text-xs font-bold text-red-700 mb-2">Эрсдэлийн дохио</p>
-                          {displayedFinancialAnalysis.riskFlags.map((risk, index) => <p key={index} className="text-xs text-red-700">- {risk}</p>)}
+                          {financialRisks.map((risk, index) => <p key={index} className="text-xs text-red-700">- {risk}</p>)}
                         </div>
-                      )}
+                        );
+                      })()}
                     </section>
                   </>
                 );

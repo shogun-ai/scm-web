@@ -43,6 +43,16 @@ const COMMITTEE_PERMISSION_DEFAULTS = {
 };
 
 const getUserRoleKeys = (user) => [...new Set([user?.role, ...(Array.isArray(user?.roles) ? user.roles : [])].filter(Boolean))];
+const filterFinancialRiskFlags = (riskFlags = [], balance = {}) => {
+  const currentLiabilities = Number(String(balance.currentLiabilities ?? '').replace(/[^0-9.-]/g, '')) || 0;
+  const totalLiabilities = Number(String(balance.totalLiabilities ?? '').replace(/[^0-9.-]/g, '')) || 0;
+  return (riskFlags || []).filter((flag) => {
+    const text = String(flag || '').toLowerCase();
+    const mentionsNoDebt = text.includes('өр төлбөр байхгүй') || text.includes('одоогийн өр төлбөр байхгүй') || (text.includes('liabilities') && text.includes('no'));
+    const framesAsRisk = text.includes('эрсдэл') || text.includes('risk');
+    return !(mentionsNoDebt && framesAsRisk && currentLiabilities <= 0 && totalLiabilities <= 0);
+  });
+};
 
 const hasCommitteePermission = (user, permissionMap, action, minimum = 'full') => {
   const roles = getUserRoleKeys(user);
@@ -2528,11 +2538,15 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
             Current ratio: <b>{Number(financialRatios.currentRatio || 0).toFixed(2)}</b> · Debt / Equity: <b>{Number(financialRatios.debtToEquity || 0).toFixed(2)}</b>
           </p>
           {financial.analysis && <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 rounded-lg p-3">{financial.analysis}</p>}
-          {financial.riskFlags?.length > 0 && (
+          {(() => {
+            const financialRisks = filterFinancialRiskFlags(financial.riskFlags, financialBalance);
+            if (!financialRisks.length) return null;
+            return (
             <div className="flex flex-wrap gap-2">
-              {financial.riskFlags.map((risk, index) => <span key={index} className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-2.5 py-1 text-xs font-semibold">{risk}</span>)}
+              {financialRisks.map((risk, index) => <span key={index} className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-2.5 py-1 text-xs font-semibold">{risk}</span>)}
             </div>
-          )}
+            );
+          })()}
         </div>
       )}
 
