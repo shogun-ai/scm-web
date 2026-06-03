@@ -2,8 +2,13 @@ import mongoose from 'mongoose';
 
 const FacebookPostKnowledgeSchema = new mongoose.Schema({
     postId: { type: String, required: true, unique: true },
+    adId: { type: String, default: '' },
+    adName: { type: String, default: '' },
+    adEffectiveStatus: { type: String, default: '' },
+    creativeId: { type: String, default: '' },
     message: { type: String, default: '' },
     permalinkUrl: { type: String, default: '' },
+    thumbnailUrl: { type: String, default: '' },
     createdTime: { type: Date },
     statusType: { type: String, default: '' },
     isPublished: { type: Boolean, default: true },

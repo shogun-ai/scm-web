@@ -2238,6 +2238,8 @@ app.post('/api/chat', async (req, res) => {
 const FB_GRAPH_VERSION = process.env.FB_GRAPH_VERSION || 'v20.0';
 const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || process.env.MESSENGER_VERIFY_TOKEN;
 const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN || process.env.MESSENGER_PAGE_ACCESS_TOKEN;
+const FB_AD_ACCOUNT_ID = String(process.env.FB_AD_ACCOUNT_ID || process.env.META_AD_ACCOUNT_ID || '').replace(/^act_/, '');
+const FB_ADS_ACCESS_TOKEN = process.env.FB_ADS_ACCESS_TOKEN || process.env.META_ADS_ACCESS_TOKEN || FB_PAGE_ACCESS_TOKEN;
 
 async function configureMessengerProfile() {
     if (!FB_PAGE_ACCESS_TOKEN) return;
@@ -6164,8 +6166,14 @@ app.post('/api/config/bulk', authenticateUser, requireAdmin, async (req, res) =>
 // ============================================================
 
 async function syncFacebookPostKnowledge() {
-    if (!FB_PAGE_ACCESS_TOKEN) {
-        const error = new Error('FB_PAGE_ACCESS_TOKEN тохируулагдаагүй байна');
+    if (!FB_AD_ACCOUNT_ID) {
+        const error = new Error('FB_AD_ACCOUNT_ID тохируулагдаагүй байна. Зөвхөн boost/ad пост sync хийхийн тулд Meta Ad Account ID хэрэгтэй.');
+        error.statusCode = 503;
+        throw error;
+    }
+
+    if (!FB_ADS_ACCESS_TOKEN) {
+        const error = new Error('FB_ADS_ACCESS_TOKEN эсвэл FB_PAGE_ACCESS_TOKEN тохируулагдаагүй байна. Boosted пост уншихад ads_read эрхтэй token хэрэгтэй.');
         error.statusCode = 503;
         throw error;
     }
@@ -6173,12 +6181,21 @@ async function syncFacebookPostKnowledge() {
     let response;
     try {
         response = await axios.get(
-            `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/feed`,
+            `https://graph.facebook.com/${FB_GRAPH_VERSION}/act_${FB_AD_ACCOUNT_ID}/ads`,
             {
                 params: {
-                    access_token: FB_PAGE_ACCESS_TOKEN,
-                    fields: 'id,message,permalink_url,created_time,status_type',
-                    limit: 25
+                    access_token: FB_ADS_ACCESS_TOKEN,
+                    fields: [
+                        'id',
+                        'name',
+                        'status',
+                        'effective_status',
+                        'created_time',
+                        'updated_time',
+                        'preview_shareable_link',
+                        'creative{id,name,body,title,thumbnail_url,image_url,effective_object_story_id,object_story_spec}'
+                    ].join(','),
+                    limit: 50
                 },
                 timeout: 20000
             }
@@ -6188,25 +6205,46 @@ async function syncFacebookPostKnowledge() {
         const message = metaError?.message || err.response?.data?.message || err.message;
         const code = metaError?.code ? `Meta code ${metaError.code}` : `HTTP ${err.response?.status || 500}`;
         const fbtrace = metaError?.fbtrace_id ? `, trace ${metaError.fbtrace_id}` : '';
-        const error = new Error(`Facebook sync алдаа: ${message} (${code}${fbtrace})`);
+        const error = new Error(`Facebook boosted/ad sync алдаа: ${message} (${code}${fbtrace}). FB_AD_ACCOUNT_ID болон ads_read эрхтэй token шалгана уу.`);
         error.statusCode = err.response?.status || 500;
         throw error;
     }
 
-    const posts = Array.isArray(response.data?.data) ? response.data.data : [];
-    const synced = await Promise.all(posts.map(async post => {
+    const ads = (Array.isArray(response.data?.data) ? response.data.data : [])
+        .filter(ad => ad.effective_status === 'ACTIVE');
+
+    const synced = await Promise.all(ads.map(async ad => {
+        const creative = ad.creative || {};
+        const storySpec = creative.object_story_spec || {};
+        const linkData = storySpec.link_data || {};
+        const videoData = storySpec.video_data || {};
+        const templateData = storySpec.template_data || {};
+        const message = [
+            linkData.message,
+            videoData.message,
+            templateData.message,
+            creative.body,
+            creative.title,
+            ad.name
+        ].find(Boolean) || '';
+        const storyId = creative.effective_object_story_id || '';
         const update = {
-            message: post.message || '',
-            permalinkUrl: post.permalink_url || '',
-            createdTime: post.created_time ? new Date(post.created_time) : undefined,
-            statusType: post.status_type || '',
+            adId: ad.id || '',
+            adName: ad.name || '',
+            adEffectiveStatus: ad.effective_status || '',
+            creativeId: creative.id || '',
+            message,
+            permalinkUrl: ad.preview_shareable_link || '',
+            thumbnailUrl: creative.thumbnail_url || creative.image_url || '',
+            createdTime: ad.created_time ? new Date(ad.created_time) : undefined,
+            statusType: ad.status || '',
             isPublished: true,
             syncedAt: new Date(),
             updatedAt: new Date()
         };
         return FacebookPostKnowledge.findOneAndUpdate(
-            { postId: post.id },
-            { $set: update, $setOnInsert: { postId: post.id, isActive: true, replyKnowledge: '', adminNotes: '' } },
+            { postId: storyId || `ad_${ad.id}` },
+            { $set: update, $setOnInsert: { postId: storyId || `ad_${ad.id}`, isActive: true, replyKnowledge: '', adminNotes: '' } },
             { upsert: true, new: true }
         );
     }));

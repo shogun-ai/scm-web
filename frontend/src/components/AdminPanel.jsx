@@ -2236,8 +2236,8 @@ const AdminPanel = ({ user, token, onLogout }) => {
                     <section className="bg-white rounded-2xl border shadow-sm p-6 space-y-5">
                       <div className="flex items-start justify-between gap-4 border-b pb-4">
                         <div>
-                          <h3 className="font-bold text-lg text-[#003B5C]">Facebook постын хариултын мэдлэг</h3>
-                          <p className="text-xs text-gray-400 mt-1">Page дээрх постуудыг sync хийгээд, пост бүрийн доор chatbot ашиглах хариултын мэдээллийг оруулна.</p>
+                          <h3 className="font-bold text-lg text-[#003B5C]">Facebook boosted/ad постын мэдлэг</h3>
+                          <p className="text-xs text-gray-400 mt-1">Зөвхөн идэвхтэй boost/ad постууд sync хийгдэнэ. Пост бүрийн доор chatbot ашиглах хариултын мэдээллийг оруулна.</p>
                         </div>
                         <button
                           onClick={syncFacebookPosts}
@@ -2249,18 +2249,23 @@ const AdminPanel = ({ user, token, onLogout }) => {
                       </div>
                       {!facebookPosts.length ? (
                         <div className="rounded-xl border bg-slate-50 p-5 text-sm text-slate-500">
-                          Одоогоор sync хийгдсэн пост алга. Facebook sync дарж Page-ийн сүүлийн постуудыг татна.
+                          Одоогоор sync хийгдсэн зарын пост алга. Facebook sync дарж идэвхтэй boosted/ad постуудыг татна.
                         </div>
                       ) : (
                         <div className="space-y-4">
                           {facebookPosts.map(post => (
                             <div key={post._id} className="rounded-2xl border bg-slate-50 p-4 space-y-3">
                               <div className="flex items-start justify-between gap-3">
+                                {post.thumbnailUrl && (
+                                  <img src={post.thumbnailUrl} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover border bg-white" />
+                                )}
                                 <div className="min-w-0">
-                                  <p className="text-xs font-bold text-slate-400">{post.createdTime ? new Date(post.createdTime).toLocaleString('mn-MN') : 'Facebook post'}</p>
-                                  <p className="mt-1 line-clamp-3 text-sm font-semibold text-slate-700">{post.message || 'Текстгүй пост'}</p>
+                                  <p className="text-xs font-bold text-slate-400">{post.createdTime ? new Date(post.createdTime).toLocaleString('mn-MN') : 'Facebook ad post'}</p>
+                                  <p className="mt-1 text-sm font-bold text-[#003B5C]">{post.adName || 'Boosted post'}</p>
+                                  <p className="mt-1 line-clamp-3 text-sm font-semibold text-slate-700">{post.message || 'Текстгүй зарын пост'}</p>
+                                  <p className="mt-1 text-[11px] font-bold text-slate-400">Ad status: {post.adEffectiveStatus || post.statusType || 'ACTIVE'}</p>
                                   {post.permalinkUrl && (
-                                    <a href={post.permalinkUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-bold text-[#1877F2]">Пост харах</a>
+                                    <a href={post.permalinkUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-bold text-[#1877F2]">Ad preview харах</a>
                                   )}
                                 </div>
                                 <label className="flex items-center gap-2 text-xs font-bold text-slate-500">
@@ -2277,7 +2282,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                                 rows={4}
                                 value={post.replyKnowledge || ''}
                                 onChange={e => updateFacebookPost(post._id, 'replyKnowledge', e.target.value)}
-                                placeholder="Энэ постын талаар хэрэглэгч асуувал chatbot ямар мэдээллийн хүрээнд хариулах вэ?"
+                                placeholder="Энэ зарын постын талаар хэрэглэгч асуувал chatbot ямар мэдээллийн хүрээнд хариулах вэ?"
                                 className="w-full p-3 border rounded-xl text-sm bg-white focus:outline-none focus:border-[#003B5C] resize-none"
                               />
                               <div className="flex justify-end">
