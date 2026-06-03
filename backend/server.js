@@ -6170,17 +6170,28 @@ async function syncFacebookPostKnowledge() {
         throw error;
     }
 
-    const response = await axios.get(
-        `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/posts`,
-        {
-            params: {
-                access_token: FB_PAGE_ACCESS_TOKEN,
-                fields: 'id,message,permalink_url,created_time,status_type,is_published',
-                limit: 25
-            },
-            timeout: 20000
-        }
-    );
+    let response;
+    try {
+        response = await axios.get(
+            `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/feed`,
+            {
+                params: {
+                    access_token: FB_PAGE_ACCESS_TOKEN,
+                    fields: 'id,message,permalink_url,created_time,status_type',
+                    limit: 25
+                },
+                timeout: 20000
+            }
+        );
+    } catch (err) {
+        const metaError = err.response?.data?.error;
+        const message = metaError?.message || err.response?.data?.message || err.message;
+        const code = metaError?.code ? `Meta code ${metaError.code}` : `HTTP ${err.response?.status || 500}`;
+        const fbtrace = metaError?.fbtrace_id ? `, trace ${metaError.fbtrace_id}` : '';
+        const error = new Error(`Facebook sync алдаа: ${message} (${code}${fbtrace})`);
+        error.statusCode = err.response?.status || 500;
+        throw error;
+    }
 
     const posts = Array.isArray(response.data?.data) ? response.data.data : [];
     const synced = await Promise.all(posts.map(async post => {
@@ -6189,7 +6200,7 @@ async function syncFacebookPostKnowledge() {
             permalinkUrl: post.permalink_url || '',
             createdTime: post.created_time ? new Date(post.created_time) : undefined,
             statusType: post.status_type || '',
-            isPublished: post.is_published !== false,
+            isPublished: true,
             syncedAt: new Date(),
             updatedAt: new Date()
         };
