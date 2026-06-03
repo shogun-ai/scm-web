@@ -118,6 +118,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
   const [siteConfig, setSiteConfig] = useState({});
   const [configEdits, setConfigEdits] = useState({});
   const [chatbotCards, setChatbotCards] = useState(DEFAULT_CHATBOT_CARDS);
+  const [facebookPosts, setFacebookPosts] = useState([]);
   const [products, setProducts] = useState([]);
   const [editingProduct, setEditingProduct] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
@@ -393,7 +394,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
   // 🗄️ CMS FUNCTIONS
   // ============================================================
   const fetchCMSData = async () => {
-    const [cfgRes, prodRes, teamRes, loanFormRes, trustFormRes, blogRes, promoRes] = await Promise.allSettled([
+    const [cfgRes, prodRes, teamRes, loanFormRes, trustFormRes, blogRes, promoRes, fbPostRes] = await Promise.allSettled([
       axios.get(`${API_URL}/api/config`),
       axios.get(`${API_URL}/api/products/content`),
       axios.get(`${API_URL}/api/team/all`),
@@ -401,6 +402,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
       axios.get(`${API_URL}/api/form-config/trust`),
       axios.get(`${API_URL}/api/blogs?isCustom=true`),
       axios.get(`${API_URL}/api/promotions?all=true`),
+      axios.get(`${API_URL}/api/facebook-post-knowledge`),
     ]);
     if (cfgRes.status === 'fulfilled') {
       setSiteConfig(cfgRes.value.data);
@@ -417,6 +419,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
       setFormConfigs({ loan: loanFormRes.value.data, trust: trustFormRes.value.data });
     if (blogRes.status === 'fulfilled') setBlogPosts(blogRes.value.data || []);
     if (promoRes.status === 'fulfilled') setPromoSlides(promoRes.value.data || []);
+    if (fbPostRes.status === 'fulfilled') setFacebookPosts(fbPostRes.value.data || []);
   };
 
   useEffect(() => {
@@ -535,7 +538,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
         'dti_org',
         'chatbot_repayment_title',
         'chatbot_repayment_text',
-        'chatbot_repayment_image'
+        'chatbot_repayment_image',
+        'chatbot_ai_enabled',
+        'chatbot_ai_scope_text',
+        'chatbot_ai_fallback_text'
       ];
       const updates = {};
       chatbotConfigKeys.forEach(key => {
@@ -680,6 +686,41 @@ const AdminPanel = ({ user, token, onLogout }) => {
     )));
   };
 
+  const syncFacebookPosts = async () => {
+    setCmsSaving(true);
+    try {
+      const res = await axios.post(`${API_URL}/api/facebook-post-knowledge/sync`);
+      setFacebookPosts(res.data?.posts || []);
+      alert(`${res.data?.synced || 0} Facebook пост sync хийгдлээ.`);
+    } catch (e) {
+      alert(e.response?.data?.message || 'Facebook пост sync хийхэд алдаа гарлаа');
+    } finally {
+      setCmsSaving(false);
+    }
+  };
+
+  const updateFacebookPost = (postId, field, value) => {
+    setFacebookPosts(prev => prev.map(post => (
+      post._id === postId ? { ...post, [field]: value } : post
+    )));
+  };
+
+  const saveFacebookPost = async (post) => {
+    setCmsSaving(true);
+    try {
+      const res = await axios.put(`${API_URL}/api/facebook-post-knowledge/${post._id}`, {
+        replyKnowledge: post.replyKnowledge || '',
+        adminNotes: post.adminNotes || '',
+        isActive: post.isActive !== false
+      });
+      setFacebookPosts(prev => prev.map(item => item._id === post._id ? res.data : item));
+    } catch (e) {
+      alert(e.response?.data?.message || 'Facebook пост хадгалахад алдаа гарлаа');
+    } finally {
+      setCmsSaving(false);
+    }
+  };
+
   const updateChatbotCard = (cardId, field, value) => {
     setChatbotCards(prev => prev.map(card => (
       card.id === cardId ? { ...card, [field]: value } : card
@@ -721,6 +762,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
           {user?.role === 'admin' && (<>
             <button onClick={() => setActiveTab('finance')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'finance' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Activity size={18} /> Файл засах</button>
             <button onClick={() => setActiveTab('cms')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'cms' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Globe size={18} /> Контент засах</button>
+            <button onClick={() => { setActiveTab('cms'); setCmsSubTab('chatbot'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'cms' && cmsSubTab === 'chatbot' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><MessageCircle size={18} /> Чатбот</button>
             <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'users' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Users size={18} /> Хэрэглэгчид</button>
             <button onClick={() => setActiveTab('permissions')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'permissions' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Shield size={18} /> Эрхийн матриц</button>
             <button onClick={() => setActiveTab('logs')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'logs' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Activity size={18} /> Үйлдлийн лог</button>
@@ -2147,6 +2189,111 @@ const AdminPanel = ({ user, token, onLogout }) => {
                         ))}
                       </section>
                     </div>
+
+                    <section className="bg-white rounded-2xl border shadow-sm p-6 space-y-4">
+                      <div className="flex items-start justify-between gap-4 border-b pb-3">
+                        <div>
+                          <h3 className="font-bold text-lg text-[#003B5C]">AI хариултын хязгаар</h3>
+                          <p className="text-xs text-gray-400 mt-1">Chatbot нь энд тохируулсан бодлого болон бүтээгдэхүүн, нөхцөл, баримт бичиг, хүү, холбоо барих мэдээллийн хүрээнд л хариулна.</p>
+                        </div>
+                        <label className="flex items-center gap-2 rounded-xl border bg-slate-50 px-4 py-2 text-xs font-bold text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={configEdits.chatbot_ai_enabled !== false && configEdits.chatbot_ai_enabled !== 'false'}
+                            onChange={e => setConfigEdits(prev => ({ ...prev, chatbot_ai_enabled: e.target.checked }))}
+                            className="h-4 w-4 accent-[#003B5C]"
+                          />
+                          AI fallback
+                        </label>
+                      </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-gray-400 uppercase">Хариулах хүрээ</label>
+                          <textarea
+                            rows={4}
+                            value={configEdits.chatbot_ai_scope_text ?? siteConfig.chatbot?.chatbot_ai_scope_text?.value ?? ''}
+                            onChange={e => setConfigEdits(prev => ({ ...prev, chatbot_ai_scope_text: e.target.value }))}
+                            placeholder="Зөвхөн админ панелд бүртгэсэн мэдээллийн хүрээнд хариулна."
+                            className="w-full p-3 border rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C] resize-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-gray-400 uppercase">Мэдээлэл байхгүй үед</label>
+                          <textarea
+                            rows={4}
+                            value={configEdits.chatbot_ai_fallback_text ?? siteConfig.chatbot?.chatbot_ai_fallback_text?.value ?? ''}
+                            onChange={e => setConfigEdits(prev => ({ ...prev, chatbot_ai_fallback_text: e.target.value }))}
+                            placeholder="Энэ мэдээлэл админ панелд бүртгэгдээгүй байна."
+                            className="w-full p-3 border rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C] resize-none"
+                          />
+                        </div>
+                      </div>
+                      <div className="rounded-xl border bg-emerald-50 p-4 text-xs leading-relaxed text-emerald-900">
+                        Тооцооллын хариу AI-аар зохиогдохгүй. Зээлийн сарын хүү, иргэн/байгууллагын ӨОХ дээр үндэслэн backend өөрөө сарын төлөлт, нийт төлөлт, шаардлагатай сарын доод орлогыг бодож гаргана.
+                      </div>
+                    </section>
+
+                    <section className="bg-white rounded-2xl border shadow-sm p-6 space-y-5">
+                      <div className="flex items-start justify-between gap-4 border-b pb-4">
+                        <div>
+                          <h3 className="font-bold text-lg text-[#003B5C]">Facebook постын хариултын мэдлэг</h3>
+                          <p className="text-xs text-gray-400 mt-1">Page дээрх постуудыг sync хийгээд, пост бүрийн доор chatbot ашиглах хариултын мэдээллийг оруулна.</p>
+                        </div>
+                        <button
+                          onClick={syncFacebookPosts}
+                          disabled={cmsSaving}
+                          className="rounded-xl bg-[#1877F2] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+                        >
+                          Facebook sync
+                        </button>
+                      </div>
+                      {!facebookPosts.length ? (
+                        <div className="rounded-xl border bg-slate-50 p-5 text-sm text-slate-500">
+                          Одоогоор sync хийгдсэн пост алга. Facebook sync дарж Page-ийн сүүлийн постуудыг татна.
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {facebookPosts.map(post => (
+                            <div key={post._id} className="rounded-2xl border bg-slate-50 p-4 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-400">{post.createdTime ? new Date(post.createdTime).toLocaleString('mn-MN') : 'Facebook post'}</p>
+                                  <p className="mt-1 line-clamp-3 text-sm font-semibold text-slate-700">{post.message || 'Текстгүй пост'}</p>
+                                  {post.permalinkUrl && (
+                                    <a href={post.permalinkUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-bold text-[#1877F2]">Пост харах</a>
+                                  )}
+                                </div>
+                                <label className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                                  <input
+                                    type="checkbox"
+                                    checked={post.isActive !== false}
+                                    onChange={e => updateFacebookPost(post._id, 'isActive', e.target.checked)}
+                                    className="h-4 w-4 accent-[#003B5C]"
+                                  />
+                                  Ашиглах
+                                </label>
+                              </div>
+                              <textarea
+                                rows={4}
+                                value={post.replyKnowledge || ''}
+                                onChange={e => updateFacebookPost(post._id, 'replyKnowledge', e.target.value)}
+                                placeholder="Энэ постын талаар хэрэглэгч асуувал chatbot ямар мэдээллийн хүрээнд хариулах вэ?"
+                                className="w-full p-3 border rounded-xl text-sm bg-white focus:outline-none focus:border-[#003B5C] resize-none"
+                              />
+                              <div className="flex justify-end">
+                                <button
+                                  onClick={() => saveFacebookPost(post)}
+                                  disabled={cmsSaving}
+                                  className="rounded-xl bg-[#003B5C] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+                                >
+                                  Постын мэдлэг хадгалах
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
 
                     <section className="bg-white rounded-2xl border shadow-sm p-6 space-y-4">
                       <h3 className="font-bold text-lg text-[#003B5C] border-b pb-3">Эргэн төлөлтийн мэдээллийн карт</h3>

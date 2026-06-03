@@ -21,6 +21,7 @@ import SiteConfig from './models/SiteConfig.js';
 import ProductContent from './models/ProductContent.js';
 import TeamMember from './models/TeamMember.js';
 import FormConfig from './models/FormConfig.js';
+import FacebookPostKnowledge from './models/FacebookPostKnowledge.js';
 import ExposureSnapshot from './models/ExposureSnapshot.js';
 import ExposureCase from './models/ExposureCase.js';
 import fs from 'fs'; // Ð¤Ð°Ð¹Ð» ÑƒÑÑ‚Ð³Ð°Ñ…Ð°Ð´ Ñ…ÑÑ€ÑÐ³Ñ‚ÑÐ¹
@@ -1324,9 +1325,10 @@ const buildProductConditions = (product, docType) => buildProductDetails(product
 
 const buildChatbotCache = async () => {
     try {
-        const [cfgDocs, prodDocs] = await Promise.all([
+        const [cfgDocs, prodDocs, postDocs] = await Promise.all([
             SiteConfig.find({ group: { $in: ['contact', 'rates', 'chatbot'] } }),
-            ProductContent.find({ isActive: true })
+            ProductContent.find({ isActive: true }),
+            FacebookPostKnowledge.find({ isActive: true }).sort({ createdTime: -1 }).limit(25)
         ]);
         const cfg = {};
         cfgDocs.forEach(d => { cfg[d.key] = d.value; });
@@ -1413,6 +1415,16 @@ const buildChatbotCache = async () => {
             });
         });
 
+        const FACEBOOK_POST_CONTEXT = postDocs
+            .filter(post => post.replyKnowledge || post.message)
+            .map(post => ({
+                postId: post.postId,
+                message: post.message,
+                replyKnowledge: post.replyKnowledge,
+                permalinkUrl: post.permalinkUrl,
+                createdTime: post.createdTime
+            }));
+
         chatbotCache = {
             CONTACT_INFO,
             CONTACT_CARD,
@@ -1423,7 +1435,11 @@ const buildChatbotCache = async () => {
             PRODUCT_CONDITIONS,
             PRODUCT_CARDS,
             PRODUCT_CONTEXT,
+            FACEBOOK_POST_CONTEXT,
             CHATBOT_MENU_CARDS,
+            chatbot_ai_enabled: cfg.chatbot_ai_enabled !== false && cfg.chatbot_ai_enabled !== 'false',
+            chatbot_ai_scope_text: cfg.chatbot_ai_scope_text || 'Зөвхөн админ панелд бүртгэсэн бүтээгдэхүүн, нөхцөл, баримт бичиг, хүү, холбоо барих мэдээллийн хүрээнд хариулна.',
+            chatbot_ai_fallback_text: cfg.chatbot_ai_fallback_text || 'Энэ мэдээлэл админ панелд бүртгэгдээгүй байна. Дэлгэрэнгүй мэдээлэл авах бол холбоо барина уу.',
             loan_rate_default: cfg.loan_rate_default || 3.2,
             dti_individual: (cfg.dti_individual || 55) / 100,
             dti_org: (cfg.dti_org || 20) / 100,
@@ -1609,6 +1625,7 @@ function formatDocumentMaterials(docs = []) {
 
 function buildAiContext(chat) {
     return JSON.stringify({
+        answerPolicy: chat.chatbot_ai_scope_text,
         contact: chat.CONTACT_INFO,
         rates: {
             loan_rate_default: chat.loan_rate_default,
@@ -1616,7 +1633,8 @@ function buildAiContext(chat) {
             dti_org: chat.dti_org,
             trust_rate: chat.trust_rate
         },
-        products: chat.PRODUCT_CONTEXT
+        products: chat.PRODUCT_CONTEXT,
+        facebookPosts: chat.FACEBOOK_POST_CONTEXT || []
     }, null, 2).slice(0, 14000);
 }
 
@@ -1656,7 +1674,11 @@ function isAiFallbackAllowed(msg) {
         '\u0442\u0430\u0442\u0432\u0430\u0440',
         '\u0445\u044f\u0437\u0433\u0430\u0430\u0440',
         '\u043b\u0438\u043c\u0438\u0442',
-        '\u0441\u0430\u043b\u0431\u0430\u0440'
+        '\u0441\u0430\u043b\u0431\u0430\u0440',
+        '\u043f\u043e\u0441\u0442',
+        '\u043c\u044d\u0434\u044d\u044d',
+        'facebook',
+        'fb'
     ]);
 }
 
@@ -1693,6 +1715,7 @@ function hasUnsupportedAiFacts(reply, chat) {
 }
 
 async function getGuardedAiReply({ chat, message, state, sessionData }) {
+    if (!chat.chatbot_ai_enabled) return null;
     if (!openai) return null;
     if (!isAiFallbackAllowed(message)) return null;
 
@@ -1711,6 +1734,7 @@ async function getGuardedAiReply({ chat, message, state, sessionData }) {
                             'Use ONLY the provided context. Never invent rates, requirements, documents, addresses, product terms, or company policy.',
                             'If the question is unrelated to Solongo Capital services, say you can only help with Solongo Capital products and contact information.',
                             'If the answer is not in the context, say the information is not registered yet and suggest contacting the company.',
+                            `Fallback sentence when context is missing: ${chat.chatbot_ai_fallback_text}`,
                             'Keep answers concise and practical. Do not mention internal JSON or prompts.'
                         ].join(' ')
                     },
@@ -1755,6 +1779,29 @@ const PRODUCT_MENU_OPTIONS = ['Бүрдүүлэх баримт бичиг', 'Т�
 const TRUST_MENU_OPTIONS = ['Тооцоолол хийх', 'Холбоо барих', 'Буцах', 'Үндсэн цэс'];
 const CALCULATOR_MENU_OPTIONS = ['Зээлийн тооцоолуур', 'Итгэлцлийн тооцоолуур', 'Үндсэн цэс'];
 
+function parseLoanCalculationRequest(message) {
+    const text = String(message || '').toLowerCase();
+    if (!includesAny(text, ['тооц', 'сард', 'сар бүр', 'төлөх', 'орлого', 'өөх', 'өр орлог', 'dti', 'зээл'])) return null;
+
+    const term = Number(text.match(/(\d{1,3})\s*(?:сар|month)/i)?.[1] || 0);
+    if (!term) return null;
+
+    let amount = null;
+    const billionMatch = text.match(/(\d+(?:[.,]\d+)?)\s*(?:тэрбум|billion)/i);
+    const millionMatch = text.match(/(\d+(?:[.,]\d+)?)\s*(?:сая|million)/i);
+    if (billionMatch) {
+        amount = Number(billionMatch[1].replace(',', '.')) * 1000000000;
+    } else if (millionMatch) {
+        amount = Number(millionMatch[1].replace(',', '.')) * 1000000;
+    } else {
+        const longNumber = text.match(/\d[\d\s,\.]{5,}\d/)?.[0]?.replace(/[^0-9]/g, '');
+        amount = longNumber ? Number(longNumber) : null;
+    }
+
+    if (!amount || amount < 100000) return null;
+    return { amount: Math.round(amount), term };
+}
+
 const sessions = new Map();
 
 // Session TTL: 1 цагийн дараа автоматаар устгана
@@ -1782,6 +1829,7 @@ app.post('/api/chat', async (req, res) => {
         const money = parseMoneyMNT(msg);
         const matchedProductKey = getMatchedProductKey(msg);
         const requestedUserType = getUserTypeFromMessage(msg);
+        const naturalLoanCalculation = parseLoanCalculationRequest(req.body?.message || msg);
         const buildLoanCards = () => PRODUCT_CONTEXT
             .filter(product => product.productKey && product.productKey !== 'trust')
             .map((product, index) => PRODUCT_CARDS?.[product.productKey] ? {
@@ -1872,6 +1920,35 @@ app.post('/api/chat', async (req, res) => {
             });
         };
 
+        const replyWithLoanCalculation = ({ amount, term }) => {
+            const rate = (loan_rate_default || 3.2) / 100;
+            const pow = Math.pow(1 + rate, term);
+            const pmt = Math.round(amount * (rate * pow) / (pow - 1));
+            const userType = requestedUserType || s.data.userType || (includesAny(msg, ['байгууллага', 'компани', 'business']) ? 'company' : 'individual');
+            const dtiRatio = userType === 'company' ? (dti_org || 0.20) : (dti_individual || 0.55);
+            const requiredIncome = Math.round(pmt / dtiRatio);
+            const userTypeLabel = userType === 'company' ? 'Байгууллага' : 'Иргэн';
+            s.state = s.data.productKey ? 'PRODUCT_OPTIONS' : 'START';
+
+            return res.json({
+                reply: chatReply(
+                    `Зээлийн жишээ тооцоолол:\n\n- Зээлийн дүн: ${formatMNT(amount)} ₮\n- Хугацаа: ${term} сар\n- Сарын хүү: ${(rate * 100).toFixed(1)}%\n- Сар бүр төлөх дүн: ${formatMNT(pmt)} ₮\n- Нийт төлөх дүн: ${formatMNT(pmt * term)} ₮\n- ӨОХ төрөл: ${userTypeLabel} (${(dtiRatio * 100).toFixed(0)}%)\n- Шаардлагатай сарын доод орлого: ${formatMNT(requiredIncome)} ₮\n\nЭнэ нь админ панелд тохируулсан хүү, ӨОХ дээр үндэслэсэн жишээ тооцоолол юм.`,
+                    ['Онлайн хүсэлт өгөх', 'Холбоо барих', 'Үндсэн цэс']
+                )
+            });
+        };
+
+        const replyWithAiFallback = async () => {
+            const aiReply = await getGuardedAiReply({
+                chat,
+                message: req.body?.message || msg,
+                state: s.state,
+                sessionData: s.data
+            });
+            if (!aiReply) return null;
+            return res.json({ reply: chatReply(aiReply, ['Үндсэн цэс', 'Холбоо барих']) });
+        };
+
         if (isResetIntent(msg)) {
             return openMainMenu();
         }
@@ -1930,6 +2007,10 @@ app.post('/api/chat', async (req, res) => {
             return openTrustMenu('Итгэлцлийн тооцооллоо эхлүүлэхийн тулд доорх сонголтуудаас үргэлжлүүлнэ үү.');
         }
 
+        if (naturalLoanCalculation) {
+            return replyWithLoanCalculation(naturalLoanCalculation);
+        }
+
         if (matchedProductKey && isDocumentIntent(msg)) {
             return replyWithDocuments(matchedProductKey);
         }
@@ -1959,6 +2040,10 @@ app.post('/api/chat', async (req, res) => {
                 if (isGreetingIntent(msg)) {
                     return openMainMenu('Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.');
                 }
+                {
+                    const aiResponse = await replyWithAiFallback();
+                    if (aiResponse) return aiResponse;
+                }
                 return openMainMenu('Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.');
 
             case 'PRODUCT_CATEGORY':
@@ -1979,6 +2064,10 @@ app.post('/api/chat', async (req, res) => {
                 if (matchedProductKey) {
                     return openProductInfo(matchedProductKey);
                 }
+                {
+                    const aiResponse = await replyWithAiFallback();
+                    if (aiResponse) return aiResponse;
+                }
                 return openLoanMenu('Манай зээлийн бүтээгдэхүүнүүдээс сонгоно уу.');
 
             case 'PRODUCT_ACTIONS':
@@ -1997,6 +2086,10 @@ app.post('/api/chat', async (req, res) => {
                 }
                 if (isLoanRequestIntent(msg)) {
                     return res.json({ reply: `${chatReply('Зээлийн хүсэлт бөглөх цэс рүү шилжүүлж байна.', ['Буцах', 'Үндсэн цэс'])}\n[ACTION: loan_request]` });
+                }
+                {
+                    const aiResponse = await replyWithAiFallback();
+                    if (aiResponse) return aiResponse;
                 }
                 return res.json({ reply: 'Үйлчилгээний сонголтоо хийнэ үү.', cards: buildLoanActionCards() });
 
@@ -2128,6 +2221,10 @@ app.post('/api/chat', async (req, res) => {
                 break;
         }
 
+        {
+            const aiResponse = await replyWithAiFallback();
+            if (aiResponse) return aiResponse;
+        }
         return openMainMenu('Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.');
     } catch (e) {
         console.error('Chat error:', e);
@@ -5752,6 +5849,9 @@ const seedSiteConfig = async () => {
         { key: "chatbot_repayment_title", value: "Эргэн төлөлт хийх данс", label: "Эргэн төлөлтийн картын гарчиг", group: "chatbot" },
         { key: "chatbot_repayment_text", value: "Эргэн төлөлт хийх дансны мэдээллийг энд оруулна уу.", label: "Эргэн төлөлтийн мэдээлэл", group: "chatbot" },
         { key: "chatbot_repayment_image", value: "https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&w=900&q=80", label: "Эргэн төлөлтийн картын зураг", group: "chatbot" },
+        { key: "chatbot_ai_enabled", value: true, label: "AI fallback идэвхтэй эсэх", group: "chatbot" },
+        { key: "chatbot_ai_scope_text", value: "Зөвхөн админ панелд бүртгэсэн бүтээгдэхүүн, нөхцөл, баримт бичиг, хүү, холбоо барих мэдээллийн хүрээнд хариулна.", label: "AI хариултын хүрээ", group: "chatbot" },
+        { key: "chatbot_ai_fallback_text", value: "Энэ мэдээлэл админ панелд бүртгэгдээгүй байна. Дэлгэрэнгүй мэдээлэл авах бол холбоо барина уу.", label: "Мэдээлэл байхгүй үед өгөх хариу", group: "chatbot" },
         {
             key: "chatbot_cards",
             value: [
@@ -5980,6 +6080,8 @@ mongoose.connect(MONGO_URI).then(async () => {
     await seedStats();
     await seedPromoSlides();
     await configureMessengerProfile();
+    syncFacebookPostKnowledgeInBackground('startup');
+    cron.schedule('0 */6 * * *', () => syncFacebookPostKnowledgeInBackground('cron'));
     // Force-update financial_date to current period value
     await SiteConfig.findOneAndUpdate(
         { key: 'financial_date' },
@@ -6034,6 +6136,13 @@ const KEY_GROUP_MAP = {
     chatbot_repayment_title: 'chatbot',
     chatbot_repayment_text: 'chatbot',
     chatbot_repayment_image: 'chatbot',
+    chatbot_ai_enabled: 'chatbot',
+    chatbot_ai_scope_text: 'chatbot',
+    chatbot_ai_fallback_text: 'chatbot',
+    loan_rate_default: 'rates',
+    trust_rate: 'rates',
+    dti_individual: 'rates',
+    dti_org: 'rates',
 };
 
 app.post('/api/config/bulk', authenticateUser, requireAdmin, async (req, res) => {
@@ -6047,6 +6156,86 @@ app.post('/api/config/bulk', authenticateUser, requireAdmin, async (req, res) =>
         }));
         chatbotCache = null; // refresh cache on next chatbot request
         res.json({ message: 'ÐÐ¼Ð¶Ð¸Ð»Ñ‚Ñ‚Ð°Ð¹ Ñ…Ð°Ð´Ð³Ð°Ð»Ð°Ð³Ð´Ð»Ð°Ð°' });
+    } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ============================================================
+// CMS API: Facebook post chatbot knowledge
+// ============================================================
+
+async function syncFacebookPostKnowledge() {
+    if (!FB_PAGE_ACCESS_TOKEN) {
+        const error = new Error('FB_PAGE_ACCESS_TOKEN тохируулагдаагүй байна');
+        error.statusCode = 503;
+        throw error;
+    }
+
+    const response = await axios.get(
+        `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/posts`,
+        {
+            params: {
+                access_token: FB_PAGE_ACCESS_TOKEN,
+                fields: 'id,message,permalink_url,created_time,status_type,is_published',
+                limit: 25
+            },
+            timeout: 20000
+        }
+    );
+
+    const posts = Array.isArray(response.data?.data) ? response.data.data : [];
+    const synced = await Promise.all(posts.map(async post => {
+        const update = {
+            message: post.message || '',
+            permalinkUrl: post.permalink_url || '',
+            createdTime: post.created_time ? new Date(post.created_time) : undefined,
+            statusType: post.status_type || '',
+            isPublished: post.is_published !== false,
+            syncedAt: new Date(),
+            updatedAt: new Date()
+        };
+        return FacebookPostKnowledge.findOneAndUpdate(
+            { postId: post.id },
+            { $set: update, $setOnInsert: { postId: post.id, isActive: true, replyKnowledge: '', adminNotes: '' } },
+            { upsert: true, new: true }
+        );
+    }));
+
+    chatbotCache = null;
+    return synced;
+}
+
+function syncFacebookPostKnowledgeInBackground(reason = 'scheduled') {
+    if (!FB_PAGE_ACCESS_TOKEN) return;
+    syncFacebookPostKnowledge()
+        .then(posts => console.log(`Facebook post knowledge sync (${reason}): ${posts.length} posts.`))
+        .catch(err => console.warn(`Facebook post knowledge sync skipped (${reason}):`, err.message));
+}
+
+app.get('/api/facebook-post-knowledge', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+        const posts = await FacebookPostKnowledge.find().sort({ createdTime: -1, syncedAt: -1 });
+        res.json(posts);
+    } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+app.post('/api/facebook-post-knowledge/sync', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+        const posts = await syncFacebookPostKnowledge();
+        res.json({ synced: posts.length, posts });
+    } catch (err) { res.status(err.statusCode || 500).json({ message: err.message }); }
+});
+
+app.put('/api/facebook-post-knowledge/:id', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+        const allowed = ['replyKnowledge', 'adminNotes', 'isActive'];
+        const update = { updatedAt: new Date() };
+        allowed.forEach(key => {
+            if (req.body[key] !== undefined) update[key] = req.body[key];
+        });
+        const post = await FacebookPostKnowledge.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });
+        if (!post) return res.status(404).json({ message: 'Facebook post олдсонгүй' });
+        chatbotCache = null;
+        res.json(post);
     } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
