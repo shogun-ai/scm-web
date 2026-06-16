@@ -65,45 +65,122 @@ export default function Transactions() {
     finally { setSaving(false); }
   };
 
+  // ─── Огноо normalize ──────────────────────────────────────────────────────
+  const normalizeDate = (val) => {
+    if (!val) return '';
+    if (val instanceof Date) return val.toISOString().slice(0, 10);
+    const s = String(val).trim();
+    // M/D/YYYY эсвэл MM/DD/YYYY
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+      const [m, d, y] = s.split('/');
+      return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    }
+    // YYYY.MM.DD эсвэл DD.MM.YYYY
+    if (/^\d{4}\.\d{2}\.\d{2}$/.test(s)) return s.replace(/\./g, '-');
+    if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) {
+      const [d, m, y] = s.split('.');
+      return `${y}-${m}-${d}`;
+    }
+    return s.slice(0, 10);
+  };
+
   // ─── Excel import ─────────────────────────────────────────────────────────
-  const handleFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const parseExcel = async (file) => {
     const XLSX = await import('xlsx');
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: 'array', cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const raw = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
 
-    const parsed = raw.map(r => {
+    return raw.map(r => {
       const keys = Object.keys(r);
       const dateKey = keys.find(k => /огноо|date|өдөр/i.test(k)) || keys[1];
       const amtKey  = keys.find(k => /дүн|amount|зарлага|орлого|мөнгөн/i.test(k)) || keys[2];
       const descKey = keys.find(k => /утга|тайлбар|description/i.test(k)) || keys[3];
       const dtKey   = keys.find(k => /^dt$/i.test(k));
       const ctKey   = keys.find(k => /^ct$/i.test(k));
-      const codeKey = keys.find(k => /код|code/i.test(k)) || keys[keys.length - 1];
+      const codeKey = keys.find(k => /код|code/i.test(k));
 
-      let dateVal = r[dateKey];
-      if (dateVal instanceof Date) dateVal = dateVal.toISOString().slice(0, 10);
-      else if (typeof dateVal === 'string' && dateVal.includes('/')) {
-        // M/D/YYYY → YYYY-MM-DD
-        const [m, d, y] = dateVal.split('/');
-        dateVal = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
-      }
-
-      const amt = parseFloat(String(r[amtKey]).replace(/[^0-9.-]/g, '')) || 0;
+      const amt = parseFloat(String(r[amtKey] || '').replace(/[^0-9.-]/g, '')) || 0;
       return {
-        date: dateVal || '',
+        date: normalizeDate(r[dateKey]),
         amount: amt,
         description: String(r[descKey] || '').trim(),
-        dt: dtKey ? String(r[dtKey]) : '',
-        ct: ctKey ? String(r[ctKey]) : '',
-        code: codeKey ? String(r[codeKey]) : '',
+        dt:   dtKey   ? String(r[dtKey]).trim()   : '',
+        ct:   ctKey   ? String(r[ctKey]).trim()   : '',
+        code: codeKey ? String(r[codeKey]).trim() : '',
       };
     }).filter(r => r.date && r.amount > 0);
+  };
 
-    setImportRows(parsed);
+  // ─── PDF import ───────────────────────────────────────────────────────────
+  const parsePdf = async (file) => {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.mjs', import.meta.url
+    ).toString();
+
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const DATE_RE = /\b(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{4}|\d{4}[\/\-\.]\d{2}[\/\-\.]\d{2})\b/;
+    const AMT_RE  = /^-?[\d,]+\.\d{2}$/;
+
+    const allItems = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      // текст item-ийг Y байрлалаар бүлэглэнэ (мөр тус бүр)
+      const byY = {};
+      for (const item of content.items) {
+        if (!item.str.trim()) continue;
+        const y = Math.round(item.transform[5]);
+        if (!byY[y]) byY[y] = [];
+        byY[y].push({ x: item.transform[4], str: item.str.trim() });
+      }
+      // Y-ийг буурах дарааллаар (дээрээс доош)
+      const ySorted = Object.keys(byY).map(Number).sort((a, b) => b - a);
+      for (const y of ySorted) {
+        const line = byY[y].sort((a, b) => a.x - b.x).map(i => i.str).join(' ');
+        allItems.push(line);
+      }
+    }
+
+    // Мөр бүрийг задлах: огноо + дүн + тайлбар хайна
+    const rows = [];
+    for (const line of allItems) {
+      const dateMatch = line.match(DATE_RE);
+      if (!dateMatch) continue;
+      const date = normalizeDate(dateMatch[1]);
+      // дүнг хайна: тоо, таслал, цэг агуулсан
+      const tokens = line.split(/\s+/);
+      const amtToken = tokens.find(t => AMT_RE.test(t));
+      if (!amtToken) continue;
+      const amount = parseFloat(amtToken.replace(/,/g, ''));
+      if (!amount || amount <= 0) continue;
+      // тайлбар: огноо болон дүнгийн хооронд эсвэл хойно байгаа текст
+      const dateIdx = tokens.indexOf(dateMatch[1]);
+      const amtIdx  = tokens.indexOf(amtToken);
+      const descTokens = tokens.filter((_, i) => i !== dateIdx && i !== amtIdx && !/^\d+$/.test(tokens[i]));
+      const description = descTokens.join(' ').trim();
+      rows.push({ date, amount, description, dt: '', ct: '', code: '' });
+    }
+    return rows;
+  };
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      let parsed;
+      if (file.name.toLowerCase().endsWith('.pdf')) {
+        parsed = await parsePdf(file);
+      } else {
+        parsed = await parseExcel(file);
+      }
+      setImportRows(parsed);
+    } catch (err) {
+      alert('Файл уншихад алдаа: ' + err.message);
+    }
     e.target.value = '';
   };
 
@@ -270,9 +347,9 @@ export default function Transactions() {
                 onClick={() => fileRef.current?.click()}
               >
                 <Upload size={28} className="mx-auto mb-2 text-slate-400" />
-                <p className="text-sm font-semibold text-slate-600">Excel файл сонгох (.xlsx, .xls)</p>
+                <p className="text-sm font-semibold text-slate-600">Excel (.xlsx, .xls) эсвэл PDF файл сонгох</p>
                 <p className="text-xs text-slate-400 mt-1">Давхардсан мөрүүдийг автоматаар алгасна</p>
-                <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
+                <input ref={fileRef} type="file" accept=".xlsx,.xls,.pdf" className="hidden" onChange={handleFile} />
               </div>
 
               {importRows.length > 0 && (
