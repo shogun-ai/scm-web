@@ -7009,6 +7009,40 @@ app.put('/api/zentro/transactions/:id', authenticateUser, async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// Бүх хоосон кодтой гүйлгээнд автоматаар dt/ct/код тодорхойлох
+function serverGuessCode(description) {
+  const d = String(description);
+  const isOrg = /солонго капитал|ббсб|хк|ххк|зохион байгуул/i.test(d);
+  if (isOrg) {
+    if (/хүр\.?тооц.*(хүү|зээл)/i.test(d))  return { dt: '2,024', ct: '1,120', code: '2,126' };
+    if (/зээлийн хүү|хүү төлев/i.test(d))    return { dt: '5,121', ct: '1,120', code: '2,126' };
+    if (/зээлааc|зээлэac|зээлээс/i.test(d))  return { dt: '2,021', ct: '1,120', code: '2,163' };
+  }
+  if (/хүр\.?тооц.*(хүү|зээл)/i.test(d))    return { dt: '1,120', ct: '1,270', code: '2,101' };
+  if (/зээлийн хүү|хүү төлев/i.test(d))      return { dt: '1,120', ct: '4,140', code: '2,101' };
+  if (/зээлааc|зээлэac|зээлээс/i.test(d))    return { dt: '1,120', ct: '1,210', code: '2,104' };
+  if (/шимтгэл/i.test(d))                    return { dt: '5,248', ct: '1,120', code: '2,129' };
+  if (/мзуаэ/i.test(d))                      return { dt: '5,228', ct: '1,120', code: '2,129' };
+  if (/аудит/i.test(d))                      return { dt: '5,236', ct: '1,120', code: '2,129' };
+  if (/сургалт/i.test(d))                    return { dt: '5,228', ct: '1,120', code: '2,129' };
+  return null;
+}
+
+app.post('/api/zentro/transactions/recode', authenticateUser, async (req, res) => {
+  try {
+    const txs = await ZentroTransaction.find({ $or: [{ code: '' }, { code: null }, { code: { $exists: false } }] });
+    let updated = 0;
+    for (const tx of txs) {
+      const codes = serverGuessCode(tx.description);
+      if (codes) {
+        await ZentroTransaction.findByIdAndUpdate(tx._id, codes);
+        updated++;
+      }
+    }
+    res.json({ updated, total: txs.length });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
 app.delete('/api/zentro/transactions/:id', authenticateUser, async (req, res) => {
   try {
     await ZentroTransaction.findByIdAndDelete(req.params.id);

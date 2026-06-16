@@ -61,6 +61,7 @@ export const getImportBatches   = () => api.get('/api/zentro/import-batches').th
 export const deleteImportBatch  = (id) => api.delete(`/api/zentro/import-batches/${id}`).then(r => r.data);
 export const updateTransaction  = (id, data) => api.put(`/api/zentro/transactions/${id}`, data).then(r => r.data);
 export const deleteTransaction  = (id) => api.delete(`/api/zentro/transactions/${id}`).then(r => r.data);
+export const recodeTransactions = () => api.post('/api/zentro/transactions/recode').then(r => r.data);
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
 export const getPortfolio = () => api.get('/api/zentro/reports/portfolio').then(r => r.data);

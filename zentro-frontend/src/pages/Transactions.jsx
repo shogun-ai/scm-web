@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   getTransactions, getTransactionCodes, createTransaction,
-  importTransactions, updateTransaction, deleteTransaction,
+  importTransactions, updateTransaction, deleteTransaction, recodeTransactions,
   fmt, fmtDate,
 } from '../api';
 import { Upload, Plus, Trash2, X, Check } from 'lucide-react';
@@ -309,7 +309,14 @@ export default function Transactions() {
             {codes.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
-        <div className="flex gap-2 ml-auto">
+        <div className="flex gap-2 ml-auto flex-wrap">
+          <button className="z-btn z-btn-secondary" onClick={async () => {
+            const res = await recodeTransactions();
+            alert(`${res.updated} мөрт код тохируулагдлаа (нийт ${res.total} хоосон байсан)`);
+            load();
+          }}>
+            ⚡ Дахин кодлох
+          </button>
           <button className="z-btn z-btn-secondary" onClick={() => { setImportRows([]); setModal('import'); }}>
             <Upload size={14} /> Хуулга оруулах
           </button>
