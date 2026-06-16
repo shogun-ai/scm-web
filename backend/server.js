@@ -28,6 +28,7 @@ import ZentroClient from './models/ZentroClient.js';
 import ZentroCar from './models/ZentroCar.js';
 import ZentroLease from './models/ZentroLease.js';
 import ZentroPayment from './models/ZentroPayment.js';
+import ZentroTransaction from './models/ZentroTransaction.js';
 import fs from 'fs'; // Ð¤Ð°Ð¹Ð» ÑƒÑÑ‚Ð³Ð°Ñ…Ð°Ð´ Ñ…ÑÑ€ÑÐ³Ñ‚ÑÐ¹
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -6920,6 +6921,76 @@ app.get('/api/zentro/reports/summary', authenticateUser, async (req, res) => {
       totalCollected: parseFloat(totalCollected.toFixed(2)),
       totalPortfolio: parseFloat(totalPortfolio.toFixed(2)),
     });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Transactions (Гүйлгээний журнал) ───────────────────────────────────────
+function txDedupKey(date, amount, description) {
+  const d = new Date(date).toISOString().slice(0, 10);
+  return `${d}|${amount}|${String(description).slice(0, 80)}`;
+}
+
+app.get('/api/zentro/transactions', authenticateUser, async (req, res) => {
+  try {
+    const { startDate, endDate, code, q } = req.query;
+    const filter = {};
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) filter.date.$gte = new Date(startDate);
+      if (endDate)   filter.date.$lte = new Date(new Date(endDate).setHours(23, 59, 59));
+    }
+    if (code) filter.code = code;
+    if (q) filter.description = { $regex: q, $options: 'i' };
+    const txs = await ZentroTransaction.find(filter).sort({ date: 1, createdAt: 1 });
+    res.json(txs);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// Код жагсаалт (filter dropdown-д)
+app.get('/api/zentro/transactions/codes', authenticateUser, async (req, res) => {
+  try {
+    const codes = await ZentroTransaction.distinct('code', { code: { $ne: '' } });
+    res.json(codes.sort());
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.post('/api/zentro/transactions', authenticateUser, async (req, res) => {
+  try {
+    const { date, amount, description, dt, ct, code, bankReference } = req.body;
+    const dedupKey = txDedupKey(date, amount, description);
+    const tx = await ZentroTransaction.create({ date, amount, description, dt, ct, code, bankReference, dedupKey, source: 'manual' });
+    res.json(tx);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// Batch import — давхардлыг алгасна
+app.post('/api/zentro/transactions/import', authenticateUser, async (req, res) => {
+  try {
+    const { rows } = req.body; // [{date, amount, description, dt?, ct?, code?, bankReference?}]
+    const batchId = new Date().toISOString();
+    let inserted = 0, skipped = 0;
+    for (const row of rows) {
+      const dedupKey = txDedupKey(row.date, row.amount, row.description);
+      const exists = await ZentroTransaction.exists({ dedupKey });
+      if (exists) { skipped++; continue; }
+      await ZentroTransaction.create({ ...row, dedupKey, source: 'bank_import', importBatchId: batchId });
+      inserted++;
+    }
+    res.json({ inserted, skipped });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.put('/api/zentro/transactions/:id', authenticateUser, async (req, res) => {
+  try {
+    const tx = await ZentroTransaction.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(tx);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.delete('/api/zentro/transactions/:id', authenticateUser, async (req, res) => {
+  try {
+    await ZentroTransaction.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 

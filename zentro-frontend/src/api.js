@@ -52,6 +52,14 @@ export const createPayment  = (data) => api.post('/api/zentro/payments', data).t
 export const bankImport     = (data) => api.post('/api/zentro/payments/bank-import', data).then(r => r.data);
 export const deletePayment  = (id) => api.delete(`/api/zentro/payments/${id}`).then(r => r.data);
 
+// ─── Transactions ─────────────────────────────────────────────────────────────
+export const getTransactions    = (params) => api.get('/api/zentro/transactions', { params }).then(r => r.data);
+export const getTransactionCodes = () => api.get('/api/zentro/transactions/codes').then(r => r.data);
+export const createTransaction  = (data) => api.post('/api/zentro/transactions', data).then(r => r.data);
+export const importTransactions = (data) => api.post('/api/zentro/transactions/import', data).then(r => r.data);
+export const updateTransaction  = (id, data) => api.put(`/api/zentro/transactions/${id}`, data).then(r => r.data);
+export const deleteTransaction  = (id) => api.delete(`/api/zentro/transactions/${id}`).then(r => r.data);
+
 // ─── Reports ──────────────────────────────────────────────────────────────────
 export const getPortfolio = () => api.get('/api/zentro/reports/portfolio').then(r => r.data);
 export const getSummary   = (params) => api.get('/api/zentro/reports/summary', { params }).then(r => r.data);
