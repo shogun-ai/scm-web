@@ -2,23 +2,39 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   getTransactions, getTransactionCodes, createTransaction,
   importTransactions, updateTransaction, deleteTransaction, recodeTransactions,
+  getCodeRules, saveCodeRule,
   fmt, fmtDate,
 } from '../api';
 import { Upload, Plus, Trash2, X, Check } from 'lucide-react';
 
 const EMPTY = { date: new Date().toISOString().slice(0, 10), amount: '', description: '', dt: '', ct: '', code: '', bankReference: '' };
 
+// ─── Тайлбарын эхний утгатай үгсийг keyword болгон авах ────────────────────
+function extractKeyword(desc) {
+  const words = String(desc).trim().toLowerCase().split(/\s+/);
+  const meaningful = words.filter(w => !/^\d/.test(w));
+  return meaningful.slice(0, 3).join(' ');
+}
+
 // ─── Тайлбараас dt/ct/код автоматаар таних ──────────────────────────────────
-function guessCode(description) {
+function guessCode(description, customRules = []) {
   const d = String(description);
   const dl = d.toLowerCase();
-  const isOrg = /солонго капитал|ббсб|хк|ххк|зохион байгуул/i.test(d);
 
+  // эхлээд хэрэглэгчийн хадгалсан дүрмүүдийг шалгана
+  for (const rule of customRules) {
+    if (rule.keyword && dl.includes(rule.keyword.toLowerCase())) {
+      return { dt: rule.dt || '', ct: rule.ct || '', code: rule.code || '' };
+    }
+  }
+
+  const isOrg = /солонго капитал|ббсб|хк|ххк|зохион байгуул/i.test(d);
   if (isOrg) {
     if (/хүр\.?тооц.*хүү|хүр\.?тооц.*зээл/i.test(d)) return { dt: '2,024', ct: '1,120', code: '2,126' };
     if (/зээлийн хүү|хүү төлев/i.test(d))             return { dt: '5,121', ct: '1,120', code: '2,126' };
     if (/зээлааc|зээлэac|зээлээс/i.test(d))           return { dt: '2,021', ct: '1,120', code: '2,163' };
   }
+  if (/зээл олгов|зээл олгол/i.test(d))               return { dt: '1,120', ct: '2,021', code: '2,161' };
   if (/хүр\.?тооц.*хүү|хүр\.?тооц.*зээл/i.test(d))   return { dt: '1,120', ct: '1,270', code: '2,101' };
   if (/зээлийн хүү|хүү төлев/i.test(d))               return { dt: '1,120', ct: '4,140', code: '2,101' };
   if (/зээлааc|зээлэac|зээлээс/i.test(d))             return { dt: '1,120', ct: '1,210', code: '2,104' };
@@ -32,6 +48,7 @@ function guessCode(description) {
 export default function Transactions() {
   const [rows, setRows]           = useState([]);
   const [codes, setCodes]         = useState([]);
+  const [codeRules, setCodeRules] = useState([]);
   const [startDate, setStart]     = useState('');
   const [endDate, setEnd]         = useState('');
   const [codeFilter, setCodeFilter] = useState('');
@@ -53,6 +70,7 @@ export default function Transactions() {
   }, [startDate, endDate, codeFilter]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { getCodeRules().then(setCodeRules).catch(() => {}); }, []);
 
   // ─── Inline edit ──────────────────────────────────────────────────────────
   const startEdit = (id, field, value) => setEditing({ id, field, value });
@@ -61,7 +79,19 @@ export default function Transactions() {
     if (!editing) return;
     const updated = await updateTransaction(editing.id, { [editing.field]: editing.value });
     setRows(prev => prev.map(r => r._id === updated._id ? updated : r));
-    // кодын жагсаалт шинэчлэх
+    // code хадгалахад дүрэм автоматаар үүсгэнэ
+    if (editing.field === 'code' && editing.value && updated.description) {
+      const kw = extractKeyword(updated.description);
+      if (kw) {
+        const rule = { keyword: kw, dt: updated.dt || '', ct: updated.ct || '', code: updated.code || '' };
+        saveCodeRule(rule).then(saved => {
+          setCodeRules(prev => {
+            const exists = prev.find(r => r.keyword === kw);
+            return exists ? prev.map(r => r.keyword === kw ? saved : r) : [...prev, saved];
+          });
+        }).catch(() => {});
+      }
+    }
     if (editing.field === 'code' && editing.value && !codes.includes(editing.value)) {
       setCodes(prev => [...prev, editing.value].sort());
     }
@@ -131,7 +161,7 @@ export default function Transactions() {
         const zarlaga = toNum(r[11]);
         const amount  = orlogo > 0 ? orlogo : zarlaga;
         const description = String(r[28] || r[23] || '').trim();
-        return { date, amount, description, ...guessCode(description) };
+        return { date, amount, description, ...guessCode(description, codeRules) };
       }).filter(r => r.amount > 0 && r.date);
     }
 
@@ -158,7 +188,7 @@ export default function Transactions() {
       }
       const description = String(r[descIdx] || '').trim();
       const hasManualCodes = dtIdx >= 0 && String(r[dtIdx]).trim();
-      const autoCodes = hasManualCodes ? {} : guessCode(description);
+      const autoCodes = hasManualCodes ? {} : guessCode(description, codeRules);
       return {
         date: normalizeDate(r[dateIdx]),
         amount,

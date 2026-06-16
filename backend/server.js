@@ -30,6 +30,12 @@ import ZentroLease from './models/ZentroLease.js';
 import ZentroPayment from './models/ZentroPayment.js';
 import ZentroTransaction from './models/ZentroTransaction.js';
 import ZentroImportBatch from './models/ZentroImportBatch.js';
+
+const ZentroCodeRuleSchema = new mongoose.Schema({
+  keyword: { type: String, required: true, unique: true },
+  dt: String, ct: String, code: String,
+}, { timestamps: true });
+const ZentroCodeRule = mongoose.model('ZentroCodeRule', ZentroCodeRuleSchema);
 import fs from 'fs'; // Ð¤Ð°Ð¹Ð» ÑƒÑÑ‚Ð³Ð°Ñ…Ð°Ð´ Ñ…ÑÑ€ÑÐ³Ñ‚ÑÐ¹
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -7021,6 +7027,7 @@ function serverGuessCode(description) {
   if (/хүр\.?тооц.*(хүү|зээл)/i.test(d))    return { dt: '1,120', ct: '1,270', code: '2,101' };
   if (/зээлийн хүү|хүү төлев/i.test(d))      return { dt: '1,120', ct: '4,140', code: '2,101' };
   if (/зээлааc|зээлэac|зээлээс/i.test(d))    return { dt: '1,120', ct: '1,210', code: '2,104' };
+  if (/зээл олгов|зээл олгол/i.test(d))       return { dt: '1,120', ct: '2,021', code: '2,161' };
   if (/шимтгэл/i.test(d))                    return { dt: '5,248', ct: '1,120', code: '2,129' };
   if (/мзуаэ/i.test(d))                      return { dt: '5,228', ct: '1,120', code: '2,129' };
   if (/аудит/i.test(d))                      return { dt: '5,236', ct: '1,120', code: '2,129' };
@@ -7030,10 +7037,16 @@ function serverGuessCode(description) {
 
 app.post('/api/zentro/transactions/recode', authenticateUser, async (req, res) => {
   try {
+    const customRules = await ZentroCodeRule.find().lean();
     const txs = await ZentroTransaction.find({ $or: [{ code: '' }, { code: null }, { code: { $exists: false } }] });
     let updated = 0;
     for (const tx of txs) {
-      const codes = serverGuessCode(tx.description);
+      let codes = serverGuessCode(tx.description);
+      if (!codes) {
+        const dl = String(tx.description).toLowerCase();
+        const match = customRules.find(r => r.keyword && dl.includes(r.keyword.toLowerCase()));
+        if (match) codes = { dt: match.dt, ct: match.ct, code: match.code };
+      }
       if (codes) {
         await ZentroTransaction.findByIdAndUpdate(tx._id, codes);
         updated++;
@@ -7046,6 +7059,34 @@ app.post('/api/zentro/transactions/recode', authenticateUser, async (req, res) =
 app.delete('/api/zentro/transactions/:id', authenticateUser, async (req, res) => {
   try {
     await ZentroTransaction.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Code Rules (AI санах дүрмүүд) ───────────────────────────────────────────
+app.get('/api/zentro/code-rules', authenticateUser, async (req, res) => {
+  try {
+    const rules = await ZentroCodeRule.find().sort({ keyword: 1 });
+    res.json(rules);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.post('/api/zentro/code-rules', authenticateUser, async (req, res) => {
+  try {
+    const { keyword, dt, ct, code } = req.body;
+    const kw = String(keyword).toLowerCase().trim();
+    const rule = await ZentroCodeRule.findOneAndUpdate(
+      { keyword: kw },
+      { keyword: kw, dt, ct, code },
+      { upsert: true, new: true }
+    );
+    res.json(rule);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.delete('/api/zentro/code-rules/:id', authenticateUser, async (req, res) => {
+  try {
+    await ZentroCodeRule.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
