@@ -88,27 +88,59 @@ export default function Transactions() {
   const parseExcel = async (file) => {
     const XLSX = await import('xlsx');
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    const wb = XLSX.read(buf, { type: 'array', cellDates: false });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
 
-    return raw.map(r => {
-      const keys = Object.keys(r);
-      const dateKey = keys.find(k => /огноо|date|өдөр/i.test(k)) || keys[1];
-      const amtKey  = keys.find(k => /дүн|amount|зарлага|орлого|мөнгөн/i.test(k)) || keys[2];
-      const descKey = keys.find(k => /утга|тайлбар|description/i.test(k)) || keys[3];
-      const dtKey   = keys.find(k => /^dt$/i.test(k));
-      const ctKey   = keys.find(k => /^ct$/i.test(k));
-      const codeKey = keys.find(k => /код|code/i.test(k));
+    // ── raw array уншина (header:1) — Голомт банк хуулга шиг тогтмол бус форматыг дэмжихийн тулд
+    const raw = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false, header: 1 });
 
-      const amt = parseFloat(String(r[amtKey] || '').replace(/[^0-9.-]/g, '')) || 0;
+    const toNum = (v) => parseFloat(String(v).replace(/,/g, '').replace(/[^0-9.-]/g, '')) || 0;
+
+    // ── Голомт банк хуулга: Col0=огноо "YYYY.M.D ...", Col7=орлого, Col11=зарлага, Col28=утга
+    const isGolomtDate = (v) => /^\d{4}\.\d{1,2}\.\d{1,2}/.test(String(v));
+    const golomtRows = raw.filter(r => isGolomtDate(r[0]));
+
+    if (golomtRows.length > 0) {
+      return golomtRows.map(r => {
+        // огноо: "2026.3.17  9:36:36 AM" → "2026-03-17"
+        const parts = String(r[0]).split(/[\s,]+/)[0].split('.');
+        const date = `${parts[0]}-${String(parts[1]).padStart(2,'0')}-${String(parts[2]).padStart(2,'0')}`;
+        const orlogo  = toNum(r[7]);
+        const zarlaga = toNum(r[11]);
+        const amount  = orlogo > 0 ? orlogo : zarlaga;
+        const description = String(r[28] || r[23] || '').trim();
+        return { date, amount, description, dt: '', ct: '', code: '' };
+      }).filter(r => r.amount > 0 && r.date);
+    }
+
+    // ── Стандарт формат: эхний мөр header байна
+    const headers = raw[0] || [];
+    const data = raw.slice(1);
+    const hi = (re) => headers.findIndex(h => re.test(String(h)));
+    const dateIdx = hi(/огноо|date|өдөр/i) !== -1 ? hi(/огноо|date|өдөр/i) : 1;
+    const amtIdx  = hi(/дүн|amount/i)      !== -1 ? hi(/дүн|amount/i)      : 2;
+    const descIdx = hi(/утга|тайлбар|description/i) !== -1 ? hi(/утга|тайлбар|description/i) : 3;
+    const dtIdx   = hi(/^dt$/i);
+    const ctIdx   = hi(/^ct$/i);
+    const codeIdx = hi(/код|code/i);
+    // Орлого/зарлага тусдаа баганатай эсэх
+    const inIdx  = hi(/орлого/i);
+    const outIdx = hi(/зарлага/i);
+
+    return data.map(r => {
+      let amount;
+      if (inIdx !== -1 && outIdx !== -1) {
+        amount = toNum(r[inIdx]) || toNum(r[outIdx]);
+      } else {
+        amount = toNum(r[amtIdx]);
+      }
       return {
-        date: normalizeDate(r[dateKey]),
-        amount: amt,
-        description: String(r[descKey] || '').trim(),
-        dt:   dtKey   ? String(r[dtKey]).trim()   : '',
-        ct:   ctKey   ? String(r[ctKey]).trim()   : '',
-        code: codeKey ? String(r[codeKey]).trim() : '',
+        date: normalizeDate(r[dateIdx]),
+        amount,
+        description: String(r[descIdx] || '').trim(),
+        dt:   dtIdx   >= 0 ? String(r[dtIdx]).trim()   : '',
+        ct:   ctIdx   >= 0 ? String(r[ctIdx]).trim()   : '',
+        code: codeIdx >= 0 ? String(r[codeIdx]).trim() : '',
       };
     }).filter(r => r.date && r.amount > 0);
   };
