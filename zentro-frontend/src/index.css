@@ -1,0 +1,238 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  background: #f3f7fb;
+  color: #0f172a;
+}
+
+@layer components {
+  .z-shell { display: flex; min-height: 100vh; }
+
+  .z-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: #fff;
+    border-right: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 10px;
+  }
+
+  .z-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px 20px;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 10px;
+  }
+
+  .z-brand-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #0ea5e9, #003b5c);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 18px;
+    font-weight: 800;
+  }
+
+  .z-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    border-radius: 10px;
+    padding: 9px 10px;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 140ms ease;
+    text-align: left;
+    border: none;
+    background: none;
+    cursor: pointer;
+  }
+
+  .z-nav-item:hover { background: #f0f9ff; color: #003b5c; }
+  .z-nav-item.active { background: #003b5c; color: #fff; box-shadow: 0 8px 20px rgba(0,59,92,.18); }
+
+  .z-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+  .z-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgba(255,255,255,.9);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid #e2e8f0;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .z-content { flex: 1; padding: 20px; }
+
+  .z-card {
+    background: #fff;
+    border: 1px solid #dbe7f3;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 4px 16px rgba(15,23,42,.05);
+  }
+
+  .z-stat {
+    background: #fff;
+    border: 1px solid #dbe7f3;
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 4px 12px rgba(15,23,42,.04);
+  }
+
+  .z-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 140ms ease;
+    border: none;
+  }
+
+  .z-btn-primary { background: #003b5c; color: #fff; box-shadow: 0 8px 20px rgba(0,59,92,.2); }
+  .z-btn-primary:hover { background: #002d47; transform: translateY(-1px); }
+  .z-btn-secondary { background: #fff; color: #003b5c; border: 1px solid rgba(0,59,92,.28); }
+  .z-btn-secondary:hover { background: #f0f9ff; }
+  .z-btn-danger { background: #fff; color: #dc2626; border: 1px solid rgba(220,38,38,.3); }
+  .z-btn-danger:hover { background: #fef2f2; }
+  .z-btn-sm { padding: 5px 10px; font-size: 12px; }
+
+  .z-input {
+    width: 100%;
+    border: 1px solid #cbd8e6;
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    outline: none;
+    transition: all 140ms ease;
+    color: #0f172a;
+  }
+
+  .z-input:focus { border-color: #003b5c; background: #fff; box-shadow: 0 0 0 3px rgba(0,59,92,.1); }
+
+  .z-select {
+    width: 100%;
+    border: 1px solid #cbd8e6;
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    outline: none;
+    color: #0f172a;
+    cursor: pointer;
+  }
+
+  .z-label { display: block; font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 5px; }
+
+  .z-table-wrap {
+    overflow: hidden;
+    border: 1px solid #dbe7f3;
+    border-radius: 14px;
+    background: #fff;
+  }
+
+  .z-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .z-table thead { background: #f1f6fb; }
+  .z-table th { padding: 11px 14px; text-align: left; font-weight: 700; color: #334155; white-space: nowrap; }
+  .z-table td { padding: 12px 14px; color: #1e293b; font-weight: 500; border-top: 1px solid #e2e8f0; }
+  .z-table tbody tr:hover { background: #f8fbff; }
+  .z-table tbody tr.selected { background: #eef7ff; box-shadow: inset 3px 0 0 #003b5c; }
+
+  .z-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .z-badge-green  { background: #dcfce7; color: #166534; }
+  .z-badge-yellow { background: #fef9c3; color: #854d0e; }
+  .z-badge-red    { background: #fee2e2; color: #991b1b; }
+  .z-badge-blue   { background: #dbeafe; color: #1e40af; }
+  .z-badge-gray   { background: #f1f5f9; color: #475569; }
+
+  .z-modal-bg {
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,.5);
+    backdrop-filter: blur(4px);
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+
+  .z-modal {
+    background: #fff;
+    border-radius: 18px;
+    width: 100%;
+    max-width: 560px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 24px 64px rgba(15,23,42,.18);
+  }
+
+  .z-modal-lg { max-width: 900px; }
+
+  .z-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e2e8f0;
+    position: sticky;
+    top: 0;
+    background: #fff;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .z-modal-body { padding: 20px; }
+  .z-modal-foot { padding: 14px 20px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 8px; }
+
+  .z-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .z-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+  .z-search {
+    position: relative;
+    flex: 1;
+    max-width: 320px;
+  }
+
+  .z-search input { padding-left: 34px; }
+  .z-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #94a3b8; }
+}

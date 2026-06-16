@@ -24,6 +24,10 @@ import FormConfig from './models/FormConfig.js';
 import FacebookPostKnowledge from './models/FacebookPostKnowledge.js';
 import ExposureSnapshot from './models/ExposureSnapshot.js';
 import ExposureCase from './models/ExposureCase.js';
+import ZentroClient from './models/ZentroClient.js';
+import ZentroCar from './models/ZentroCar.js';
+import ZentroLease from './models/ZentroLease.js';
+import ZentroPayment from './models/ZentroPayment.js';
 import fs from 'fs'; // Ð¤Ð°Ð¹Ð» ÑƒÑÑ‚Ð³Ð°Ñ…Ð°Ð´ Ñ…ÑÑ€ÑÐ³Ñ‚ÑÐ¹
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -6540,6 +6544,383 @@ app.post('/api/public/analyze-property', (req, res) => {
             res.json(result);
         } catch (e) { res.status(500).json({ message: e.message || 'Эд хөрөнгийн баримт унших алдаа' }); }
     });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ZENTRO — Машины лизинг систем
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Хуваарь тооцоо (Annuity / reducing balance) ────────────────────────────
+function calcSchedule(loanAmount, annualRate, termMonths, startDate) {
+  const r = annualRate / 100 / 12;
+  const n = termMonths;
+  const monthly = r === 0
+    ? loanAmount / n
+    : loanAmount * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1);
+
+  let balance = loanAmount;
+  const items = [];
+  const start = new Date(startDate);
+
+  for (let i = 1; i <= n; i++) {
+    const due = new Date(start);
+    due.setMonth(due.getMonth() + i);
+    const interest = parseFloat((balance * r).toFixed(2));
+    const principal = parseFloat((monthly - interest).toFixed(2));
+    balance = parseFloat((balance - principal).toFixed(2));
+    if (i === n) balance = 0;
+    items.push({
+      month: i,
+      dueDate: due,
+      principal,
+      interest,
+      total: parseFloat(monthly.toFixed(2)),
+      balance: balance < 0 ? 0 : balance,
+      paidAmount: 0,
+      status: 'pending',
+    });
+  }
+  return { monthly: parseFloat(monthly.toFixed(2)), items };
+}
+
+// ─── Хуваарийн төлөлтийн статус шинэчлэх ────────────────────────────────────
+async function syncLeaseStatus(leaseId) {
+  const lease = await ZentroLease.findById(leaseId);
+  if (!lease) return;
+  const now = new Date();
+  for (const item of lease.schedule) {
+    if (item.status === 'paid') continue;
+    if (item.paidAmount >= item.total) {
+      item.status = 'paid';
+    } else if (item.paidAmount > 0) {
+      item.status = 'partial';
+    } else if (new Date(item.dueDate) < now) {
+      item.status = 'overdue';
+    } else {
+      item.status = 'pending';
+    }
+  }
+  const allPaid = lease.schedule.every(i => i.status === 'paid');
+  const anyOverdue = lease.schedule.some(i => i.status === 'overdue');
+  if (allPaid) lease.status = 'completed';
+  else if (anyOverdue) lease.status = 'overdue';
+  else lease.status = 'active';
+  await lease.save();
+}
+
+// ─── Clients ─────────────────────────────────────────────────────────────────
+app.get('/api/zentro/clients', authenticateUser, async (req, res) => {
+  try {
+    const { q, status } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    if (q) {
+      filter.$or = [
+        { firstname: { $regex: q, $options: 'i' } },
+        { lastname: { $regex: q, $options: 'i' } },
+        { register: { $regex: q, $options: 'i' } },
+        { phone: { $regex: q, $options: 'i' } },
+        { orgName: { $regex: q, $options: 'i' } },
+        { orgRegNo: { $regex: q, $options: 'i' } },
+      ];
+    }
+    const clients = await ZentroClient.find(filter).sort({ createdAt: -1 });
+    res.json(clients);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.get('/api/zentro/clients/:id', authenticateUser, async (req, res) => {
+  try {
+    const client = await ZentroClient.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Олдсонгүй' });
+    const leases = await ZentroLease.find({ client: req.params.id })
+      .populate('car', 'make model year plateNumber')
+      .sort({ createdAt: -1 });
+    res.json({ client, leases });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.post('/api/zentro/clients', authenticateUser, async (req, res) => {
+  try {
+    const client = await ZentroClient.create(req.body);
+    res.json(client);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.put('/api/zentro/clients/:id', authenticateUser, async (req, res) => {
+  try {
+    const client = await ZentroClient.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(client);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Cars ─────────────────────────────────────────────────────────────────────
+app.get('/api/zentro/cars', authenticateUser, async (req, res) => {
+  try {
+    const { status } = req.query;
+    const filter = status ? { status } : {};
+    const cars = await ZentroCar.find(filter).sort({ createdAt: -1 });
+    res.json(cars);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.get('/api/zentro/cars/:id', authenticateUser, async (req, res) => {
+  try {
+    const car = await ZentroCar.findById(req.params.id);
+    if (!car) return res.status(404).json({ message: 'Олдсонгүй' });
+    res.json(car);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.post('/api/zentro/cars', authenticateUser, async (req, res) => {
+  try {
+    const car = await ZentroCar.create(req.body);
+    res.json(car);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.put('/api/zentro/cars/:id', authenticateUser, async (req, res) => {
+  try {
+    const car = await ZentroCar.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(car);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Leases ───────────────────────────────────────────────────────────────────
+app.get('/api/zentro/leases', authenticateUser, async (req, res) => {
+  try {
+    const { status, clientId } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    if (clientId) filter.client = clientId;
+    const leases = await ZentroLease.find(filter)
+      .populate('client', 'firstname lastname orgName register type phone')
+      .populate('car', 'make model year plateNumber')
+      .sort({ createdAt: -1 });
+    res.json(leases);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.get('/api/zentro/leases/:id', authenticateUser, async (req, res) => {
+  try {
+    const lease = await ZentroLease.findById(req.params.id)
+      .populate('client')
+      .populate('car');
+    if (!lease) return res.status(404).json({ message: 'Олдсонгүй' });
+    const payments = await ZentroPayment.find({ lease: req.params.id }).sort({ date: -1 });
+    res.json({ lease, payments });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.post('/api/zentro/leases', authenticateUser, async (req, res) => {
+  try {
+    const { clientId, carId, startDate, termMonths, leaseValue, downPayment, interestRate, researchRef, notes } = req.body;
+    const loanAmount = leaseValue - (downPayment || 0);
+    const { monthly, items } = calcSchedule(loanAmount, interestRate, termMonths, startDate);
+    const end = new Date(startDate);
+    end.setMonth(end.getMonth() + termMonths);
+
+    const lease = await ZentroLease.create({
+      client: clientId, car: carId,
+      startDate, endDate: end, termMonths,
+      leaseValue, downPayment: downPayment || 0,
+      loanAmount, interestRate, monthlyPayment: monthly,
+      schedule: items, researchRef, notes, status: 'active',
+    });
+
+    await ZentroCar.findByIdAndUpdate(carId, { status: 'leased' });
+    await lease.populate(['client', 'car']);
+    res.json(lease);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// Хуваарь өөрчлөх (нэг хугацааны урт, хүү өөрчлөгдөхөд дахин тооцох)
+app.put('/api/zentro/leases/:id/reschedule', authenticateUser, async (req, res) => {
+  try {
+    const lease = await ZentroLease.findById(req.params.id);
+    if (!lease) return res.status(404).json({ message: 'Олдсонгүй' });
+    const { fromMonth, newRate, newTermMonths, newStartDate } = req.body;
+
+    // Хэдэн төлөгдсөнийг тооцно
+    const paidPrincipal = lease.schedule
+      .filter(i => i.month < fromMonth && i.status === 'paid')
+      .reduce((s, i) => s + i.principal, 0);
+    const remainingPrincipal = lease.loanAmount - paidPrincipal;
+
+    const rate = newRate ?? lease.interestRate;
+    const term = newTermMonths ?? (lease.termMonths - fromMonth + 1);
+    const startDate = newStartDate ?? lease.schedule.find(i => i.month === fromMonth)?.dueDate ?? new Date();
+
+    const { monthly, items } = calcSchedule(remainingPrincipal, rate, term, new Date(startDate).setMonth(new Date(startDate).getMonth() - 1));
+
+    // Төлөгдсөн хэсгийг хадгалж, дахин тооцсон хэсгийг солих
+    lease.schedule = [
+      ...lease.schedule.filter(i => i.month < fromMonth),
+      ...items.map(i => ({ ...i, month: i.month + fromMonth - 1 })),
+    ];
+    if (newRate) lease.interestRate = newRate;
+    lease.monthlyPayment = monthly;
+    lease.termMonths = (fromMonth - 1) + term;
+    const endDate = new Date(startDate);
+    endDate.setMonth(endDate.getMonth() + term);
+    lease.endDate = endDate;
+
+    await lease.save();
+    res.json(lease);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.put('/api/zentro/leases/:id', authenticateUser, async (req, res) => {
+  try {
+    const lease = await ZentroLease.findByIdAndUpdate(req.params.id, req.body, { new: true })
+      .populate('client').populate('car');
+    res.json(lease);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Payments ─────────────────────────────────────────────────────────────────
+app.get('/api/zentro/payments', authenticateUser, async (req, res) => {
+  try {
+    const { leaseId } = req.query;
+    const filter = leaseId ? { lease: leaseId } : {};
+    const payments = await ZentroPayment.find(filter)
+      .populate({ path: 'lease', populate: { path: 'client', select: 'firstname lastname orgName' } })
+      .sort({ date: -1 }).limit(200);
+    res.json(payments);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.post('/api/zentro/payments', authenticateUser, async (req, res) => {
+  try {
+    const { leaseId, date, amount, bankReference, description, source } = req.body;
+    const payment = await ZentroPayment.create({
+      lease: leaseId, date, amount,
+      bankReference, description,
+      source: source || 'manual',
+      createdBy: req.user._id,
+    });
+
+    // Хуваарийн хамгийн ойрын төлөгдөөгүй сарыг бөглөх
+    const lease = await ZentroLease.findById(leaseId);
+    let remaining = amount;
+    for (const item of lease.schedule.sort((a, b) => a.month - b.month)) {
+      if (remaining <= 0) break;
+      if (item.status === 'paid') continue;
+      const needed = item.total - item.paidAmount;
+      const apply = Math.min(remaining, needed);
+      item.paidAmount = parseFloat((item.paidAmount + apply).toFixed(2));
+      remaining = parseFloat((remaining - apply).toFixed(2));
+      payment.appliedMonths.push(item.month);
+    }
+    await payment.save();
+    await syncLeaseStatus(leaseId);
+    res.json(payment);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// Банкны хуулга import (Excel rows)
+app.post('/api/zentro/payments/bank-import', authenticateUser, async (req, res) => {
+  try {
+    const { leaseId, rows } = req.body;
+    // rows: [{date, amount, bankReference, description}]
+    const results = [];
+    for (const row of rows) {
+      const p = await ZentroPayment.create({
+        lease: leaseId,
+        date: row.date, amount: row.amount,
+        bankReference: row.bankReference,
+        description: row.description,
+        source: 'bank_import',
+        createdBy: req.user._id,
+      });
+      results.push(p);
+    }
+    // Хуваарь шинэчлэх
+    const lease = await ZentroLease.findById(leaseId);
+    const allPayments = await ZentroPayment.find({ lease: leaseId }).sort({ date: 1 });
+    // Reset schedule paid amounts
+    for (const item of lease.schedule) { item.paidAmount = 0; item.paidDate = null; }
+    for (const pay of allPayments) {
+      let rem = pay.amount;
+      for (const item of lease.schedule.sort((a, b) => a.month - b.month)) {
+        if (rem <= 0) break;
+        if (item.status === 'paid' && item.paidAmount >= item.total) continue;
+        const needed = item.total - item.paidAmount;
+        const apply = Math.min(rem, needed);
+        item.paidAmount = parseFloat((item.paidAmount + apply).toFixed(2));
+        rem = parseFloat((rem - apply).toFixed(2));
+      }
+    }
+    await syncLeaseStatus(leaseId);
+    res.json({ imported: results.length });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.delete('/api/zentro/payments/:id', authenticateUser, async (req, res) => {
+  try {
+    const pay = await ZentroPayment.findByIdAndDelete(req.params.id);
+    if (pay) await syncLeaseStatus(pay.lease.toString());
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Reports ──────────────────────────────────────────────────────────────────
+app.get('/api/zentro/reports/portfolio', authenticateUser, async (req, res) => {
+  try {
+    const leases = await ZentroLease.find({ status: { $in: ['active', 'overdue'] } })
+      .populate('client', 'firstname lastname orgName type')
+      .populate('car', 'make model year plateNumber');
+
+    const now = new Date();
+    const report = leases.map(l => {
+      const overdue = l.schedule.filter(i => i.status === 'overdue' || (new Date(i.dueDate) < now && i.paidAmount < i.total));
+      const overdueAmount = overdue.reduce((s, i) => s + (i.total - i.paidAmount), 0);
+      const remaining = l.schedule.filter(i => i.status !== 'paid').reduce((s, i) => s + (i.total - i.paidAmount), 0);
+      return {
+        _id: l._id, contractNumber: l.contractNumber,
+        client: l.client, car: l.car,
+        status: l.status, monthlyPayment: l.monthlyPayment,
+        loanAmount: l.loanAmount, remaining: parseFloat(remaining.toFixed(2)),
+        overdueAmount: parseFloat(overdueAmount.toFixed(2)),
+        overdueDays: overdue.length > 0 ? Math.floor((now - new Date(overdue[0].dueDate)) / 86400000) : 0,
+      };
+    });
+    res.json(report);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.get('/api/zentro/reports/summary', authenticateUser, async (req, res) => {
+  try {
+    const [totalLeases, activeLeases, overdueLeases, completedLeases, totalClients, totalCars] = await Promise.all([
+      ZentroLease.countDocuments(),
+      ZentroLease.countDocuments({ status: 'active' }),
+      ZentroLease.countDocuments({ status: 'overdue' }),
+      ZentroLease.countDocuments({ status: 'completed' }),
+      ZentroClient.countDocuments(),
+      ZentroCar.countDocuments(),
+    ]);
+    const { month } = req.query;
+    const payFilter = {};
+    if (month) {
+      const d = new Date(month);
+      payFilter.date = { $gte: new Date(d.getFullYear(), d.getMonth(), 1), $lt: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
+    }
+    const payments = await ZentroPayment.find(payFilter);
+    const totalCollected = payments.reduce((s, p) => s + p.amount, 0);
+
+    const activeLeasesDocs = await ZentroLease.find({ status: { $in: ['active', 'overdue'] } });
+    const totalPortfolio = activeLeasesDocs.reduce((s, l) => {
+      const rem = l.schedule.filter(i => i.status !== 'paid').reduce((ss, i) => ss + (i.total - i.paidAmount), 0);
+      return s + rem;
+    }, 0);
+
+    res.json({
+      totalLeases, activeLeases, overdueLeases, completedLeases,
+      totalClients, totalCars,
+      totalCollected: parseFloat(totalCollected.toFixed(2)),
+      totalPortfolio: parseFloat(totalPortfolio.toFixed(2)),
+    });
+  } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}.`));
