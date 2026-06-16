@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
-import { getPortfolio, getSummary, fmt, fmtDate, statusBadge, statusLabel } from '../api';
-import { AlertTriangle, TrendingUp, Download } from 'lucide-react';
+import { getPortfolio, getSummary, getAccountBalances, fmt, fmtDate, statusBadge, statusLabel } from '../api';
+import { COA, BALANCE_GROUPS, INCOME_GROUPS } from '../chartOfAccounts';
+import { AlertTriangle, TrendingUp, Download, Scale, BarChart3 } from 'lucide-react';
 
 export default function Reports() {
   const [portfolio, setPortfolio] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [tab, setTab] = useState('overdue');
-  const [loading, setLoading] = useState(true);
+  const [summary, setSummary]     = useState(null);
+  const [balData, setBalData]     = useState({ balances: {}, uncoded: 0 });
+  const [month, setMonth]         = useState(new Date().toISOString().slice(0, 7));
+  const [balStart, setBalStart]   = useState('');
+  const [balEnd, setBalEnd]       = useState('');
+  const [tab, setTab]             = useState('balance');
+  const [loading, setLoading]     = useState(true);
 
   const load = async () => {
     setLoading(true);
@@ -16,10 +20,16 @@ export default function Reports() {
     setLoading(false);
   };
 
+  const loadBalances = async () => {
+    const d = await getAccountBalances({ startDate: balStart || undefined, endDate: balEnd || undefined });
+    setBalData(d);
+  };
+
   useEffect(() => { load(); }, [month]);
+  useEffect(() => { loadBalances(); }, [balStart, balEnd]);
 
   const overdue = portfolio.filter(l => l.overdueAmount > 0).sort((a, b) => b.overdueAmount - a.overdueAmount);
-  const active  = portfolio.sort((a, b) => b.remaining - a.remaining);
+  const active  = [...portfolio].sort((a, b) => b.remaining - a.remaining);
 
   const exportCsv = (rows, filename) => {
     const headers = Object.keys(rows[0] || {}).join(',');
@@ -28,37 +38,196 @@ export default function Reports() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
   };
 
-  if (loading) return <div className="text-slate-400 text-sm font-semibold">Уншиж байна...</div>;
+  // ─── Balance sheet / income statement renderer ───────────────────────────
+  const bal = balData.balances;
 
-  return (
-    <div className="flex flex-col gap-5">
-      {/* Summary stats */}
+  const sectionTotal = (codes) => codes.reduce((s, c) => s + (bal[c] || 0), 0);
+  const groupTotal   = (group) => group.sections.reduce((s, sec) => s + sectionTotal(sec.codes), 0);
+
+  const renderStatement = (groups, title, dateRange) => {
+    const totals = groups.map(g => ({ key: g.key, label: g.label, total: groupTotal(g) }));
+    const netIncome = totals.find(t => t.key === 'income')?.total - totals.find(t => t.key === 'expense')?.total;
+
+    return (
       <div className="z-card">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-          <h2 className="font-bold text-slate-800">Хураангуй тайлан</h2>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-semibold">Сар:</span>
-            <input className="z-input" type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 160 }} />
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-bold text-slate-800 text-base">{title}</h3>
+            {dateRange && <p className="text-xs text-slate-400 mt-0.5">{dateRange}</p>}
+          </div>
+          {balData.uncoded > 0 && (
+            <div className="flex items-center gap-1.5 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-1.5">
+              <AlertTriangle size={13} className="text-yellow-600" />
+              <span className="text-xs font-semibold text-yellow-700">{balData.uncoded} гүйлгээ кодгүй байна</span>
+            </div>
+          )}
+        </div>
+
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: '#f1f6fb', borderBottom: '2px solid #cbd8e6' }}>
+              <th style={{ padding: '6px 10px', textAlign: 'left', width: 70 }}>Данс</th>
+              <th style={{ padding: '6px 10px', textAlign: 'left' }}>Нэр</th>
+              <th style={{ padding: '6px 14px', textAlign: 'right', width: 140 }}>Дүн /₮/</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map(group => {
+              const gTotal = groupTotal(group);
+              return (
+                <>
+                  {/* Group header */}
+                  <tr key={group.key + '-head'} style={{ background: '#e8f0fb' }}>
+                    <td colSpan={2} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 12, color: '#1e3a5f', letterSpacing: '0.03em' }}>
+                      {group.label}
+                    </td>
+                    <td style={{ padding: '7px 14px', textAlign: 'right', fontWeight: 700, color: '#1e3a5f' }}>
+                      {fmt(Math.round(gTotal))}
+                    </td>
+                  </tr>
+
+                  {group.sections.map(sec => {
+                    const secRows = sec.codes.filter(c => bal[c] !== undefined && bal[c] !== 0);
+                    if (secRows.length === 0) return null;
+                    const secTotal = sectionTotal(sec.codes);
+                    return (
+                      <>
+                        {/* Section header */}
+                        <tr key={sec.label} style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                          <td colSpan={2} style={{ padding: '5px 10px 3px 18px', fontSize: 11, fontWeight: 600, color: '#475569' }}>
+                            {sec.label}
+                          </td>
+                          <td style={{ padding: '5px 14px 3px', textAlign: 'right', fontSize: 11, color: '#475569', fontWeight: 600 }}>
+                            {fmt(Math.round(secTotal))}
+                          </td>
+                        </tr>
+                        {/* Account rows */}
+                        {secRows.map(code => (
+                          <tr key={code} style={{ borderTop: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '3px 10px 3px 28px', fontFamily: 'monospace', color: '#64748b', fontSize: 11 }}>{code}</td>
+                            <td style={{ padding: '3px 6px', color: '#334155', fontSize: 11 }}>{COA[code] || code}</td>
+                            <td style={{ padding: '3px 14px', textAlign: 'right', fontWeight: 500 }}>
+                              {fmt(Math.round(bal[code]))}
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    );
+                  })}
+                </>
+              );
+            })}
+
+            {/* Net income row for income statement */}
+            {netIncome !== undefined && (
+              <tr style={{ borderTop: '2px solid #cbd8e6', background: netIncome >= 0 ? '#f0fdf4' : '#fef2f2' }}>
+                <td colSpan={2} style={{ padding: '8px 10px', fontWeight: 700, fontSize: 13, color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
+                  ЦЭВЭР АШИГ (АЛДАГДАЛ)
+                </td>
+                <td style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 800, fontSize: 13, color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
+                  {fmt(Math.round(netIncome))}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const renderBalanceSheet = () => {
+    const assets = groupTotal(BALANCE_GROUPS[0]);
+    const liabilities = groupTotal(BALANCE_GROUPS[1]);
+    const equity = groupTotal(BALANCE_GROUPS[2]);
+    const check = assets - liabilities - equity;
+    return (
+      <div className="flex flex-col gap-4">
+        {renderStatement(BALANCE_GROUPS, 'Баланс (Активын тайлан)', balStart || balEnd ? `${balStart || '...'} — ${balEnd || '...'}` : 'Нийт бүх гүйлгээ')}
+        {/* Balance check */}
+        <div className={`z-card flex items-center gap-3 ${Math.abs(check) < 1 ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
+          <Scale size={18} className={Math.abs(check) < 1 ? 'text-green-600' : 'text-yellow-600'} />
+          <div className="text-sm">
+            <span className="font-bold">Баланс шалгалт: </span>
+            <span>Нийт хөрөнгө <b>{fmt(Math.round(assets))}</b> = Өр төлбөр <b>{fmt(Math.round(liabilities))}</b> + Өөрийн хөрөнгө <b>{fmt(Math.round(equity))}</b></span>
+            {Math.abs(check) >= 1 && <span className="text-yellow-700 font-semibold"> · Зөрүү: {fmt(Math.round(check))} (кодгүй гүйлгээ байгаа байж магадгүй)</span>}
+            {Math.abs(check) < 1 && <span className="text-green-700 font-semibold"> ✓</span>}
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label="Нийт портфель" value={`${fmt(summary?.totalPortfolio)} ₮`} color="blue" />
-          <StatCard label={`${month}-р сард орж ирсэн`} value={`${fmt(summary?.totalCollected)} ₮`} color="green" />
-          <StatCard label="Хугацаа хэтэрсэн" value={summary?.overdueLeases || 0} color="red" />
-          <StatCard label="Дууссан гэрээ" value={summary?.completedLeases || 0} color="gray" />
-        </div>
       </div>
+    );
+  };
+
+  const renderIncomeStatement = () =>
+    renderStatement(INCOME_GROUPS, 'Орлого, зардлын тайлан', balStart || balEnd ? `${balStart || '...'} — ${balEnd || '...'}` : 'Нийт бүх гүйлгээ');
+
+  if (loading) return <div className="text-slate-400 text-sm font-semibold p-4">Уншиж байна...</div>;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Date filter for financial statements */}
+      {(tab === 'balance' || tab === 'income') && (
+        <div className="z-card flex flex-wrap items-end gap-3">
+          <div>
+            <label className="z-label">Эхлэх огноо</label>
+            <input className="z-input" type="date" value={balStart} onChange={e => setBalStart(e.target.value)} style={{ width: 150 }} />
+          </div>
+          <div>
+            <label className="z-label">Дуусах огноо</label>
+            <input className="z-input" type="date" value={balEnd} onChange={e => setBalEnd(e.target.value)} style={{ width: 150 }} />
+          </div>
+          {(balStart || balEnd) && (
+            <button className="z-btn z-btn-secondary z-btn-sm" onClick={() => { setBalStart(''); setBalEnd(''); }}>
+              Шүүлт арилгах
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        <button className={`z-btn z-btn-sm ${tab === 'balance' ? 'z-btn-primary' : 'z-btn-secondary'}`} onClick={() => setTab('balance')}>
+          <Scale size={13} /> Баланс
+        </button>
+        <button className={`z-btn z-btn-sm ${tab === 'income' ? 'z-btn-primary' : 'z-btn-secondary'}`} onClick={() => setTab('income')}>
+          <BarChart3 size={13} /> Орлогын тайлан
+        </button>
         <button className={`z-btn z-btn-sm ${tab === 'overdue' ? 'z-btn-primary' : 'z-btn-secondary'}`} onClick={() => setTab('overdue')}>
           <AlertTriangle size={13} /> Хугацаа хэтэрсэн ({overdue.length})
         </button>
         <button className={`z-btn z-btn-sm ${tab === 'portfolio' ? 'z-btn-primary' : 'z-btn-secondary'}`} onClick={() => setTab('portfolio')}>
-          <TrendingUp size={13} /> Нийт портфель ({active.length})
+          <TrendingUp size={13} /> Портфель ({active.length})
+        </button>
+        <button className={`z-btn z-btn-sm ${tab === 'summary' ? 'z-btn-primary' : 'z-btn-secondary'}`} onClick={() => setTab('summary')}>
+          Хураангуй
         </button>
       </div>
 
+      {/* ── БАЛАНС ── */}
+      {tab === 'balance' && renderBalanceSheet()}
+
+      {/* ── ОРЛОГЫН ТАЙЛАН ── */}
+      {tab === 'income' && renderIncomeStatement()}
+
+      {/* ── ХУРААНГУЙ ── */}
+      {tab === 'summary' && (
+        <div className="z-card">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+            <h2 className="font-bold text-slate-800">Хураангуй тайлан</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-semibold">Сар:</span>
+              <input className="z-input" type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 160 }} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard label="Нийт портфель" value={`${fmt(summary?.totalPortfolio)} ₮`} color="blue" />
+            <StatCard label={`${month}-р сард орж ирсэн`} value={`${fmt(summary?.totalCollected)} ₮`} color="green" />
+            <StatCard label="Хугацаа хэтэрсэн" value={summary?.overdueLeases || 0} color="red" />
+            <StatCard label="Дууссан гэрээ" value={summary?.completedLeases || 0} color="gray" />
+          </div>
+        </div>
+      )}
+
+      {/* ── ХУГАЦАА ХЭТЭРСЭН ── */}
       {tab === 'overdue' && (
         <div className="z-card">
           <div className="flex items-center justify-between mb-4">
@@ -97,6 +266,7 @@ export default function Reports() {
         </div>
       )}
 
+      {/* ── ПОРТФЕЛЬ ── */}
       {tab === 'portfolio' && (
         <div className="z-card">
           <div className="flex items-center justify-between mb-4">

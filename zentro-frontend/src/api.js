@@ -67,8 +67,9 @@ export const saveCodeRule    = (data) => api.post('/api/zentro/code-rules', data
 export const deleteCodeRule  = (id) => api.delete(`/api/zentro/code-rules/${id}`).then(r => r.data);
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
-export const getPortfolio = () => api.get('/api/zentro/reports/portfolio').then(r => r.data);
-export const getSummary   = (params) => api.get('/api/zentro/reports/summary', { params }).then(r => r.data);
+export const getPortfolio      = () => api.get('/api/zentro/reports/portfolio').then(r => r.data);
+export const getSummary        = (params) => api.get('/api/zentro/reports/summary', { params }).then(r => r.data);
+export const getAccountBalances = (params) => api.get('/api/zentro/reports/balances', { params }).then(r => r.data);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 export const fmt = (n) => (n || 0).toLocaleString('mn-MN');

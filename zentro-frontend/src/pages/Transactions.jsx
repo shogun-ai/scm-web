@@ -5,7 +5,7 @@ import {
   getCodeRules, saveCodeRule,
   fmt, fmtDate,
 } from '../api';
-import { Upload, Plus, Trash2, X, Check } from 'lucide-react';
+import { Upload, Plus, Trash2, X, Check, AlertTriangle } from 'lucide-react';
 
 const EMPTY = { date: new Date().toISOString().slice(0, 10), amount: '', description: '', dt: '', ct: '', code: '', bankReference: '' };
 
@@ -375,9 +375,15 @@ export default function Transactions() {
             {rows.length === 0 && (
               <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: '#94a3b8' }}>Гүйлгээ байхгүй</td></tr>
             )}
-            {rows.map((r, i) => (
-              <tr key={r._id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                <td style={{ padding: '3px 6px', color: '#94a3b8', textAlign: 'center' }}>{i + 1}</td>
+            {rows.map((r, i) => {
+              const uncoded = !r.code && !r.dt && !r.ct;
+              return (
+              <tr key={r._id} style={{ borderTop: '1px solid #e2e8f0', background: uncoded ? '#fffbeb' : undefined }}>
+                <td style={{ padding: '3px 6px', color: '#94a3b8', textAlign: 'center' }}>
+                  {uncoded
+                    ? <AlertTriangle size={11} className="text-yellow-500 mx-auto" title="Код тохируулаагүй байна — гараар оруулах эсвэл ⚡ дарна уу" />
+                    : i + 1}
+                </td>
                 <td style={{ padding: '3px 8px', whiteSpace: 'nowrap' }}>{fmtDate(r.date)}</td>
                 <td style={{ padding: '3px 8px', textAlign: 'right', fontWeight: 600 }}>{fmt(r.amount)}</td>
                 <Cell row={r} field="description" wide />
@@ -390,7 +396,8 @@ export default function Transactions() {
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
           <tfoot>
             <tr style={{ borderTop: '2px solid #cbd8e6', background: '#f8fafc' }}>

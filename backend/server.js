@@ -6931,6 +6931,47 @@ app.get('/api/zentro/reports/summary', authenticateUser, async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// Дансны балансыг гаргах (баланс + орлогын тайлан)
+app.get('/api/zentro/reports/balances', authenticateUser, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const match = {};
+    if (startDate || endDate) {
+      match.date = {};
+      if (startDate) match.date.$gte = new Date(startDate);
+      if (endDate) match.date.$lte = new Date(endDate + 'T23:59:59');
+    }
+    const noCode = { $nin: ['', null] };
+    const [dtAgg, ctAgg, uncoded] = await Promise.all([
+      ZentroTransaction.aggregate([
+        { $match: { ...match, dt: noCode } },
+        { $group: { _id: '$dt', total: { $sum: '$amount' } } },
+      ]),
+      ZentroTransaction.aggregate([
+        { $match: { ...match, ct: noCode } },
+        { $group: { _id: '$ct', total: { $sum: '$amount' } } },
+      ]),
+      ZentroTransaction.countDocuments({ ...match, $or: [{ code: '' }, { code: null }, { code: { $exists: false } }] }),
+    ]);
+
+    const dtMap = Object.fromEntries(dtAgg.filter(r => r._id).map(r => [r._id, r.total]));
+    const ctMap = Object.fromEntries(ctAgg.filter(r => r._id).map(r => [r._id, r.total]));
+    const allCodes = new Set([...Object.keys(dtMap), ...Object.keys(ctMap)]);
+
+    const balances = {};
+    for (const code of allCodes) {
+      const dt = dtMap[code] || 0;
+      const ct = ctMap[code] || 0;
+      // Asset(1) + Expense(5) → debit normal → balance = dt - ct
+      // Liability(2) + Equity(3) + Income(4) → credit normal → balance = ct - dt
+      const firstChar = String(code).replace(/,/g, '')[0];
+      balances[code] = (firstChar === '1' || firstChar === '5') ? dt - ct : ct - dt;
+    }
+
+    res.json({ balances, uncoded });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
 // ─── Transactions (Гүйлгээний журнал) ───────────────────────────────────────
 function txDedupKey(date, amount, description) {
   const d = new Date(date).toISOString().slice(0, 10);
