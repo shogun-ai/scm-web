@@ -11,8 +11,8 @@ const EMPTY = { date: new Date().toISOString().slice(0, 10), amount: '', descrip
 export default function Transactions() {
   const [rows, setRows]           = useState([]);
   const [codes, setCodes]         = useState([]);
-  const [startDate, setStart]     = useState(new Date().toISOString().slice(0, 8) + '01');
-  const [endDate, setEnd]         = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStart]     = useState('');
+  const [endDate, setEnd]         = useState('');
   const [codeFilter, setCodeFilter] = useState('');
   const [editing, setEditing]     = useState(null); // {id, field, value}
   const [modal, setModal]         = useState(null);  // null | 'new' | 'import'
