@@ -4,9 +4,30 @@ import {
   importTransactions, updateTransaction, deleteTransaction,
   fmt, fmtDate,
 } from '../api';
-import { Upload, Plus, Trash2, X, Check, Filter } from 'lucide-react';
+import { Upload, Plus, Trash2, X, Check } from 'lucide-react';
 
 const EMPTY = { date: new Date().toISOString().slice(0, 10), amount: '', description: '', dt: '', ct: '', code: '', bankReference: '' };
+
+// ─── Тайлбараас dt/ct/код автоматаар таних ──────────────────────────────────
+function guessCode(description) {
+  const d = String(description);
+  const dl = d.toLowerCase();
+  const isOrg = /солонго капитал|ббсб|хк|ххк|зохион байгуул/i.test(d);
+
+  if (isOrg) {
+    if (/хүр\.?тооц.*хүү|хүр\.?тооц.*зээл/i.test(d)) return { dt: '2,024', ct: '1,120', code: '2,126' };
+    if (/зээлийн хүү|хүү төлев/i.test(d))             return { dt: '5,121', ct: '1,120', code: '2,126' };
+    if (/зээлааc|зээлэac|зээлээс/i.test(d))           return { dt: '2,021', ct: '1,120', code: '2,163' };
+  }
+  if (/хүр\.?тооц.*хүү|хүр\.?тооц.*зээл/i.test(d))   return { dt: '1,120', ct: '1,270', code: '2,101' };
+  if (/зээлийн хүү|хүү төлев/i.test(d))               return { dt: '1,120', ct: '4,140', code: '2,101' };
+  if (/зээлааc|зээлэac|зээлээс/i.test(d))             return { dt: '1,120', ct: '1,210', code: '2,104' };
+  if (/шимтгэл/i.test(d))                             return { dt: '5,248', ct: '1,120', code: '2,129' };
+  if (/мзуаэ/i.test(d))                               return { dt: '5,228', ct: '1,120', code: '2,129' };
+  if (/аудит/i.test(d))                               return { dt: '5,236', ct: '1,120', code: '2,129' };
+  if (/сургалт/i.test(d))                             return { dt: '5,228', ct: '1,120', code: '2,129' };
+  return { dt: '', ct: '', code: '' };
+}
 
 export default function Transactions() {
   const [rows, setRows]           = useState([]);
@@ -18,6 +39,7 @@ export default function Transactions() {
   const [modal, setModal]         = useState(null);  // null | 'new' | 'import'
   const [form, setForm]           = useState(EMPTY);
   const [importRows, setImportRows] = useState([]);
+  const [importFilename, setImportFilename] = useState('');
   const [saving, setSaving]       = useState(false);
   const fileRef = useRef();
 
@@ -109,7 +131,7 @@ export default function Transactions() {
         const zarlaga = toNum(r[11]);
         const amount  = orlogo > 0 ? orlogo : zarlaga;
         const description = String(r[28] || r[23] || '').trim();
-        return { date, amount, description, dt: '', ct: '', code: '' };
+        return { date, amount, description, ...guessCode(description) };
       }).filter(r => r.amount > 0 && r.date);
     }
 
@@ -134,13 +156,16 @@ export default function Transactions() {
       } else {
         amount = toNum(r[amtIdx]);
       }
+      const description = String(r[descIdx] || '').trim();
+      const hasManualCodes = dtIdx >= 0 && String(r[dtIdx]).trim();
+      const autoCodes = hasManualCodes ? {} : guessCode(description);
       return {
         date: normalizeDate(r[dateIdx]),
         amount,
-        description: String(r[descIdx] || '').trim(),
-        dt:   dtIdx   >= 0 ? String(r[dtIdx]).trim()   : '',
-        ct:   ctIdx   >= 0 ? String(r[ctIdx]).trim()   : '',
-        code: codeIdx >= 0 ? String(r[codeIdx]).trim() : '',
+        description,
+        dt:   dtIdx   >= 0 ? String(r[dtIdx]).trim()   : (autoCodes.dt   || ''),
+        ct:   ctIdx   >= 0 ? String(r[ctIdx]).trim()   : (autoCodes.ct   || ''),
+        code: codeIdx >= 0 ? String(r[codeIdx]).trim() : (autoCodes.code || ''),
       };
     }).filter(r => r.date && r.amount > 0);
   };
@@ -210,6 +235,7 @@ export default function Transactions() {
         parsed = await parseExcel(file);
       }
       setImportRows(parsed);
+      setImportFilename(file.name);
     } catch (err) {
       alert('Файл уншихад алдаа: ' + err.message);
     }
@@ -219,10 +245,12 @@ export default function Transactions() {
   const saveImport = async () => {
     setSaving(true);
     try {
-      const res = await importTransactions({ rows: importRows });
+      const source = importFilename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'excel';
+      const res = await importTransactions({ rows: importRows, filename: importFilename, source });
       alert(`${res.inserted} мөр нэмэгдлээ, ${res.skipped} давхардал алгасав`);
       setModal(null);
       setImportRows([]);
+      setImportFilename('');
       load();
     } catch (e) { alert(e.response?.data?.message || 'Алдаа'); }
     finally { setSaving(false); }
@@ -231,32 +259,33 @@ export default function Transactions() {
   // ─── Totals ───────────────────────────────────────────────────────────────
   const total = rows.reduce((s, r) => s + r.amount, 0);
 
-  const Cell = ({ row, field, wide }) => {
+  const Cell = ({ row, field, wide, center }) => {
     const isEditing = editing?.id === row._id && editing?.field === field;
+    const tdStyle = { padding: '3px 6px', textAlign: center ? 'center' : 'left' };
     if (isEditing) return (
-      <td style={{ padding: '4px 6px', minWidth: wide ? 180 : 80 }}>
+      <td style={{ ...tdStyle, minWidth: wide ? 180 : 60 }}>
         <div className="flex items-center gap-1">
           <input
-            className="z-input text-xs"
-            style={{ padding: '4px 6px', minWidth: wide ? 160 : 60 }}
+            className="z-input"
+            style={{ padding: '2px 5px', fontSize: 11, minWidth: wide ? 160 : 44 }}
             value={editing.value}
             autoFocus
             onChange={e => setEditing(ed => ({ ...ed, value: e.target.value }))}
             onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
           />
-          <button className="z-btn z-btn-primary z-btn-sm p-1" onClick={commitEdit}><Check size={11} /></button>
-          <button className="z-btn z-btn-secondary z-btn-sm p-1" onClick={cancelEdit}><X size={11} /></button>
+          <button className="z-btn z-btn-primary z-btn-sm" style={{ padding: '2px 4px' }} onClick={commitEdit}><Check size={10} /></button>
+          <button className="z-btn z-btn-secondary z-btn-sm" style={{ padding: '2px 4px' }} onClick={cancelEdit}><X size={10} /></button>
         </div>
       </td>
     );
     return (
       <td
         className="cursor-pointer hover:bg-yellow-50 transition-colors"
-        style={{ padding: '10px 14px' }}
+        style={tdStyle}
         onDoubleClick={() => startEdit(row._id, field, row[field] || '')}
         title="Давхар дарж засах"
       >
-        {row[field] || <span className="text-slate-300 text-xs">—</span>}
+        {row[field] || <span style={{ color: '#cbd5e1' }}>—</span>}
       </td>
     );
   };
@@ -292,45 +321,45 @@ export default function Transactions() {
 
       {/* Table */}
       <div className="z-table-wrap">
-        <table className="z-table" style={{ fontSize: 12 }}>
+        <table className="z-table" style={{ fontSize: 11, borderCollapse: 'collapse' }}>
           <thead>
-            <tr>
-              <th style={{ width: 36 }}>№</th>
-              <th style={{ width: 96 }}>Огноо</th>
-              <th style={{ width: 120 }}>Дүн /₮/</th>
-              <th>Гүйлгээний утга</th>
-              <th style={{ width: 70 }}>dt</th>
-              <th style={{ width: 70 }}>ct</th>
-              <th style={{ width: 80 }}>Код</th>
-              <th style={{ width: 36 }}></th>
+            <tr style={{ background: '#f1f6fb' }}>
+              <th style={{ width: 30, padding: '5px 6px' }}>№</th>
+              <th style={{ width: 82, padding: '5px 8px' }}>Огноо</th>
+              <th style={{ width: 110, padding: '5px 8px', textAlign: 'right' }}>Дүн /₮/</th>
+              <th style={{ padding: '5px 8px' }}>Гүйлгээний утга</th>
+              <th style={{ width: 56, padding: '5px 8px', textAlign: 'center' }}>dt</th>
+              <th style={{ width: 56, padding: '5px 8px', textAlign: 'center' }}>ct</th>
+              <th style={{ width: 56, padding: '5px 8px', textAlign: 'center' }}>Код</th>
+              <th style={{ width: 28 }}></th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-10">Гүйлгээ байхгүй</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: '#94a3b8' }}>Гүйлгээ байхгүй</td></tr>
             )}
             {rows.map((r, i) => (
-              <tr key={r._id}>
-                <td className="text-slate-400 text-center">{i + 1}</td>
-                <td>{fmtDate(r.date)}</td>
-                <td className="font-semibold text-right">{fmt(r.amount)}</td>
+              <tr key={r._id} style={{ borderTop: '1px solid #e2e8f0' }}>
+                <td style={{ padding: '3px 6px', color: '#94a3b8', textAlign: 'center' }}>{i + 1}</td>
+                <td style={{ padding: '3px 8px', whiteSpace: 'nowrap' }}>{fmtDate(r.date)}</td>
+                <td style={{ padding: '3px 8px', textAlign: 'right', fontWeight: 600 }}>{fmt(r.amount)}</td>
                 <Cell row={r} field="description" wide />
-                <Cell row={r} field="dt" />
-                <Cell row={r} field="ct" />
-                <Cell row={r} field="code" />
-                <td>
-                  <button className="z-btn z-btn-danger z-btn-sm p-1" onClick={() => remove(r._id)}>
-                    <Trash2 size={11} />
+                <Cell row={r} field="dt" center />
+                <Cell row={r} field="ct" center />
+                <Cell row={r} field="code" center />
+                <td style={{ padding: '2px 4px' }}>
+                  <button className="z-btn z-btn-danger z-btn-sm" style={{ padding: '2px 5px' }} onClick={() => remove(r._id)}>
+                    <Trash2 size={10} />
                   </button>
                 </td>
               </tr>
             ))}
           </tbody>
           <tfoot>
-            <tr>
-              <td colSpan={2} className="text-right font-bold text-slate-600 px-3 py-2 text-xs">Нийт дүн:</td>
-              <td className="font-bold text-slate-800 text-right px-3 py-2">{fmt(total)}</td>
-              <td colSpan={5} className="text-xs text-slate-400 px-3">{rows.length} мөр</td>
+            <tr style={{ borderTop: '2px solid #cbd8e6', background: '#f8fafc' }}>
+              <td colSpan={2} style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontSize: 11, color: '#475569' }}>Нийт дүн:</td>
+              <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>{fmt(total)}</td>
+              <td colSpan={5} style={{ padding: '5px 8px', fontSize: 11, color: '#94a3b8' }}>{rows.length} мөр</td>
             </tr>
           </tfoot>
         </table>

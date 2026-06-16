@@ -57,6 +57,8 @@ export const getTransactions    = (params) => api.get('/api/zentro/transactions'
 export const getTransactionCodes = () => api.get('/api/zentro/transactions/codes').then(r => r.data);
 export const createTransaction  = (data) => api.post('/api/zentro/transactions', data).then(r => r.data);
 export const importTransactions = (data) => api.post('/api/zentro/transactions/import', data).then(r => r.data);
+export const getImportBatches   = () => api.get('/api/zentro/import-batches').then(r => r.data);
+export const deleteImportBatch  = (id) => api.delete(`/api/zentro/import-batches/${id}`).then(r => r.data);
 export const updateTransaction  = (id, data) => api.put(`/api/zentro/transactions/${id}`, data).then(r => r.data);
 export const deleteTransaction  = (id) => api.delete(`/api/zentro/transactions/${id}`).then(r => r.data);
 

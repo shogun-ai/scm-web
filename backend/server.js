@@ -29,6 +29,7 @@ import ZentroCar from './models/ZentroCar.js';
 import ZentroLease from './models/ZentroLease.js';
 import ZentroPayment from './models/ZentroPayment.js';
 import ZentroTransaction from './models/ZentroTransaction.js';
+import ZentroImportBatch from './models/ZentroImportBatch.js';
 import fs from 'fs'; // Ð¤Ð°Ð¹Ð» ÑƒÑÑ‚Ð³Ð°Ñ…Ð°Ð´ Ñ…ÑÑ€ÑÐ³Ñ‚ÑÐ¹
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -6963,20 +6964,41 @@ app.post('/api/zentro/transactions', authenticateUser, async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// Batch import — давхардлыг алгасна
+// Batch import — давхардлыг алгасна, batch бүртгэнэ
 app.post('/api/zentro/transactions/import', authenticateUser, async (req, res) => {
   try {
-    const { rows } = req.body; // [{date, amount, description, dt?, ct?, code?, bankReference?}]
-    const batchId = new Date().toISOString();
+    const { rows, filename, source } = req.body;
+    const batch = await ZentroImportBatch.create({
+      filename: filename || 'Нэргүй файл',
+      source: source || 'excel',
+      importedBy: req.user._id,
+    });
     let inserted = 0, skipped = 0;
     for (const row of rows) {
       const dedupKey = txDedupKey(row.date, row.amount, row.description);
       const exists = await ZentroTransaction.exists({ dedupKey });
       if (exists) { skipped++; continue; }
-      await ZentroTransaction.create({ ...row, dedupKey, source: 'bank_import', importBatchId: batchId });
+      await ZentroTransaction.create({ ...row, dedupKey, source: 'bank_import', importBatchId: batch._id.toString() });
       inserted++;
     }
-    res.json({ inserted, skipped });
+    await ZentroImportBatch.findByIdAndUpdate(batch._id, { rowCount: inserted, skipped });
+    res.json({ inserted, skipped, batchId: batch._id });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// Import batch жагсаалт
+app.get('/api/zentro/import-batches', authenticateUser, async (req, res) => {
+  try {
+    const batches = await ZentroImportBatch.find().sort({ createdAt: -1 }).populate('importedBy', 'name email');
+    res.json(batches);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.delete('/api/zentro/import-batches/:id', authenticateUser, async (req, res) => {
+  try {
+    await ZentroTransaction.deleteMany({ importBatchId: req.params.id });
+    await ZentroImportBatch.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
