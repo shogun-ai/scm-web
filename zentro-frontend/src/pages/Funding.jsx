@@ -70,8 +70,13 @@ export default function Funding() {
     setSaving(true);
     try {
       const data = { ...form, amount: +form.amount||0, interestRate: +form.interestRate||0, balance: +form.balance||0 };
-      if (modal === 'new') setRecords(p => [await createFunding(data), ...p]);
-      else { const u = await updateFunding(modal._id, data); setRecords(p => p.map(r => r._id === u._id ? u : r)); }
+      if (modal === 'new') {
+        const created = await createFunding(data);
+        setRecords(p => [created, ...p]);
+      } else {
+        const u = await updateFunding(modal._id, data);
+        setRecords(p => p.map(r => r._id === u._id ? u : r));
+      }
       setModal(null);
     } catch (e) { alert(e.response?.data?.message || 'Алдаа'); }
     finally { setSaving(false); }
