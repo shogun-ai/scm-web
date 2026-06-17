@@ -68,10 +68,12 @@ export const deleteCodeRule  = (id) => api.delete(`/api/zentro/code-rules/${id}`
 export const getCodeCombos   = () => api.get('/api/zentro/code-combos').then(r => r.data);
 
 // ─── Funding (Эх үүсвэр) ──────────────────────────────────────────────────────
-export const getFunding      = ()       => api.get('/api/zentro/funding').then(r => r.data);
-export const createFunding   = (data)   => api.post('/api/zentro/funding', data).then(r => r.data);
-export const updateFunding   = (id, d)  => api.put(`/api/zentro/funding/${id}`, d).then(r => r.data);
-export const deleteFunding   = (id)     => api.delete(`/api/zentro/funding/${id}`).then(r => r.data);
+export const getFunding              = ()     => api.get('/api/zentro/funding').then(r => r.data);
+export const createFunding           = (data) => api.post('/api/zentro/funding', data).then(r => r.data);
+export const updateFunding           = (id,d) => api.put(`/api/zentro/funding/${id}`, d).then(r => r.data);
+export const deleteFunding           = (id)   => api.delete(`/api/zentro/funding/${id}`).then(r => r.data);
+export const syncFunding             = ()     => api.post('/api/zentro/funding/sync').then(r => r.data);
+export const getFinancialStatement   = ()     => api.get('/api/zentro/reports/financial-statement').then(r => r.data);
 
 // ─── Collateral (Барьцаа) ─────────────────────────────────────────────────────
 export const getCollateral   = (p)      => api.get('/api/zentro/collateral', { params: p }).then(r => r.data);

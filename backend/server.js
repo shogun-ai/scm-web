@@ -39,15 +39,16 @@ const ZentroCodeRule = mongoose.model('ZentroCodeRule', ZentroCodeRuleSchema);
 
 // ─── Эх үүсвэр (Funding sources — банкнаас авсан зээл, хөрөнгө оруулалт) ─────
 const ZentroFundingSchema = new mongoose.Schema({
-  name:         { type: String, required: true },
-  type:         { type: String, enum: ['bank', 'investor', 'bond', 'other'], default: 'bank' },
-  amount:       { type: Number, required: true },
-  interestRate: { type: Number, default: 0 },
-  startDate:    { type: Date },
-  endDate:      { type: Date },
-  balance:      { type: Number, default: 0 },
-  status:       { type: String, enum: ['active', 'paid', 'overdue'], default: 'active' },
-  notes:        { type: String, default: '' },
+  name:                { type: String, required: true },
+  type:                { type: String, enum: ['bank', 'investor', 'bond', 'other'], default: 'bank' },
+  amount:              { type: Number, required: true },
+  interestRate:        { type: Number, default: 0 },
+  startDate:           { type: Date },
+  endDate:             { type: Date },
+  balance:             { type: Number, default: 0 },
+  status:              { type: String, enum: ['active', 'paid', 'overdue'], default: 'active' },
+  sourceTransactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'ZentroTransaction' },
+  notes:               { type: String, default: '' },
 }, { timestamps: true });
 const ZentroFunding = mongoose.model('ZentroFunding', ZentroFundingSchema);
 
@@ -7029,11 +7030,33 @@ app.get('/api/zentro/transactions/codes', authenticateUser, async (req, res) => 
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// ─── Гүйлгээнээс автоматаар эх үүсвэр бүртгэх helper ─────────────────────────
+const FUNDING_CT = ['2,021', '2,020']; // эдгээр ct-тэй гүйлгээ = авсан зээл
+async function autoSyncFunding(tx) {
+  if (!tx || !FUNDING_CT.includes(tx.ct)) return;
+  const exists = await ZentroFunding.findOne({ sourceTransactionId: tx._id });
+  if (exists) return;
+  // Тайлбараас байгууллагын нэр гаргах
+  const name = (tx.description || '').split(/[:\-–|]/)[0].replace(/\s{2,}/g, ' ').trim().slice(0, 80) || 'Тодорхойгүй';
+  await ZentroFunding.create({
+    name,
+    type: 'bank',
+    amount: tx.amount,
+    balance: tx.amount,
+    interestRate: 0,
+    startDate: tx.date,
+    status: 'active',
+    sourceTransactionId: tx._id,
+    notes: tx.description,
+  }).catch(() => {});
+}
+
 app.post('/api/zentro/transactions', authenticateUser, async (req, res) => {
   try {
     const { date, amount, description, dt, ct, code, bankReference } = req.body;
     const dedupKey = txDedupKey(date, amount, description);
     const tx = await ZentroTransaction.create({ date, amount, description, dt, ct, code, bankReference, dedupKey, source: 'manual' });
+    await autoSyncFunding(tx);
     res.json(tx);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
@@ -7052,7 +7075,8 @@ app.post('/api/zentro/transactions/import', authenticateUser, async (req, res) =
       const dedupKey = txDedupKey(row.date, row.amount, row.description);
       const exists = await ZentroTransaction.exists({ dedupKey });
       if (exists) { skipped++; continue; }
-      await ZentroTransaction.create({ ...row, dedupKey, source: 'bank_import', importBatchId: batch._id.toString() });
+      const tx = await ZentroTransaction.create({ ...row, dedupKey, source: 'bank_import', importBatchId: batch._id.toString() });
+      await autoSyncFunding(tx);
       inserted++;
     }
     await ZentroImportBatch.findByIdAndUpdate(batch._id, { rowCount: inserted, skipped });
@@ -7079,6 +7103,7 @@ app.delete('/api/zentro/import-batches/:id', authenticateUser, async (req, res) 
 app.put('/api/zentro/transactions/:id', authenticateUser, async (req, res) => {
   try {
     const tx = await ZentroTransaction.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    await autoSyncFunding(tx);
     res.json(tx);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
@@ -7215,6 +7240,74 @@ app.get('/api/zentro/code-combos', authenticateUser, async (req, res) => {
       { $limit: 200 },
     ]);
     res.json(combos.filter(c => c.dt || c.ct || c.code));
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Гүйлгээнд тулгуурласан санхүүгийн тайлан ───────────────────────────────
+app.get('/api/zentro/reports/financial-statement', authenticateUser, async (req, res) => {
+  try {
+    const sum = arr => arr.reduce((s, t) => s + (t.amount || 0), 0);
+    const q   = (filter) => ZentroTransaction.find(filter).sort({ date: -1 }).lean();
+
+    const [
+      fundRcv,    // эх үүсвэр авсан: ct=2,021/2,020
+      fundPaid,   // үндсэн буцаасан: dt=2,021/2,020
+      intExpense, // хүүгийн зардал: dt=5,121/5,120
+      intAccr,    // хүүгийн өглөг: dt=2,024
+      loanDisb,   // зээл олгосон: ct=1,708
+      loanNewRec, // зээлийн авлага нэмэгдсэн: dt=1,210/1,220
+      loanColl,   // эргэн төлөгдсөн: ct=1,210/1,220/1,270
+      intIncome,  // хүүгийн орлого: ct=4,140/4,111
+    ] = await Promise.all([
+      q({ ct: { $in: ['2,021', '2,020'] } }),
+      q({ dt: { $in: ['2,021', '2,020'] } }),
+      q({ dt: { $in: ['5,121', '5,120'] } }),
+      q({ dt: '2,024' }),
+      q({ ct: '1,708' }),
+      q({ dt: { $in: ['1,210', '1,220'] } }),
+      q({ ct: { $in: ['1,210', '1,220', '1,270'] } }),
+      q({ ct: { $in: ['4,140', '4,111'] } }),
+    ]);
+
+    res.json({
+      funding: {
+        received:      sum(fundRcv),
+        principalPaid: sum(fundPaid),
+        interestPaid:  sum(intExpense),
+        interestAccr:  sum(intAccr),
+        outstanding:   sum(fundRcv) - sum(fundPaid),
+        recentReceived: fundRcv.slice(0, 20),
+        recentPaid:     [...fundPaid, ...intExpense].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 20),
+      },
+      loans: {
+        disbursed:     sum(loanDisb) + sum(loanNewRec),
+        collected:     sum(loanColl),
+        interestIncome: sum(intIncome),
+        outstanding:   sum(loanDisb) + sum(loanNewRec) - sum(loanColl),
+        recentDisbursed: [...loanDisb, ...loanNewRec].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 20),
+        recentCollected: loanColl.slice(0, 20),
+      },
+    });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Өмнөх гүйлгээнүүдийг scan хийж эх үүсвэр бүртгэх ──────────────────────
+app.post('/api/zentro/funding/sync', authenticateUser, async (req, res) => {
+  try {
+    const txs = await ZentroTransaction.find({ ct: { $in: FUNDING_CT } }).lean();
+    let created = 0;
+    for (const tx of txs) {
+      const exists = await ZentroFunding.exists({ sourceTransactionId: tx._id });
+      if (exists) continue;
+      const name = (tx.description || '').split(/[:\-–|]/)[0].replace(/\s{2,}/g, ' ').trim().slice(0, 80) || 'Тодорхойгүй';
+      await ZentroFunding.create({
+        name, type: 'bank', amount: tx.amount, balance: tx.amount,
+        interestRate: 0, startDate: tx.date, status: 'active',
+        sourceTransactionId: tx._id, notes: tx.description,
+      });
+      created++;
+    }
+    res.json({ created, total: txs.length });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 

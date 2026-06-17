@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { getPortfolio, getSummary, getAccountBalances, getNpl, accrueInterest, fmt, fmtDate, statusBadge, statusLabel } from '../api';
+import { getPortfolio, getSummary, getAccountBalances, getNpl, accrueInterest, getFinancialStatement, fmt, fmtDate, statusBadge, statusLabel } from '../api';
 import { COA, BALANCE_GROUPS, INCOME_GROUPS } from '../chartOfAccounts';
-import { AlertTriangle, TrendingUp, Download, Scale, BarChart3, ShieldAlert, Zap } from 'lucide-react';
+import { AlertTriangle, TrendingUp, Download, Scale, BarChart3, ShieldAlert, Zap, ArrowDownLeft, ArrowUpRight, RefreshCw } from 'lucide-react';
 
 export default function Reports() {
   const [portfolio, setPortfolio] = useState([]);
   const [summary, setSummary]     = useState(null);
   const [balData, setBalData]     = useState({ balances: {}, uncoded: 0 });
   const [npl, setNpl]             = useState(null);
+  const [stmt, setStmt]           = useState(null);
   const [month, setMonth]         = useState(new Date().toISOString().slice(0, 7));
   const [balStart, setBalStart]   = useState('');
   const [balEnd, setBalEnd]       = useState('');
@@ -30,6 +31,7 @@ export default function Reports() {
   useEffect(() => { load(); }, [month]);
   useEffect(() => { loadBalances(); }, [balStart, balEnd]);
   useEffect(() => { if (tab === 'npl') getNpl().then(setNpl).catch(() => {}); }, [tab]);
+  useEffect(() => { if (tab === 'finance') getFinancialStatement().then(setStmt).catch(() => {}); }, [tab]);
 
   const overdue = portfolio.filter(l => l.overdueAmount > 0).sort((a, b) => b.overdueAmount - a.overdueAmount);
   const active  = [...portfolio].sort((a, b) => b.remaining - a.remaining);
@@ -205,6 +207,9 @@ export default function Reports() {
         </button>
         <button className={`z-btn z-btn-sm ${tab === 'npl' ? 'z-btn-primary' : 'z-btn-secondary'}`} onClick={() => setTab('npl')}>
           <ShieldAlert size={13} /> NPL / Нөөц
+        </button>
+        <button className={`z-btn z-btn-sm ${tab === 'finance' ? 'z-btn-primary' : 'z-btn-secondary'}`} onClick={() => setTab('finance')}>
+          <ArrowDownLeft size={13} /> Санхүүжилт
         </button>
       </div>
 
@@ -411,6 +416,103 @@ export default function Reports() {
                   </div>
                 </div>
               )}
+            </>
+          )}
+        </div>
+      )}
+      {/* ── САНХҮҮЖИЛТ ── */}
+      {tab === 'finance' && (
+        <div className="flex flex-col gap-4">
+          <div className="flex justify-end">
+            <button className="z-btn z-btn-secondary z-btn-sm" onClick={() => getFinancialStatement().then(setStmt)}>
+              <RefreshCw size={13}/> Шинэчлэх
+            </button>
+          </div>
+          {!stmt ? <div className="text-slate-400 text-sm p-4">Уншиж байна...</div> : (
+            <>
+              {/* Funding summary */}
+              <div className="z-card">
+                <h3 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
+                  <ArrowDownLeft size={14} className="text-blue-600"/> Эх үүсвэр (Авсан зээл)
+                  <span className="text-xs font-normal text-slate-400">ct = 2,021 / 2,020</span>
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <StatCard label="Нийт авсан"        value={`${fmt(stmt.funding.received)} ₮`}      color="blue" />
+                  <StatCard label="Үндсэн буцаасан"   value={`${fmt(stmt.funding.principalPaid)} ₮`} color="green" />
+                  <StatCard label="Хүүгийн зардал"    value={`${fmt(stmt.funding.interestPaid)} ₮`}  color="yellow" />
+                  <StatCard label="Одоогийн үлдэгдэл" value={`${fmt(stmt.funding.outstanding)} ₮`}   color="red" />
+                </div>
+              </div>
+
+              {/* Loans summary */}
+              <div className="z-card">
+                <h3 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
+                  <ArrowUpRight size={14} className="text-green-600"/> Олгосон зээл (Активууд)
+                  <span className="text-xs font-normal text-slate-400">ct = 1,708 · dt = 1,210 / 1,270</span>
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <StatCard label="Нийт олгосон"    value={`${fmt(stmt.loans.disbursed)} ₮`}     color="blue" />
+                  <StatCard label="Эргэн төлөлт"    value={`${fmt(stmt.loans.collected)} ₮`}     color="green" />
+                  <StatCard label="Хүүгийн орлого"  value={`${fmt(stmt.loans.interestIncome)} ₮`} color="yellow" />
+                </div>
+              </div>
+
+              {/* Net spread */}
+              <div className="z-card border-slate-200 bg-slate-50">
+                <h3 className="font-bold text-slate-700 text-sm mb-3">Спред шинжилгээ</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="text-center p-3 rounded-lg bg-white border border-slate-200">
+                    <p className="text-xs text-slate-500 mb-1">Хүүгийн орлого</p>
+                    <p className="text-xl font-bold text-green-700">{fmt(stmt.loans.interestIncome)} ₮</p>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-white border border-slate-200">
+                    <p className="text-xs text-slate-500 mb-1">Хүүгийн зардал</p>
+                    <p className="text-xl font-bold text-red-700">{fmt(stmt.funding.interestPaid)} ₮</p>
+                  </div>
+                  <div className={`text-center p-3 rounded-lg border ${stmt.loans.interestIncome - stmt.funding.interestPaid >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    <p className="text-xs text-slate-500 mb-1">Цэвэр хүүгийн орлого (NII)</p>
+                    <p className={`text-xl font-bold ${stmt.loans.interestIncome - stmt.funding.interestPaid >= 0 ? 'text-green-800' : 'text-red-800'}`}>
+                      {fmt(stmt.loans.interestIncome - stmt.funding.interestPaid)} ₮
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent transactions */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="z-card">
+                  <h4 className="font-semibold text-slate-700 text-xs mb-2">Сүүлийн авсан зээлүүд</h4>
+                  <table className="z-table" style={{ fontSize: 11 }}>
+                    <thead><tr><th>Огноо</th><th>Тайлбар</th><th className="text-right">Дүн</th></tr></thead>
+                    <tbody>
+                      {stmt.funding.recentReceived.length === 0 && <tr><td colSpan={3} className="text-slate-400 text-center py-4">—</td></tr>}
+                      {stmt.funding.recentReceived.map(tx => (
+                        <tr key={tx._id} style={{ borderTop: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '3px 8px', whiteSpace: 'nowrap', color: '#64748b' }}>{fmtDate(tx.date)}</td>
+                          <td style={{ padding: '3px 8px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.description}</td>
+                          <td style={{ padding: '3px 8px', textAlign: 'right', fontWeight: 700 }}>{fmt(tx.amount)} ₮</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="z-card">
+                  <h4 className="font-semibold text-slate-700 text-xs mb-2">Сүүлийн олгосон зээлүүд</h4>
+                  <table className="z-table" style={{ fontSize: 11 }}>
+                    <thead><tr><th>Огноо</th><th>Тайлбар</th><th className="text-right">Дүн</th></tr></thead>
+                    <tbody>
+                      {stmt.loans.recentDisbursed.length === 0 && <tr><td colSpan={3} className="text-slate-400 text-center py-4">—</td></tr>}
+                      {stmt.loans.recentDisbursed.map(tx => (
+                        <tr key={tx._id} style={{ borderTop: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '3px 8px', whiteSpace: 'nowrap', color: '#64748b' }}>{fmtDate(tx.date)}</td>
+                          <td style={{ padding: '3px 8px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.description}</td>
+                          <td style={{ padding: '3px 8px', textAlign: 'right', fontWeight: 700 }}>{fmt(tx.amount)} ₮</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </>
           )}
         </div>
