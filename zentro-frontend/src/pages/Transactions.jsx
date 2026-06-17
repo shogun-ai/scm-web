@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   getTransactions, getTransactionCodes, createTransaction,
   importTransactions, updateTransaction, deleteTransaction, recodeTransactions,
-  getCodeRules, saveCodeRule,
+  getCodeRules, saveCodeRule, getCodeCombos,
   fmt, fmtDate,
 } from '../api';
 import { COA } from '../chartOfAccounts';
@@ -71,82 +71,159 @@ function guessCode(description, customRules = []) {
   return { dt: '', ct: '', code: '' };
 }
 
-// ─── Дансны зүйл ангиас хайж сонгох dropdown ────────────────────────────────
-function CoaDropdown({ value, onChange, onCommit, onCancel }) {
-  const [q, setQ] = useState(value || '');
+// ─── Хэрэглэгчийн кодуудаас сонгох modal ─────────────────────────────────────
+function RulePicker({ row, combos, codeRules, onApply, onClose }) {
+  const [filter, setFilter] = useState('');
+  const [manual, setManual] = useState({ dt: row.dt || '', ct: row.ct || '', code: row.code || '' });
   const inputRef = useRef();
-  const listRef  = useRef();
 
-  const filtered = useMemo(() => {
-    if (!q) return Object.entries(COA).slice(0, 10);
-    const ql = q.toLowerCase().replace(/,/g, '');
-    return Object.entries(COA).filter(([code, name]) =>
-      code.replace(/,/g, '').startsWith(ql) ||
-      code.replace(/,/g, '').includes(ql) ||
-      name.toLowerCase().includes(q.toLowerCase())
-    ).slice(0, 10);
-  }, [q]);
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 50); }, []);
 
-  const select = (code) => { onChange(code); onCommit(code); };
+  const desc = (row.description || '').toLowerCase();
+  const matchedRules = codeRules.filter(r => r.keyword && desc.includes(r.keyword.toLowerCase()));
+  const matchedKeys  = new Set(matchedRules.map(r => `${r.dt}|${r.ct}|${r.code}`));
+  const matchedCombos = combos.filter(c => matchedKeys.has(`${c.dt}|${c.ct}|${c.code}`));
 
-  return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
-      <input
-        ref={inputRef}
-        className="z-input"
-        style={{ padding: '2px 5px', fontSize: 11, width: 66 }}
-        value={q}
-        autoFocus
-        onChange={e => { setQ(e.target.value); onChange(e.target.value); }}
-        onKeyDown={e => {
-          if (e.key === 'Enter') onCommit(q);
-          if (e.key === 'Escape') onCancel();
-          if (e.key === 'ArrowDown') { e.preventDefault(); listRef.current?.querySelector('div')?.focus(); }
-        }}
-      />
-      {filtered.length > 0 && (
-        <div ref={listRef} style={{
-          position: 'fixed', zIndex: 9999,
-          background: '#fff', border: '1px solid #cbd5e1', borderRadius: 7,
-          boxShadow: '0 6px 20px rgba(0,0,0,0.14)',
-          minWidth: 300, maxHeight: 260, overflowY: 'auto',
-          left: inputRef.current ? inputRef.current.getBoundingClientRect().left : 0,
-          top: inputRef.current ? inputRef.current.getBoundingClientRect().bottom + 2 : 0,
-        }}>
-          {filtered.map(([code, name]) => (
-            <div
-              key={code}
-              tabIndex={0}
-              style={{ padding: '5px 10px', cursor: 'pointer', fontSize: 11, display: 'flex', gap: 8,
-                       borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}
-              onMouseDown={e => { e.preventDefault(); select(code); }}
-              onKeyDown={e => { if (e.key === 'Enter') select(code); }}
-              onMouseEnter={e => e.currentTarget.style.background = '#f0f9ff'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            >
-              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#2563eb', minWidth: 52 }}>{code}</span>
-              <span style={{ color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-            </div>
-          ))}
+  const q = filter.toLowerCase();
+  const allFiltered = q
+    ? combos.filter(c =>
+        (c.dt || '').includes(q) || (c.ct || '').includes(q) || (c.code || '').includes(q) ||
+        (c.sample || '').toLowerCase().includes(q)
+      )
+    : combos;
+  const otherCombos = allFiltered.filter(c => !matchedKeys.has(`${c.dt}|${c.ct}|${c.code}`));
+
+  const ComboRow = ({ c, matched }) => (
+    <div
+      onClick={() => onApply(c)}
+      style={{
+        padding: '8px 12px', cursor: 'pointer', borderRadius: 8, marginBottom: 4,
+        border: matched ? '1.5px solid #93c5fd' : '1px solid #e2e8f0',
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = matched ? '#eff6ff' : '#f8fafc'}
+      onMouseLeave={e => e.currentTarget.style.background = ''}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {matched && (
+          <span style={{ background: '#dbeafe', color: '#1d4ed8', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 700 }}>
+            Тохирно
+          </span>
+        )}
+        <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0f172a', fontSize: 12 }}>
+          dt {c.dt || '—'} &nbsp;/&nbsp; ct {c.ct || '—'} &nbsp;/&nbsp; код {c.code || '—'}
+        </span>
+        <span style={{ color: '#94a3b8', fontSize: 10, marginLeft: 'auto' }}>{c.count}x</span>
+      </div>
+      {c.sample && (
+        <div style={{ fontSize: 10, color: '#64748b', marginTop: 2, paddingLeft: 0 }}>
+          {c.sample.slice(0, 80)}
         </div>
       )}
+    </div>
+  );
+
+  return (
+    <div
+      onClick={e => e.target === e.currentTarget && onClose()}
+      style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <div style={{ background: '#fff', borderRadius: 14, width: 520, maxWidth: '95vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        {/* Header */}
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: 0.4, textTransform: 'uppercase' }}>Кодлох гүйлгээ</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', marginTop: 4, background: '#f8fafc', borderRadius: 6, padding: '5px 9px' }}>
+              {row.description || '—'}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 4 }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 18px' }}>
+          {matchedCombos.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', marginBottom: 6 }}>AI тохирох код олов</div>
+              {matchedCombos.map(c => <ComboRow key={`${c.dt}|${c.ct}|${c.code}`} c={c} matched />)}
+            </div>
+          )}
+
+          <input
+            ref={inputRef}
+            className="z-input"
+            style={{ width: '100%', marginBottom: 10, fontSize: 12 }}
+            placeholder="Хайх (данс, код, тайлбар...)"
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+          />
+
+          {combos.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12, padding: 24 }}>
+              Өмнө кодолсон гүйлгээ байхгүй — доор гараар оруулна уу
+            </div>
+          ) : (
+            <>
+              {otherCombos.length > 0 && (
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>
+                  {matchedCombos.length > 0 ? 'Бусад кодууд' : 'Өмнө ашигласан кодууд'}
+                </div>
+              )}
+              {otherCombos.length === 0 && filter ? (
+                <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12, padding: 12 }}>
+                  Хайлтад тохирсон код олдсонгүй
+                </div>
+              ) : (
+                otherCombos.map(c => <ComboRow key={`${c.dt}|${c.ct}|${c.code}`} c={c} />)
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Manual entry */}
+        <div style={{ padding: '12px 18px', borderTop: '1px solid #f1f5f9' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 7 }}>Гараар оруулах</div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input className="z-input" placeholder="dt" value={manual.dt}
+              onChange={e => setManual(m => ({ ...m, dt: e.target.value }))}
+              style={{ width: 70, fontSize: 12 }} />
+            <input className="z-input" placeholder="ct" value={manual.ct}
+              onChange={e => setManual(m => ({ ...m, ct: e.target.value }))}
+              style={{ width: 70, fontSize: 12 }} />
+            <input className="z-input" placeholder="код" value={manual.code}
+              onChange={e => setManual(m => ({ ...m, code: e.target.value }))}
+              style={{ width: 70, fontSize: 12 }} />
+            <button
+              className="z-btn z-btn-primary z-btn-sm"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => onApply(manual)}
+              disabled={!manual.dt && !manual.ct && !manual.code}
+            >
+              <Check size={12} /> Хадгалах
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function Transactions() {
-  const [rows, setRows]           = useState([]);
-  const [codes, setCodes]         = useState([]);
-  const [codeRules, setCodeRules] = useState([]);
-  const [startDate, setStart]     = useState('');
-  const [endDate, setEnd]         = useState('');
-  const [codeFilter, setCodeFilter] = useState('');
-  const [editing, setEditing]     = useState(null); // {id, field, value}
-  const [modal, setModal]         = useState(null);  // null | 'new' | 'import'
-  const [form, setForm]           = useState(EMPTY);
-  const [importRows, setImportRows] = useState([]);
+  const [rows, setRows]               = useState([]);
+  const [codes, setCodes]             = useState([]);
+  const [codeRules, setCodeRules]     = useState([]);
+  const [codeCombos, setCodeCombos]   = useState([]);
+  const [rulePicker, setRulePicker]   = useState(null); // null | { rowId, description, dt, ct, code }
+  const [startDate, setStart]         = useState('');
+  const [endDate, setEnd]             = useState('');
+  const [codeFilter, setCodeFilter]   = useState('');
+  const [editing, setEditing]         = useState(null); // {id, field, value} — description only
+  const [modal, setModal]             = useState(null);  // null | 'new' | 'import'
+  const [form, setForm]               = useState(EMPTY);
+  const [importRows, setImportRows]   = useState([]);
   const [importFilename, setImportFilename] = useState('');
-  const [saving, setSaving]       = useState(false);
+  const [saving, setSaving]           = useState(false);
   const fileRef = useRef();
 
   const load = useCallback(async () => {
@@ -160,6 +237,7 @@ export default function Transactions() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { getCodeRules().then(setCodeRules).catch(() => {}); }, []);
+  useEffect(() => { getCodeCombos().then(setCodeCombos).catch(() => {}); }, []);
 
   // ─── Inline edit ──────────────────────────────────────────────────────────
   const startEdit = (id, field, value) => setEditing({ id, field, value });
@@ -188,6 +266,36 @@ export default function Transactions() {
   };
 
   const cancelEdit = () => setEditing(null);
+
+  // ─── RulePicker-ээс combo сонгоход 3 талбарыг нэгэн зэрэг хадгалах ──────
+  const applyCombo = async (combo) => {
+    if (!rulePicker) return;
+    const { rowId, description } = rulePicker;
+    const updated = await updateTransaction(rowId, { dt: combo.dt || '', ct: combo.ct || '', code: combo.code || '' });
+    setRows(prev => prev.map(r => r._id === updated._id ? updated : r));
+
+    // combo-г кодуудын жагсаалтад нэмэх
+    const key = `${combo.dt}|${combo.ct}|${combo.code}`;
+    setCodeCombos(prev => {
+      const exists = prev.find(c => `${c.dt}|${c.ct}|${c.code}` === key);
+      if (exists) return prev.map(c => `${c.dt}|${c.ct}|${c.code}` === key ? { ...c, count: c.count + 1 } : c);
+      return [{ dt: combo.dt || '', ct: combo.ct || '', code: combo.code || '', count: 1, sample: description }, ...prev];
+    });
+
+    // дүрмийг санах (keyword → combo)
+    const kw = extractKeyword(description);
+    if (kw && (combo.dt || combo.ct)) {
+      const rule = { keyword: kw, dt: combo.dt || '', ct: combo.ct || '', code: combo.code || '' };
+      saveCodeRule(rule).then(saved => {
+        setCodeRules(prev => {
+          const exists = prev.find(r => r.keyword === kw);
+          return exists ? prev.map(r => r.keyword === kw ? saved : r) : [...prev, saved];
+        });
+      }).catch(() => {});
+    }
+
+    setRulePicker(null);
+  };
 
   const remove = async (id) => {
     if (!confirm('Устгах уу?')) return;
@@ -379,35 +487,44 @@ export default function Transactions() {
   const total = rows.reduce((s, r) => s + r.amount, 0);
 
   const Cell = ({ row, field, wide, center }) => {
-    const isEditing = editing?.id === row._id && editing?.field === field;
-    const tdStyle = { padding: '3px 6px', textAlign: center ? 'center' : 'left' };
-    const isCoaField = field === 'dt' || field === 'ct';
-    const coaName = isCoaField && row[field] ? COA[row[field]] : null;
+    const isCodeField = field === 'dt' || field === 'ct' || field === 'code';
+    const isEditing   = !isCodeField && editing?.id === row._id && editing?.field === field;
+    const tdStyle     = { padding: '3px 6px', textAlign: center ? 'center' : 'left' };
+    const coaName     = isCodeField && row[field] ? COA[row[field]] : null;
 
+    // dt / ct / code — нэг дарахад RulePicker нээнэ
+    if (isCodeField) {
+      return (
+        <td
+          className="cursor-pointer hover:bg-blue-50 transition-colors"
+          style={tdStyle}
+          onClick={() => setRulePicker({ rowId: row._id, description: row.description || '', dt: row.dt || '', ct: row.ct || '', code: row.code || '' })}
+          title={coaName ? `${row[field]}: ${coaName}` : 'Дарж кодлох'}
+        >
+          {row[field]
+            ? <span>
+                {row[field]}
+                {coaName && <span style={{ fontSize: 9, color: '#94a3b8', display: 'block', lineHeight: 1.2 }}>{coaName}</span>}
+              </span>
+            : <span style={{ color: '#e2e8f0' }}>—</span>}
+        </td>
+      );
+    }
+
+    // description / бусад — double-click inline edit
     if (isEditing) return (
       <td style={{ ...tdStyle, minWidth: wide ? 180 : 80 }}>
         <div className="flex items-center gap-1">
-          {isCoaField ? (
-            <CoaDropdown
-              value={editing.value}
-              onChange={v => setEditing(ed => ({ ...ed, value: v }))}
-              onCommit={v => { setEditing(ed => ({ ...ed, value: v })); setTimeout(commitEdit, 0); }}
-              onCancel={cancelEdit}
-            />
-          ) : (
-            <input
-              className="z-input"
-              style={{ padding: '2px 5px', fontSize: 11, minWidth: wide ? 160 : 44 }}
-              value={editing.value}
-              autoFocus
-              onChange={e => setEditing(ed => ({ ...ed, value: e.target.value }))}
-              onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
-            />
-          )}
-          {!isCoaField && <>
-            <button className="z-btn z-btn-primary z-btn-sm" style={{ padding: '2px 4px' }} onClick={commitEdit}><Check size={10} /></button>
-            <button className="z-btn z-btn-secondary z-btn-sm" style={{ padding: '2px 4px' }} onClick={cancelEdit}><X size={10} /></button>
-          </>}
+          <input
+            className="z-input"
+            style={{ padding: '2px 5px', fontSize: 11, minWidth: wide ? 160 : 44 }}
+            value={editing.value}
+            autoFocus
+            onChange={e => setEditing(ed => ({ ...ed, value: e.target.value }))}
+            onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
+          />
+          <button className="z-btn z-btn-primary z-btn-sm" style={{ padding: '2px 4px' }} onClick={commitEdit}><Check size={10} /></button>
+          <button className="z-btn z-btn-secondary z-btn-sm" style={{ padding: '2px 4px' }} onClick={cancelEdit}><X size={10} /></button>
         </div>
       </td>
     );
@@ -416,11 +533,9 @@ export default function Transactions() {
         className="cursor-pointer hover:bg-yellow-50 transition-colors"
         style={tdStyle}
         onDoubleClick={() => startEdit(row._id, field, row[field] || '')}
-        title={coaName ? `${row[field]}: ${coaName}` : 'Давхар дарж засах'}
+        title="Давхар дарж засах"
       >
-        {row[field]
-          ? <span>{row[field]}{coaName && <span style={{ fontSize: 9, color: '#94a3b8', display: 'block', lineHeight: 1.2 }}>{coaName}</span>}</span>
-          : <span style={{ color: '#cbd5e1' }}>—</span>}
+        {row[field] ? <span>{row[field]}</span> : <span style={{ color: '#cbd5e1' }}>—</span>}
       </td>
     );
   };
@@ -486,7 +601,12 @@ export default function Transactions() {
               <tr key={r._id} style={{ borderTop: '1px solid #e2e8f0', background: uncoded ? '#fffbeb' : undefined }}>
                 <td style={{ padding: '3px 6px', color: '#94a3b8', textAlign: 'center' }}>
                   {uncoded
-                    ? <AlertTriangle size={11} className="text-yellow-500 mx-auto" title="Код тохируулаагүй байна — гараар оруулах эсвэл ⚡ дарна уу" />
+                    ? <AlertTriangle
+                        size={11}
+                        className="text-yellow-500 mx-auto cursor-pointer"
+                        title="Дарж кодлох"
+                        onClick={() => setRulePicker({ rowId: r._id, description: r.description || '', dt: r.dt || '', ct: r.ct || '', code: r.code || '' })}
+                      />
                     : i + 1}
                 </td>
                 <td style={{ padding: '3px 8px', whiteSpace: 'nowrap' }}>{fmtDate(r.date)}</td>
@@ -541,6 +661,17 @@ export default function Transactions() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* RulePicker modal */}
+      {rulePicker && (
+        <RulePicker
+          row={{ _id: rulePicker.rowId, description: rulePicker.description, dt: rulePicker.dt, ct: rulePicker.ct, code: rulePicker.code }}
+          combos={codeCombos}
+          codeRules={codeRules}
+          onApply={applyCombo}
+          onClose={() => setRulePicker(null)}
+        />
       )}
 
       {/* Import modal */}

@@ -65,6 +65,7 @@ export const recodeTransactions = () => api.post('/api/zentro/transactions/recod
 export const getCodeRules    = () => api.get('/api/zentro/code-rules').then(r => r.data);
 export const saveCodeRule    = (data) => api.post('/api/zentro/code-rules', data).then(r => r.data);
 export const deleteCodeRule  = (id) => api.delete(`/api/zentro/code-rules/${id}`).then(r => r.data);
+export const getCodeCombos   = () => api.get('/api/zentro/code-combos').then(r => r.data);
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
 export const getPortfolio      = () => api.get('/api/zentro/reports/portfolio').then(r => r.data);

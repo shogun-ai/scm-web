@@ -7150,5 +7150,46 @@ app.delete('/api/zentro/code-rules/:id', authenticateUser, async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// ─── Code Combos (хэрэглэгчийн ашигласан dt/ct/code хослолууд) ───────────────
+app.get('/api/zentro/code-combos', authenticateUser, async (req, res) => {
+  try {
+    const combos = await ZentroTransaction.aggregate([
+      {
+        $match: {
+          $or: [
+            { dt: { $exists: true, $ne: '' } },
+            { ct: { $exists: true, $ne: '' } },
+            { code: { $exists: true, $ne: '' } },
+          ],
+        },
+      },
+      {
+        $group: {
+          _id: {
+            dt:   { $ifNull: ['$dt',   ''] },
+            ct:   { $ifNull: ['$ct',   ''] },
+            code: { $ifNull: ['$code', ''] },
+          },
+          count:   { $sum: 1 },
+          samples: { $addToSet: '$description' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          dt:     '$_id.dt',
+          ct:     '$_id.ct',
+          code:   '$_id.code',
+          count:  1,
+          sample: { $arrayElemAt: ['$samples', 0] },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: 200 },
+    ]);
+    res.json(combos.filter(c => c.dt || c.ct || c.code));
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}.`));
 
