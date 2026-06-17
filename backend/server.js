@@ -36,6 +36,33 @@ const ZentroCodeRuleSchema = new mongoose.Schema({
   dt: String, ct: String, code: String,
 }, { timestamps: true });
 const ZentroCodeRule = mongoose.model('ZentroCodeRule', ZentroCodeRuleSchema);
+
+// ─── Эх үүсвэр (Funding sources — банкнаас авсан зээл, хөрөнгө оруулалт) ─────
+const ZentroFundingSchema = new mongoose.Schema({
+  name:         { type: String, required: true },
+  type:         { type: String, enum: ['bank', 'investor', 'bond', 'other'], default: 'bank' },
+  amount:       { type: Number, required: true },
+  interestRate: { type: Number, default: 0 },
+  startDate:    { type: Date },
+  endDate:      { type: Date },
+  balance:      { type: Number, default: 0 },
+  status:       { type: String, enum: ['active', 'paid', 'overdue'], default: 'active' },
+  notes:        { type: String, default: '' },
+}, { timestamps: true });
+const ZentroFunding = mongoose.model('ZentroFunding', ZentroFundingSchema);
+
+// ─── Барьцаа (Collateral) ─────────────────────────────────────────────────────
+const ZentroCollateralSchema = new mongoose.Schema({
+  clientId:       { type: mongoose.Schema.Types.ObjectId, ref: 'ZentroClient' },
+  leaseId:        { type: mongoose.Schema.Types.ObjectId, ref: 'ZentroLease' },
+  type:           { type: String, enum: ['car', 'property', 'equipment', 'machinery', 'other'], default: 'other' },
+  description:    { type: String, required: true },
+  estimatedValue: { type: Number, default: 0 },
+  registrationNo: { type: String, default: '' },
+  status:         { type: String, enum: ['active', 'released', 'seized'], default: 'active' },
+  notes:          { type: String, default: '' },
+}, { timestamps: true });
+const ZentroCollateral = mongoose.model('ZentroCollateral', ZentroCollateralSchema);
 import fs from 'fs'; // Ð¤Ð°Ð¹Ð» ÑƒÑÑ‚Ð³Ð°Ñ…Ð°Ð´ Ñ…ÑÑ€ÑÐ³Ñ‚ÑÐ¹
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -7188,6 +7215,202 @@ app.get('/api/zentro/code-combos', authenticateUser, async (req, res) => {
       { $limit: 200 },
     ]);
     res.json(combos.filter(c => c.dt || c.ct || c.code));
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Funding CRUD ──────────────────────────────────────────────────────────────
+app.get('/api/zentro/funding', authenticateUser, async (req, res) => {
+  try {
+    const data = await ZentroFunding.find().sort({ createdAt: -1 });
+    res.json(data);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.post('/api/zentro/funding', authenticateUser, async (req, res) => {
+  try {
+    const f = await ZentroFunding.create(req.body);
+    res.json(f);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.put('/api/zentro/funding/:id', authenticateUser, async (req, res) => {
+  try {
+    const f = await ZentroFunding.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(f);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.delete('/api/zentro/funding/:id', authenticateUser, async (req, res) => {
+  try {
+    await ZentroFunding.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Collateral CRUD ──────────────────────────────────────────────────────────
+app.get('/api/zentro/collateral', authenticateUser, async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.clientId) filter.clientId = req.query.clientId;
+    if (req.query.leaseId)  filter.leaseId  = req.query.leaseId;
+    const data = await ZentroCollateral.find(filter)
+      .populate('clientId', 'firstname lastname orgName phone')
+      .populate('leaseId',  'contractNumber loanAmount')
+      .sort({ createdAt: -1 });
+    res.json(data);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.post('/api/zentro/collateral', authenticateUser, async (req, res) => {
+  try {
+    const c = await ZentroCollateral.create(req.body);
+    const populated = await ZentroCollateral.findById(c._id)
+      .populate('clientId', 'firstname lastname orgName phone')
+      .populate('leaseId',  'contractNumber loanAmount');
+    res.json(populated);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.put('/api/zentro/collateral/:id', authenticateUser, async (req, res) => {
+  try {
+    const c = await ZentroCollateral.findByIdAndUpdate(req.params.id, req.body, { new: true })
+      .populate('clientId', 'firstname lastname orgName phone')
+      .populate('leaseId',  'contractNumber loanAmount');
+    res.json(c);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.delete('/api/zentro/collateral/:id', authenticateUser, async (req, res) => {
+  try {
+    await ZentroCollateral.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── NPL / Зэрэглэл / Нөөцийн шинжилгээ ────────────────────────────────────
+const PROVISION_RATES = { current: 0.01, watch: 0.05, substandard: 0.25, doubtful: 0.50, loss: 1.00 };
+const BUCKET_LABELS   = { current: 'Хэвийн (0)', watch: 'Анхаарал (1-30)', substandard: 'Хэвийн бус (31-60)', doubtful: 'Эргэлзэлтэй (61-90)', loss: 'Муу (90+)' };
+
+app.get('/api/zentro/reports/npl', authenticateUser, async (req, res) => {
+  try {
+    const now = new Date();
+    const leases = await ZentroLease.find({ status: { $in: ['active', 'overdue'] } })
+      .populate('client', 'firstname lastname orgName phone')
+      .populate('car',    'make model plateNumber');
+
+    const buckets = { current: [], watch: [], substandard: [], doubtful: [], loss: [] };
+    let totalPortfolio = 0;
+    let totalProvision = 0;
+
+    for (const lease of leases) {
+      const overdueItems = lease.schedule.filter(i =>
+        new Date(i.dueDate) < now && i.paidAmount < i.total
+      );
+      const maxOverdueDays = overdueItems.length > 0
+        ? Math.max(...overdueItems.map(i => Math.floor((now - new Date(i.dueDate)) / 86400000)))
+        : 0;
+      const overdueAmount = overdueItems.reduce((s, i) => s + (i.total - i.paidAmount), 0);
+      const remaining = lease.schedule
+        .filter(i => i.paidAmount < i.total)
+        .reduce((s, i) => s + (i.total - i.paidAmount), 0);
+
+      const bucket = maxOverdueDays === 0 ? 'current'
+        : maxOverdueDays <= 30  ? 'watch'
+        : maxOverdueDays <= 60  ? 'substandard'
+        : maxOverdueDays <= 90  ? 'doubtful'
+        : 'loss';
+
+      const provisionRate = PROVISION_RATES[bucket];
+      const provision     = remaining * provisionRate;
+      totalPortfolio += remaining;
+      totalProvision += provision;
+
+      buckets[bucket].push({
+        _id:            lease._id,
+        contractNumber: lease.contractNumber,
+        client:         lease.client,
+        car:            lease.car,
+        loanAmount:     lease.loanAmount,
+        remaining:      Math.round(remaining),
+        overdueAmount:  Math.round(overdueAmount),
+        overdueDays:    maxOverdueDays,
+        provision:      Math.round(provision),
+        provisionRate:  provisionRate * 100,
+        bucket,
+      });
+    }
+
+    const nplLoans = [...buckets.doubtful, ...buckets.loss];
+    const nplAmount = nplLoans.reduce((s, l) => s + l.remaining, 0);
+    const nplRatio  = totalPortfolio > 0 ? (nplAmount / totalPortfolio) * 100 : 0;
+
+    res.json({
+      buckets,
+      summary: {
+        totalPortfolio: Math.round(totalPortfolio),
+        totalProvision: Math.round(totalProvision),
+        nplAmount:      Math.round(nplAmount),
+        nplRatio:       parseFloat(nplRatio.toFixed(2)),
+        bucketCounts:   Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k, v.length])),
+        bucketTotals:   Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k, Math.round(v.reduce((s, l) => s + l.remaining, 0))])),
+        bucketProvisions: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k, Math.round(v.reduce((s, l) => s + l.provision, 0))])),
+      },
+    });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Хүүгийн хуримтлал (Interest accrual) ────────────────────────────────────
+app.post('/api/zentro/transactions/accrue', authenticateUser, async (req, res) => {
+  try {
+    const accrualDate = req.body.date ? new Date(req.body.date) : new Date();
+    const dateStr = accrualDate.toISOString().slice(0, 10);
+    let created = 0;
+
+    // Зээлийн хүүгийн хуримтлал: dt=1,270 ct=4,140
+    const leases = await ZentroLease.find({ status: { $in: ['active', 'overdue'] } });
+    for (const lease of leases) {
+      const principalBalance = lease.schedule
+        .filter(i => i.paidAmount < i.principal)
+        .reduce((s, i) => s + (i.principal - (i.paidAmount || 0)), 0);
+      if (principalBalance <= 0) continue;
+
+      const dailyInterest = Math.round(principalBalance * (lease.interestRate / 100 / 365));
+      if (dailyInterest <= 0) continue;
+
+      const desc    = `Хүүгийн хуримтлал: ${lease.contractNumber}`;
+      const dedup   = `${dateStr}|${dailyInterest}|${desc.slice(0, 80)}`;
+      const exists  = await ZentroTransaction.findOne({ dedupKey: dedup });
+      if (exists) continue;
+
+      await ZentroTransaction.create({
+        date: accrualDate, amount: dailyInterest, description: desc,
+        dt: '1,270', ct: '4,140', code: '4,140',
+        source: 'accrual', dedupKey: dedup,
+      });
+      created++;
+    }
+
+    // Эх үүсвэрийн хүүгийн зардал: dt=5,121 ct=2,024
+    const fundings = await ZentroFunding.find({ status: 'active' });
+    for (const funding of fundings) {
+      if (!funding.balance || !funding.interestRate) continue;
+      const dailyExpense = Math.round(funding.balance * (funding.interestRate / 100 / 365));
+      if (dailyExpense <= 0) continue;
+
+      const desc   = `Хүүгийн зардал хуримтлал: ${funding.name}`;
+      const dedup  = `${dateStr}|${dailyExpense}|${desc.slice(0, 80)}`;
+      const exists = await ZentroTransaction.findOne({ dedupKey: dedup });
+      if (exists) continue;
+
+      await ZentroTransaction.create({
+        date: accrualDate, amount: dailyExpense, description: desc,
+        dt: '5,121', ct: '2,024', code: '5,121',
+        source: 'accrual', dedupKey: dedup,
+      });
+      created++;
+    }
+
+    res.json({ ok: true, created, date: dateStr });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 

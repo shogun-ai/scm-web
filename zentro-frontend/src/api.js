@@ -67,6 +67,22 @@ export const saveCodeRule    = (data) => api.post('/api/zentro/code-rules', data
 export const deleteCodeRule  = (id) => api.delete(`/api/zentro/code-rules/${id}`).then(r => r.data);
 export const getCodeCombos   = () => api.get('/api/zentro/code-combos').then(r => r.data);
 
+// ─── Funding (Эх үүсвэр) ──────────────────────────────────────────────────────
+export const getFunding      = ()       => api.get('/api/zentro/funding').then(r => r.data);
+export const createFunding   = (data)   => api.post('/api/zentro/funding', data).then(r => r.data);
+export const updateFunding   = (id, d)  => api.put(`/api/zentro/funding/${id}`, d).then(r => r.data);
+export const deleteFunding   = (id)     => api.delete(`/api/zentro/funding/${id}`).then(r => r.data);
+
+// ─── Collateral (Барьцаа) ─────────────────────────────────────────────────────
+export const getCollateral   = (p)      => api.get('/api/zentro/collateral', { params: p }).then(r => r.data);
+export const createCollateral= (data)   => api.post('/api/zentro/collateral', data).then(r => r.data);
+export const updateCollateral= (id, d)  => api.put(`/api/zentro/collateral/${id}`, d).then(r => r.data);
+export const deleteCollateral= (id)     => api.delete(`/api/zentro/collateral/${id}`).then(r => r.data);
+
+// ─── NPL / Provision ─────────────────────────────────────────────────────────
+export const getNpl          = ()       => api.get('/api/zentro/reports/npl').then(r => r.data);
+export const accrueInterest  = (date)   => api.post('/api/zentro/transactions/accrue', { date }).then(r => r.data);
+
 // ─── Reports ──────────────────────────────────────────────────────────────────
 export const getPortfolio      = () => api.get('/api/zentro/reports/portfolio').then(r => r.data);
 export const getSummary        = (params) => api.get('/api/zentro/reports/summary', { params }).then(r => r.data);

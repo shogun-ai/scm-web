@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
-import { getPortfolio, getSummary, getAccountBalances, fmt, fmtDate, statusBadge, statusLabel } from '../api';
+import { getPortfolio, getSummary, getAccountBalances, getNpl, accrueInterest, fmt, fmtDate, statusBadge, statusLabel } from '../api';
 import { COA, BALANCE_GROUPS, INCOME_GROUPS } from '../chartOfAccounts';
-import { AlertTriangle, TrendingUp, Download, Scale, BarChart3 } from 'lucide-react';
+import { AlertTriangle, TrendingUp, Download, Scale, BarChart3, ShieldAlert, Zap } from 'lucide-react';
 
 export default function Reports() {
   const [portfolio, setPortfolio] = useState([]);
   const [summary, setSummary]     = useState(null);
   const [balData, setBalData]     = useState({ balances: {}, uncoded: 0 });
+  const [npl, setNpl]             = useState(null);
   const [month, setMonth]         = useState(new Date().toISOString().slice(0, 7));
   const [balStart, setBalStart]   = useState('');
   const [balEnd, setBalEnd]       = useState('');
   const [tab, setTab]             = useState('balance');
   const [loading, setLoading]     = useState(true);
+  const [accruing, setAccruing]   = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -27,6 +29,7 @@ export default function Reports() {
 
   useEffect(() => { load(); }, [month]);
   useEffect(() => { loadBalances(); }, [balStart, balEnd]);
+  useEffect(() => { if (tab === 'npl') getNpl().then(setNpl).catch(() => {}); }, [tab]);
 
   const overdue = portfolio.filter(l => l.overdueAmount > 0).sort((a, b) => b.overdueAmount - a.overdueAmount);
   const active  = [...portfolio].sort((a, b) => b.remaining - a.remaining);
@@ -200,6 +203,9 @@ export default function Reports() {
         <button className={`z-btn z-btn-sm ${tab === 'summary' ? 'z-btn-primary' : 'z-btn-secondary'}`} onClick={() => setTab('summary')}>
           Хураангуй
         </button>
+        <button className={`z-btn z-btn-sm ${tab === 'npl' ? 'z-btn-primary' : 'z-btn-secondary'}`} onClick={() => setTab('npl')}>
+          <ShieldAlert size={13} /> NPL / Нөөц
+        </button>
       </div>
 
       {/* ── БАЛАНС ── */}
@@ -301,6 +307,112 @@ export default function Reports() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+      {/* ── NPL / НӨӨЦ ── */}
+      {tab === 'npl' && (
+        <div className="flex flex-col gap-4">
+          {/* Accrual button */}
+          <div className="z-card flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="font-bold text-slate-700 text-sm">Хүүгийн хуримтлал (Accrual)</p>
+              <p className="text-xs text-slate-400 mt-0.5">Өнөөдрийн хүүг тооцоолж дансны бичилт үүсгэнэ (dt 1,270 / ct 4,140 зээлийн хүү · dt 5,121 / ct 2,024 зардал)</p>
+            </div>
+            <button className="z-btn z-btn-primary" disabled={accruing} onClick={async () => {
+              setAccruing(true);
+              try {
+                const r = await accrueInterest(new Date().toISOString().slice(0, 10));
+                alert(`${r.created} бичилт үүслээ (${r.date})`);
+              } catch (e) { alert(e.response?.data?.message || 'Алдаа'); }
+              finally { setAccruing(false); }
+            }}>
+              <Zap size={14} /> {accruing ? 'Тооцоолж байна...' : 'Өнөөдрийн хүү хуримтлуулах'}
+            </button>
+          </div>
+
+          {!npl ? (
+            <div className="text-slate-400 text-sm font-semibold p-4">Уншиж байна...</div>
+          ) : (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <StatCard label="Нийт зээлийн портфель"  value={`${fmt(npl.summary.totalPortfolio)} ₮`}   color="blue" />
+                <StatCard label="NPL дүн (90+ хоног)"    value={`${fmt(npl.summary.nplAmount)} ₮`}         color="red" />
+                <StatCard label="NPL харьцаа"            value={`${npl.summary.nplRatio}%`}                color={npl.summary.nplRatio > 5 ? 'red' : 'green'} />
+                <StatCard label="Шаардлагатай нөөц"      value={`${fmt(npl.summary.totalProvision)} ₮`}    color="yellow" />
+              </div>
+
+              {/* Bucket summary */}
+              <div className="z-card">
+                <h3 className="font-bold text-slate-800 mb-3 text-sm">Зэрэглэлийн хураангуй (ББСБ-ийн стандарт)</h3>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: '#f1f6fb', borderBottom: '2px solid #cbd8e6' }}>
+                      <th style={{ padding: '6px 10px', textAlign: 'left' }}>Зэрэглэл</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'center' }}>Хугацаа (хоног)</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'center' }}>Нөөцийн хувь</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'center' }}>Гэрээний тоо</th>
+                      <th style={{ padding: '6px 14px', textAlign: 'right' }}>Үлдэгдэл</th>
+                      <th style={{ padding: '6px 14px', textAlign: 'right' }}>Шаардлагатай нөөц</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { key: 'current',     label: 'Хэвийн',           days: '0',     rate: '1%',   color: '#f0fdf4', textColor: '#166534' },
+                      { key: 'watch',       label: 'Анхаарал',          days: '1-30',  rate: '5%',   color: '#fefce8', textColor: '#713f12' },
+                      { key: 'substandard', label: 'Хэвийн бус',        days: '31-60', rate: '25%',  color: '#fff7ed', textColor: '#9a3412' },
+                      { key: 'doubtful',    label: 'Эргэлзэлтэй',       days: '61-90', rate: '50%',  color: '#fef2f2', textColor: '#991b1b' },
+                      { key: 'loss',        label: 'Муу зээл',          days: '90+',   rate: '100%', color: '#fef2f2', textColor: '#7f1d1d' },
+                    ].map(b => (
+                      <tr key={b.key} style={{ borderTop: '1px solid #e2e8f0', background: b.color }}>
+                        <td style={{ padding: '6px 10px', fontWeight: 700, color: b.textColor }}>{b.label}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace' }}>{b.days}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700, color: b.textColor }}>{b.rate}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'center' }}>{npl.summary.bucketCounts[b.key] || 0}</td>
+                        <td style={{ padding: '6px 14px', textAlign: 'right', fontWeight: 600 }}>{fmt(npl.summary.bucketTotals[b.key] || 0)} ₮</td>
+                        <td style={{ padding: '6px 14px', textAlign: 'right', fontWeight: 700, color: b.textColor }}>{fmt(npl.summary.bucketProvisions[b.key] || 0)} ₮</td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderTop: '2px solid #cbd8e6', background: '#f8fafc' }}>
+                      <td colSpan={3} style={{ padding: '7px 10px', fontWeight: 700 }}>НИЙТ</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'center', fontWeight: 700 }}>
+                        {Object.values(npl.summary.bucketCounts).reduce((s, v) => s + v, 0)}
+                      </td>
+                      <td style={{ padding: '7px 14px', textAlign: 'right', fontWeight: 700 }}>{fmt(npl.summary.totalPortfolio)} ₮</td>
+                      <td style={{ padding: '7px 14px', textAlign: 'right', fontWeight: 800, color: '#991b1b' }}>{fmt(npl.summary.totalProvision)} ₮</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* NPL detail — doubtful + loss only */}
+              {[...npl.buckets.doubtful, ...npl.buckets.loss].length > 0 && (
+                <div className="z-card">
+                  <h3 className="font-bold text-slate-800 mb-3 text-sm">NPL задаргаа (эргэлзэлтэй + муу зээл)</h3>
+                  <div className="z-table-wrap">
+                    <table className="z-table" style={{ fontSize: 12 }}>
+                      <thead>
+                        <tr><th>Гэрээ №</th><th>Харилцагч</th><th>Хоног</th><th className="text-right">Үлдэгдэл</th><th className="text-right">Хэтрэлт</th><th className="text-right">Нөөц (%)</th><th className="text-right">Нөөц дүн</th></tr>
+                      </thead>
+                      <tbody>
+                        {[...npl.buckets.doubtful, ...npl.buckets.loss].sort((a, b) => b.overdueDays - a.overdueDays).map(l => (
+                          <tr key={l._id} style={{ borderTop: '1px solid #e2e8f0', background: l.bucket === 'loss' ? '#fef2f2' : '#fff7ed' }}>
+                            <td className="font-bold text-blue-700">{l.contractNumber}</td>
+                            <td>{l.client?.firstname || l.client?.orgName} {l.client?.lastname || ''}</td>
+                            <td className="font-bold text-red-700 text-center">{l.overdueDays}</td>
+                            <td className="text-right font-semibold">{fmt(l.remaining)} ₮</td>
+                            <td className="text-right text-red-600">{fmt(l.overdueAmount)} ₮</td>
+                            <td className="text-right text-red-700 font-bold">{l.provisionRate}%</td>
+                            <td className="text-right font-bold text-red-800">{fmt(l.provision)} ₮</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>

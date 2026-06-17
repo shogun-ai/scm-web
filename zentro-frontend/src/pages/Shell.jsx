@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LayoutDashboard, Users, Car, FileText, CreditCard, BarChart3, ArrowLeftRight, Database, LogOut, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Users, Car, FileText, CreditCard, BarChart3, ArrowLeftRight, Database, LogOut, Menu, X, TrendingDown, Shield } from 'lucide-react';
 import Dashboard from './Dashboard';
 import Clients from './Clients';
 import Cars from './Cars';
@@ -7,24 +7,28 @@ import Leases from './Leases';
 import Payments from './Payments';
 import Reports from './Reports';
 import Transactions from './Transactions';
+import Funding from './Funding';
+import Collateral from './Collateral';
 import Data from './Data';
 
 const NAV = [
-  { id: 'dashboard',    label: 'Нүүр',      icon: LayoutDashboard },
-  { id: 'clients',      label: 'Харилцагч', icon: Users },
-  { id: 'cars',         label: 'Машин',     icon: Car },
-  { id: 'leases',       label: 'Лизинг',    icon: FileText },
-  { id: 'payments',     label: 'Төлөлт',    icon: CreditCard },
-  { id: 'transactions', label: 'Гүйлгээ',   icon: ArrowLeftRight },
-  { id: 'reports',      label: 'Тайлан',    icon: BarChart3 },
-  { id: 'data',         label: 'Дата',      icon: Database },
+  { id: 'dashboard',    label: 'Нүүр',        icon: LayoutDashboard },
+  { id: 'clients',      label: 'Харилцагч',   icon: Users },
+  { id: 'leases',       label: 'Зээл',        icon: FileText },
+  { id: 'collateral',   label: 'Барьцаа',     icon: Shield },
+  { id: 'payments',     label: 'Төлөлт',      icon: CreditCard },
+  { id: 'funding',      label: 'Эх үүсвэр',   icon: TrendingDown },
+  { id: 'transactions', label: 'Гүйлгээ',     icon: ArrowLeftRight },
+  { id: 'reports',      label: 'Тайлан',      icon: BarChart3 },
+  { id: 'cars',         label: 'Машин',       icon: Car },
+  { id: 'data',         label: 'Дата',        icon: Database },
 ];
 
 export default function Shell({ user, onLogout }) {
   const [page, setPage] = useState('dashboard');
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const pages = { dashboard: Dashboard, clients: Clients, cars: Cars, leases: Leases, payments: Payments, transactions: Transactions, reports: Reports, data: Data };
+  const pages = { dashboard: Dashboard, clients: Clients, cars: Cars, leases: Leases, payments: Payments, transactions: Transactions, reports: Reports, funding: Funding, collateral: Collateral, data: Data };
   const Page = pages[page];
 
   return (
