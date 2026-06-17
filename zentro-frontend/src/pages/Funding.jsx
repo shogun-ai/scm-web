@@ -4,6 +4,7 @@ import { getFinancialStatement, fmt, fmtDate } from '../api';
 export default function Funding() {
   const [data, setData] = useState(null);
 
+  // SPA-д navigate хийх бүрт шинээр mount → data автоматаар refresh хийгдэнэ
   useEffect(() => {
     getFinancialStatement().then(setData).catch(() => {});
   }, []);
@@ -11,56 +12,35 @@ export default function Funding() {
   if (!data) return <div className="text-slate-400 p-6">Уншиж байна...</div>;
 
   const f = data.funding;
-  const l = data.loans;
 
   return (
     <div className="flex flex-col gap-6">
 
-      {/* ── ЭХ ҮҮСВЭР (АВСАН ЗЭЭЛ) ── */}
+      {/* Дүнгийн хураангуй */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SCard label="Нийт авсан зээл"    value={fmt(f.received)}      color="blue" />
+        <SCard label="Үндсэн буцаасан"    value={fmt(f.principalPaid)} color="green" />
+        <SCard label="Хүүгийн зардал"     value={fmt(f.interestPaid)}  color="yellow" />
+        <SCard label="Одоогийн үлдэгдэл"  value={fmt(f.outstanding)}   color="red" />
+      </div>
+
+      {/* Авсан зээлүүд */}
       <div className="z-card">
-        <h2 className="font-bold text-slate-800 mb-1">Эх үүсвэр — авсан зээл</h2>
-        <p className="text-xs text-slate-400 mb-4">ct = 2,021 / 2,020 кодтой гүйлгээнүүд</p>
-
-        {/* Дүнгийн хураангуй */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-          <SCard label="Нийт авсан"      value={fmt(f.received)}      color="blue" />
-          <SCard label="Үндсэн буцаасан" value={fmt(f.principalPaid)} color="green" />
-          <SCard label="Хүүгийн зардал"  value={fmt(f.interestPaid)}  color="yellow" />
-          <SCard label="Үлдэгдэл"        value={fmt(f.outstanding)}   color="red" />
-        </div>
-
-        {/* Гүйлгээний жагсаалт */}
+        <h2 className="font-bold text-slate-800 mb-1">Авсан зээл (эх үүсвэр)</h2>
+        <p className="text-xs text-slate-400 mb-4">ct = 2,021 / 2,020 кодтой гүйлгээнүүд — банк болон хөрөнгө оруулагчаас авсан зээл</p>
         {f.recentReceived.length === 0
           ? <p className="text-slate-400 text-sm py-4">ct=2,021 эсвэл ct=2,020 кодтой гүйлгээ байхгүй байна</p>
           : <TxTable rows={f.recentReceived} />
         }
       </div>
 
-      {/* ── БУЦААСАН ТӨЛӨЛТ ── */}
+      {/* Буцаасан төлөлт */}
       <div className="z-card">
         <h2 className="font-bold text-slate-800 mb-1">Буцаасан зээл ба хүүгийн зардал</h2>
-        <p className="text-xs text-slate-400 mb-4">dt = 2,021 / 2,020 / 5,121 / 5,120 / 2,024 кодтой гүйлгээнүүд</p>
-
+        <p className="text-xs text-slate-400 mb-4">dt = 2,021 / 2,020 / 5,121 / 5,120 / 2,024 кодтой гүйлгээнүүд — банкруу буцаан төлсөн</p>
         {f.recentPaid.length === 0
           ? <p className="text-slate-400 text-sm py-4">Буцаасан гүйлгээ байхгүй байна</p>
           : <TxTable rows={f.recentPaid} />
-        }
-      </div>
-
-      {/* ── ОЛГОСОН ЗЭЭЛ ── */}
-      <div className="z-card">
-        <h2 className="font-bold text-slate-800 mb-1">Бусдад олгосон зээл</h2>
-        <p className="text-xs text-slate-400 mb-4">ct = 1,708 / dt = 1,210 / 1,220 кодтой гүйлгээнүүд</p>
-
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
-          <SCard label="Нийт олгосон"   value={fmt(l.disbursed)}     color="blue" />
-          <SCard label="Эргэн төлөлт"   value={fmt(l.collected)}     color="green" />
-          <SCard label="Хүүгийн орлого" value={fmt(l.interestIncome)} color="yellow" />
-        </div>
-
-        {l.recentDisbursed.length === 0
-          ? <p className="text-slate-400 text-sm py-4">Зээл олгосон гүйлгээ байхгүй байна</p>
-          : <TxTable rows={l.recentDisbursed} />
         }
       </div>
 
@@ -87,9 +67,7 @@ function TxTable({ rows }) {
               <td style={{ whiteSpace: 'nowrap', color: '#64748b' }}>{fmtDate(tx.date)}</td>
               <td style={{ fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>{tx.dt || '—'}</td>
               <td style={{ fontFamily: 'monospace', color: '#16a34a', whiteSpace: 'nowrap' }}>{tx.ct || '—'}</td>
-              <td style={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {tx.description}
-              </td>
+              <td style={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.description}</td>
               <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(tx.amount)}</td>
             </tr>
           ))}
