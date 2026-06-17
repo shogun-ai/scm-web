@@ -52,6 +52,17 @@ const ZentroFundingSchema = new mongoose.Schema({
 }, { timestamps: true });
 const ZentroFunding = mongoose.model('ZentroFunding', ZentroFundingSchema);
 
+// ─── Эх үүсвэрийн төлөлт (буцаасан зээл, хүүгийн зардал) ────────────────────
+const ZentroFundingPaymentSchema = new mongoose.Schema({
+  fundingId:     { type: mongoose.Schema.Types.ObjectId, ref: 'ZentroFunding', required: true },
+  transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'ZentroTransaction', unique: true },
+  amount:        { type: Number, required: true },
+  date:          { type: Date },
+  type:          { type: String, enum: ['principal', 'interest', 'accrual'], default: 'principal' },
+  description:   { type: String, default: '' },
+}, { timestamps: true });
+const ZentroFundingPayment = mongoose.model('ZentroFundingPayment', ZentroFundingPaymentSchema);
+
 // ─── Барьцаа (Collateral) ─────────────────────────────────────────────────────
 const ZentroCollateralSchema = new mongoose.Schema({
   clientId:       { type: mongoose.Schema.Types.ObjectId, ref: 'ZentroClient' },
@@ -7030,8 +7041,12 @@ app.get('/api/zentro/transactions/codes', authenticateUser, async (req, res) => 
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// ─── Гүйлгээнээс автоматаар эх үүсвэр бүртгэх helper ─────────────────────────
-const FUNDING_CT = ['2,021', '2,020']; // эдгээр ct-тэй гүйлгээ = авсан зээл
+// ─── Гүйлгээнээс автоматаар эх үүсвэр + төлөлт бүртгэх helpers ──────────────
+const FUNDING_CT      = ['2,021', '2,020'];           // ct = авсан зээл
+const PRINCIPAL_DT    = ['2,021', '2,020'];           // dt = үндсэн буцаалт
+const INTEREST_EXP_DT = ['5,121', '5,120'];           // dt = хүүгийн зардал
+const ACCRUAL_DT      = ['2,024'];                    // dt = хуримтлагдсан хүүгийн зардал
+
 async function autoSyncFunding(tx) {
   if (!tx || !FUNDING_CT.includes(tx.ct)) return;
   const exists = await ZentroFunding.findOne({ sourceTransactionId: tx._id });
@@ -7051,12 +7066,50 @@ async function autoSyncFunding(tx) {
   }).catch(() => {});
 }
 
+// dt=2,021/5,121/2,024 гүйлгээ → эх үүсвэрийн төлөлт болгон бүртгэх
+async function autoSyncFundingPayment(tx) {
+  if (!tx) return;
+  let payType = null;
+  if (PRINCIPAL_DT.includes(tx.dt))    payType = 'principal';
+  else if (INTEREST_EXP_DT.includes(tx.dt)) payType = 'interest';
+  else if (ACCRUAL_DT.includes(tx.dt))      payType = 'accrual';
+  else return;
+
+  const exists = await ZentroFundingPayment.findOne({ transactionId: tx._id });
+  if (exists) return;
+
+  // Ямар эх үүсвэрт холбох вэ? — нэрийн keyword тохирч байвал тэрхэнд, үгүй бол хамгийн эртний идэвхтэй
+  const actives = await ZentroFunding.find({ status: 'active' }).sort({ startDate: 1 });
+  if (actives.length === 0) return;
+  let target = actives[0];
+  if (actives.length > 1) {
+    const desc = (tx.description || '').toLowerCase();
+    const matched = actives.find(f => f.name && desc.includes(f.name.toLowerCase().slice(0, 5)));
+    if (matched) target = matched;
+  }
+
+  await ZentroFundingPayment.create({
+    fundingId: target._id,
+    transactionId: tx._id,
+    amount: tx.amount,
+    date: tx.date,
+    type: payType,
+    description: tx.description,
+  }).catch(() => {});
+
+  // Үндсэн буцаалт бол үлдэгдлийг хасах
+  if (payType === 'principal') {
+    await ZentroFunding.updateOne({ _id: target._id }, { $inc: { balance: -tx.amount } }).catch(() => {});
+  }
+}
+
 app.post('/api/zentro/transactions', authenticateUser, async (req, res) => {
   try {
     const { date, amount, description, dt, ct, code, bankReference } = req.body;
     const dedupKey = txDedupKey(date, amount, description);
     const tx = await ZentroTransaction.create({ date, amount, description, dt, ct, code, bankReference, dedupKey, source: 'manual' });
     await autoSyncFunding(tx);
+    await autoSyncFundingPayment(tx);
     res.json(tx);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
@@ -7077,6 +7130,7 @@ app.post('/api/zentro/transactions/import', authenticateUser, async (req, res) =
       if (exists) { skipped++; continue; }
       const tx = await ZentroTransaction.create({ ...row, dedupKey, source: 'bank_import', importBatchId: batch._id.toString() });
       await autoSyncFunding(tx);
+      await autoSyncFundingPayment(tx);
       inserted++;
     }
     await ZentroImportBatch.findByIdAndUpdate(batch._id, { rowCount: inserted, skipped });
@@ -7104,6 +7158,7 @@ app.put('/api/zentro/transactions/:id', authenticateUser, async (req, res) => {
   try {
     const tx = await ZentroTransaction.findByIdAndUpdate(req.params.id, req.body, { new: true });
     await autoSyncFunding(tx);
+    await autoSyncFundingPayment(tx);
     res.json(tx);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
@@ -7308,6 +7363,32 @@ app.post('/api/zentro/funding/sync', authenticateUser, async (req, res) => {
       created++;
     }
     res.json({ created, total: txs.length });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Өмнөх буцаалт гүйлгээнүүдийг scan хийж төлөлт бүртгэх ─────────────────
+app.post('/api/zentro/funding/sync-payments', authenticateUser, async (req, res) => {
+  try {
+    const allDt = [...PRINCIPAL_DT, ...INTEREST_EXP_DT, ...ACCRUAL_DT];
+    const txs = await ZentroTransaction.find({ dt: { $in: allDt } }).sort({ date: 1 }).lean();
+    let created = 0;
+    for (const tx of txs) {
+      const exists = await ZentroFundingPayment.findOne({ transactionId: tx._id });
+      if (exists) continue;
+      await autoSyncFundingPayment(tx);
+      created++;
+    }
+    res.json({ created, total: txs.length });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ─── Тодорхой эх үүсвэрийн төлөлтүүд ────────────────────────────────────────
+app.get('/api/zentro/funding/:id/payments', authenticateUser, async (req, res) => {
+  try {
+    const payments = await ZentroFundingPayment.find({ fundingId: req.params.id })
+      .sort({ date: -1 })
+      .lean();
+    res.json(payments);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 

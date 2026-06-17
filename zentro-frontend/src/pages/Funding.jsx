@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { getFunding, createFunding, updateFunding, deleteFunding,
-         syncFunding, getFinancialStatement, fmt, fmtDate } from '../api';
-import { Plus, Trash2, Pencil, X, Check, TrendingDown, RefreshCw, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+         syncFunding, syncFundingPayments, getFundingPayments,
+         getFinancialStatement, fmt, fmtDate } from '../api';
+import { Plus, Trash2, Pencil, X, Check, TrendingDown, RefreshCw,
+         ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight } from 'lucide-react';
 
 const EMPTY = { name: '', type: 'bank', amount: '', interestRate: '', startDate: '', endDate: '', balance: '', status: 'active', notes: '' };
 const TYPE_LABEL   = { bank: 'Банк', investor: 'Хөрөнгө оруулагч', bond: 'Өрийн бичиг', other: 'Бусад' };
@@ -12,11 +14,14 @@ export default function Funding() {
   const [stmt, setStmt]   = useState(null);       // гүйлгээнд тулгуурласан тайлан
   const [records, setRecords] = useState([]);     // гараар + auto бүртгэл
   const [tab, setTab]     = useState('statement');
-  const [modal, setModal] = useState(null);
-  const [form, setForm]   = useState(EMPTY);
-  const [saving, setSaving]   = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [stmtTab, setStmtTab] = useState('funding'); // funding | loans
+  const [modal, setModal]       = useState(null);
+  const [form, setForm]         = useState(EMPTY);
+  const [saving, setSaving]     = useState(false);
+  const [syncing, setSyncing]   = useState(false);
+  const [syncingPay, setSyncingPay] = useState(false);
+  const [expanded, setExpanded] = useState({});      // fundingId → bool
+  const [payments, setPayments] = useState({});      // fundingId → []
+  const [stmtTab, setStmtTab]   = useState('funding');
 
   const loadStmt    = () => getFinancialStatement().then(setStmt).catch(() => {});
   const loadRecords = () => getFunding().then(setRecords).catch(() => {});
@@ -31,6 +36,29 @@ export default function Funding() {
       loadRecords();
     } catch (e) { alert(e.response?.data?.message || 'Алдаа'); }
     finally { setSyncing(false); }
+  };
+
+  const doSyncPayments = async () => {
+    setSyncingPay(true);
+    try {
+      const r = await syncFundingPayments();
+      alert(`${r.created} төлөлт бүртгэгдлээ (нийт ${r.total} гүйлгээ шалгагдлаа)`);
+      setPayments({});     // clear cache — next expand will re-fetch
+      loadRecords();       // balance updated
+    } catch (e) { alert(e.response?.data?.message || 'Алдаа'); }
+    finally { setSyncingPay(false); }
+  };
+
+  const toggleExpand = async (id) => {
+    if (expanded[id]) {
+      setExpanded(p => ({ ...p, [id]: false }));
+      return;
+    }
+    setExpanded(p => ({ ...p, [id]: true }));
+    if (!payments[id]) {
+      const data = await getFundingPayments(id).catch(() => []);
+      setPayments(p => ({ ...p, [id]: data }));
+    }
   };
 
   const openNew  = () => { setForm(EMPTY); setModal('new'); };
@@ -212,51 +240,126 @@ export default function Funding() {
       {/* ── БҮРТГЭЛ ── */}
       {tab === 'records' && (
         <div className="flex flex-col gap-4">
-          <div className="z-card flex justify-between items-center">
+          <div className="z-card flex flex-wrap justify-between items-center gap-2">
             <p className="text-xs text-slate-500">Гүйлгээнээс автоматаар бүртгэсэн болон гараар нэмсэн бүртгэлүүд</p>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button className="z-btn z-btn-secondary" disabled={syncing} onClick={doSync}>
-                <RefreshCw size={13}/> {syncing ? 'Sync хийж байна...' : 'Гүйлгээнээс sync'}
+                <RefreshCw size={13}/> {syncing ? '...' : 'Эх үүсвэр sync'}
+              </button>
+              <button className="z-btn z-btn-secondary" disabled={syncingPay} onClick={doSyncPayments}>
+                <ArrowUpRight size={13}/> {syncingPay ? '...' : 'Төлөлт sync'}
               </button>
               <button className="z-btn z-btn-primary" onClick={openNew}><Plus size={14}/> Гараар нэмэх</button>
             </div>
           </div>
 
-          <div className="z-table-wrap">
-            <table className="z-table" style={{ fontSize: 12 }}>
-              <thead>
-                <tr>
-                  <th>Нэр</th><th>Төрөл</th><th className="text-right">Авсан дүн</th>
-                  <th className="text-right">Үлдэгдэл</th><th className="text-center">Хүү %</th>
-                  <th>Эхлэх</th><th>Статус</th><th style={{width:72}}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {records.length === 0 && (
-                  <tr><td colSpan={8} className="text-center text-slate-400 py-10">
-                    Бүртгэл байхгүй — "Гүйлгээнээс sync" дарж автоматаар үүсгэнэ үү
-                  </td></tr>
+          {records.length === 0 ? (
+            <div className="z-card text-center text-slate-400 py-10 text-sm">
+              Бүртгэл байхгүй — "Эх үүсвэр sync" дарж ct=2,021/2,020 гүйлгээнүүдийг автоматаар бүртгэнэ
+            </div>
+          ) : records.map(r => {
+            const pList = payments[r._id] || [];
+            const principalPaid = pList.filter(p => p.type === 'principal').reduce((s, p) => s + p.amount, 0);
+            const interestPaid  = pList.filter(p => p.type !== 'principal').reduce((s, p) => s + p.amount, 0);
+            const isOpen = expanded[r._id];
+
+            return (
+              <div key={r._id} className="z-card p-0 overflow-hidden">
+                {/* Header row */}
+                <div
+                  className="flex items-center gap-3 p-3 cursor-pointer hover:bg-slate-50 select-none"
+                  onClick={() => toggleExpand(r._id)}
+                >
+                  <span className="text-slate-400">{isOpen ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-slate-800 text-sm truncate">{r.name}</p>
+                    <p className="text-xs text-slate-400">{TYPE_LABEL[r.type]||r.type} · эхлэх: {r.startDate ? fmtDate(r.startDate) : '—'}</p>
+                  </div>
+                  <div className="flex gap-4 items-center flex-wrap">
+                    <div className="text-right">
+                      <p className="text-xs text-slate-400">Авсан</p>
+                      <p className="font-bold text-blue-700 text-sm">{fmt(r.amount)} ₮</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-slate-400">Үлдэгдэл</p>
+                      <p className={`font-bold text-sm ${r.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmt(r.balance)} ₮</p>
+                    </div>
+                    <div className="text-right hidden sm:block">
+                      <p className="text-xs text-slate-400">Хүү</p>
+                      <p className="text-sm font-semibold">{r.interestRate || '0'}%</p>
+                    </div>
+                    <span className={`z-badge ${STATUS_COLOR[r.status]||'z-badge-gray'}`}>{STATUS_LABEL[r.status]||r.status}</span>
+                    <div className="flex gap-1">
+                      <button className="z-btn z-btn-secondary z-btn-sm" style={{padding:'2px 6px'}}
+                        onClick={e => { e.stopPropagation(); openEdit(r); }}><Pencil size={11}/></button>
+                      <button className="z-btn z-btn-danger z-btn-sm" style={{padding:'2px 6px'}}
+                        onClick={e => { e.stopPropagation(); remove(r._id); }}><Trash2 size={11}/></button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expanded: payment history */}
+                {isOpen && (
+                  <div style={{ borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                    {/* Payment summary */}
+                    <div className="flex gap-4 px-4 py-2 flex-wrap" style={{ background: '#f0f9ff', borderBottom: '1px solid #e0f2fe' }}>
+                      <div><span className="text-xs text-slate-500">Үндсэн буцаасан: </span>
+                        <span className="text-xs font-bold text-green-700">{fmt(principalPaid)} ₮</span></div>
+                      <div><span className="text-xs text-slate-500">Хүүгийн зардал: </span>
+                        <span className="text-xs font-bold text-yellow-700">{fmt(interestPaid)} ₮</span></div>
+                      <div><span className="text-xs text-slate-500">Нийт буцаасан: </span>
+                        <span className="text-xs font-bold text-slate-700">{fmt(principalPaid + interestPaid)} ₮</span></div>
+                    </div>
+
+                    {pList.length === 0 ? (
+                      <p className="text-slate-400 text-xs py-4 px-4">
+                        Төлөлтийн гүйлгээ байхгүй — "Төлөлт sync" дарна уу (dt=2,021/5,121/2,024 гүйлгээнүүдийг таних болно)
+                      </p>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                        <thead>
+                          <tr style={{ background: '#f1f6fb', borderBottom: '1px solid #cbd8e6' }}>
+                            <th style={{ padding: '4px 12px', textAlign: 'left' }}>Огноо</th>
+                            <th style={{ padding: '4px 8px', textAlign: 'left' }}>Төрөл</th>
+                            <th style={{ padding: '4px 8px', textAlign: 'left' }}>Тайлбар</th>
+                            <th style={{ padding: '4px 12px', textAlign: 'right' }}>Дүн</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pList.map(p => (
+                            <tr key={p._id} style={{ borderTop: '1px solid #e2e8f0',
+                              background: p.type==='principal'?'#f0fdf4':p.type==='interest'?'#fefce8':'#f0f9ff' }}>
+                              <td style={{ padding: '3px 12px', whiteSpace: 'nowrap', color: '#64748b' }}>{fmtDate(p.date)}</td>
+                              <td style={{ padding: '3px 8px' }}>
+                                <span className={`z-badge ${p.type==='principal'?'z-badge-green':p.type==='interest'?'z-badge-yellow':'z-badge-blue'}`}>
+                                  {p.type==='principal'?'Үндсэн':p.type==='interest'?'Хүү':'Хуримтлал'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '3px 8px', maxWidth: 280, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#334155' }}>
+                                {p.description || '—'}
+                              </td>
+                              <td style={{ padding: '3px 12px', textAlign:'right', fontWeight:700,
+                                color: p.type==='principal'?'#166534':p.type==='interest'?'#713f12':'#1e40af' }}>
+                                {fmt(p.amount)} ₮
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ borderTop: '2px solid #cbd8e6', background: '#f8fafc' }}>
+                            <td colSpan={3} style={{ padding: '4px 12px', fontWeight: 700, fontSize: 11 }}>Нийт төлсөн</td>
+                            <td style={{ padding: '4px 12px', textAlign:'right', fontWeight:800, color:'#166534' }}>
+                              {fmt(principalPaid + interestPaid)} ₮
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    )}
+                  </div>
                 )}
-                {records.map(r => (
-                  <tr key={r._id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                    <td className="font-semibold text-xs">{r.name}</td>
-                    <td>{TYPE_LABEL[r.type]||r.type}</td>
-                    <td className="text-right font-semibold text-blue-700">{fmt(r.amount)} ₮</td>
-                    <td className="text-right font-bold text-red-600">{fmt(r.balance)} ₮</td>
-                    <td className="text-center">{r.interestRate || '—'}%</td>
-                    <td>{r.startDate ? fmtDate(r.startDate) : '—'}</td>
-                    <td><span className={`z-badge ${STATUS_COLOR[r.status]||'z-badge-gray'}`}>{STATUS_LABEL[r.status]||r.status}</span></td>
-                    <td style={{padding:'2px 6px'}}>
-                      <div className="flex gap-1">
-                        <button className="z-btn z-btn-secondary z-btn-sm" style={{padding:'2px 6px'}} onClick={()=>openEdit(r)}><Pencil size={11}/></button>
-                        <button className="z-btn z-btn-danger z-btn-sm"    style={{padding:'2px 6px'}} onClick={()=>remove(r._id)}><Trash2 size={11}/></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

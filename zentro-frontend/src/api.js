@@ -73,6 +73,8 @@ export const createFunding           = (data) => api.post('/api/zentro/funding',
 export const updateFunding           = (id,d) => api.put(`/api/zentro/funding/${id}`, d).then(r => r.data);
 export const deleteFunding           = (id)   => api.delete(`/api/zentro/funding/${id}`).then(r => r.data);
 export const syncFunding             = ()     => api.post('/api/zentro/funding/sync').then(r => r.data);
+export const syncFundingPayments     = ()     => api.post('/api/zentro/funding/sync-payments').then(r => r.data);
+export const getFundingPayments      = (id)   => api.get(`/api/zentro/funding/${id}/payments`).then(r => r.data);
 export const getFinancialStatement   = ()     => api.get('/api/zentro/reports/financial-statement').then(r => r.data);
 
 // ─── Collateral (Барьцаа) ─────────────────────────────────────────────────────
