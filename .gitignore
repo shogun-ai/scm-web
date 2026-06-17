@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+!zentro-frontend/dist
+!zentro-frontend/dist/**
 *.local
 
 # Editor directories and files
