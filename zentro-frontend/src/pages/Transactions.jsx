@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   getTransactions, getTransactionCodes, createTransaction,
   importTransactions, updateTransaction, deleteTransaction, recodeTransactions,
   getCodeRules, saveCodeRule,
   fmt, fmtDate,
 } from '../api';
+import { COA } from '../chartOfAccounts';
 import { Upload, Plus, Trash2, X, Check, AlertTriangle } from 'lucide-react';
 
 const EMPTY = { date: new Date().toISOString().slice(0, 10), amount: '', description: '', dt: '', ct: '', code: '', bankReference: '' };
@@ -21,28 +22,116 @@ function guessCode(description, customRules = []) {
   const d = String(description);
   const dl = d.toLowerCase();
 
-  // эхлээд хэрэглэгчийн хадгалсан дүрмүүдийг шалгана
+  // 1. Хэрэглэгчийн хадгалсан дүрмүүд (хамгийн өндөр эрэмбэ)
   for (const rule of customRules) {
     if (rule.keyword && dl.includes(rule.keyword.toLowerCase())) {
       return { dt: rule.dt || '', ct: rule.ct || '', code: rule.code || '' };
     }
   }
 
+  // 2. Байгууллага (Солонго капитал, ББСБ гэх мэт)
   const isOrg = /солонго капитал|ббсб|хк|ххк|зохион байгуул/i.test(d);
   if (isOrg) {
-    if (/хүр\.?тооц.*хүү|хүр\.?тооц.*зээл/i.test(d)) return { dt: '2,024', ct: '1,120', code: '2,126' };
-    if (/зээлийн хүү|хүү төлев/i.test(d))             return { dt: '5,121', ct: '1,120', code: '2,126' };
-    if (/зээлааc|зээлэac|зээлээс/i.test(d))           return { dt: '2,021', ct: '1,120', code: '2,163' };
+    if (/хүр\.?тооц.*(хүү|зээл)/i.test(d)) return { dt: '2,024', ct: '1,120', code: '2,126' };
+    if (/зээлийн хүү|хүү төлев/i.test(d))  return { dt: '5,121', ct: '1,120', code: '2,126' };
+    if (/зээлааc|зээлэac|зээлээс/i.test(d)) return { dt: '2,021', ct: '1,120', code: '2,163' };
   }
-  if (/зээл олгов|зээл олгол/i.test(d))               return { dt: '1,120', ct: '2,021', code: '2,161' };
-  if (/хүр\.?тооц.*хүү|хүр\.?тооц.*зээл/i.test(d))   return { dt: '1,120', ct: '1,270', code: '2,101' };
-  if (/зээлийн хүү|хүү төлев/i.test(d))               return { dt: '1,120', ct: '4,140', code: '2,101' };
-  if (/зээлааc|зээлэac|зээлээс/i.test(d))             return { dt: '1,120', ct: '1,210', code: '2,104' };
-  if (/шимтгэл/i.test(d))                             return { dt: '5,248', ct: '1,120', code: '2,129' };
-  if (/мзуаэ/i.test(d))                               return { dt: '5,228', ct: '1,120', code: '2,129' };
-  if (/аудит/i.test(d))                               return { dt: '5,236', ct: '1,120', code: '2,129' };
-  if (/сургалт/i.test(d))                             return { dt: '5,228', ct: '1,120', code: '2,129' };
+
+  // 3. Зээл — банкнаас авсан
+  if (/зээл олгов|зээл олгол/i.test(d))              return { dt: '1,120', ct: '2,021', code: '2,161' };
+  if (/зээлааc|зээлэac|зээлээс|зээл буц/i.test(d))   return { dt: '1,120', ct: '1,210', code: '2,104' };
+
+  // 4. Хүүгийн орлого
+  if (/хүр\.?тооц.*(хүү|зээл)/i.test(d))            return { dt: '1,120', ct: '1,270', code: '2,101' };
+  if (/зээлийн хүү|хүүгийн орлого|хүү төлев/i.test(d)) return { dt: '1,120', ct: '4,140', code: '2,101' };
+
+  // 5. Боловсон хүчний зардал
+  if (/цалин/i.test(d))                              return { dt: '5,221', ct: '1,120', code: '2,129' };
+  if (/нийгмийн даатгал|ндш|мзуаэ/i.test(d))         return { dt: '5,226', ct: '1,120', code: '2,129' };
+  if (/эрүүл мэнд.*даатгал|даатгалын шимтгэл/i.test(d)) return { dt: '5,226', ct: '1,120', code: '2,129' };
+  if (/томилолт/i.test(d))                           return { dt: '5,227', ct: '1,120', code: '2,129' };
+  if (/сургалт/i.test(d))                            return { dt: '5,228', ct: '1,120', code: '2,129' };
+
+  // 6. Бусад зардал
+  if (/шимтгэл/i.test(d))                            return { dt: '5,248', ct: '1,120', code: '2,129' };
+  if (/аудит/i.test(d))                              return { dt: '5,236', ct: '1,120', code: '2,129' };
+  if (/даатгал/i.test(d))                            return { dt: '5,238', ct: '1,120', code: '2,129' };
+  if (/интернет|харилцаа холбоо|утасны/i.test(d))    return { dt: '5,245', ct: '1,120', code: '2,129' };
+  if (/цахилгаан|дулаан|усан хангамж/i.test(d))      return { dt: '5,241', ct: '1,120', code: '2,129' };
+  if (/хэвлэл|сэтгүүл/i.test(d))                    return { dt: '5,246', ct: '1,120', code: '2,129' };
+  if (/бичиг хэрэг/i.test(d))                       return { dt: '5,253', ct: '1,120', code: '2,129' };
+  if (/хуулийн|өмгөөлөл/i.test(d))                  return { dt: '5,258', ct: '1,120', code: '2,129' };
+  if (/маркетинг|сурталчилгаа/i.test(d))             return { dt: '5,252', ct: '1,120', code: '2,129' };
+  if (/тээвэр|ачаа/i.test(d))                        return { dt: '5,254', ct: '1,120', code: '2,129' };
+  if (/хамгаалалт|манаач/i.test(d))                  return { dt: '5,244', ct: '1,120', code: '2,129' };
+  if (/торгуул/i.test(d))                            return { dt: '5,303', ct: '1,120', code: '2,129' };
+  if (/хандив/i.test(d))                             return { dt: '5,304', ct: '1,120', code: '2,129' };
+  if (/элэгдэл/i.test(d))                            return { dt: '5,242', ct: '1,120', code: '2,129' };
+
   return { dt: '', ct: '', code: '' };
+}
+
+// ─── Дансны зүйл ангиас хайж сонгох dropdown ────────────────────────────────
+function CoaDropdown({ value, onChange, onCommit, onCancel }) {
+  const [q, setQ] = useState(value || '');
+  const inputRef = useRef();
+  const listRef  = useRef();
+
+  const filtered = useMemo(() => {
+    if (!q) return Object.entries(COA).slice(0, 10);
+    const ql = q.toLowerCase().replace(/,/g, '');
+    return Object.entries(COA).filter(([code, name]) =>
+      code.replace(/,/g, '').startsWith(ql) ||
+      code.replace(/,/g, '').includes(ql) ||
+      name.toLowerCase().includes(q.toLowerCase())
+    ).slice(0, 10);
+  }, [q]);
+
+  const select = (code) => { onChange(code); onCommit(code); };
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <input
+        ref={inputRef}
+        className="z-input"
+        style={{ padding: '2px 5px', fontSize: 11, width: 66 }}
+        value={q}
+        autoFocus
+        onChange={e => { setQ(e.target.value); onChange(e.target.value); }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') onCommit(q);
+          if (e.key === 'Escape') onCancel();
+          if (e.key === 'ArrowDown') { e.preventDefault(); listRef.current?.querySelector('div')?.focus(); }
+        }}
+      />
+      {filtered.length > 0 && (
+        <div ref={listRef} style={{
+          position: 'fixed', zIndex: 9999,
+          background: '#fff', border: '1px solid #cbd5e1', borderRadius: 7,
+          boxShadow: '0 6px 20px rgba(0,0,0,0.14)',
+          minWidth: 300, maxHeight: 260, overflowY: 'auto',
+          left: inputRef.current ? inputRef.current.getBoundingClientRect().left : 0,
+          top: inputRef.current ? inputRef.current.getBoundingClientRect().bottom + 2 : 0,
+        }}>
+          {filtered.map(([code, name]) => (
+            <div
+              key={code}
+              tabIndex={0}
+              style={{ padding: '5px 10px', cursor: 'pointer', fontSize: 11, display: 'flex', gap: 8,
+                       borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}
+              onMouseDown={e => { e.preventDefault(); select(code); }}
+              onKeyDown={e => { if (e.key === 'Enter') select(code); }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f0f9ff'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#2563eb', minWidth: 52 }}>{code}</span>
+              <span style={{ color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Transactions() {
@@ -292,19 +381,33 @@ export default function Transactions() {
   const Cell = ({ row, field, wide, center }) => {
     const isEditing = editing?.id === row._id && editing?.field === field;
     const tdStyle = { padding: '3px 6px', textAlign: center ? 'center' : 'left' };
+    const isCoaField = field === 'dt' || field === 'ct';
+    const coaName = isCoaField && row[field] ? COA[row[field]] : null;
+
     if (isEditing) return (
-      <td style={{ ...tdStyle, minWidth: wide ? 180 : 60 }}>
+      <td style={{ ...tdStyle, minWidth: wide ? 180 : 80 }}>
         <div className="flex items-center gap-1">
-          <input
-            className="z-input"
-            style={{ padding: '2px 5px', fontSize: 11, minWidth: wide ? 160 : 44 }}
-            value={editing.value}
-            autoFocus
-            onChange={e => setEditing(ed => ({ ...ed, value: e.target.value }))}
-            onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
-          />
-          <button className="z-btn z-btn-primary z-btn-sm" style={{ padding: '2px 4px' }} onClick={commitEdit}><Check size={10} /></button>
-          <button className="z-btn z-btn-secondary z-btn-sm" style={{ padding: '2px 4px' }} onClick={cancelEdit}><X size={10} /></button>
+          {isCoaField ? (
+            <CoaDropdown
+              value={editing.value}
+              onChange={v => setEditing(ed => ({ ...ed, value: v }))}
+              onCommit={v => { setEditing(ed => ({ ...ed, value: v })); setTimeout(commitEdit, 0); }}
+              onCancel={cancelEdit}
+            />
+          ) : (
+            <input
+              className="z-input"
+              style={{ padding: '2px 5px', fontSize: 11, minWidth: wide ? 160 : 44 }}
+              value={editing.value}
+              autoFocus
+              onChange={e => setEditing(ed => ({ ...ed, value: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
+            />
+          )}
+          {!isCoaField && <>
+            <button className="z-btn z-btn-primary z-btn-sm" style={{ padding: '2px 4px' }} onClick={commitEdit}><Check size={10} /></button>
+            <button className="z-btn z-btn-secondary z-btn-sm" style={{ padding: '2px 4px' }} onClick={cancelEdit}><X size={10} /></button>
+          </>}
         </div>
       </td>
     );
@@ -313,9 +416,11 @@ export default function Transactions() {
         className="cursor-pointer hover:bg-yellow-50 transition-colors"
         style={tdStyle}
         onDoubleClick={() => startEdit(row._id, field, row[field] || '')}
-        title="Давхар дарж засах"
+        title={coaName ? `${row[field]}: ${coaName}` : 'Давхар дарж засах'}
       >
-        {row[field] || <span style={{ color: '#cbd5e1' }}>—</span>}
+        {row[field]
+          ? <span>{row[field]}{coaName && <span style={{ fontSize: 9, color: '#94a3b8', display: 'block', lineHeight: 1.2 }}>{coaName}</span>}</span>
+          : <span style={{ color: '#cbd5e1' }}>—</span>}
       </td>
     );
   };

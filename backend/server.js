@@ -7068,11 +7068,29 @@ function serverGuessCode(description) {
   if (/хүр\.?тооц.*(хүү|зээл)/i.test(d))    return { dt: '1,120', ct: '1,270', code: '2,101' };
   if (/зээлийн хүү|хүү төлев/i.test(d))      return { dt: '1,120', ct: '4,140', code: '2,101' };
   if (/зээлааc|зээлэac|зээлээс/i.test(d))    return { dt: '1,120', ct: '1,210', code: '2,104' };
-  if (/зээл олгов|зээл олгол/i.test(d))       return { dt: '1,120', ct: '2,021', code: '2,161' };
-  if (/шимтгэл/i.test(d))                    return { dt: '5,248', ct: '1,120', code: '2,129' };
-  if (/мзуаэ/i.test(d))                      return { dt: '5,228', ct: '1,120', code: '2,129' };
-  if (/аудит/i.test(d))                      return { dt: '5,236', ct: '1,120', code: '2,129' };
-  if (/сургалт/i.test(d))                    return { dt: '5,228', ct: '1,120', code: '2,129' };
+  if (/зээл олгов|зээл олгол/i.test(d))               return { dt: '1,120', ct: '2,021', code: '2,161' };
+  if (/зээлааc|зээлэac|зээлээс|зээл буц/i.test(d))    return { dt: '1,120', ct: '1,210', code: '2,104' };
+  // Боловсон хүчний зардал
+  if (/цалин/i.test(d))                               return { dt: '5,221', ct: '1,120', code: '2,129' };
+  if (/нийгмийн даатгал|ндш|мзуаэ/i.test(d))          return { dt: '5,226', ct: '1,120', code: '2,129' };
+  if (/эрүүл мэнд.*даатгал|даатгалын шимтгэл/i.test(d)) return { dt: '5,226', ct: '1,120', code: '2,129' };
+  if (/томилолт/i.test(d))                            return { dt: '5,227', ct: '1,120', code: '2,129' };
+  if (/сургалт/i.test(d))                             return { dt: '5,228', ct: '1,120', code: '2,129' };
+  // Бусад зардал
+  if (/шимтгэл/i.test(d))                             return { dt: '5,248', ct: '1,120', code: '2,129' };
+  if (/аудит/i.test(d))                               return { dt: '5,236', ct: '1,120', code: '2,129' };
+  if (/даатгал/i.test(d))                             return { dt: '5,238', ct: '1,120', code: '2,129' };
+  if (/интернет|харилцаа холбоо|утасны/i.test(d))     return { dt: '5,245', ct: '1,120', code: '2,129' };
+  if (/цахилгаан|дулаан|усан хангамж/i.test(d))       return { dt: '5,241', ct: '1,120', code: '2,129' };
+  if (/хэвлэл|сэтгүүл/i.test(d))                     return { dt: '5,246', ct: '1,120', code: '2,129' };
+  if (/бичиг хэрэг/i.test(d))                        return { dt: '5,253', ct: '1,120', code: '2,129' };
+  if (/хуулийн|өмгөөлөл/i.test(d))                   return { dt: '5,258', ct: '1,120', code: '2,129' };
+  if (/маркетинг|сурталчилгаа/i.test(d))              return { dt: '5,252', ct: '1,120', code: '2,129' };
+  if (/тээвэр|ачаа/i.test(d))                         return { dt: '5,254', ct: '1,120', code: '2,129' };
+  if (/хамгаалалт|манаач/i.test(d))                   return { dt: '5,244', ct: '1,120', code: '2,129' };
+  if (/торгуул/i.test(d))                             return { dt: '5,303', ct: '1,120', code: '2,129' };
+  if (/хандив/i.test(d))                              return { dt: '5,304', ct: '1,120', code: '2,129' };
+  if (/элэгдэл/i.test(d))                             return { dt: '5,242', ct: '1,120', code: '2,129' };
   return null;
 }
 
