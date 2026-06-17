@@ -71,6 +71,62 @@ function guessCode(description, customRules = []) {
   return { dt: '', ct: '', code: '' };
 }
 
+// ─── COA autocomplete input (dt/ct талбарт данс хайх) ────────────────────────
+function CoaInput({ value, onChange, placeholder }) {
+  const [q, setQ]       = useState(value || '');
+  const [open, setOpen] = useState(false);
+  const ref             = useRef();
+
+  useEffect(() => { setQ(value || ''); }, [value]);
+
+  const matches = (() => {
+    const ql = q.toLowerCase().replace(/,/g, '');
+    if (!ql) return Object.entries(COA).slice(0, 10);
+    return Object.entries(COA).filter(([code, name]) =>
+      code.replace(/,/g, '').startsWith(ql) ||
+      name.toLowerCase().includes(q.toLowerCase())
+    ).slice(0, 10);
+  })();
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        ref={ref}
+        className="z-input"
+        style={{ width: 80, fontSize: 12 }}
+        placeholder={placeholder}
+        value={q}
+        onChange={e => { setQ(e.target.value); onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 160)}
+      />
+      {open && matches.length > 0 && (
+        <div style={{
+          position: 'fixed', zIndex: 99999,
+          background: '#fff', border: '1px solid #cbd5e1', borderRadius: 8,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+          minWidth: 300, maxHeight: 220, overflowY: 'auto',
+          left: ref.current ? ref.current.getBoundingClientRect().left : 0,
+          top:  ref.current ? ref.current.getBoundingClientRect().bottom + 2 : 0,
+        }}>
+          {matches.map(([code, name]) => (
+            <div
+              key={code}
+              onMouseDown={e => { e.preventDefault(); setQ(code); onChange(code); setOpen(false); }}
+              style={{ padding: '5px 10px', cursor: 'pointer', fontSize: 11, display: 'flex', gap: 8, alignItems: 'center' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f0f9ff'}
+              onMouseLeave={e => e.currentTarget.style.background = ''}
+            >
+              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#2563eb', minWidth: 56 }}>{code}</span>
+              <span style={{ color: '#475569' }}>{name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Хэрэглэгчийн кодуудаас сонгох modal ─────────────────────────────────────
 function RulePicker({ row, combos, codeRules, onApply, onClose }) {
   const [filter, setFilter] = useState('');
@@ -160,8 +216,9 @@ function RulePicker({ row, combos, codeRules, onApply, onClose }) {
           />
 
           {combos.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12, padding: 24 }}>
-              Өмнө кодолсон гүйлгээ байхгүй — доор гараар оруулна уу
+            <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12, padding: 24, lineHeight: 1.8 }}>
+              Өмнө кодолсон гүйлгээ байхгүй<br />
+              <span style={{ fontSize: 11 }}>Доор dt/ct талбарт данс хайж оруулна уу — жишээ нь: <b>1,120</b> буюу <b>зээл</b></span>
             </div>
           ) : (
             <>
@@ -181,22 +238,30 @@ function RulePicker({ row, combos, codeRules, onApply, onClose }) {
           )}
         </div>
 
-        {/* Manual entry */}
+        {/* Manual entry with COA autocomplete */}
         <div style={{ padding: '12px 18px', borderTop: '1px solid #f1f5f9' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 7 }}>Гараар оруулах</div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input className="z-input" placeholder="dt" value={manual.dt}
-              onChange={e => setManual(m => ({ ...m, dt: e.target.value }))}
-              style={{ width: 70, fontSize: 12 }} />
-            <input className="z-input" placeholder="ct" value={manual.ct}
-              onChange={e => setManual(m => ({ ...m, ct: e.target.value }))}
-              style={{ width: 70, fontSize: 12 }} />
-            <input className="z-input" placeholder="код" value={manual.code}
-              onChange={e => setManual(m => ({ ...m, code: e.target.value }))}
-              style={{ width: 70, fontSize: 12 }} />
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 7 }}>
+            Гараар оруулах
+            <span style={{ fontWeight: 400, marginLeft: 6, color: '#94a3b8' }}>— dt/ct талбарт данс хайна</span>
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontSize: 10, color: '#94a3b8' }}>dt (дебет данс)</span>
+              <CoaInput value={manual.dt} onChange={v => setManual(m => ({ ...m, dt: v }))} placeholder="1,120..." />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontSize: 10, color: '#94a3b8' }}>ct (кредит данс)</span>
+              <CoaInput value={manual.ct} onChange={v => setManual(m => ({ ...m, ct: v }))} placeholder="2,021..." />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontSize: 10, color: '#94a3b8' }}>код</span>
+              <input className="z-input" placeholder="2,161..." value={manual.code}
+                onChange={e => setManual(m => ({ ...m, code: e.target.value }))}
+                style={{ width: 80, fontSize: 12 }} />
+            </div>
             <button
               className="z-btn z-btn-primary z-btn-sm"
-              style={{ marginLeft: 'auto' }}
+              style={{ marginLeft: 'auto', alignSelf: 'flex-end', marginBottom: 2 }}
               onClick={() => onApply(manual)}
               disabled={!manual.dt && !manual.ct && !manual.code}
             >
