@@ -1,5 +1,6 @@
-﻿import { useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { LayoutDashboard, Users, Car, FileText, CreditCard, BarChart3, ArrowLeftRight, Database, LogOut, Menu, TrendingDown, Shield, Settings, Inbox, UserCog } from 'lucide-react';
+import { getPublicConfig } from '../api';
 import Dashboard from './Dashboard';
 import Clients from './Clients';
 import Cars from './Cars';
@@ -30,9 +31,16 @@ const NAV = [
   { id: 'users', label: 'Хэрэглэгч/лог', icon: UserCog },
 ];
 
+function ShellBrand({ config }) {
+  const brand = config?.brandName || 'Zentro Prime';
+  return <div className="z-brand"><div className="z-brand-icon">{config?.logoUrl ? <img src={config.logoUrl} alt={brand} /> : 'Z'}</div><div><p className="text-sm font-bold text-slate-900">{brand}</p><p className="text-xs text-slate-500">Ломбард ERP</p></div></div>;
+}
+
 export default function Shell({ user, onLogout }) {
   const [page, setPage] = useState('dashboard');
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [config, setConfig] = useState(null);
+  useEffect(() => { getPublicConfig().then(setConfig).catch(() => {}); }, []);
   const pages = { dashboard: Dashboard, requests: LoanRequests, clients: Clients, cars: Cars, leases: Leases, payments: Payments, transactions: Transactions, reports: Reports, funding: Funding, collateral: Collateral, data: Data, webadmin: WebAdmin, users: UserAdmin };
   const Page = pages[page] || Dashboard;
 
@@ -45,11 +53,11 @@ export default function Shell({ user, onLogout }) {
   return (
     <div className="z-shell">
       <aside className="z-sidebar hidden md:flex">
-        <div className="z-brand"><div className="z-brand-icon">Z</div><div><p className="text-sm font-bold text-slate-800">Zentro Prime</p><p className="text-xs text-slate-500">Ломбард ERP</p></div></div>
+        <ShellBrand config={config} />
         <nav className="flex flex-col gap-1 flex-1"><NavButtons /></nav>
         <button className="z-nav-item text-red-500 hover:bg-red-50 hover:text-red-600" onClick={onLogout}><LogOut size={16} /> Гарах</button>
       </aside>
-      {mobileOpen && <div className="fixed inset-0 z-50 flex md:hidden"><div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} /><aside className="relative w-64 bg-white flex flex-col p-3 shadow-2xl overflow-y-auto"><div className="z-brand mb-2"><div className="z-brand-icon">Z</div><div><p className="text-sm font-bold">Zentro Prime</p></div></div><NavButtons /><button className="z-nav-item text-red-500" onClick={onLogout}><LogOut size={16} /> Гарах</button></aside></div>}
+      {mobileOpen && <div className="fixed inset-0 z-50 flex md:hidden"><div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} /><aside className="relative w-64 bg-white flex flex-col p-3 shadow-2xl overflow-y-auto"><ShellBrand config={config} /><NavButtons /><button className="z-nav-item text-red-500" onClick={onLogout}><LogOut size={16} /> Гарах</button></aside></div>}
       <div className="z-main">
         <header className="z-topbar"><div className="flex items-center gap-3"><button className="md:hidden z-btn z-btn-secondary z-btn-sm" onClick={() => setMobileOpen(true)}><Menu size={16} /></button><p className="font-bold text-slate-700 text-sm">{NAV.find(n => n.id === page)?.label}</p></div><div className="flex items-center gap-2"><span className="text-xs font-semibold text-slate-500 hidden sm:block">{user?.name || user?.email}</span><a className="z-btn z-btn-secondary z-btn-sm" href="/" target="_blank" rel="noreferrer">Веб</a><button className="z-btn z-btn-secondary z-btn-sm" onClick={onLogout}><LogOut size={13} /> Гарах</button></div></header>
         <main className="z-content"><Page onNavigate={setPage} /></main>

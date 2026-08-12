@@ -79,6 +79,7 @@ const ZentroWebConfigSchema = new mongoose.Schema({
   key: { type: String, unique: true, default: 'public' },
   brandName: { type: String, default: 'Zentro Prime Capital' },
   tagline: { type: String, default: 'Машинаа унаад, барьцаалаад шуурхай зээлээ ав' },
+  logoUrl: { type: String, default: '' },
   heroTitle: { type: String, default: 'Машинаа байршуулахгүй, орлого нотлохгүй шуурхай зээл' },
   heroText: { type: String, default: 'Ломбардны зөвшөөрөлтэй Zentro Prime Capital нь автомашин барьцаалсан шуурхай зээл болон бусад барьцаат, барьцаагүй зээлийн шийдлийг санал болгоно.' },
   phone: { type: String, default: '7599-1919' },
@@ -6680,7 +6681,7 @@ app.get('/api/zentro/admin/web-config', authenticateUser, async (req, res) => {
 
 app.put('/api/zentro/admin/web-config', authenticateUser, requireAdmin, async (req, res) => {
   try {
-    const allowed = ['brandName','tagline','heroTitle','heroText','phone','email','address','heroImage','products','formFlow'];
+    const allowed = ['brandName','tagline','logoUrl','heroTitle','heroText','phone','email','address','heroImage','products','formFlow'];
     const update = {};
     for (const key of allowed) if (key in req.body) update[key] = req.body[key];
     const doc = await ZentroWebConfig.findOneAndUpdate({ key: 'public' }, { $set: update }, { new: true, upsert: true });
@@ -7735,6 +7736,7 @@ app.post('/api/zentro/transactions/accrue', authenticateUser, async (req, res) =
 });
 
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}.`));
+
 
 
 

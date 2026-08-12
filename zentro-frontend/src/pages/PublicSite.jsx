@@ -9,6 +9,11 @@ const fallbackProducts = [
   { name: 'Барьцаагүй шуурхай зээл', rate: 'Эрсдэлээр', term: '1-6 сар', amount: 'Лимитээр', description: 'Богино хугацааны хэрэгцээнд.' },
 ];
 
+function BrandMark({ config }) {
+  const brand = config?.brandName || 'Zentro Prime Capital';
+  return <>{config?.logoUrl ? <img className="zp-logo-img" src={config.logoUrl} alt={brand} /> : <span>Z</span>}{brand}</>;
+}
+
 export default function PublicSite({ onLogin }) {
   const [config, setConfig] = useState(null);
   const [mobile, setMobile] = useState(false);
@@ -34,7 +39,7 @@ export default function PublicSite({ onLogin }) {
   return (
     <div className="zp-site">
       <header className="zp-nav">
-        <a className="zp-logo" href="#top"><span>Z</span>{brand}</a>
+        <a className="zp-logo" href="#top"><BrandMark config={config} /></a>
         <nav className="zp-links">
           <a href="#products">Зээл</a>
           <a href="#process">Давуу тал</a>
@@ -64,7 +69,7 @@ export default function PublicSite({ onLogin }) {
         </section>
 
         <section className="zp-products" id="products">
-          <div className="zp-section-head"><h2>Зээлийн бүтээгдэхүүн</h2><p>Админ панелаас нөхцөл, текст, зураг, хүсэлтийн асуултуудыг өөрчилнө.</p></div>
+          <div className="zp-section-head"><h2>Зээлийн бүтээгдэхүүн</h2><p>Админ панелаас нөхцөл, текст, зураг, лого, хүсэлтийн асуултуудыг өөрчилнө.</p></div>
           <div className="zp-product-grid">
             {products.map((p, i) => <article key={`${p.name}-${i}`}><div className="zp-product-icon">{i === 2 ? <Gem /> : i === 3 ? <ShieldCheck /> : <Car />}</div><h3>{p.name}</h3><p>{p.description}</p><dl><div><dt>Хүү</dt><dd>{p.rate}</dd></div><div><dt>Хугацаа</dt><dd>{p.term}</dd></div><div><dt>Дүн</dt><dd>{p.amount}</dd></div></dl></article>)}
           </div>

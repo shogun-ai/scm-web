@@ -1,11 +1,15 @@
-﻿import { useState } from 'react';
-import { loginApi } from '../api';
+﻿import { useEffect, useState } from 'react';
+import { ArrowLeft, KeyRound } from 'lucide-react';
+import { getPublicConfig, loginApi } from '../api';
 
 export default function Login({ onLogin, onBack }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [config, setConfig] = useState(null);
+
+  useEffect(() => { getPublicConfig().then(setConfig).catch(() => setConfig({})); }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -14,38 +18,34 @@ export default function Login({ onLogin, onBack }) {
       const data = await loginApi(email, password);
       onLogin(data.token, data.user);
     } catch (err) {
-      setError(err.response?.data?.message || 'ÐÑÐ²Ñ‚Ñ€ÑÑ… Ò¯ÐµÐ´ Ð°Ð»Ð´Ð°Ð° Ð³Ð°Ñ€Ð»Ð°Ð°');
+      setError(err.response?.data?.message || 'Нэвтрэх үед алдаа гарлаа');
     } finally { setLoading(false); }
   };
 
+  const brand = config?.brandName || 'Zentro Prime Capital';
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 p-4">
-      <div className="z-card w-full max-w-sm">
-        {onBack && <button type="button" className="text-xs font-bold text-slate-500 mb-4" onClick={onBack}>← Веб рүү буцах</button>}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="z-brand-icon text-lg">Z</div>
-          <div>
-            <p className="text-base font-bold text-slate-800">Zentro</p>
-            <p className="text-xs text-slate-500 font-semibold">ÐœÐ°ÑˆÐ¸Ð½Ñ‹ Ð»Ð¸Ð·Ð¸Ð½Ð³ ÑÐ¸ÑÑ‚ÐµÐ¼</p>
-          </div>
+    <div className="zp-login-page">
+      <section className="zp-login-panel">
+        <div className="zp-login-copy">
+          {onBack && <button type="button" className="zp-back" onClick={onBack}><ArrowLeft size={16} /> Веб рүү буцах</button>}
+          <a className="zp-logo zp-login-brand" href="/">
+            {config?.logoUrl ? <img className="zp-logo-img" src={config.logoUrl} alt={brand} /> : <span>Z</span>}{brand}
+          </a>
+          <h1>Админ системд нэвтрэх</h1>
+          <p>Харилцагч, шуурхай зээл, төлөлт, веб хүсэлт болон тайлангаа нэг дор удирдана.</p>
         </div>
-        <form onSubmit={submit} className="flex flex-col gap-4">
-          <div>
-            <label className="z-label">Ð˜-Ð¼ÑÐ¹Ð»</label>
-            <input className="z-input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
-          </div>
-          <div>
-            <label className="z-label">ÐÑƒÑƒÑ† Ò¯Ð³</label>
-            <input className="z-input" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
-          </div>
-          {error && <p className="text-red-600 text-sm font-semibold">{error}</p>}
-          <button className="z-btn z-btn-primary w-full justify-center py-3" disabled={loading}>
-            {loading ? 'ÐÑÐ²Ñ‚Ñ€ÑÐ¶ Ð±Ð°Ð¹Ð½Ð°...' : 'ÐÑÐ²Ñ‚Ñ€ÑÑ…'}
-          </button>
+        <form onSubmit={submit} className="zp-login-form">
+          <div className="zp-login-icon"><KeyRound size={22} /></div>
+          <h2>Нэвтрэх</h2>
+          <label>И-мэйл</label>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
+          <label>Нууц үг</label>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} required />
+          {error && <p className="zp-login-error">{error}</p>}
+          <button disabled={loading}>{loading ? 'Нэвтэрч байна...' : 'Нэвтрэх'}</button>
         </form>
-      </div>
+      </section>
     </div>
   );
 }
-
-
