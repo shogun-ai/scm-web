@@ -1,4 +1,4 @@
-﻿// server.js-Ð¸Ð¹Ð½ Ñ…Ð°Ð¼Ð³Ð¸Ð¹Ð½ Ð´ÑÑÑ€ Ð±Ð°Ð¹Ð³Ð°Ð° Ð±Ò¯Ñ… require-Ð¸Ð¹Ð³ Ò¯Ò¯Ð³ÑÑÑ€ ÑÐ¾Ð»ÑŒ:
+// server.js-Ð¸Ð¹Ð½ Ñ…Ð°Ð¼Ð³Ð¸Ð¹Ð½ Ð´ÑÑÑ€ Ð±Ð°Ð¹Ð³Ð°Ð° Ð±Ò¯Ñ… require-Ð¸Ð¹Ð³ Ò¯Ò¯Ð³ÑÑÑ€ ÑÐ¾Ð»ÑŒ:
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors'; // âœ… require('cors')-Ð¸Ð¹Ð³ Ð¸Ð½Ð³ÑÐ¶ ÑÐ¾Ð»ÑŒÑÐ¾Ð½
@@ -6156,12 +6156,28 @@ const seedPromoSlides = async () => {
 };
 
 const seedAdmin = async () => {
-    const count = await User.countDocuments();
-    if (count === 0) {
-        const hashed = await bcrypt.hash('Admin@2024!', 10);
-        await User.create({ name: 'Admin', email: 'admin@scm.mn', password: hashed, role: 'admin', isActive: true });
-        console.log('Default admin created: admin@scm.mn / Admin@2024!');
+    const zentroAdminEmail = 'admin@zentrocapitalgroup.com';
+    const adminPassword = process.env.ZENTRO_ADMIN_PASSWORD || process.env.BACKEND_ADMIN_PASSWORD || 'loanAi123+';
+    const existingZentroAdmin = await User.findOne({ email: zentroAdminEmail });
+
+    if (existingZentroAdmin) {
+        if (existingZentroAdmin.role !== 'admin' || !existingZentroAdmin.isActive) {
+            existingZentroAdmin.role = 'admin';
+            existingZentroAdmin.isActive = true;
+            await existingZentroAdmin.save();
+        }
+        return;
     }
+
+    const hashed = await bcrypt.hash(adminPassword, 10);
+    await User.create({
+        name: 'Zentro Admin',
+        email: zentroAdminEmail,
+        password: hashed,
+        role: 'admin',
+        isActive: true
+    });
+    console.log(`Default admin ensured: ${zentroAdminEmail}`);
 };
 
 mongoose.connect(MONGO_URI).then(async () => {
