@@ -29,7 +29,7 @@ const ZentroLeaseSchema = new mongoose.Schema({
 
   schedule: [ScheduleItemSchema],
 
-  // loan.scm.mn судалгааны холбоос
+  // Дотоод судалгааны холбоос
   researchRef: { type: String },
 
   status: { type: String, enum: ['active', 'completed', 'overdue', 'cancelled'], default: 'active' },

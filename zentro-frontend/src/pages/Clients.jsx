@@ -116,7 +116,7 @@ export default function Clients() {
               </div>
               <div><label className="z-label">И-мэйл</label><input className="z-input" type="email" value={form.email} onChange={e => set('email', e.target.value)} /></div>
               <div><label className="z-label">Хаяг</label><input className="z-input" value={form.address} onChange={e => set('address', e.target.value)} /></div>
-              <div><label className="z-label">loan.scm.mn судалгааны ID</label><input className="z-input" value={form.researchId} onChange={e => set('researchId', e.target.value)} /></div>
+              <div><label className="z-label">Дотоод судалгааны ID</label><input className="z-input" value={form.researchId} onChange={e => set('researchId', e.target.value)} /></div>
               <div>
                 <label className="z-label">Статус</label>
                 <select className="z-select" value={form.status} onChange={e => set('status', e.target.value)}>

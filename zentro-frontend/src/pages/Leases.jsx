@@ -164,7 +164,7 @@ export default function Leases() {
                   </p>
                 </div>
               )}
-              <div><label className="z-label">loan.scm.mn судалгааны дугаар</label><input className="z-input" value={form.researchRef} onChange={e => set('researchRef', e.target.value)} /></div>
+              <div><label className="z-label">Дотоод судалгааны дугаар</label><input className="z-input" value={form.researchRef} onChange={e => set('researchRef', e.target.value)} /></div>
               <div><label className="z-label">Тэмдэглэл</label><textarea className="z-input" rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} /></div>
             </div>
             <div className="z-modal-foot">

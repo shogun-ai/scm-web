@@ -19,7 +19,7 @@ const ZentroClientSchema = new mongoose.Schema({
   directorName:     { type: String },
   directorRegister: { type: String },
 
-  // loan.scm.mn судалгааны холбоос
+  // Дотоод судалгааны холбоос
   researchId: { type: String },
 
   status: { type: String, enum: ['active', 'inactive', 'blacklist'], default: 'active' },

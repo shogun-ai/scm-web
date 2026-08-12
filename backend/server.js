@@ -142,6 +142,8 @@ const ALLOWED_ORIGINS = [
     'https://www.scm.mn',
     'https://scm.mn',
     'https://loan.scm.mn',
+    'https://zentrocapitalgroup.com',
+    'https://www.zentrocapitalgroup.com',
     'https://scm-okjs.onrender.com',
     'http://localhost:5173',
     'http://localhost:5174',
@@ -2665,13 +2667,13 @@ app.post('/api/auth/login', async (req, res) => {
             if (!verified) return res.status(401).json({ message: '2FA error' });
         }
         const token = jwt.sign({ id: user._id, role: user.role, roles: user.roles || [] }, JWT_SECRET, { expiresIn: '1d' });
-        await createLog(user, 'loan_login', `User logged in to loan.scm.mn (${email})`);
+        await createLog(user, 'loan_login', `User logged in to Zentro Prime Capital (${email})`);
         res.json({ token, user: { id: user._id, name: user.name, role: user.role, roles: user.roles || [] } });
     } catch (e) { res.status(500).send("Error"); }
 });
 
 app.post('/api/auth/logout', authenticateUser, async (req, res) => {
-    await createLog(req.user, 'loan_logout', 'User logged out from loan.scm.mn');
+    await createLog(req.user, 'loan_logout', 'User logged out from Zentro Prime Capital');
     res.json({ message: 'Success' });
 });
 
@@ -7736,6 +7738,7 @@ app.post('/api/zentro/transactions/accrue', authenticateUser, async (req, res) =
 });
 
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}.`));
+
 
 
 
