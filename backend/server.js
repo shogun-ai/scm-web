@@ -75,6 +75,51 @@ const ZentroCollateralSchema = new mongoose.Schema({
   notes:          { type: String, default: '' },
 }, { timestamps: true });
 const ZentroCollateral = mongoose.model('ZentroCollateral', ZentroCollateralSchema);
+const ZentroWebConfigSchema = new mongoose.Schema({
+  key: { type: String, unique: true, default: 'public' },
+  brandName: { type: String, default: 'Zentro Prime Capital' },
+  tagline: { type: String, default: 'Машинаа унаад, барьцаалаад шуурхай зээлээ ав' },
+  heroTitle: { type: String, default: 'Машинаа байршуулахгүй, орлого нотлохгүй шуурхай зээл' },
+  heroText: { type: String, default: 'Ломбардны зөвшөөрөлтэй Zentro Prime Capital нь автомашин барьцаалсан шуурхай зээл болон бусад барьцаат, барьцаагүй зээлийн шийдлийг санал болгоно.' },
+  phone: { type: String, default: '7599-1919' },
+  email: { type: String, default: 'info@zentrocapitalgroup.com' },
+  address: { type: String, default: 'Улаанбаатар хот' },
+  heroImage: { type: String, default: 'https://images.unsplash.com/photo-1542282088-fe8426682b8f?auto=format&fit=crop&w=1400&q=80' },
+  products: {
+    type: [mongoose.Schema.Types.Mixed],
+    default: [
+      { name: 'Машин барьцаалсан шуурхай зээл', rate: 'Сарын 3.0%-аас', term: '1-24 сар', amount: 'Үнэлгээний 70% хүртэл', description: 'Машинаа үргэлжлүүлэн унаж хэрэглэнэ.' },
+      { name: 'Машин байршуулах зээл', rate: 'Сарын 2.5%-аас', term: '1-12 сар', amount: 'Үнэлгээний 80% хүртэл', description: 'Орлого нотлохгүй, хурдан шийдвэрлэнэ.' },
+      { name: 'Үнэт металл барьцаалсан зээл', rate: 'Уян хатан нөхцөл', term: '1-6 сар', amount: 'Үнэлгээнд суурилна', description: 'Алт, мөнгө, үнэт эдлэл барьцаална.' },
+      { name: 'Барьцаагүй шуурхай зээл', rate: 'Эрсдэлийн үнэлгээгээр', term: '1-6 сар', amount: 'Боломжит лимитээр', description: 'Богино хугацааны шуурхай хэрэгцээнд.' },
+    ],
+  },
+  formFlow: {
+    type: [mongoose.Schema.Types.Mixed],
+    default: [
+      { id: 'contact', title: 'Холбоо барих мэдээлэл', fields: ['name', 'phone', 'register', 'email'] },
+      { id: 'loan', title: 'Зээлийн мэдээлэл', fields: ['productType', 'amount', 'termMonths', 'collateral'] },
+      { id: 'documents', title: 'Материал', fields: ['vehicleCertificate', 'idCard', 'collateralPhoto'] },
+    ],
+  },
+}, { timestamps: true });
+const ZentroWebConfig = mongoose.models.ZentroWebConfig || mongoose.model('ZentroWebConfig', ZentroWebConfigSchema);
+const ZentroLoanRequestSchema = new mongoose.Schema({
+  name: String,
+  phone: String,
+  register: String,
+  email: String,
+  productType: String,
+  amount: Number,
+  termMonths: Number,
+  collateral: String,
+  answers: { type: mongoose.Schema.Types.Mixed, default: {} },
+  status: { type: String, enum: ['new', 'contacted', 'approved', 'rejected', 'converted'], default: 'new' },
+  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'ZentroClient' },
+  notes: String,
+}, { timestamps: true });
+const ZentroLoanRequest = mongoose.models.ZentroLoanRequest || mongoose.model('ZentroLoanRequest', ZentroLoanRequestSchema);
 import fs from 'fs'; // Ð¤Ð°Ð¹Ð» ÑƒÑÑ‚Ð³Ð°Ñ…Ð°Ð´ Ñ…ÑÑ€ÑÐ³Ñ‚ÑÐ¹
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -6594,6 +6639,107 @@ app.post('/api/public/analyze-property', (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+async function getZentroWebConfigDoc() {
+  return ZentroWebConfig.findOneAndUpdate(
+    { key: 'public' },
+    { $setOnInsert: { key: 'public' } },
+    { new: true, upsert: true }
+  ).lean();
+}
+
+app.get('/api/zentro/public/config', async (req, res) => {
+  try { res.json(await getZentroWebConfigDoc()); }
+  catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.post('/api/zentro/public/loan-requests', async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!body.name || !body.phone) return res.status(400).json({ message: 'Нэр, утас заавал оруулна уу' });
+    const request = await ZentroLoanRequest.create({
+      name: body.name,
+      phone: body.phone,
+      register: body.register,
+      email: body.email,
+      productType: body.productType,
+      amount: Number(body.amount) || 0,
+      termMonths: Number(body.termMonths) || 0,
+      collateral: body.collateral,
+      answers: body.answers || {},
+      status: 'new',
+      notes: body.notes,
+    });
+    res.status(201).json({ message: 'Хүсэлт амжилттай илгээгдлээ', requestId: request._id });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.get('/api/zentro/admin/web-config', authenticateUser, async (req, res) => {
+  try { res.json(await getZentroWebConfigDoc()); }
+  catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.put('/api/zentro/admin/web-config', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const allowed = ['brandName','tagline','heroTitle','heroText','phone','email','address','heroImage','products','formFlow'];
+    const update = {};
+    for (const key of allowed) if (key in req.body) update[key] = req.body[key];
+    const doc = await ZentroWebConfig.findOneAndUpdate({ key: 'public' }, { $set: update }, { new: true, upsert: true });
+    await createLog(req.user, 'zentro_web_config_updated', 'Updated Zentro public website content and form flow');
+    res.json(doc);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.get('/api/zentro/admin/loan-requests', authenticateUser, async (req, res) => {
+  try {
+    const { status } = req.query;
+    const filter = status ? { status } : {};
+    const requests = await ZentroLoanRequest.find(filter)
+      .populate('assignedTo', 'name email role')
+      .populate('clientId', 'firstname lastname orgName phone register')
+      .sort({ createdAt: -1 })
+      .limit(300);
+    res.json(requests);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.put('/api/zentro/admin/loan-requests/:id', authenticateUser, async (req, res) => {
+  try {
+    const allowed = ['status','assignedTo','notes'];
+    const update = {};
+    for (const key of allowed) if (key in req.body) update[key] = req.body[key] || null;
+    const request = await ZentroLoanRequest.findByIdAndUpdate(req.params.id, update, { new: true })
+      .populate('assignedTo', 'name email role')
+      .populate('clientId', 'firstname lastname orgName phone register');
+    await createLog(req.user, 'zentro_request_updated', `${request?.name || req.params.id} -> ${request?.status || ''}`);
+    res.json(request);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+app.post('/api/zentro/admin/loan-requests/:id/convert-client', authenticateUser, async (req, res) => {
+  try {
+    const request = await ZentroLoanRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ message: 'Хүсэлт олдсонгүй' });
+    let client = null;
+    if (request.clientId) client = await ZentroClient.findById(request.clientId);
+    if (!client) {
+      const [lastname, ...firstParts] = String(request.name || '').trim().split(/\s+/);
+      client = await ZentroClient.create({
+        type: 'individual',
+        lastname: firstParts.length ? lastname : '',
+        firstname: firstParts.length ? firstParts.join(' ') : (request.name || ''),
+        register: request.register,
+        phone: request.phone,
+        email: request.email,
+        notes: `Веб хүсэлтээс үүсэв. Бүтээгдэхүүн: ${request.productType || '-'}. Барьцаа: ${request.collateral || '-'}`,
+      });
+    }
+    request.clientId = client._id;
+    request.status = 'converted';
+    await request.save();
+    await createLog(req.user, 'zentro_request_converted', `${request.name} -> client ${client._id}`);
+    res.json({ request, client });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
 // ZENTRO — Машины лизинг систем
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -7589,4 +7735,6 @@ app.post('/api/zentro/transactions/accrue', authenticateUser, async (req, res) =
 });
 
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}.`));
+
+
 

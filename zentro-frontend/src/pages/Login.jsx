@@ -1,7 +1,7 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { loginApi } from '../api';
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, onBack }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -14,35 +14,38 @@ export default function Login({ onLogin }) {
       const data = await loginApi(email, password);
       onLogin(data.token, data.user);
     } catch (err) {
-      setError(err.response?.data?.message || 'Нэвтрэх үед алдаа гарлаа');
+      setError(err.response?.data?.message || 'ÐÑÐ²Ñ‚Ñ€ÑÑ… Ò¯ÐµÐ´ Ð°Ð»Ð´Ð°Ð° Ð³Ð°Ñ€Ð»Ð°Ð°');
     } finally { setLoading(false); }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 p-4">
       <div className="z-card w-full max-w-sm">
+        {onBack && <button type="button" className="text-xs font-bold text-slate-500 mb-4" onClick={onBack}>← Веб рүү буцах</button>}
         <div className="flex items-center gap-3 mb-6">
           <div className="z-brand-icon text-lg">Z</div>
           <div>
             <p className="text-base font-bold text-slate-800">Zentro</p>
-            <p className="text-xs text-slate-500 font-semibold">Машины лизинг систем</p>
+            <p className="text-xs text-slate-500 font-semibold">ÐœÐ°ÑˆÐ¸Ð½Ñ‹ Ð»Ð¸Ð·Ð¸Ð½Ð³ ÑÐ¸ÑÑ‚ÐµÐ¼</p>
           </div>
         </div>
         <form onSubmit={submit} className="flex flex-col gap-4">
           <div>
-            <label className="z-label">И-мэйл</label>
+            <label className="z-label">Ð˜-Ð¼ÑÐ¹Ð»</label>
             <input className="z-input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
           </div>
           <div>
-            <label className="z-label">Нууц үг</label>
+            <label className="z-label">ÐÑƒÑƒÑ† Ò¯Ð³</label>
             <input className="z-input" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
           </div>
           {error && <p className="text-red-600 text-sm font-semibold">{error}</p>}
           <button className="z-btn z-btn-primary w-full justify-center py-3" disabled={loading}>
-            {loading ? 'Нэвтрэж байна...' : 'Нэвтрэх'}
+            {loading ? 'ÐÑÐ²Ñ‚Ñ€ÑÐ¶ Ð±Ð°Ð¹Ð½Ð°...' : 'ÐÑÐ²Ñ‚Ñ€ÑÑ…'}
           </button>
         </form>
       </div>
     </div>
   );
 }
+
+

@@ -105,3 +105,16 @@ export const statusBadge = (s) => {
     paid: 'green', partial: 'yellow', pending: 'gray', available: 'green', leased: 'blue', sold: 'gray' };
   return `z-badge z-badge-${cls[s] || 'gray'}`;
 };
+
+export const getPublicConfig = () => axios.get(`${API}/api/zentro/public/config`).then(r => r.data);
+export const submitPublicLoanRequest = (data) => axios.post(`${API}/api/zentro/public/loan-requests`, data).then(r => r.data);
+export const getAdminWebConfig = () => api.get('/api/zentro/admin/web-config').then(r => r.data);
+export const updateAdminWebConfig = (data) => api.put('/api/zentro/admin/web-config', data).then(r => r.data);
+export const getZentroLoanRequests = (params) => api.get('/api/zentro/admin/loan-requests', { params }).then(r => r.data);
+export const updateZentroLoanRequest = (id, data) => api.put(`/api/zentro/admin/loan-requests/${id}`, data).then(r => r.data);
+export const convertZentroLoanRequest = (id) => api.post(`/api/zentro/admin/loan-requests/${id}/convert-client`).then(r => r.data);
+export const getUsers = () => api.get('/api/users').then(r => r.data);
+export const createUser = (data) => api.post('/api/users', data).then(r => r.data);
+export const updateUser = (id, data) => api.put(`/api/users/${id}`, data).then(r => r.data);
+export const deleteUser = (id) => api.delete(`/api/users/${id}`).then(r => r.data);
+export const getLogs = () => api.get('/api/logs').then(r => r.data);
