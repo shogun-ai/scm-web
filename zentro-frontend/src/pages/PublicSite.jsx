@@ -1,12 +1,19 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Car, Gem, KeyRound, Menu, Phone, ShieldCheck, X } from 'lucide-react';
 import { getPublicConfig, submitPublicLoanRequest } from '../api';
 
+const fallbackImages = [
+  'https://images.unsplash.com/photo-1542282088-fe8426682b8f?auto=format&fit=crop&w=1600&q=85',
+  'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1600&q=85',
+  'https://images.unsplash.com/photo-1610375461246-83df859d849d?auto=format&fit=crop&w=1600&q=85',
+  'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1600&q=85',
+];
+
 const fallbackProducts = [
-  { name: 'Машин барьцаалсан шуурхай зээл', rate: 'Сарын 3.0%-аас', term: '1-24 сар', amount: 'Үнэлгээний 70% хүртэл', description: 'Машинаа унаад зээлээ авна.' },
-  { name: 'Машин байршуулах зээл', rate: 'Сарын 2.5%-аас', term: '1-12 сар', amount: 'Үнэлгээний 80% хүртэл', description: 'Орлого нотлохгүй, барьцаагаа байршуулна.' },
-  { name: 'Үнэт металл барьцаалсан зээл', rate: 'Уян хатан', term: '1-6 сар', amount: 'Үнэлгээнд суурилна', description: 'Алт, мөнгө, үнэт эдлэл.' },
-  { name: 'Барьцаагүй шуурхай зээл', rate: 'Эрсдэлээр', term: '1-6 сар', amount: 'Лимитээр', description: 'Богино хугацааны хэрэгцээнд.' },
+  { name: 'Машин барьцаалсан шуурхай зээл', rate: 'Сарын 3.0%-аас', term: '1-24 сар', amount: 'Үнэлгээний 70% хүртэл', description: 'Машинаа унаад зээлээ авна.', image: fallbackImages[0] },
+  { name: 'Машин байршуулах зээл', rate: 'Сарын 2.5%-аас', term: '1-12 сар', amount: 'Үнэлгээний 80% хүртэл', description: 'Орлого нотлохгүй, барьцаагаа байршуулна.', image: fallbackImages[1] },
+  { name: 'Үнэт металл барьцаалсан зээл', rate: 'Уян хатан', term: '1-6 сар', amount: 'Үнэлгээнд суурилна', description: 'Алт, мөнгө, үнэт эдлэл.', image: fallbackImages[2] },
+  { name: 'Барьцаагүй шуурхай зээл', rate: 'Эрсдэлээр', term: '1-6 сар', amount: 'Лимитээр', description: 'Богино хугацааны хэрэгцээнд.', image: fallbackImages[3] },
 ];
 
 function BrandMark({ config }) {
@@ -20,10 +27,23 @@ export default function PublicSite({ onLogin }) {
   const [form, setForm] = useState({ name: '', phone: '', register: '', email: '', productType: '', amount: '', termMonths: '', collateral: '', notes: '' });
   const [sent, setSent] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [activeProduct, setActiveProduct] = useState(0);
 
   useEffect(() => { getPublicConfig().then(setConfig).catch(() => setConfig({})); }, []);
+
   const products = useMemo(() => config?.products?.length ? config.products : fallbackProducts, [config]);
+  const productSlides = useMemo(() => products.map((product, index) => ({
+    ...product,
+    image: product.image || product.imageUrl || fallbackImages[index % fallbackImages.length],
+  })), [products]);
+  const activeSlide = productSlides[activeProduct % Math.max(productSlides.length, 1)] || fallbackProducts[0];
   const brand = config?.brandName || 'Zentro Prime Capital';
+
+  useEffect(() => {
+    if (!productSlides.length) return undefined;
+    const timer = window.setInterval(() => setActiveProduct(i => (i + 1) % productSlides.length), 5200);
+    return () => window.clearInterval(timer);
+  }, [productSlides.length]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const submit = async (e) => {
@@ -60,12 +80,27 @@ export default function PublicSite({ onLogin }) {
             <p>{config?.heroText || 'Машинаа унаад барьцаалаад зээлээ ав. Машинаа байршуулбал орлого нотлохгүй шийдвэрлүүлнэ.'}</p>
             <div className="zp-actions"><a href="#apply">Зээлийн хүсэлт өгөх <ArrowRight size={16} /></a><a href={`tel:${config?.phone || '75991919'}`}><Phone size={16} /> {config?.phone || '7599-1919'}</a></div>
           </div>
-          <div className="zp-hero-media"><img src={config?.heroImage || 'https://images.unsplash.com/photo-1542282088-fe8426682b8f?auto=format&fit=crop&w=1400&q=80'} alt="Zentro car loan" /></div>
+          <div className="zp-hero-media"><img src={config?.heroImage || fallbackImages[0]} alt="Zentro car loan" /></div>
         </section>
 
-        <section className="zp-band" id="process">
-          <h2>Машинаа унаад зээлээ ав</h2>
-          <div className="zp-proof"><p>Автомашин барьцаалсан шуурхай зээл</p><p>Машин байршуулах орлого нотлохгүй зээл</p><p>Үнэт металл болон бусад барьцаат зээл</p></div>
+        <section className="zp-band zp-flow" id="process" style={{ backgroundImage: `linear-gradient(90deg, rgba(245,245,241,.92) 0%, rgba(245,245,241,.74) 48%, rgba(17,17,17,.24) 100%), url(${activeSlide.image})` }}>
+          <div className="zp-flow-title">
+            <p className="zp-kicker">Шуурхай шийдвэрлэлт</p>
+            <h2>Машинаа унаад зээлээ ав</h2>
+          </div>
+          <div className="zp-proof" aria-label="Зээлийн бүтээгдэхүүнүүд">
+            {productSlides.slice(0, 4).map((product, index) => (
+              <button
+                className={index === activeProduct ? 'active' : ''}
+                key={`${product.name}-${index}`}
+                onClick={() => setActiveProduct(index)}
+                type="button"
+              >
+                <span>{String(index + 1).padStart(2, '0')}</span>
+                {product.name}
+              </button>
+            ))}
+          </div>
         </section>
 
         <section className="zp-products" id="products">
