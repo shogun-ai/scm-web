@@ -9,6 +9,12 @@ const fallbackImages = [
   'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1600&q=85',
 ];
 
+const defaultWidgets = [
+  { id: 'speed', type: 'text', text: '30 минутын дотор урьдчилсан шийдвэр', x: 6, y: 12, w: 34, h: 22, size: 28 },
+  { id: 'docs', type: 'text', text: 'Орлого нотлохгүй боломжтой', x: 55, y: 18, w: 32, h: 16, size: 22 },
+  { id: 'contact', type: 'button', text: 'Хүсэлт өгөх', x: 6, y: 68, w: 18, h: 12, size: 16 },
+];
+
 const flowPhrases = [
   'Машинаа унаад зээлээ ав',
   'Машинаа тавиад зээлээ ав',
@@ -45,6 +51,7 @@ export default function PublicSite({ onLogin }) {
     image: product.image || product.imageUrl || fallbackImages[index % fallbackImages.length],
   })), [products]);
   const activeSlide = productSlides[activeProduct % Math.max(productSlides.length, 1)] || fallbackProducts[0];
+  const pageWidgets = config?.webWidgets?.length ? config.webWidgets : defaultWidgets;
   const brand = config?.brandName || 'Zentro Prime Capital';
 
   useEffect(() => {
@@ -98,6 +105,15 @@ export default function PublicSite({ onLogin }) {
             <p className="zp-flow-subline">{activeSlide.description || activeSlide.name}</p>
           </div>
         </section>
+
+        {pageWidgets.length > 0 && <section className="zp-widget-stage" aria-label="Онцлох мэдээлэл">
+          {pageWidgets.map(widget => {
+            const style = { left: `${widget.x}%`, top: `${widget.y}%`, width: `${widget.w}%`, height: `${widget.h}%`, fontSize: `${widget.size || 18}px` };
+            if (widget.type === 'image') return <img className="zp-widget zp-widget-image" key={widget.id} src={widget.src} alt={widget.text || 'Zentro widget'} style={style} />;
+            if (widget.type === 'button') return <a className="zp-widget zp-widget-button" key={widget.id} href="#apply" style={style}>{widget.text}</a>;
+            return <div className="zp-widget zp-widget-text" key={widget.id} style={style}>{widget.text}</div>;
+          })}
+        </section>}
 
         <section className="zp-products" id="products">
           <div className="zp-section-head"><h2>Зээлийн бүтээгдэхүүн</h2><p>Админ панелаас нөхцөл, текст, зураг, лого, хүсэлтийн асуултуудыг өөрчилнө.</p></div>
