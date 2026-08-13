@@ -280,6 +280,7 @@ export default function SitePage({
     '--zp-accent': config.theme.accent,
     '--zp-soft-blue': config.theme.softBlue,
     '--zp-soft-rose': config.theme.softRose,
+    '--zp-logo-width': `${config.theme.logoWidth || 260}px`,
     '--zp-logo-height': `${config.theme.logoHeight || 52}px`,
   };
 

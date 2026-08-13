@@ -107,7 +107,8 @@ function SettingsPanel({ cfg, changePath, uploadImage, applyConfig }) {
   return <div className="za-settings-page">
     <div className="za-settings-section"><div><h2>Лого ба байгууллага</h2></div><div className="za-settings-fields">
       <div className="za-logo-setting"><div className="za-logo-preview">{cfg.logoUrl ? <img src={cfg.logoUrl} alt="Logo" /> : <b>Zentro</b>}</div><label className="za-upload"><Upload size={15} /> Лого сонгох<input type="file" accept="image/*,.svg" onChange={event => uploadImage('logoUrl', event.target.files?.[0])} /></label>{cfg.logoUrl && <button type="button" className="za-text-danger" onClick={() => changePath('logoUrl', '')}>Арилгах</button>}</div>
-      <Field label={`Логоны өндөр · ${cfg.theme.logoHeight || 52}px`}><input type="range" min="24" max="60" value={cfg.theme.logoHeight || 52} onChange={event => changePath('theme.logoHeight', Number(event.target.value))} /></Field>
+      <Field label={`Логоны өргөн · ${cfg.theme.logoWidth || 260}px`}><input type="range" min="80" max="520" step="5" value={cfg.theme.logoWidth || 260} onChange={event => changePath('theme.logoWidth', Number(event.target.value))} /></Field>
+      <Field label={`Логоны өндөр · ${cfg.theme.logoHeight || 52}px`}><input type="range" min="24" max="140" step="2" value={cfg.theme.logoHeight || 52} onChange={event => changePath('theme.logoHeight', Number(event.target.value))} /></Field>
       <Field label="Брэнд нэр"><input value={cfg.brandName} onChange={event => changePath('brandName', event.target.value)} /></Field>
       <Field label="Уриа"><input value={cfg.tagline} onChange={event => changePath('tagline', event.target.value)} /></Field>
     </div></div>
@@ -275,6 +276,7 @@ export default function WebAdmin() {
       <div className="za-image-preview">{selectedText ? <img src={selectedText} alt="Preview" /> : <ImagePlus size={24} />}</div>
       <label className="za-upload full"><Upload size={15} /> Файлаас сонгох<input type="file" accept="image/*,.svg" onChange={event => uploadImage(selection.path, event.target.files?.[0])} /></label>
       <Field label="Зураг URL"><textarea rows={3} value={selectedText || ''} onChange={event => changePath(selection.path, event.target.value)} /></Field>
+      {selection.path === 'logoUrl' && <><Field label={`Логоны өргөн · ${cfg.theme.logoWidth || 260}px`}><input type="range" min="80" max="520" step="5" value={cfg.theme.logoWidth || 260} onChange={event => changePath('theme.logoWidth', Number(event.target.value))} /></Field><Field label={`Логоны өндөр · ${cfg.theme.logoHeight || 52}px`}><input type="range" min="24" max="140" step="2" value={cfg.theme.logoHeight || 52} onChange={event => changePath('theme.logoHeight', Number(event.target.value))} /></Field></>}
       {selection.path === 'heroImage' && <><Field label="Зургийн байрлал"><select value={cfg.theme.heroPosition} onChange={event => changePath('theme.heroPosition', event.target.value)}><option value="center">Төв</option><option value="left center">Зүүн</option><option value="right center">Баруун</option><option value="center top">Дээд</option><option value="center bottom">Доод</option></select></Field><Field label={`Dark overlay · ${cfg.theme.heroOverlay}%`}><input type="range" min="20" max="90" value={cfg.theme.heroOverlay} onChange={event => changePath('theme.heroOverlay', Number(event.target.value))} /></Field></>}
     </>;
 

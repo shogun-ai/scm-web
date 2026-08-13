@@ -93,6 +93,7 @@ export const DEFAULT_THEME = {
   accent: '#c9f45b',
   softBlue: '#dceaf7',
   softRose: '#f4d4cf',
+  logoWidth: 260,
   logoHeight: 52,
   heroOverlay: 68,
   heroPosition: 'center',
