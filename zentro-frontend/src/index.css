@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -8,7 +8,7 @@
 
 body {
   margin: 0;
-  font-family: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  font-family: "Inter", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   background: #f3f7fb;
   color: #0f172a;
 }
@@ -303,6 +303,8 @@ body {
 .z-nav-item.active { background: #111; color: #fff; box-shadow: none; }
 .z-brand { border-bottom: 1px solid rgba(0,0,0,.12); }
 .z-brand-icon { border-radius: 50%; background: #111; }
+.z-brand-icon.has-logo { width: 72px; height: 42px; border-radius: 0; background: transparent; }
+.z-brand-icon.has-logo img { border-radius: 0; }
 .z-btn { border-radius: 999px; }
 .z-btn-primary { background: #111; box-shadow: none; }
 .z-btn-primary:hover { background: #2b2b2b; }

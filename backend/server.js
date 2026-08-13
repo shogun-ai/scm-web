@@ -86,6 +86,15 @@ const ZentroWebConfigSchema = new mongoose.Schema({
   email: { type: String, default: 'info@zentrocapitalgroup.com' },
   address: { type: String, default: 'Улаанбаатар хот' },
   heroImage: { type: String, default: 'https://images.unsplash.com/photo-1542282088-fe8426682b8f?auto=format&fit=crop&w=1400&q=80' },
+  siteContent: { type: mongoose.Schema.Types.Mixed, default: {} },
+  theme: { type: mongoose.Schema.Types.Mixed, default: {} },
+  sectionOrder: {
+    type: [String],
+    default: ['hero', 'trust', 'products', 'flow', 'process', 'apply'],
+  },
+  sectionStyles: { type: mongoose.Schema.Types.Mixed, default: {} },
+  elementStyles: { type: mongoose.Schema.Types.Mixed, default: {} },
+  customSections: { type: [mongoose.Schema.Types.Mixed], default: [] },
   webWidgets: {
     type: [mongoose.Schema.Types.Mixed],
     default: [],
@@ -6704,7 +6713,7 @@ app.get('/api/zentro/admin/web-config', authenticateUser, async (req, res) => {
 
 app.put('/api/zentro/admin/web-config', authenticateUser, requireAdmin, async (req, res) => {
   try {
-    const allowed = ['brandName','tagline','logoUrl','heroTitle','heroText','phone','email','address','heroImage','webWidgets','products','formFlow'];
+    const allowed = ['brandName','tagline','logoUrl','heroTitle','heroText','phone','email','address','heroImage','siteContent','theme','sectionOrder','sectionStyles','elementStyles','customSections','webWidgets','products','formFlow'];
     const update = {};
     for (const key of allowed) if (key in req.body) update[key] = req.body[key];
     const doc = await ZentroWebConfig.findOneAndUpdate({ key: 'public' }, { $set: update }, { new: true, upsert: true });

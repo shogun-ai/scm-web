@@ -33,7 +33,7 @@ const NAV = [
 
 function ShellBrand({ config }) {
   const brand = config?.brandName || 'Zentro Prime';
-  return <div className="z-brand"><div className="z-brand-icon">{config?.logoUrl ? <img src={config.logoUrl} alt={brand} /> : 'Z'}</div><div><p className="text-sm font-bold text-slate-900">{brand}</p><p className="text-xs text-slate-500">Ломбард ERP</p></div></div>;
+  return <div className="z-brand"><div className={`z-brand-icon ${config?.logoUrl ? 'has-logo' : ''}`}>{config?.logoUrl ? <img src={config.logoUrl} alt={brand} /> : 'Z'}</div><div><p className="text-sm font-bold text-slate-900">{brand}</p><p className="text-xs text-slate-500">Ломбард ERP</p></div></div>;
 }
 
 export default function Shell({ user, onLogout }) {
