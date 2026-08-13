@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { getAdminWebConfig, updateAdminWebConfig } from '../api';
 import { ImageUp, Save } from 'lucide-react';
 
-const emptyProduct = { name: '', rate: '', term: '', amount: '', description: '', image: '' };
+const emptyProduct = { name: '', flowTitle: '', rate: '', term: '', amount: '', description: '', image: '' };
 const emptyStep = { id: '', title: '', fields: [] };
 
 export default function WebAdmin() {
@@ -49,6 +49,7 @@ export default function WebAdmin() {
       <div className="grid md:grid-cols-2 gap-3">
         {(cfg.products || []).map((p, i) => <div className="za-subcard" key={i}>
           <input className="z-input" placeholder="Нэр" value={p.name || ''} onChange={e => setProduct(i, 'name', e.target.value)} />
+          <input className="z-input" placeholder="Урсах гарчиг: Машинаа унаад зээлээ ав" value={p.flowTitle || ''} onChange={e => setProduct(i, 'flowTitle', e.target.value)} />
           <div className="grid grid-cols-3 gap-2"><input className="z-input" placeholder="Хүү" value={p.rate || ''} onChange={e => setProduct(i, 'rate', e.target.value)} /><input className="z-input" placeholder="Хугацаа" value={p.term || ''} onChange={e => setProduct(i, 'term', e.target.value)} /><input className="z-input" placeholder="Дүн" value={p.amount || ''} onChange={e => setProduct(i, 'amount', e.target.value)} /></div>
           <textarea className="z-input" placeholder="Тайлбар" value={p.description || ''} onChange={e => setProduct(i, 'description', e.target.value)} />
           <input className="z-input" placeholder="Урсдаг хэсгийн зураг URL" value={p.image || ''} onChange={e => setProduct(i, 'image', e.target.value)} />

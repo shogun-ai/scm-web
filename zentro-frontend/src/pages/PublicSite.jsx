@@ -9,11 +9,18 @@ const fallbackImages = [
   'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1600&q=85',
 ];
 
+const flowPhrases = [
+  'Машинаа унаад зээлээ ав',
+  'Машинаа тавиад зээлээ ав',
+  'Үнэт металлаа барьцаалаад зээлээ ав',
+  'Барьцаагүй шуурхай зээлээ ав',
+];
+
 const fallbackProducts = [
-  { name: 'Машин барьцаалсан шуурхай зээл', rate: 'Сарын 3.0%-аас', term: '1-24 сар', amount: 'Үнэлгээний 70% хүртэл', description: 'Машинаа унаад зээлээ авна.', image: fallbackImages[0] },
-  { name: 'Машин байршуулах зээл', rate: 'Сарын 2.5%-аас', term: '1-12 сар', amount: 'Үнэлгээний 80% хүртэл', description: 'Орлого нотлохгүй, барьцаагаа байршуулна.', image: fallbackImages[1] },
-  { name: 'Үнэт металл барьцаалсан зээл', rate: 'Уян хатан', term: '1-6 сар', amount: 'Үнэлгээнд суурилна', description: 'Алт, мөнгө, үнэт эдлэл.', image: fallbackImages[2] },
-  { name: 'Барьцаагүй шуурхай зээл', rate: 'Эрсдэлээр', term: '1-6 сар', amount: 'Лимитээр', description: 'Богино хугацааны хэрэгцээнд.', image: fallbackImages[3] },
+  { name: 'Машин барьцаалсан шуурхай зээл', flowTitle: flowPhrases[0], rate: 'Сарын 3.0%-аас', term: '1-24 сар', amount: 'Үнэлгээний 70% хүртэл', description: 'Машинаа унаад зээлээ авна.', image: fallbackImages[0] },
+  { name: 'Машин байршуулах зээл', flowTitle: flowPhrases[1], rate: 'Сарын 2.5%-аас', term: '1-12 сар', amount: 'Үнэлгээний 80% хүртэл', description: 'Орлого нотлохгүй, барьцаагаа байршуулна.', image: fallbackImages[1] },
+  { name: 'Үнэт металл барьцаалсан зээл', flowTitle: flowPhrases[2], rate: 'Уян хатан', term: '1-6 сар', amount: 'Үнэлгээнд суурилна', description: 'Алт, мөнгө, үнэт эдлэл.', image: fallbackImages[2] },
+  { name: 'Барьцаагүй шуурхай зээл', flowTitle: flowPhrases[3], rate: 'Эрсдэлээр', term: '1-6 сар', amount: 'Лимитээр', description: 'Богино хугацааны хэрэгцээнд.', image: fallbackImages[3] },
 ];
 
 function BrandMark({ config }) {
@@ -34,6 +41,7 @@ export default function PublicSite({ onLogin }) {
   const products = useMemo(() => config?.products?.length ? config.products : fallbackProducts, [config]);
   const productSlides = useMemo(() => products.map((product, index) => ({
     ...product,
+    flowTitle: product.flowTitle || flowPhrases[index % flowPhrases.length] || product.name,
     image: product.image || product.imageUrl || fallbackImages[index % fallbackImages.length],
   })), [products]);
   const activeSlide = productSlides[activeProduct % Math.max(productSlides.length, 1)] || fallbackProducts[0];
@@ -41,7 +49,7 @@ export default function PublicSite({ onLogin }) {
 
   useEffect(() => {
     if (!productSlides.length) return undefined;
-    const timer = window.setInterval(() => setActiveProduct(i => (i + 1) % productSlides.length), 5200);
+    const timer = window.setInterval(() => setActiveProduct(i => (i + 1) % productSlides.length), 4200);
     return () => window.clearInterval(timer);
   }, [productSlides.length]);
 
@@ -83,23 +91,11 @@ export default function PublicSite({ onLogin }) {
           <div className="zp-hero-media"><img src={config?.heroImage || fallbackImages[0]} alt="Zentro car loan" /></div>
         </section>
 
-        <section className="zp-band zp-flow" id="process" style={{ backgroundImage: `linear-gradient(90deg, rgba(245,245,241,.92) 0%, rgba(245,245,241,.74) 48%, rgba(17,17,17,.24) 100%), url(${activeSlide.image})` }}>
-          <div className="zp-flow-title">
+        <section className="zp-band zp-flow" id="process" style={{ backgroundImage: `linear-gradient(90deg, rgba(245,245,241,.94) 0%, rgba(245,245,241,.76) 48%, rgba(17,17,17,.18) 100%), url(${activeSlide.image})` }}>
+          <div className="zp-flow-title" key={activeSlide.flowTitle}>
             <p className="zp-kicker">Шуурхай шийдвэрлэлт</p>
-            <h2>Машинаа унаад зээлээ ав</h2>
-          </div>
-          <div className="zp-proof" aria-label="Зээлийн бүтээгдэхүүнүүд">
-            {productSlides.slice(0, 4).map((product, index) => (
-              <button
-                className={index === activeProduct ? 'active' : ''}
-                key={`${product.name}-${index}`}
-                onClick={() => setActiveProduct(index)}
-                type="button"
-              >
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                {product.name}
-              </button>
-            ))}
+            <h2>{activeSlide.flowTitle}</h2>
+            <p className="zp-flow-subline">{activeSlide.description || activeSlide.name}</p>
           </div>
         </section>
 

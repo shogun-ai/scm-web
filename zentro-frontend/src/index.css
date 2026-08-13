@@ -257,15 +257,13 @@ body {
 .zp-actions a + a { background: #fff; color: #111; border: 1px solid #111; }
 .zp-hero-media { min-height: 640px; overflow: hidden; border-radius: 0 8px 0 0; }
 .zp-hero-media img { width: 100%; height: 100%; object-fit: cover; filter: saturate(.88) contrast(.96); }
-.zp-band { background: #d9d9d6; padding: 56px 44px; display: grid; grid-template-columns: .9fr 1.1fr; gap: 32px; }
-.zp-flow { min-height: 292px; align-items: end; background-size: cover; background-position: center; transition: background-image .5s ease; position: relative; overflow: hidden; }
-.zp-flow::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(0,0,0,.08)); pointer-events: none; }
-.zp-flow-title, .zp-flow .zp-proof { position: relative; z-index: 1; }
-.zp-band h2, .zp-section-head h2, .zp-apply h2 { font-size: clamp(34px, 5vw, 68px); line-height: .96; margin: 0; letter-spacing: 0; }
-.zp-proof { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: end; }
-.zp-proof button { min-height: 94px; border: 1px solid rgba(17,17,17,.22); background: rgba(245,245,241,.72); color: #111; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; gap: 18px; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; font-weight: 850; cursor: pointer; backdrop-filter: blur(10px); transition: background .2s ease, border-color .2s ease, transform .2s ease; }
-.zp-proof button:hover, .zp-proof button.active { background: #111; color: #fff; border-color: #111; transform: translateY(-2px); }
-.zp-proof button span { font-size: 11px; font-weight: 900; opacity: .72; }
+.zp-band { background: #d9d9d6; padding: 64px 44px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
+.zp-flow { min-height: 340px; align-items: center; background-size: cover; background-position: center; transition: background-image .5s ease; position: relative; overflow: hidden; }
+.zp-flow::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.08)); pointer-events: none; }
+.zp-flow-title { position: relative; z-index: 1; max-width: 720px; animation: zp-flow-rise .5s ease both; }
+.zp-band h2, .zp-section-head h2, .zp-apply h2 { font-size: clamp(42px, 7vw, 96px); line-height: .92; margin: 0; letter-spacing: 0; }
+.zp-flow-subline { margin: 24px 0 0; color: #37352f; font-size: 16px; line-height: 1.55; font-weight: 750; max-width: 520px; }
+@keyframes zp-flow-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 .zp-products { background: #fff; padding: 72px 44px; }
 .zp-section-head { display: flex; justify-content: space-between; gap: 24px; align-items: end; margin-bottom: 28px; }
 .zp-section-head p { max-width: 460px; color: #555; font-weight: 600; }
@@ -287,7 +285,7 @@ body {
 .zp-success { padding: 12px 14px; border: 1px solid #166534; color: #166534; border-radius: 8px; background: #dcfce7; font-weight: 800; }
 .zp-footer { background: #fff; padding: 34px 44px; display: flex; align-items: center; gap: 24px; justify-content: space-between; font-weight: 700; }
 .zp-footer a { color: #111; }
-@media (max-width: 960px) { .zp-nav { padding: 0 18px; } .zp-links, .zp-login { display: none; } .zp-menu { display: inline-flex; margin-left: auto; } .zp-hero, .zp-band, .zp-apply { grid-template-columns: 1fr; padding-left: 18px; padding-right: 18px; } .zp-hero-copy { border-radius: 8px 8px 0 0; padding: 34px 24px; } .zp-hero-media { min-height: 360px; border-radius: 0 0 8px 8px; } .zp-proof, .zp-product-grid, .zp-two { grid-template-columns: 1fr; } .zp-flow { min-height: 520px; align-items: start; background-position: center right; } .zp-section-head { display: block; } .zp-products { padding: 48px 18px; } .zp-footer { flex-direction: column; align-items: flex-start; padding: 28px 18px; } }
+@media (max-width: 960px) { .zp-nav { padding: 0 18px; } .zp-links, .zp-login { display: none; } .zp-menu { display: inline-flex; margin-left: auto; } .zp-hero, .zp-band, .zp-apply { grid-template-columns: 1fr; padding-left: 18px; padding-right: 18px; } .zp-hero-copy { border-radius: 8px 8px 0 0; padding: 34px 24px; } .zp-hero-media { min-height: 360px; border-radius: 0 0 8px 8px; } .zp-product-grid, .zp-two { grid-template-columns: 1fr; } .zp-flow { min-height: 420px; align-items: center; background-position: center right; } .zp-section-head { display: block; } .zp-products { padding: 48px 18px; } .zp-footer { flex-direction: column; align-items: flex-start; padding: 28px 18px; } }
 
 .z-brand-icon img { width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
 .z-shell { background: #f5f5f1; }
