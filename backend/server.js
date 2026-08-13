@@ -6663,11 +6663,12 @@ app.post('/api/public/analyze-property', (req, res) => {
 
 // ═══════════════════════════════════════════════════════════════════════════
 async function getZentroWebConfigDoc() {
-  return ZentroWebConfig.findOneAndUpdate(
+  const doc = await ZentroWebConfig.findOneAndUpdate(
     { key: 'public' },
     { $setOnInsert: { key: 'public' } },
     { new: true, upsert: true }
   ).lean();
+  return { ...doc, webWidgets: Array.isArray(doc.webWidgets) ? doc.webWidgets : [] };
 }
 
 app.get('/api/zentro/public/config', async (req, res) => {
