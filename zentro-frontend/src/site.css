@@ -15,10 +15,11 @@ button, input, textarea, select { font-family: inherit; }
 }
 .zp-logo { min-width: 150px; display: inline-flex; align-items: center; gap: 11px; color: var(--zp-ink); font-size: 15px; font-weight: 800; text-decoration: none; }
 .zp-logo-mark { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; border-radius: 4px; background: var(--zp-ink); color: #fff; }
-.zp-brand-image-wrap { position: relative; display: inline-flex; align-items: center; }
-.zp-logo .zp-brand-image-wrap, .zp-logo .zp-brand-name { width: auto; height: auto; border-radius: 0; background: transparent; color: inherit; }
+.zp-brand-image-wrap { position: relative; width: var(--zp-logo-width,260px); height: var(--zp-logo-height,52px); display: inline-flex; align-items: center; flex: 0 0 auto; overflow: hidden; transition: width 180ms ease, height 180ms ease; }
+.zp-logo .zp-brand-image-wrap, .zp-logo .zp-brand-name { border-radius: 0; background: transparent; color: inherit; }
+.zp-logo .zp-brand-name { width: auto; height: auto; }
 .zp-logo .zp-logo-mark { width: 36px; height: 36px; border-radius: 4px; background: var(--zp-ink); color: #fff; }
-.zp-logo-img { width: var(--zp-logo-width,260px); max-width: none; height: var(--zp-logo-height,52px); object-fit: contain; object-position: left center; border: 0; border-radius: 0; background: transparent; }
+.zp-logo-img { position: relative; left: var(--zp-logo-x,0px); top: var(--zp-logo-y,0px); width: 100%; max-width: none; height: 100%; object-fit: contain; object-position: left center; transform: scale(var(--zp-logo-zoom,1)); transform-origin: center; border: 0; border-radius: 0; background: transparent; transition: left 180ms ease, top 180ms ease, transform 180ms ease; }
 .zp-links { display: flex; align-items: center; gap: 28px; margin-left: auto; }
 .zp-links a, .zp-nav-phone { color: var(--zp-ink); font-size: 13px; font-weight: 650; text-decoration: none; }
 .zp-links a { position: relative; padding: 28px 0 25px; }
@@ -308,6 +309,23 @@ button, input, textarea, select { font-family: inherit; }
 .za-logo-setting { display: flex; align-items: center; gap: 10px; }
 .za-logo-preview { width: 170px; height: 74px; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 7px; border: 1px solid #d4d8d1; border-radius: 4px; background: #fff; }
 .za-logo-preview img { width: 100%; height: 100%; object-fit: contain; }
+.za-logo-page-preview { width: 100%; overflow: hidden; border: 1px solid #cfd4cc; border-radius: 5px; background: #d9ddd7; box-shadow: 0 8px 24px rgba(30,34,28,.08); }
+.za-logo-page-preview.mobile { width: min(390px,100%); margin: 0 auto; }
+.za-logo-demo-nav { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 24px; background: #fff; }
+.za-logo-page-preview.mobile .za-logo-demo-nav { padding: 0 16px; }
+.za-logo-page-preview .zp-brand-image-wrap { width: var(--zp-logo-width,260px); height: var(--zp-logo-height,52px); }
+.za-logo-page-preview .zp-logo-img { left: var(--zp-logo-x,0px); top: var(--zp-logo-y,0px); transform: scale(var(--zp-logo-zoom,1)); }
+.za-logo-demo-nav > b { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.za-logo-demo-nav > button { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; border: 1px solid #cfd4cc; border-radius: 50%; background: #fff; color: #151713; pointer-events: none; }
+.za-logo-demo-hero { position: relative; height: 118px; overflow: hidden; background: #222; }
+.za-logo-page-preview.mobile .za-logo-demo-hero { height: 150px; }
+.za-logo-page-preview.compact .za-logo-demo-hero { height: 64px; }
+.za-logo-demo-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg,rgba(12,14,12,.5),rgba(12,14,12,.08)); }
+.za-logo-demo-hero img { width: 100%; height: 100%; object-fit: cover; }
+.za-logo-controls { display: flex; flex-direction: column; gap: 11px; }
+.za-logo-actions { display: grid; grid-template-columns: minmax(0,1fr) 38px; gap: 6px; }
+.za-logo-actions .za-secondary { width: 100%; }
+.za-logo-actions .za-icon-button { width: 38px; padding: 0; }
 .za-color-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .za-loading { min-height: 360px; display: flex; align-items: center; justify-content: center; gap: 9px; color: #70766d; font-size: 12px; font-weight: 650; }
 
@@ -320,9 +338,10 @@ button, input, textarea, select { font-family: inherit; }
 .zp-site.is-tablet .zp-apply-grid { grid-template-columns: 1fr; }
 .zp-site.is-tablet .zp-apply-copy { position: static; }
 
-.zp-site.is-mobile .zp-nav { height: max(66px,calc(min(var(--zp-logo-height,52px),44px) + 18px)); padding: 0 16px; }
+.zp-site.is-mobile .zp-nav { height: max(66px,calc(var(--zp-logo-mobile-height,40px) + 18px)); padding: 0 16px; }
 .zp-site.is-mobile .zp-logo { min-width: 0; }
-.zp-site.is-mobile .zp-logo-img { width: min(var(--zp-logo-width,260px),180px); max-width: none; height: min(var(--zp-logo-height,52px),44px); }
+.zp-site.is-mobile .zp-brand-image-wrap { width: min(var(--zp-logo-mobile-width,160px),calc(100vw - 100px)); height: var(--zp-logo-mobile-height,40px); }
+.zp-site.is-mobile .zp-logo-img { left: var(--zp-logo-mobile-x,0px); top: var(--zp-logo-mobile-y,0px); transform: scale(var(--zp-logo-mobile-zoom,1)); }
 .zp-site.is-mobile .zp-brand-name { max-width: 125px; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .zp-site.is-mobile .zp-links, .zp-site.is-mobile .zp-nav-phone, .zp-site.is-mobile .zp-login { display: none; }
 .zp-site.is-mobile .zp-menu { display: inline-flex; margin-left: auto; }
@@ -372,9 +391,10 @@ button, input, textarea, select { font-family: inherit; }
 }
 
 @media (max-width: 760px) {
-  .zp-nav { height: max(66px,calc(min(var(--zp-logo-height,52px),44px) + 18px)); padding: 0 16px; }
+  .zp-nav { height: max(66px,calc(var(--zp-logo-mobile-height,40px) + 18px)); padding: 0 16px; }
   .zp-logo { min-width: 0; }
-  .zp-logo-img { width: min(var(--zp-logo-width,260px),180px); max-width: none; height: min(var(--zp-logo-height,52px),44px); }
+  .zp-brand-image-wrap { width: min(var(--zp-logo-mobile-width,160px),calc(100vw - 100px)); height: var(--zp-logo-mobile-height,40px); }
+  .zp-logo-img { left: var(--zp-logo-mobile-x,0px); top: var(--zp-logo-mobile-y,0px); transform: scale(var(--zp-logo-mobile-zoom,1)); }
   .zp-brand-name { max-width: 150px; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
   .zp-links, .zp-nav-phone, .zp-login { display: none; }
   .zp-menu { display: inline-flex; margin-left: auto; }

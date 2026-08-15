@@ -13,11 +13,13 @@ import {
   Laptop,
   LayoutTemplate,
   LoaderCircle,
+  Menu,
   Monitor,
   Plus,
   Redo2,
   RotateCcw,
   Save,
+  ScanLine,
   Settings2,
   Smartphone,
   Trash2,
@@ -29,6 +31,7 @@ import { getAdminWebConfig, updateAdminWebConfig, uploadAdminWebImages } from '.
 import {
   DEFAULT_SECTION_ORDER,
   DEFAULT_SECTION_STYLES,
+  DEFAULT_THEME,
   FIELD_LIBRARY,
   getAtPath,
   normalizeField,
@@ -59,6 +62,122 @@ function Field({ label, children, hint }) {
 
 function IconSegment({ value, onChange, options }) {
   return <div className="za-segment">{options.map(({ id, icon: Icon, label }) => <button type="button" key={id} className={value === id ? 'active' : ''} onClick={() => onChange(id)} title={label}><Icon size={15} /></button>)}</div>;
+}
+
+const LOGO_APPEARANCE = {
+  desktop: {
+    width: 'logoWidth', height: 'logoHeight', zoom: 'logoZoom', x: 'logoOffsetX', y: 'logoOffsetY',
+    defaults: { width: DEFAULT_THEME.logoWidth, height: DEFAULT_THEME.logoHeight, zoom: DEFAULT_THEME.logoZoom, x: 0, y: 0 },
+  },
+  mobile: {
+    width: 'logoMobileWidth', height: 'logoMobileHeight', zoom: 'logoMobileZoom', x: 'logoMobileOffsetX', y: 'logoMobileOffsetY',
+    defaults: { width: DEFAULT_THEME.logoMobileWidth, height: DEFAULT_THEME.logoMobileHeight, zoom: DEFAULT_THEME.logoMobileZoom, x: 0, y: 0 },
+  },
+};
+
+function getLogoAppearance(cfg, mode) {
+  const fields = LOGO_APPEARANCE[mode] || LOGO_APPEARANCE.desktop;
+  return {
+    fields,
+    width: Number(cfg.theme?.[fields.width] ?? fields.defaults.width),
+    height: Number(cfg.theme?.[fields.height] ?? fields.defaults.height),
+    zoom: Number(cfg.theme?.[fields.zoom] ?? fields.defaults.zoom),
+    x: Number(cfg.theme?.[fields.x] ?? fields.defaults.x),
+    y: Number(cfg.theme?.[fields.y] ?? fields.defaults.y),
+  };
+}
+
+function LogoHeaderPreview({ cfg, mode, compact = false }) {
+  const appearance = getLogoAppearance(cfg, mode);
+  const style = {
+    '--zp-logo-width': `${appearance.width}px`,
+    '--zp-logo-height': `${appearance.height}px`,
+    '--zp-logo-zoom': appearance.zoom,
+    '--zp-logo-x': `${appearance.x}px`,
+    '--zp-logo-y': `${appearance.y}px`,
+  };
+  const heroImage = cfg.heroImages?.[0] || cfg.heroImage;
+  return <div className={`za-logo-page-preview ${mode} ${compact ? 'compact' : ''}`} style={style}>
+    <div className="za-logo-demo-nav" style={{ height: `${Math.max(mode === 'mobile' ? 66 : 76, appearance.height + 20)}px` }}>
+      {cfg.logoUrl ? <span className="zp-brand-image-wrap"><img className="zp-logo-img" src={cfg.logoUrl} alt={cfg.brandName} /></span> : <b>{cfg.brandName}</b>}
+      <button type="button" tabIndex={-1} aria-hidden="true"><Menu size={18} /></button>
+    </div>
+    {heroImage && <div className="za-logo-demo-hero"><img src={heroImage} alt="" /></div>}
+  </div>;
+}
+
+function LogoAppearanceControls({ cfg, mode, changePath, onAutoFit, onReset }) {
+  const [fitting, setFitting] = useState(false);
+  const appearance = getLogoAppearance(cfg, mode);
+  const { fields } = appearance;
+  const mobile = mode === 'mobile';
+  const autoFit = async () => {
+    setFitting(true);
+    try { await onAutoFit(mode); } finally { setFitting(false); }
+  };
+  return <div className="za-logo-controls">
+    <Field label={`Харагдах өргөн · ${appearance.width}px`}><input type="range" min={mobile ? 80 : 100} max={mobile ? 260 : 520} step="2" value={appearance.width} onChange={event => changePath(`theme.${fields.width}`, Number(event.target.value))} /></Field>
+    <Field label={`Харагдах өндөр · ${appearance.height}px`}><input type="range" min="24" max={mobile ? 80 : 140} step="2" value={appearance.height} onChange={event => changePath(`theme.${fields.height}`, Number(event.target.value))} /></Field>
+    <Field label={`Дотор томруулалт · ${Math.round(appearance.zoom * 100)}%`}><input type="range" min="0.5" max="4" step="0.1" value={appearance.zoom} onChange={event => changePath(`theme.${fields.zoom}`, Number(event.target.value))} /></Field>
+    <Field label={`Хэвтээ байрлал · ${appearance.x}px`}><input type="range" min={-appearance.width} max={appearance.width} step="1" value={appearance.x} onChange={event => changePath(`theme.${fields.x}`, Number(event.target.value))} /></Field>
+    <Field label={`Босоо байрлал · ${appearance.y}px`}><input type="range" min={-appearance.height} max={appearance.height} step="1" value={appearance.y} onChange={event => changePath(`theme.${fields.y}`, Number(event.target.value))} /></Field>
+    <div className="za-logo-actions"><button type="button" className="za-secondary" onClick={autoFit} disabled={fitting || !cfg.logoUrl}>{fitting ? <LoaderCircle className="animate-spin" size={14} /> : <ScanLine size={14} />} Автоматаар тааруулах</button><button type="button" className="za-icon-button" onClick={() => onReset(mode)} title="Хэмжээ сэргээх"><RotateCcw size={14} /></button></div>
+  </div>;
+}
+
+function loadLogoImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    if (/^https?:/i.test(src)) image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Лого зургийг уншиж чадсангүй.'));
+    image.src = src;
+  });
+}
+
+async function calculateLogoFit(src, width, height) {
+  const image = await loadLogoImage(src);
+  const scale = Math.min(1, 1200 / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  const corners = [[0, 0], [canvas.width - 1, 0], [0, canvas.height - 1], [canvas.width - 1, canvas.height - 1]];
+  const background = corners.reduce((sum, [x, y]) => {
+    const index = (y * canvas.width + x) * 4;
+    return sum.map((value, channel) => value + pixels[index + channel] / corners.length);
+  }, [0, 0, 0, 0]);
+  let minX = canvas.width;
+  let minY = canvas.height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      const index = (y * canvas.width + x) * 4;
+      const alpha = pixels[index + 3];
+      const difference = Math.abs(pixels[index] - background[0]) + Math.abs(pixels[index + 1] - background[1]) + Math.abs(pixels[index + 2] - background[2]);
+      const visible = background[3] < 20 ? alpha > 24 : alpha > 24 && (difference > 60 || Math.abs(alpha - background[3]) > 24);
+      if (!visible) continue;
+      minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+    }
+  }
+  if (maxX < minX || maxY < minY) throw new Error('Логоны харагдах хэсгийг олж чадсангүй.');
+  const imageRatio = image.naturalWidth / image.naturalHeight;
+  const objectWidth = Math.min(width, height * imageRatio);
+  const objectHeight = objectWidth / imageRatio;
+  const objectTop = (height - objectHeight) / 2;
+  const contentWidth = ((maxX - minX + 1) / canvas.width) * objectWidth;
+  const contentHeight = ((maxY - minY + 1) / canvas.height) * objectHeight;
+  const contentCenterX = ((minX + maxX + 1) / 2 / canvas.width) * objectWidth;
+  const contentCenterY = objectTop + ((minY + maxY + 1) / 2 / canvas.height) * objectHeight;
+  const zoom = Math.min(4, Math.max(.5, Math.min(width * .9 / contentWidth, height * .88 / contentHeight)));
+  return {
+    zoom: Math.round(zoom * 10) / 10,
+    x: Math.round(Math.max(-width, Math.min(width, -zoom * (contentCenterX - width / 2)))),
+    y: Math.round(Math.max(-height, Math.min(height, -zoom * (contentCenterY - height / 2)))),
+  };
 }
 
 function galleryPathForImage(path) {
@@ -149,12 +268,14 @@ function FormManager({ cfg, changePath, applyConfig }) {
   </div>;
 }
 
-function SettingsPanel({ cfg, changePath, uploadImage, applyConfig }) {
+function SettingsPanel({ cfg, changePath, uploadImage, applyConfig, onAutoFitLogo, onResetLogo }) {
+  const [logoMode, setLogoMode] = useState('mobile');
   return <div className="za-settings-page">
     <div className="za-settings-section"><div><h2>Лого ба байгууллага</h2></div><div className="za-settings-fields">
-      <div className="za-logo-setting"><div className="za-logo-preview">{cfg.logoUrl ? <img src={cfg.logoUrl} alt="Logo" /> : <b>Zentro</b>}</div><label className="za-upload"><Upload size={15} /> Лого сонгох<input type="file" accept="image/*,.svg" onChange={event => uploadImage('logoUrl', event.target.files?.[0])} /></label>{cfg.logoUrl && <button type="button" className="za-text-danger" onClick={() => changePath('logoUrl', '')}>Арилгах</button>}</div>
-      <Field label={`Логоны өргөн · ${cfg.theme.logoWidth || 260}px`}><input type="range" min="80" max="520" step="5" value={cfg.theme.logoWidth || 260} onChange={event => changePath('theme.logoWidth', Number(event.target.value))} /></Field>
-      <Field label={`Логоны өндөр · ${cfg.theme.logoHeight || 52}px`}><input type="range" min="24" max="140" step="2" value={cfg.theme.logoHeight || 52} onChange={event => changePath('theme.logoHeight', Number(event.target.value))} /></Field>
+      <IconSegment value={logoMode} onChange={setLogoMode} options={[{ id: 'desktop', icon: Monitor, label: 'Desktop' }, { id: 'mobile', icon: Smartphone, label: 'Mobile' }]} />
+      <LogoHeaderPreview cfg={cfg} mode={logoMode} />
+      <div className="za-logo-setting"><label className="za-upload"><Upload size={15} /> Лого сонгох<input type="file" accept="image/*,.svg" onChange={event => uploadImage('logoUrl', event.target.files?.[0])} /></label>{cfg.logoUrl && <button type="button" className="za-text-danger" onClick={() => changePath('logoUrl', '')}>Арилгах</button>}</div>
+      <LogoAppearanceControls cfg={cfg} mode={logoMode} changePath={changePath} onAutoFit={onAutoFitLogo} onReset={onResetLogo} />
       <Field label="Брэнд нэр"><input value={cfg.brandName} onChange={event => changePath('brandName', event.target.value)} /></Field>
       <Field label="Уриа"><input value={cfg.tagline} onChange={event => changePath('tagline', event.target.value)} /></Field>
     </div></div>
@@ -289,6 +410,38 @@ export default function WebAdmin() {
     reader.readAsDataURL(file);
   };
 
+  const updateLogoAppearance = (mode, values) => applyConfig(current => {
+    const fields = LOGO_APPEARANCE[mode] || LOGO_APPEARANCE.desktop;
+    return {
+      ...current,
+      theme: {
+        ...current.theme,
+        [fields.width]: values.width ?? current.theme[fields.width],
+        [fields.height]: values.height ?? current.theme[fields.height],
+        [fields.zoom]: values.zoom ?? current.theme[fields.zoom],
+        [fields.x]: values.x ?? current.theme[fields.x],
+        [fields.y]: values.y ?? current.theme[fields.y],
+      },
+    };
+  });
+
+  const resetLogoAppearance = mode => {
+    const fields = LOGO_APPEARANCE[mode] || LOGO_APPEARANCE.desktop;
+    updateLogoAppearance(mode, fields.defaults);
+  };
+
+  const autoFitLogo = async mode => {
+    try {
+      const current = cfgRef.current;
+      if (!current?.logoUrl) return;
+      const appearance = getLogoAppearance(current, mode);
+      const fit = await calculateLogoFit(current.logoUrl, appearance.width, appearance.height);
+      updateLogoAppearance(mode, fit);
+    } catch (error) {
+      window.alert(error.message || 'Лого автоматаар тааруулахад алдаа гарлаа.');
+    }
+  };
+
   const setGalleryImages = (legacyPath, galleryPath, values) => applyConfig(current => {
     const images = [...new Set((Array.isArray(values) ? values : [])
       .map(value => (typeof value === 'string' ? value.trim() : ''))
@@ -369,12 +522,22 @@ export default function WebAdmin() {
       {selection.path === 'heroImage' && <><Field label="Зургийн байрлал"><select value={cfg.theme.heroPosition} onChange={event => changePath('theme.heroPosition', event.target.value)}><option value="center">Төв</option><option value="left center">Зүүн</option><option value="right center">Баруун</option><option value="center top">Дээд</option><option value="center bottom">Доод</option></select></Field><Field label={`Dark overlay · ${cfg.theme.heroOverlay}%`}><input type="range" min="20" max="90" value={cfg.theme.heroOverlay} onChange={event => changePath('theme.heroOverlay', Number(event.target.value))} /></Field></>}
     </>;
 
+    if (selection?.kind === 'image' && selection.path === 'logoUrl') {
+      const logoMode = viewport === 'mobile' ? 'mobile' : 'desktop';
+      return <>
+        <div className="za-inspector-title"><ImageIcon size={17} /><div><b>Лого</b><span>{logoMode === 'mobile' ? 'Mobile харагдац' : 'Desktop харагдац'}</span></div></div>
+        <LogoHeaderPreview cfg={cfg} mode={logoMode} compact />
+        <label className="za-upload full"><Upload size={15} /> Лого солих<input type="file" accept="image/*,.svg" onChange={event => uploadImage('logoUrl', event.target.files?.[0])} /></label>
+        <LogoAppearanceControls cfg={cfg} mode={logoMode} changePath={changePath} onAutoFit={autoFitLogo} onReset={resetLogoAppearance} />
+        <Field label="Лого URL"><textarea rows={3} value={selectedText || ''} onChange={event => changePath('logoUrl', event.target.value)} /></Field>
+      </>;
+    }
+
     if (selection?.kind === 'image') return <>
       <div className="za-inspector-title"><ImageIcon size={17} /><div><b>{selection.label || 'Зураг'}</b><span>Зураг солих</span></div></div>
       <div className="za-image-preview">{selectedText ? <img src={selectedText} alt="Preview" /> : <ImagePlus size={24} />}</div>
       <label className="za-upload full"><Upload size={15} /> Файлаас сонгох<input type="file" accept="image/*,.svg" onChange={event => uploadImage(selection.path, event.target.files?.[0])} /></label>
       <Field label="Зураг URL"><textarea rows={3} value={selectedText || ''} onChange={event => changePath(selection.path, event.target.value)} /></Field>
-      {selection.path === 'logoUrl' && <><Field label={`Логоны өргөн · ${cfg.theme.logoWidth || 260}px`}><input type="range" min="80" max="520" step="5" value={cfg.theme.logoWidth || 260} onChange={event => changePath('theme.logoWidth', Number(event.target.value))} /></Field><Field label={`Логоны өндөр · ${cfg.theme.logoHeight || 52}px`}><input type="range" min="24" max="140" step="2" value={cfg.theme.logoHeight || 52} onChange={event => changePath('theme.logoHeight', Number(event.target.value))} /></Field></>}
     </>;
 
     if (selection?.kind === 'section') {
@@ -426,7 +589,7 @@ export default function WebAdmin() {
     </div>}
 
     {tab === 'form' && <FormManager cfg={cfg} changePath={changePath} applyConfig={applyConfig} />}
-    {tab === 'settings' && <SettingsPanel cfg={cfg} changePath={changePath} uploadImage={uploadImage} applyConfig={applyConfig} />}
+    {tab === 'settings' && <SettingsPanel cfg={cfg} changePath={changePath} uploadImage={uploadImage} applyConfig={applyConfig} onAutoFitLogo={autoFitLogo} onResetLogo={resetLogoAppearance} />}
     <span className="sr-only">{historyVersion}</span>
   </div>;
 }

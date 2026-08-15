@@ -387,6 +387,14 @@ export default function SitePage({
     '--zp-soft-rose': config.theme.softRose,
     '--zp-logo-width': `${config.theme.logoWidth || 260}px`,
     '--zp-logo-height': `${config.theme.logoHeight || 52}px`,
+    '--zp-logo-zoom': Number(config.theme.logoZoom || 1),
+    '--zp-logo-x': `${Number(config.theme.logoOffsetX || 0)}px`,
+    '--zp-logo-y': `${Number(config.theme.logoOffsetY || 0)}px`,
+    '--zp-logo-mobile-width': `${config.theme.logoMobileWidth || 160}px`,
+    '--zp-logo-mobile-height': `${config.theme.logoMobileHeight || 40}px`,
+    '--zp-logo-mobile-zoom': Number(config.theme.logoMobileZoom || 1),
+    '--zp-logo-mobile-x': `${Number(config.theme.logoMobileOffsetX || 0)}px`,
+    '--zp-logo-mobile-y': `${Number(config.theme.logoMobileOffsetY || 0)}px`,
   };
 
   useEffect(() => {

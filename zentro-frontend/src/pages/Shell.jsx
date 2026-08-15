@@ -14,6 +14,7 @@ import Data from './Data';
 import WebAdmin from './WebAdmin';
 import LoanRequests from './LoanRequests';
 import UserAdmin from './UserAdmin';
+import { normalizeSiteConfig } from '../siteDefaults';
 
 const NAV = [
   { id: 'dashboard', label: 'Нүүр', icon: LayoutDashboard },
@@ -32,8 +33,22 @@ const NAV = [
 ];
 
 function ShellBrand({ config }) {
-  const brand = config?.brandName || 'Zentro Prime';
-  return <div className="z-brand"><div className={`z-brand-icon ${config?.logoUrl ? 'has-logo' : ''}`}>{config?.logoUrl ? <img src={config.logoUrl} alt={brand} /> : 'Z'}</div><div><p className="text-sm font-bold text-slate-900">{brand}</p><p className="text-xs text-slate-500">Ломбард ERP</p></div></div>;
+  const normalized = normalizeSiteConfig(config || {});
+  const brand = normalized.brandName || 'Zentro Prime';
+  if (normalized.logoUrl) {
+    const sourceWidth = Number(normalized.theme.logoWidth || 260);
+    const width = Math.min(174, sourceWidth);
+    const ratio = width / sourceWidth;
+    const style = {
+      '--zp-logo-width': `${width}px`,
+      '--zp-logo-height': `${Math.min(50, Number(normalized.theme.logoHeight || 52) * ratio)}px`,
+      '--zp-logo-zoom': Number(normalized.theme.logoZoom || 1),
+      '--zp-logo-x': `${Number(normalized.theme.logoOffsetX || 0) * ratio}px`,
+      '--zp-logo-y': `${Number(normalized.theme.logoOffsetY || 0) * ratio}px`,
+    };
+    return <div className="z-brand has-wordmark" style={style}><span className="zp-brand-image-wrap"><img className="zp-logo-img" src={normalized.logoUrl} alt={brand} /></span><p className="text-xs text-slate-500">Ломбард ERP</p></div>;
+  }
+  return <div className="z-brand"><div className="z-brand-icon">Z</div><div><p className="text-sm font-bold text-slate-900">{brand}</p><p className="text-xs text-slate-500">Ломбард ERP</p></div></div>;
 }
 
 export default function Shell({ user, onLogout }) {
