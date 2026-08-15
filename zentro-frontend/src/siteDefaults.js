@@ -97,6 +97,8 @@ export const DEFAULT_THEME = {
   logoHeight: 52,
   heroOverlay: 68,
   heroPosition: 'center',
+  heroGallerySeconds: 5.6,
+  flowGallerySeconds: 3.2,
 };
 
 export const DEFAULT_SECTION_ORDER = ['hero', 'trust', 'products', 'flow', 'process', 'apply'];
@@ -138,6 +140,13 @@ export function normalizeImageGallery(images, fallback = '') {
     .slice(0, 5);
 }
 
+export function normalizeGallerySeconds(value, fallback = 5) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds)) return fallback;
+  return Math.min(30, Math.max(2, Math.round(seconds * 10) / 10));
+}
+
 export function normalizeField(field, index = 0) {
   if (typeof field === 'string') return { ...(FIELD_LIBRARY[field] || { id: field, label: field, placeholder: field, type: 'text' }) };
   const id = field?.id || `field-${index}`;
@@ -157,16 +166,18 @@ export function normalizeSiteConfig(raw = {}) {
         flowTitle: product.flowTitle || fallback.flowTitle || product.name,
         image: images[0],
         images,
+        gallerySeconds: normalizeGallerySeconds(product.gallerySeconds, 4.3 + index * 0.4),
       };
     })
-    : FALLBACK_PRODUCTS.map(product => ({
+    : FALLBACK_PRODUCTS.map((product, index) => ({
       ...product,
       images: normalizeImageGallery([], product.image),
+      gallerySeconds: normalizeGallerySeconds(null, 4.3 + index * 0.4),
     }));
   const customSections = (Array.isArray(raw.customSections) ? raw.customSections : []).map(section => {
     if (section.type !== 'media') return section;
     const images = normalizeImageGallery(section.images, section.image || heroImage);
-    return { ...section, image: images[0], images };
+    return { ...section, image: images[0], images, gallerySeconds: normalizeGallerySeconds(section.gallerySeconds, 5) };
   });
   const validOrder = Array.isArray(raw.sectionOrder) && raw.sectionOrder.length ? raw.sectionOrder : DEFAULT_SECTION_ORDER;
   const sectionOrder = [...validOrder];
@@ -191,7 +202,12 @@ export function normalizeSiteConfig(raw = {}) {
       trustItems: raw.siteContent?.trustItems?.length ? raw.siteContent.trustItems : DEFAULT_SITE_CONTENT.trustItems,
       processSteps: raw.siteContent?.processSteps?.length ? raw.siteContent.processSteps : DEFAULT_SITE_CONTENT.processSteps,
     },
-    theme: { ...DEFAULT_THEME, ...(raw.theme || {}) },
+    theme: {
+      ...DEFAULT_THEME,
+      ...(raw.theme || {}),
+      heroGallerySeconds: normalizeGallerySeconds(raw.theme?.heroGallerySeconds, DEFAULT_THEME.heroGallerySeconds),
+      flowGallerySeconds: normalizeGallerySeconds(raw.theme?.flowGallerySeconds, DEFAULT_THEME.flowGallerySeconds),
+    },
     sectionOrder,
     sectionStyles: { ...DEFAULT_SECTION_STYLES, ...(raw.sectionStyles || {}) },
     elementStyles: raw.elementStyles || {},
