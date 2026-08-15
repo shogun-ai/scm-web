@@ -154,7 +154,7 @@ function RotatingGallery({ images, alt, className = '', interval = 5200, positio
   }, [gallery.length, galleryKey]);
 
   useEffect(() => {
-    if (gallery.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+    if (gallery.length < 2) return undefined;
     const timer = window.setInterval(() => setActiveIndex(current => (current + 1) % gallery.length), interval);
     return () => window.clearInterval(timer);
   }, [gallery.length, galleryKey, interval]);
