@@ -142,6 +142,30 @@ function ImageTarget({ path, label, editor, selection, onSelect }) {
   );
 }
 
+function RotatingGallery({ images, alt, className = '', interval = 5200, position = 'center' }) {
+  const gallery = useMemo(() => [...new Set((Array.isArray(images) ? images : [])
+    .map(image => (typeof image === 'string' ? image.trim() : ''))
+    .filter(Boolean))].slice(0, 5), [images]);
+  const galleryKey = gallery.join('\u001f');
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    setActiveIndex(current => (gallery.length ? current % gallery.length : 0));
+  }, [gallery.length, galleryKey]);
+
+  useEffect(() => {
+    if (gallery.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+    const timer = window.setInterval(() => setActiveIndex(current => (current + 1) % gallery.length), interval);
+    return () => window.clearInterval(timer);
+  }, [gallery.length, galleryKey, interval]);
+
+  if (!gallery.length) return null;
+  return <div className={`zp-visual-gallery ${className}`}>
+    {gallery.map((src, index) => <img key={`${src}-${index}`} className={index === activeIndex ? 'is-active' : ''} src={src} alt={index === activeIndex ? alt : ''} aria-hidden={index !== activeIndex} style={{ objectPosition: position }} />)}
+    {gallery.length > 1 && <span className="zp-gallery-progress" aria-hidden="true">{gallery.map((_, index) => <i key={index} className={index === activeIndex ? 'is-active' : ''} />)}</span>}
+  </div>;
+}
+
 function SectionFrame({ id, config, editor, selection, onSelect, onChange, onMoveSection, className = '', style = {}, children }) {
   const sectionSettings = config.sectionStyles?.[id] || {};
   const selected = editor && selection?.kind === 'section' && selection.id === id;
@@ -315,8 +339,8 @@ function CustomSection({ section, index, commonProps }) {
   const { config, editor, selection, onSelect, onChange } = commonProps;
   if (section.type === 'media') {
     return <SectionFrame id={section.id} className="zp-custom zp-custom-media" {...commonProps}>
-      <img src={section.image || config.heroImage} alt={section.title || 'Zentro'} />
-      <ImageTarget path={`${prefix}.image`} label="Зураг" editor={editor} selection={selection} onSelect={onSelect} />
+      <RotatingGallery images={section.images} alt={section.title || 'Zentro'} interval={5000 + index * 350} />
+      <ImageTarget path={`${prefix}.image`} label="Зургууд" editor={editor} selection={selection} onSelect={onSelect} />
       <div className="zp-custom-caption"><EditableText as="p" path={`${prefix}.kicker`} value={section.kicker || 'Онцлох мэдээлэл'} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} className="zp-kicker" /><EditableText as="h2" path={`${prefix}.title`} value={section.title || 'Шинэ зурагт хэсэг'} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /></div>
     </SectionFrame>;
   }
@@ -395,13 +419,11 @@ export default function SitePage({
       key="hero"
       id="hero"
       className="zp-hero"
-      style={{
-        backgroundImage: `linear-gradient(90deg, rgba(11,13,11,${Number(config.theme.heroOverlay || 68) / 100}) 0%, rgba(11,13,11,.28) 70%, rgba(11,13,11,.12) 100%), url(${config.heroImage})`,
-        backgroundPosition: config.theme.heroPosition || 'center',
-      }}
       {...commonProps}
     >
-      <ImageTarget path="heroImage" label="Hero зураг" editor={editor} selection={selection} onSelect={onSelect} />
+      <RotatingGallery images={config.heroImages} alt={config.heroTitle} position={config.theme.heroPosition || 'center'} interval={5600} />
+      <div className="zp-hero-shade" style={{ background: `linear-gradient(90deg, rgba(11,13,11,${Number(config.theme.heroOverlay || 68) / 100}) 0%, rgba(11,13,11,.28) 70%, rgba(11,13,11,.12) 100%)` }} />
+      <ImageTarget path="heroImage" label="Hero зургууд" editor={editor} selection={selection} onSelect={onSelect} />
       <div className="zp-hero-inner">
         <EditableText as="p" path="siteContent.heroEyebrow" value={content.heroEyebrow} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} className="zp-kicker" />
         <EditableText as="h1" path="heroTitle" value={config.heroTitle} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} />
@@ -423,14 +445,16 @@ export default function SitePage({
           const Icon = PRODUCT_ICONS[index % PRODUCT_ICONS.length];
           const selected = editor && selection?.kind === 'product' && selection.index === index;
           return <article key={`${product.name}-${index}`} className={`zp-product ${selected ? 'is-selected' : ''}`} onClick={event => { if (!editor) return; event.stopPropagation(); onSelect?.({ kind: 'product', index, label: product.name }); }}>
-            <div className="zp-product-image"><img src={product.image} alt={product.name} /><span><Icon size={17} /></span><ImageTarget path={`products.${index}.image`} label="Зураг" editor={editor} selection={selection} onSelect={onSelect} /></div>
+            <div className="zp-product-image"><RotatingGallery images={product.images} alt={product.name} interval={4300 + index * 420} /><span><Icon size={17} /></span><ImageTarget path={`products.${index}.image`} label="Зургууд" editor={editor} selection={selection} onSelect={onSelect} /></div>
             <div className="zp-product-body"><span className="zp-product-number">0{index + 1}</span><EditableText as="h3" path={`products.${index}.name`} value={product.name} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="p" path={`products.${index}.description`} value={product.description} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><dl><div><EditableText as="dt" path="siteContent.productRateLabel" value={content.productRateLabel} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="dd" path={`products.${index}.rate`} value={product.rate} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /></div><div><EditableText as="dt" path="siteContent.productTermLabel" value={content.productTermLabel} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="dd" path={`products.${index}.term`} value={product.term} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /></div><div><EditableText as="dt" path="siteContent.productAmountLabel" value={content.productAmountLabel} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="dd" path={`products.${index}.amount`} value={product.amount} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /></div></dl></div>
           </article>;
         })}</div>
       </div>
     </SectionFrame>,
-    flow: () => <SectionFrame key="flow" id="flow" className="zp-flow" style={{ backgroundImage: `linear-gradient(90deg, rgba(12,14,12,.78), rgba(12,14,12,.12)), url(${active?.image || config.heroImage})` }} {...commonProps}>
-      <ImageTarget path={`products.${activeIndex}.image`} label="Арын зураг" editor={editor} selection={selection} onSelect={onSelect} />
+    flow: () => <SectionFrame key="flow" id="flow" className="zp-flow" {...commonProps}>
+      <RotatingGallery images={active?.images || config.heroImages} alt={active?.name || config.heroTitle} interval={3200} />
+      <div className="zp-flow-shade" />
+      <ImageTarget path={`products.${activeIndex}.image`} label="Арын зургууд" editor={editor} selection={selection} onSelect={onSelect} />
       <div className="zp-container zp-flow-inner" key={activeIndex}>
         <EditableText as="p" path="siteContent.flowEyebrow" value={content.flowEyebrow} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} className="zp-kicker" />
         <EditableText as="h2" path={`products.${activeIndex}.flowTitle`} value={active?.flowTitle || active?.name} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} />

@@ -25,7 +25,7 @@ import {
   Undo2,
   Upload,
 } from 'lucide-react';
-import { getAdminWebConfig, updateAdminWebConfig } from '../api';
+import { getAdminWebConfig, updateAdminWebConfig, uploadAdminWebImages } from '../api';
 import {
   DEFAULT_SECTION_ORDER,
   DEFAULT_SECTION_STYLES,
@@ -46,7 +46,7 @@ const PANEL_TABS = [
 const CUSTOM_SECTION_PRESETS = {
   editorial: { type: 'editorial', kicker: 'Онцлох мэдээлэл', title: 'Шинэ мэдээллийн хэсэг', body: 'Шинэ хэсгийн тайлбар текст.' },
   statement: { type: 'statement', kicker: 'Zentro Prime Capital', title: 'Том хэмжээний онцлох өгүүлбэр', body: '' },
-  media: { type: 'media', kicker: 'Онцлох мэдээлэл', title: 'Зурагт хэсгийн гарчиг', body: '', image: '' },
+  media: { type: 'media', kicker: 'Онцлох мэдээлэл', title: 'Зурагт хэсгийн гарчиг', body: '', image: '', images: [] },
 };
 
 function snapshot(value) {
@@ -59,6 +59,51 @@ function Field({ label, children, hint }) {
 
 function IconSegment({ value, onChange, options }) {
   return <div className="za-segment">{options.map(({ id, icon: Icon, label }) => <button type="button" key={id} className={value === id ? 'active' : ''} onClick={() => onChange(id)} title={label}><Icon size={15} /></button>)}</div>;
+}
+
+function galleryPathForImage(path) {
+  if (path === 'heroImage') return 'heroImages';
+  if (/^products\.\d+\.image$/.test(path || '')) return path.replace(/\.image$/, '.images');
+  if (/^customSections\.\d+\.image$/.test(path || '')) return path.replace(/\.image$/, '.images');
+  return '';
+}
+
+function GalleryManager({ images, uploading, onUpload, onChange }) {
+  const [url, setUrl] = useState('');
+  const gallery = Array.isArray(images) ? images.slice(0, 5) : [];
+  const move = (index, direction) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= gallery.length) return;
+    const next = [...gallery];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    onChange(next);
+  };
+  const addUrl = () => {
+    const value = url.trim();
+    if (!value || gallery.length >= 5) return;
+    try {
+      const parsed = new URL(value);
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Invalid protocol');
+    } catch {
+      window.alert('Зөв http эсвэл https зураг URL оруулна уу.');
+      return;
+    }
+    if (gallery.includes(value)) { setUrl(''); return; }
+    onChange([...gallery, value]);
+    setUrl('');
+  };
+
+  return <div className="za-gallery-manager">
+    <div className="za-gallery-heading"><div><b>Зургийн дараалал</b><span>Автоматаар солигдоно</span></div><strong>{gallery.length}/5</strong></div>
+    <div className="za-gallery-list">{gallery.map((image, index) => <article key={`${image}-${index}`}>
+      <img src={image} alt={`Зураг ${index + 1}`} />
+      <span>#{index + 1}</span>
+      <div className="za-inline-actions"><button type="button" onClick={() => move(index, -1)} disabled={index === 0} title="Дээш"><ChevronUp size={14} /></button><button type="button" onClick={() => move(index, 1)} disabled={index === gallery.length - 1} title="Доош"><ChevronDown size={14} /></button><button type="button" className="danger" onClick={() => onChange(gallery.filter((_, itemIndex) => itemIndex !== index))} disabled={gallery.length <= 1} title="Устгах"><Trash2 size={14} /></button></div>
+    </article>)}</div>
+    <label className="za-upload full" aria-disabled={uploading || gallery.length >= 5}>{uploading ? <LoaderCircle className="animate-spin" size={15} /> : <Upload size={15} />}{uploading ? 'Зураг байршуулж байна' : 'Зураг нэмэх'}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple disabled={uploading || gallery.length >= 5} onChange={async event => { const input = event.currentTarget; await onUpload(input.files); input.value = ''; }} /></label>
+    {gallery.length < 5 && <div className="za-gallery-url"><input value={url} onChange={event => setUrl(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addUrl(); } }} placeholder="https://... зураг URL" /><button type="button" onClick={addUrl} disabled={!url.trim()} title="URL нэмэх"><Plus size={15} /></button></div>}
+    <small>JPG, PNG, WEBP, GIF · зураг тус бүр 8MB хүртэл</small>
+  </div>;
 }
 
 function FormManager({ cfg, changePath, applyConfig }) {
@@ -129,6 +174,7 @@ export default function WebAdmin() {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [uploadingGallery, setUploadingGallery] = useState('');
   const [historyVersion, setHistoryVersion] = useState(0);
   const cfgRef = useRef(null);
   const pastRef = useRef([]);
@@ -242,6 +288,48 @@ export default function WebAdmin() {
     reader.readAsDataURL(file);
   };
 
+  const setGalleryImages = (legacyPath, galleryPath, values) => applyConfig(current => {
+    const images = [...new Set((Array.isArray(values) ? values : [])
+      .map(value => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean))]
+      .slice(0, 5);
+    if (!images.length) return current;
+    return setAtPath(setAtPath(current, galleryPath, images), legacyPath, images[0]);
+  });
+
+  const uploadGalleryImages = async (legacyPath, galleryPath, files) => {
+    const currentImages = getAtPath(cfgRef.current, galleryPath) || [];
+    const remaining = Math.max(0, 5 - currentImages.length);
+    if (!remaining) return;
+    const selected = Array.from(files || []);
+    const supported = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (selected.some(file => !supported.includes(file.type))) {
+      window.alert('JPG, PNG, WEBP эсвэл GIF зураг сонгоно уу.');
+      return;
+    }
+    if (selected.some(file => file.size > 8 * 1024 * 1024)) {
+      window.alert('Зураг тус бүр 8MB-аас бага байх хэрэгтэй.');
+      return;
+    }
+    const accepted = selected.slice(0, remaining);
+    if (!accepted.length) return;
+    if (selected.length > remaining) window.alert(`Энэ хэсэгт ${remaining} зураг нэмэх боломжтой. Эхний ${remaining} зургийг оруулна.`);
+    setUploadingGallery(galleryPath);
+    try {
+      const result = await uploadAdminWebImages(accepted);
+      const uploaded = (result.images || []).map(image => image.url).filter(Boolean);
+      applyConfig(current => {
+        const existing = getAtPath(current, galleryPath) || [];
+        const images = [...new Set([...existing, ...uploaded])].slice(0, 5);
+        return setAtPath(setAtPath(current, galleryPath, images), legacyPath, images[0]);
+      });
+    } catch (error) {
+      window.alert(error.response?.data?.message || 'Зураг upload хийхэд алдаа гарлаа.');
+    } finally {
+      setUploadingGallery('');
+    }
+  };
+
   const setElementStyle = (key, value) => applyConfig(current => ({
     ...current,
     elementStyles: {
@@ -253,6 +341,8 @@ export default function WebAdmin() {
   if (!cfg) return <div className="za-loading"><LoaderCircle className="animate-spin" size={20} /> Веб засварлагчийг нээж байна...</div>;
 
   const selectedText = selection?.path ? getAtPath(cfg, selection.path) : '';
+  const selectedGalleryPath = selection?.kind === 'image' ? galleryPathForImage(selection.path) : '';
+  const selectedGallery = selectedGalleryPath ? getAtPath(cfg, selectedGalleryPath) || [] : [];
   const selectedStyle = selection?.path ? cfg.elementStyles?.[selection.path] || {} : {};
   const selectedSection = selection?.kind === 'section' ? cfg.sectionStyles?.[selection.id] || {} : null;
   const selectedProduct = selection?.kind === 'product' ? cfg.products[selection.index] : null;
@@ -271,13 +361,18 @@ export default function WebAdmin() {
       <button type="button" className="za-secondary full" onClick={() => applyConfig(current => ({ ...current, elementStyles: Object.fromEntries(Object.entries(current.elementStyles).filter(([key]) => key !== selection.path)) }))}><RotateCcw size={14} /> Текстийн загвар сэргээх</button>
     </>;
 
+    if (selection?.kind === 'image' && selectedGalleryPath) return <>
+      <div className="za-inspector-title"><ImageIcon size={17} /><div><b>{selection.label || 'Зургууд'}</b><span>5 хүртэл зураг</span></div></div>
+      <GalleryManager images={selectedGallery} uploading={uploadingGallery === selectedGalleryPath} onUpload={files => uploadGalleryImages(selection.path, selectedGalleryPath, files)} onChange={images => setGalleryImages(selection.path, selectedGalleryPath, images)} />
+      {selection.path === 'heroImage' && <><Field label="Зургийн байрлал"><select value={cfg.theme.heroPosition} onChange={event => changePath('theme.heroPosition', event.target.value)}><option value="center">Төв</option><option value="left center">Зүүн</option><option value="right center">Баруун</option><option value="center top">Дээд</option><option value="center bottom">Доод</option></select></Field><Field label={`Dark overlay · ${cfg.theme.heroOverlay}%`}><input type="range" min="20" max="90" value={cfg.theme.heroOverlay} onChange={event => changePath('theme.heroOverlay', Number(event.target.value))} /></Field></>}
+    </>;
+
     if (selection?.kind === 'image') return <>
       <div className="za-inspector-title"><ImageIcon size={17} /><div><b>{selection.label || 'Зураг'}</b><span>Зураг солих</span></div></div>
       <div className="za-image-preview">{selectedText ? <img src={selectedText} alt="Preview" /> : <ImagePlus size={24} />}</div>
       <label className="za-upload full"><Upload size={15} /> Файлаас сонгох<input type="file" accept="image/*,.svg" onChange={event => uploadImage(selection.path, event.target.files?.[0])} /></label>
       <Field label="Зураг URL"><textarea rows={3} value={selectedText || ''} onChange={event => changePath(selection.path, event.target.value)} /></Field>
       {selection.path === 'logoUrl' && <><Field label={`Логоны өргөн · ${cfg.theme.logoWidth || 260}px`}><input type="range" min="80" max="520" step="5" value={cfg.theme.logoWidth || 260} onChange={event => changePath('theme.logoWidth', Number(event.target.value))} /></Field><Field label={`Логоны өндөр · ${cfg.theme.logoHeight || 52}px`}><input type="range" min="24" max="140" step="2" value={cfg.theme.logoHeight || 52} onChange={event => changePath('theme.logoHeight', Number(event.target.value))} /></Field></>}
-      {selection.path === 'heroImage' && <><Field label="Зургийн байрлал"><select value={cfg.theme.heroPosition} onChange={event => changePath('theme.heroPosition', event.target.value)}><option value="center">Төв</option><option value="left center">Зүүн</option><option value="right center">Баруун</option><option value="center top">Дээд</option><option value="center bottom">Доод</option></select></Field><Field label={`Dark overlay · ${cfg.theme.heroOverlay}%`}><input type="range" min="20" max="90" value={cfg.theme.heroOverlay} onChange={event => changePath('theme.heroOverlay', Number(event.target.value))} /></Field></>}
     </>;
 
     if (selection?.kind === 'section') {
@@ -297,7 +392,7 @@ export default function WebAdmin() {
       <Field label="Тайлбар"><textarea rows={4} value={selectedProduct.description || ''} onChange={event => changePath(`products.${selection.index}.description`, event.target.value)} /></Field>
       <div className="za-control-row"><Field label="Хүү"><input value={selectedProduct.rate || ''} onChange={event => changePath(`products.${selection.index}.rate`, event.target.value)} /></Field><Field label="Хугацаа"><input value={selectedProduct.term || ''} onChange={event => changePath(`products.${selection.index}.term`, event.target.value)} /></Field></div>
       <Field label="Зээлийн хэмжээ"><input value={selectedProduct.amount || ''} onChange={event => changePath(`products.${selection.index}.amount`, event.target.value)} /></Field>
-      <label className="za-upload full"><Upload size={15} /> Бүтээгдэхүүний зураг<input type="file" accept="image/*" onChange={event => uploadImage(`products.${selection.index}.image`, event.target.files?.[0])} /></label>
+      <GalleryManager images={selectedProduct.images} uploading={uploadingGallery === `products.${selection.index}.images`} onUpload={files => uploadGalleryImages(`products.${selection.index}.image`, `products.${selection.index}.images`, files)} onChange={images => setGalleryImages(`products.${selection.index}.image`, `products.${selection.index}.images`, images)} />
       <button type="button" className="za-danger full" disabled={cfg.products.length <= 1} onClick={() => applyConfig(current => ({ ...current, products: current.products.filter((_, index) => index !== selection.index) }))}><Trash2 size={14} /> Бүтээгдэхүүн устгах</button>
     </>;
 
@@ -321,7 +416,7 @@ export default function WebAdmin() {
       <aside className="za-block-rail"><div><b>Хэсгүүд</b></div><div className="za-section-list">{cfg.sectionOrder.map(id => {
         const custom = cfg.customSections.find(section => section.id === id);
         return <button type="button" key={id} className={selection?.kind === 'section' && selection.id === id ? 'active' : ''} onClick={() => { setSelection({ kind: 'section', id, label: custom?.title || SECTION_LABELS[id] || 'Нэмэлт хэсэг' }); document.querySelector(`.za-preview-frame [data-edit-section="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}><span>{custom?.title || SECTION_LABELS[id] || 'Нэмэлт хэсэг'}</span></button>;
-      })}</div><div className="za-add-block"><b>Хэсэг нэмэх</b><button type="button" onClick={() => addSection('editorial')}><Type size={15} /> Текст хэсэг</button><button type="button" onClick={() => addSection('statement')}><LayoutTemplate size={15} /> Том өгүүлбэр</button><button type="button" onClick={() => addSection('media')}><ImagePlus size={15} /> Зурагт хэсэг</button><button type="button" onClick={() => applyConfig(current => ({ ...current, products: [...current.products, { name: 'Шинэ зээлийн бүтээгдэхүүн', flowTitle: 'Шинэ боломжоо нээ', rate: 'Нөхцөл оруулах', term: 'Хугацаа оруулах', amount: 'Дүн оруулах', description: 'Бүтээгдэхүүний тайлбар', image: current.heroImage }] }))}><Plus size={15} /> Бүтээгдэхүүн</button></div></aside>
+      })}</div><div className="za-add-block"><b>Хэсэг нэмэх</b><button type="button" onClick={() => addSection('editorial')}><Type size={15} /> Текст хэсэг</button><button type="button" onClick={() => addSection('statement')}><LayoutTemplate size={15} /> Том өгүүлбэр</button><button type="button" onClick={() => addSection('media')}><ImagePlus size={15} /> Зурагт хэсэг</button><button type="button" onClick={() => applyConfig(current => ({ ...current, products: [...current.products, { name: 'Шинэ зээлийн бүтээгдэхүүн', flowTitle: 'Шинэ боломжоо нээ', rate: 'Нөхцөл оруулах', term: 'Хугацаа оруулах', amount: 'Дүн оруулах', description: 'Бүтээгдэхүүний тайлбар', image: current.heroImage, images: [current.heroImage] }] }))}><Plus size={15} /> Бүтээгдэхүүн</button></div></aside>
 
       <section className="za-preview-area"><div className="za-preview-toolbar"><div><span className={dirty ? 'is-dirty' : ''}>{dirty ? 'Хадгалаагүй өөрчлөлт' : 'Live-тэй ижил'}</span></div><IconSegment value={viewport} onChange={setViewport} options={[{ id: 'desktop', icon: Monitor, label: 'Desktop' }, { id: 'tablet', icon: Laptop, label: 'Tablet' }, { id: 'mobile', icon: Smartphone, label: 'Mobile' }]} /></div><div className={`za-preview-frame ${viewport}`}><SitePage rawConfig={cfg} editor viewport={viewport} selection={selection} onSelect={setSelection} onChange={changePath} onMoveSection={moveSection} /></div></section>
 

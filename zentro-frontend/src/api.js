@@ -110,6 +110,11 @@ export const getPublicConfig = () => axios.get(`${API}/api/zentro/public/config`
 export const submitPublicLoanRequest = (data) => axios.post(`${API}/api/zentro/public/loan-requests`, data).then(r => r.data);
 export const getAdminWebConfig = () => api.get('/api/zentro/admin/web-config').then(r => r.data);
 export const updateAdminWebConfig = (data) => api.put('/api/zentro/admin/web-config', data).then(r => r.data);
+export const uploadAdminWebImages = (files) => {
+  const body = new FormData();
+  Array.from(files || []).forEach(file => body.append('images', file));
+  return api.post('/api/zentro/admin/web-images', body).then(r => r.data);
+};
 export const getZentroLoanRequests = (params) => api.get('/api/zentro/admin/loan-requests', { params }).then(r => r.data);
 export const updateZentroLoanRequest = (id, data) => api.put(`/api/zentro/admin/loan-requests/${id}`, data).then(r => r.data);
 export const convertZentroLoanRequest = (id) => api.post(`/api/zentro/admin/loan-requests/${id}/convert-client`).then(r => r.data);

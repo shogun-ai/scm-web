@@ -130,6 +130,14 @@ export const DEFAULT_FORM_FLOW = [
   { id: 'loan', title: 'Зээлийн мэдээлэл', fields: ['productType', 'amount', 'termMonths', 'collateral'] },
 ];
 
+export function normalizeImageGallery(images, fallback = '') {
+  const source = Array.isArray(images) ? images : [];
+  return [...new Set([...source, fallback]
+    .map(image => (typeof image === 'string' ? image.trim() : ''))
+    .filter(Boolean))]
+    .slice(0, 5);
+}
+
 export function normalizeField(field, index = 0) {
   if (typeof field === 'string') return { ...(FIELD_LIBRARY[field] || { id: field, label: field, placeholder: field, type: 'text' }) };
   const id = field?.id || `field-${index}`;
@@ -137,18 +145,29 @@ export function normalizeField(field, index = 0) {
 }
 
 export function normalizeSiteConfig(raw = {}) {
+  const heroImages = normalizeImageGallery(raw.heroImages, raw.heroImage || FALLBACK_IMAGES[0]);
+  const heroImage = heroImages[0] || FALLBACK_IMAGES[0];
   const products = raw.products?.length
     ? raw.products.map((product, index) => {
       const fallback = FALLBACK_PRODUCTS[index % FALLBACK_PRODUCTS.length];
+      const images = normalizeImageGallery(product.images, product.image || product.imageUrl || fallback.image);
       return {
         ...fallback,
         ...product,
         flowTitle: product.flowTitle || fallback.flowTitle || product.name,
-        image: product.image || product.imageUrl || fallback.image,
+        image: images[0],
+        images,
       };
     })
-    : FALLBACK_PRODUCTS.map(product => ({ ...product }));
-  const customSections = Array.isArray(raw.customSections) ? raw.customSections : [];
+    : FALLBACK_PRODUCTS.map(product => ({
+      ...product,
+      images: normalizeImageGallery([], product.image),
+    }));
+  const customSections = (Array.isArray(raw.customSections) ? raw.customSections : []).map(section => {
+    if (section.type !== 'media') return section;
+    const images = normalizeImageGallery(section.images, section.image || heroImage);
+    return { ...section, image: images[0], images };
+  });
   const validOrder = Array.isArray(raw.sectionOrder) && raw.sectionOrder.length ? raw.sectionOrder : DEFAULT_SECTION_ORDER;
   const sectionOrder = [...validOrder];
   for (const id of DEFAULT_SECTION_ORDER) if (!sectionOrder.includes(id)) sectionOrder.push(id);
@@ -161,7 +180,8 @@ export function normalizeSiteConfig(raw = {}) {
     phone: raw.phone || '7599-1919',
     email: raw.email || 'info@zentrocapitalgroup.com',
     address: raw.address || 'Улаанбаатар хот',
-    heroImage: raw.heroImage || FALLBACK_IMAGES[0],
+    heroImage,
+    heroImages,
     heroTitle: raw.heroTitle || DEFAULT_SITE_CONTENT.heroTitle,
     heroText: raw.heroText || DEFAULT_SITE_CONTENT.heroText,
     products,

@@ -86,6 +86,7 @@ const ZentroWebConfigSchema = new mongoose.Schema({
   email: { type: String, default: 'info@zentrocapitalgroup.com' },
   address: { type: String, default: 'Улаанбаатар хот' },
   heroImage: { type: String, default: 'https://images.unsplash.com/photo-1542282088-fe8426682b8f?auto=format&fit=crop&w=1400&q=80' },
+  heroImages: { type: [String], default: [] },
   siteContent: { type: mongoose.Schema.Types.Mixed, default: {} },
   theme: { type: mongoose.Schema.Types.Mixed, default: {} },
   sectionOrder: {
@@ -202,6 +203,22 @@ const upload = multer({
         files: 20,
     },
 }).any();
+const zentroWebImageStorage = new CloudinaryStorage({
+    cloudinary,
+    params: {
+        folder: 'zentro_website',
+        resource_type: 'image',
+        access_mode: 'public',
+    },
+});
+const uploadZentroWebImages = multer({
+    storage: zentroWebImageStorage,
+    limits: { files: 5, fileSize: 8 * 1024 * 1024 },
+    fileFilter: (_req, file, callback) => {
+        const supported = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        callback(supported.includes(file.mimetype) ? null : new Error('JPG, PNG, WEBP эсвэл GIF зураг оруулна уу.'), supported.includes(file.mimetype));
+    },
+}).array('images', 5);
 const exposureDiskStorage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, exposureUploadsDir),
     filename: (_req, file, cb) => {
@@ -6730,9 +6747,23 @@ app.get('/api/zentro/admin/web-config', authenticateUser, async (req, res) => {
   catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+app.post('/api/zentro/admin/web-images', authenticateUser, requireAdmin, (req, res) => {
+  uploadZentroWebImages(req, res, async error => {
+    if (error) return res.status(400).json({ message: error.message || 'Зураг upload хийхэд алдаа гарлаа' });
+    if (!req.files?.length) return res.status(400).json({ message: 'Зураг сонгоно уу' });
+    try {
+      const images = req.files.map(file => ({ url: file.path, publicId: file.filename }));
+      await createLog(req.user, 'zentro_web_images_uploaded', `Uploaded ${images.length} website image(s)`);
+      return res.status(201).json({ images });
+    } catch (e) {
+      return res.status(500).json({ message: e.message });
+    }
+  });
+});
+
 app.put('/api/zentro/admin/web-config', authenticateUser, requireAdmin, async (req, res) => {
   try {
-    const allowed = ['brandName','tagline','logoUrl','heroTitle','heroText','phone','email','address','heroImage','siteContent','theme','sectionOrder','sectionStyles','elementStyles','customSections','webWidgets','products','formFlow'];
+    const allowed = ['brandName','tagline','logoUrl','heroTitle','heroText','phone','email','address','heroImage','heroImages','siteContent','theme','sectionOrder','sectionStyles','elementStyles','customSections','webWidgets','products','formFlow'];
     const update = {};
     for (const key of allowed) if (key in req.body) update[key] = req.body[key];
     const doc = await ZentroWebConfig.findOneAndUpdate({ key: 'public' }, { $set: update }, { new: true, upsert: true });
