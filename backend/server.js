@@ -6685,18 +6685,37 @@ app.get('/api/zentro/public/config', async (req, res) => {
   catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+const publicInteger = (value) => {
+  const normalized = String(value ?? '').replace(/[,\s]/g, '');
+  if (!normalized) return 0;
+  if (!/^[0-9]+$/.test(normalized)) return Number.NaN;
+  const number = Number(normalized);
+  return Number.isSafeInteger(number) ? number : Number.NaN;
+};
+
 app.post('/api/zentro/public/loan-requests', async (req, res) => {
   try {
     const body = req.body || {};
-    if (!body.name || !body.phone) return res.status(400).json({ message: 'Нэр, утас заавал оруулна уу' });
+    const name = String(body.name || '').trim().replace(/\s+/g, ' ');
+    const phone = String(body.phone || '').trim();
+    const register = String(body.register || '').trim().replace(/\s+/g, '').toUpperCase();
+    const amount = publicInteger(body.amount);
+    const termMonths = publicInteger(body.termMonths);
+
+    if (!name || !phone) return res.status(400).json({ message: 'Овог нэр болон 8 оронтой утасны дугаараа оруулна уу' });
+    if (!/^[А-Яа-яЁёӨөҮү]+(?:[ -][А-Яа-яЁёӨөҮү]+)*$/.test(name)) return res.status(400).json({ message: 'Овог, нэрийг зөвхөн Монгол кирилл үсгээр бичнэ үү' });
+    if (!/^[0-9]{8}$/.test(phone)) return res.status(400).json({ message: 'Утасны дугаар яг 8 оронтой байна' });
+    if (register && !/^[А-ЯЁӨҮ]{2}[0-9]{8}$/.test(register)) return res.status(400).json({ message: 'Регистрийн дугаарыг 2 Монгол кирилл үсэг, 8 цифрээр бичнэ үү' });
+    if (!Number.isFinite(amount) || !Number.isFinite(termMonths)) return res.status(400).json({ message: 'Дүн болон хугацааг зөвхөн цифрээр оруулна уу' });
+
     const request = await ZentroLoanRequest.create({
-      name: body.name,
-      phone: body.phone,
-      register: body.register,
+      name,
+      phone,
+      register,
       email: body.email,
       productType: body.productType,
-      amount: Number(body.amount) || 0,
-      termMonths: Number(body.termMonths) || 0,
+      amount,
+      termMonths,
       collateral: body.collateral,
       answers: body.answers || {},
       status: 'new',

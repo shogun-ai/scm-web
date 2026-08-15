@@ -29,6 +29,36 @@ const SECTION_LABELS = {
 
 const PRODUCT_ICONS = [CarFront, CarFront, Gem, ShieldCheck];
 const CORE_FIELDS = ['name', 'phone', 'register', 'email', 'productType', 'amount', 'termMonths', 'collateral', 'notes'];
+const MONGOLIAN_NAME_PATTERN = '[А-Яа-яЁёӨөҮү]+(?:(?: |-)[А-Яа-яЁёӨөҮү]+)*';
+const MONGOLIAN_REGISTER_PATTERN = '[А-ЯЁӨҮ]{2}[0-9]{8}';
+
+function digitsOnly(value, limit) {
+  const digits = String(value ?? '').replace(/[^0-9]/g, '');
+  return typeof limit === 'number' ? digits.slice(0, limit) : digits;
+}
+
+function integerDigits(value) {
+  return digitsOnly(value).replace(/^0+(?=[0-9])/, '');
+}
+
+function formatIntegerInput(value) {
+  const digits = integerDigits(value);
+  return digits.replace(/\B(?=([0-9]{3})+(?![0-9]))/g, ',');
+}
+
+function mongolianNameOnly(value) {
+  return String(value ?? '')
+    .replace(/[^А-Яа-яЁёӨөҮү\s-]/g, '')
+    .replace(/^[\s-]+/, '')
+    .replace(/\s{2,}/g, ' ');
+}
+
+function formatRegisterInput(value) {
+  const source = String(value ?? '').toUpperCase();
+  const letters = (source.match(/[А-ЯЁӨҮ]/g) || []).join('').slice(0, 2);
+  const numbers = letters.length === 2 ? digitsOnly(source, 8) : '';
+  return `${letters}${numbers}`;
+}
 
 function styleFor(config, path) {
   const value = config.elementStyles?.[path] || {};
@@ -182,11 +212,12 @@ function Brand({ config, editor, selection, onSelect, onChange }) {
 function DynamicField({ field, stepIndex, fieldIndex, products, value, onValue, editor, onSelect }) {
   const definition = normalizeField(field, fieldIndex);
   const fieldPath = `formFlow.${stepIndex}.fields.${fieldIndex}`;
+  const inputValue = typeof value === 'string' || typeof value === 'number' ? value : '';
   const common = {
     id: `zp-${definition.id}-${stepIndex}-${fieldIndex}`,
     required: !editor && Boolean(definition.required),
     disabled: editor,
-    value: typeof value === 'string' || typeof value === 'number' ? value : '',
+    value: inputValue,
     onChange: event => onValue(definition.id, event.target.value),
   };
   const selectField = event => {
@@ -224,6 +255,51 @@ function DynamicField({ field, stepIndex, fieldIndex, products, value, onValue, 
         reader.readAsDataURL(file);
       }}
     /><span>{value?.name || 'Файл сонгох'}</span><ArrowDown size={15} /></label>;
+  } else if (definition.id === 'phone') {
+    control = <input
+      {...common}
+      type="tel"
+      inputMode="numeric"
+      autoComplete="tel"
+      minLength={8}
+      maxLength={8}
+      pattern="[0-9]{8}"
+      title="Утасны дугаар яг 8 оронтой байна"
+      placeholder={definition.placeholder || definition.label || ''}
+      onChange={event => onValue(definition.id, digitsOnly(event.target.value, 8))}
+    />;
+  } else if (definition.id === 'name') {
+    control = <input
+      {...common}
+      type="text"
+      autoComplete="name"
+      maxLength={100}
+      pattern={MONGOLIAN_NAME_PATTERN}
+      title="Овог, нэрийг зөвхөн Монгол кирилл үсгээр бичнэ үү"
+      placeholder={definition.placeholder || definition.label || ''}
+      onChange={event => onValue(definition.id, mongolianNameOnly(event.target.value))}
+    />;
+  } else if (definition.id === 'register') {
+    control = <input
+      {...common}
+      type="text"
+      autoCapitalize="characters"
+      maxLength={10}
+      pattern={MONGOLIAN_REGISTER_PATTERN}
+      title="Регистрийн дугаарыг 2 Монгол кирилл үсэг, 8 цифрээр бичнэ үү"
+      placeholder={definition.placeholder || definition.label || ''}
+      onChange={event => onValue(definition.id, formatRegisterInput(event.target.value))}
+    />;
+  } else if (definition.type === 'number') {
+    control = <input
+      {...common}
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]{1,3}(,[0-9]{3})*"
+      value={formatIntegerInput(inputValue)}
+      placeholder={definition.placeholder || definition.label || ''}
+      onChange={event => onValue(definition.id, integerDigits(event.target.value))}
+    />;
   } else {
     control = <input {...common} type={definition.type || 'text'} inputMode={definition.type === 'number' ? 'numeric' : undefined} placeholder={definition.placeholder || definition.label || ''} />;
   }
@@ -273,6 +349,7 @@ export default function SitePage({
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [sent, setSent] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const themeStyle = {
     '--zp-ink': config.theme.ink,
     '--zp-paper': config.theme.paper,
@@ -296,12 +373,15 @@ export default function SitePage({
     if (editor || !onSubmit) return;
     setSaving(true);
     setSent(false);
+    setSubmitError('');
     try {
       const answers = {};
       Object.entries(form).forEach(([key, value]) => { if (!CORE_FIELDS.includes(key)) answers[key] = value; });
       await onSubmit({ ...form, answers: { ...answers, source: 'zentrocapitalgroup.com' } });
       setForm({});
       setSent(true);
+    } catch (error) {
+      setSubmitError(error.response?.data?.message || 'Хүсэлт илгээх үед алдаа гарлаа. Дахин оролдоно уу.');
     } finally {
       setSaving(false);
     }
@@ -369,6 +449,7 @@ export default function SitePage({
         <div className="zp-apply-copy"><EditableText as="p" path="siteContent.formEyebrow" value={content.formEyebrow} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} className="zp-kicker" /><EditableText as="h2" path="siteContent.formTitle" value={content.formTitle} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="p" path="siteContent.formText" value={content.formText} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} className="zp-apply-description" /><div className="zp-contact-inline"><Phone size={17} /><span>{config.phone}</span></div></div>
         <form className="zp-form" onSubmit={submit}>
           {sent && <p className="zp-success"><Check size={17} />{content.formSuccess}</p>}
+          {submitError && <p className="zp-form-error" role="alert">{submitError}</p>}
           {config.formFlow.map((step, stepIndex) => <fieldset key={step.id || stepIndex}><EditableText as="legend" path={`formFlow.${stepIndex}.title`} value={step.title || `Алхам ${stepIndex + 1}`} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><div className="zp-field-grid">{(step.fields || []).map((field, fieldIndex) => {
             const definition = normalizeField(field, fieldIndex);
             return <DynamicField key={`${definition.id}-${fieldIndex}`} field={field} stepIndex={stepIndex} fieldIndex={fieldIndex} products={products} value={form[definition.id]} onValue={setValue} editor={editor} onSelect={onSelect} />;
