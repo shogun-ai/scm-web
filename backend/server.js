@@ -81,15 +81,17 @@ const ZentroWebConfigSchema = new mongoose.Schema({
   brandName: { type: String, default: 'Zentro Prime Capital' },
   tagline: { type: String, default: 'Машинаа унаад, барьцаалаад шуурхай зээлээ ав' },
   logoUrl: { type: String, default: '' },
+  faviconUrl: { type: String, default: '' },
   heroTitle: { type: String, default: 'Машинаа байршуулахгүй, орлого нотлохгүй шуурхай зээл' },
   heroText: { type: String, default: 'Ломбардны зөвшөөрөлтэй Zentro Prime Capital нь автомашин барьцаалсан шуурхай зээл болон бусад барьцаат, барьцаагүй зээлийн шийдлийг санал болгоно.' },
   phone: { type: String, default: '7599-1919' },
   email: { type: String, default: 'info@zentrocapitalgroup.com' },
   address: { type: String, default: 'Улаанбаатар хот' },
-  heroImage: { type: String, default: 'https://images.unsplash.com/photo-1542282088-fe8426682b8f?auto=format&fit=crop&w=1400&q=80' },
+  heroImage: { type: String, default: '' },
   heroImages: { type: [String], default: [] },
   siteContent: { type: mongoose.Schema.Types.Mixed, default: {} },
   social: { type: mongoose.Schema.Types.Mixed, default: {} },
+  seo: { type: mongoose.Schema.Types.Mixed, default: {} },
   theme: { type: mongoose.Schema.Types.Mixed, default: {} },
   sectionOrder: {
     type: [String],
@@ -6716,8 +6718,25 @@ async function getZentroWebConfigDoc() {
   return { ...doc, webWidgets: Array.isArray(doc.webWidgets) ? doc.webWidgets : [] };
 }
 
+function compactPublicZentroImages(doc) {
+  const config = { ...doc };
+  if (Array.isArray(config.heroImages) && config.heroImages.length) config.heroImage = '';
+  config.products = Array.isArray(config.products) ? config.products.map(product => {
+    if (!Array.isArray(product.images) || !product.images.length) return product;
+    return { ...product, image: '', imageUrl: '' };
+  }) : config.products;
+  config.customSections = Array.isArray(config.customSections) ? config.customSections.map(section => {
+    if (!Array.isArray(section.images) || !section.images.length) return section;
+    return { ...section, image: '' };
+  }) : config.customSections;
+  return config;
+}
+
 app.get('/api/zentro/public/config', async (req, res) => {
-  try { res.json(await getZentroWebConfigDoc()); }
+  try {
+    res.set('Cache-Control', 'public, max-age=0, s-maxage=60, stale-while-revalidate=300');
+    res.json(compactPublicZentroImages(await getZentroWebConfigDoc()));
+  }
   catch (e) { res.status(500).json({ message: e.message }); }
 });
 
@@ -6783,7 +6802,7 @@ app.post('/api/zentro/admin/web-images', authenticateUser, requireAdmin, (req, r
 
 app.put('/api/zentro/admin/web-config', authenticateUser, requireAdmin, async (req, res) => {
   try {
-    const allowed = ['brandName','tagline','logoUrl','heroTitle','heroText','phone','email','address','heroImage','heroImages','siteContent','social','theme','sectionOrder','sectionStyles','elementStyles','customSections','webWidgets','products','formFlow'];
+    const allowed = ['brandName','tagline','logoUrl','faviconUrl','heroTitle','heroText','phone','email','address','heroImage','heroImages','siteContent','social','seo','theme','sectionOrder','sectionStyles','elementStyles','customSections','webWidgets','products','formFlow'];
     const update = {};
     for (const key of allowed) if (key in req.body) update[key] = req.body[key];
     const doc = await ZentroWebConfig.findOneAndUpdate({ key: 'public' }, { $set: update }, { new: true, upsert: true });
@@ -6843,7 +6862,7 @@ app.post('/api/zentro/admin/loan-requests/:id/convert-client', authenticateUser,
     res.json({ request, client });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
-// ZENTRO — Машины лизинг систем
+// ZENTRO — Шуурхай зээлийн систем
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── Хуваарь тооцоо (Annuity / reducing balance) ────────────────────────────

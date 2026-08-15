@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Shell from './pages/Shell';
 import PublicSite from './pages/PublicSite';
 import { API } from './api';
+import { applyPrivateMetadata } from './siteMetadata';
 
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('zentro_token'));
@@ -43,6 +44,11 @@ export default function App() {
     window.addEventListener('auth:expired', handleLogout);
     return () => window.removeEventListener('auth:expired', handleLogout);
   }, [handleLogout]);
+
+  useEffect(() => {
+    if (path.startsWith('/admin')) applyPrivateMetadata('Админ удирдлага');
+    else if (path === '/login') applyPrivateMetadata('Нэвтрэх');
+  }, [path]);
 
   if (path === '/login') return <Login onLogin={handleLogin} onBack={() => go('/')} />;
   if (token && user && path.startsWith('/admin')) return <Shell user={user} onLogout={handleLogout} />;

@@ -175,7 +175,7 @@ function RotatingGallery({ images, alt, className = '', interval = 5200, positio
 
   if (!gallery.length) return null;
   return <div className={`zp-visual-gallery ${className}`}>
-    {gallery.map((src, index) => <img key={`${src}-${index}`} className={index === activeIndex ? 'is-active' : ''} src={src} alt={index === activeIndex ? alt : ''} aria-hidden={index !== activeIndex} style={{ objectPosition: position }} />)}
+    {gallery.map((src, index) => <img key={`${src}-${index}`} className={index === activeIndex ? 'is-active' : ''} src={src} alt={index === activeIndex ? alt : ''} aria-hidden={index !== activeIndex} loading={index === 0 ? 'eager' : 'lazy'} fetchPriority={index === 0 ? 'high' : 'auto'} decoding="async" style={{ objectPosition: position }} />)}
     {gallery.length > 1 && <span className="zp-gallery-progress" aria-hidden="true">{gallery.map((_, index) => <i key={index} className={index === activeIndex ? 'is-active' : ''} />)}</span>}
   </div>;
 }

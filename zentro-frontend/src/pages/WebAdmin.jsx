@@ -20,6 +20,7 @@ import {
   RotateCcw,
   Save,
   ScanLine,
+  Search,
   Settings2,
   Smartphone,
   Trash2,
@@ -44,6 +45,7 @@ const PANEL_TABS = [
   { id: 'page', label: 'Хуудас', icon: LayoutTemplate },
   { id: 'form', label: 'Хүсэлтийн форм', icon: FileQuestion },
   { id: 'settings', label: 'Брэнд тохиргоо', icon: Settings2 },
+  { id: 'seo', label: 'Google ба browser', icon: Search },
 ];
 
 const CUSTOM_SECTION_PRESETS = {
@@ -268,13 +270,13 @@ function FormManager({ cfg, changePath, applyConfig }) {
   </div>;
 }
 
-function SettingsPanel({ cfg, changePath, uploadImage, applyConfig, onAutoFitLogo, onResetLogo }) {
+function SettingsPanel({ cfg, changePath, uploadAsset, assetUploading, applyConfig, onAutoFitLogo, onResetLogo }) {
   const [logoMode, setLogoMode] = useState('mobile');
   return <div className="za-settings-page">
     <div className="za-settings-section"><div><h2>Лого ба байгууллага</h2></div><div className="za-settings-fields">
       <IconSegment value={logoMode} onChange={setLogoMode} options={[{ id: 'desktop', icon: Monitor, label: 'Desktop' }, { id: 'mobile', icon: Smartphone, label: 'Mobile' }]} />
       <LogoHeaderPreview cfg={cfg} mode={logoMode} />
-      <div className="za-logo-setting"><label className="za-upload"><Upload size={15} /> Лого сонгох<input type="file" accept="image/*,.svg" onChange={event => uploadImage('logoUrl', event.target.files?.[0])} /></label>{cfg.logoUrl && <button type="button" className="za-text-danger" onClick={() => changePath('logoUrl', '')}>Арилгах</button>}</div>
+      <div className="za-logo-setting"><label className="za-upload" aria-disabled={assetUploading === 'logoUrl'}>{assetUploading === 'logoUrl' ? <LoaderCircle className="animate-spin" size={15} /> : <Upload size={15} />} Лого сонгох<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={Boolean(assetUploading)} onChange={event => uploadAsset('logoUrl', event.target.files?.[0])} /></label>{cfg.logoUrl && <button type="button" className="za-text-danger" onClick={() => changePath('logoUrl', '')}>Арилгах</button>}</div>
       <LogoAppearanceControls cfg={cfg} mode={logoMode} changePath={changePath} onAutoFit={onAutoFitLogo} onReset={onResetLogo} />
       <Field label="Брэнд нэр"><input value={cfg.brandName} onChange={event => changePath('brandName', event.target.value)} /></Field>
       <Field label="Уриа"><input value={cfg.tagline} onChange={event => changePath('tagline', event.target.value)} /></Field>
@@ -288,6 +290,34 @@ function SettingsPanel({ cfg, changePath, uploadImage, applyConfig, onAutoFitLog
   </div>;
 }
 
+function SeoPanel({ cfg, changePath, uploadAsset, assetUploading }) {
+  const favicon = cfg.faviconUrl || '/favicon.svg';
+  const seo = cfg.seo;
+  return <div className="za-settings-page za-seo-page">
+    <div className="za-settings-section"><div><h2>Browser icon</h2><p>Browser tab болон Google хайлтын үр дүнд харагдах квадрат тэмдэг.</p></div><div className="za-settings-fields">
+      <div className="za-browser-preview"><img src={favicon} alt="" /><span>{seo.title}</span><i>×</i></div>
+      <div className="za-logo-setting"><label className="za-upload" aria-disabled={assetUploading === 'faviconUrl'}>{assetUploading === 'faviconUrl' ? <LoaderCircle className="animate-spin" size={15} /> : <Upload size={15} />} Icon оруулах<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(assetUploading)} onChange={event => uploadAsset('faviconUrl', event.target.files?.[0], { square: true })} /></label>{cfg.faviconUrl && <button type="button" className="za-text-danger" onClick={() => changePath('faviconUrl', '')}>Default Z icon ашиглах</button>}</div>
+      <small className="za-field-note">PNG эсвэл WEBP, 1:1 харьцаатай, 48×48-аас том зураг сонгоно.</small>
+    </div></div>
+
+    <div className="za-settings-section"><div><h2>Google харагдац</h2><p>Хайлтын үр дүнд харагдах нэр болон товч тайлбар.</p></div><div className="za-settings-fields">
+      <div className="za-search-preview"><span>{seo.siteName}</span><small>https://zentrocapitalgroup.com</small><b>{seo.title}</b><p>{seo.description}</p></div>
+      <Field label={`Site нэр · ${String(seo.siteName || '').length}/40`}><input value={seo.siteName} maxLength={40} onChange={event => changePath('seo.siteName', event.target.value)} /></Field>
+      <Field label={`Page title · ${String(seo.title || '').length}/65`} hint="Нэг гарчигт ижил үгийг олон давтахгүй."><input value={seo.title} maxLength={65} onChange={event => changePath('seo.title', event.target.value)} /></Field>
+      <Field label={`Meta description · ${String(seo.description || '').length}/170`}><textarea rows={4} value={seo.description} maxLength={170} onChange={event => changePath('seo.description', event.target.value)} /></Field>
+      <Field label="Монгол, Англи хайлтын хэллэг" hint="Таслалаар тусгаарлана. Үндсэн үйлчилгээтэй бодитоор холбоотой үг хэрэглэнэ."><textarea rows={4} value={seo.keywords} onChange={event => changePath('seo.keywords', event.target.value)} /></Field>
+      <Field label="Canonical URL"><input type="url" value={seo.canonicalUrl} onChange={event => changePath('seo.canonicalUrl', event.target.value)} /></Field>
+    </div></div>
+
+    <div className="za-settings-section"><div><h2>Social preview</h2><p>Facebook, Messenger болон бусад сувагт веб линк хуваалцах үеийн мэдээлэл.</p></div><div className="za-settings-fields">
+      {seo.socialImageUrl && <div className="za-social-image-preview"><img src={seo.socialImageUrl} alt="Social preview" /></div>}
+      <div className="za-logo-setting"><label className="za-upload" aria-disabled={assetUploading === 'seo.socialImageUrl'}>{assetUploading === 'seo.socialImageUrl' ? <LoaderCircle className="animate-spin" size={15} /> : <ImagePlus size={15} />} Preview зураг<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(assetUploading)} onChange={event => uploadAsset('seo.socialImageUrl', event.target.files?.[0])} /></label>{seo.socialImageUrl && <button type="button" className="za-text-danger" onClick={() => changePath('seo.socialImageUrl', '')}>Арилгах</button>}</div>
+      <Field label="Social title"><input value={seo.socialTitle} onChange={event => changePath('seo.socialTitle', event.target.value)} /></Field>
+      <Field label="Social description"><textarea rows={3} value={seo.socialDescription} onChange={event => changePath('seo.socialDescription', event.target.value)} /></Field>
+    </div></div>
+  </div>;
+}
+
 export default function WebAdmin() {
   const [cfg, setCfg] = useState(null);
   const [tab, setTab] = useState('page');
@@ -297,6 +327,7 @@ export default function WebAdmin() {
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState('');
+  const [assetUploading, setAssetUploading] = useState('');
   const [historyVersion, setHistoryVersion] = useState(0);
   const cfgRef = useRef(null);
   const pastRef = useRef([]);
@@ -402,12 +433,38 @@ export default function WebAdmin() {
 
   const removeCustomSection = id => applyConfig(current => ({ ...current, customSections: current.customSections.filter(section => section.id !== id), sectionOrder: current.sectionOrder.filter(sectionId => sectionId !== id), sectionStyles: Object.fromEntries(Object.entries(current.sectionStyles).filter(([key]) => key !== id)) }));
 
-  const uploadImage = (path, file) => {
+  const uploadAsset = async (path, file, { square = false } = {}) => {
     if (!file) return;
-    if (file.size > 1800000) { alert('Зураг 1.8MB-аас бага байх хэрэгтэй.'); return; }
-    const reader = new FileReader();
-    reader.onload = () => changePath(path, reader.result);
-    reader.readAsDataURL(file);
+    const supported = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!supported.includes(file.type)) { window.alert('JPG, PNG, WEBP эсвэл GIF зураг сонгоно уу.'); return; }
+    if (file.size > 8 * 1024 * 1024) { window.alert('Зураг 8MB-аас бага байх хэрэгтэй.'); return; }
+    if (square) {
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        const image = await loadLogoImage(objectUrl);
+        const ratio = image.naturalWidth / image.naturalHeight;
+        if (Math.abs(1 - ratio) > .04 || image.naturalWidth < 48 || image.naturalHeight < 48) {
+          window.alert('Icon 1:1 квадрат харьцаатай, хамгийн багадаа 48×48 хэмжээтэй байна.');
+          return;
+        }
+      } catch {
+        window.alert('Icon файлыг уншиж чадсангүй. Өөр JPG, PNG, WEBP эсвэл GIF зураг сонгоно уу.');
+        return;
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+    setAssetUploading(path);
+    try {
+      const result = await uploadAdminWebImages([file]);
+      const imageUrl = result.images?.[0]?.url;
+      if (!imageUrl) throw new Error('Upload URL ирсэнгүй.');
+      changePath(path, imageUrl);
+    } catch (error) {
+      window.alert(error.response?.data?.message || error.message || 'Зураг upload хийхэд алдаа гарлаа.');
+    } finally {
+      setAssetUploading('');
+    }
   };
 
   const updateLogoAppearance = (mode, values) => applyConfig(current => {
@@ -527,7 +584,7 @@ export default function WebAdmin() {
       return <>
         <div className="za-inspector-title"><ImageIcon size={17} /><div><b>Лого</b><span>{logoMode === 'mobile' ? 'Mobile харагдац' : 'Desktop харагдац'}</span></div></div>
         <LogoHeaderPreview cfg={cfg} mode={logoMode} compact />
-        <label className="za-upload full"><Upload size={15} /> Лого солих<input type="file" accept="image/*,.svg" onChange={event => uploadImage('logoUrl', event.target.files?.[0])} /></label>
+        <label className="za-upload full" aria-disabled={assetUploading === 'logoUrl'}>{assetUploading === 'logoUrl' ? <LoaderCircle className="animate-spin" size={15} /> : <Upload size={15} />} {assetUploading === 'logoUrl' ? 'Лого байршуулж байна' : 'Лого солих'}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={Boolean(assetUploading)} onChange={event => uploadAsset('logoUrl', event.target.files?.[0])} /></label>
         <LogoAppearanceControls cfg={cfg} mode={logoMode} changePath={changePath} onAutoFit={autoFitLogo} onReset={resetLogoAppearance} />
         <Field label="Лого URL"><textarea rows={3} value={selectedText || ''} onChange={event => changePath('logoUrl', event.target.value)} /></Field>
       </>;
@@ -536,7 +593,7 @@ export default function WebAdmin() {
     if (selection?.kind === 'image') return <>
       <div className="za-inspector-title"><ImageIcon size={17} /><div><b>{selection.label || 'Зураг'}</b><span>Зураг солих</span></div></div>
       <div className="za-image-preview">{selectedText ? <img src={selectedText} alt="Preview" /> : <ImagePlus size={24} />}</div>
-      <label className="za-upload full"><Upload size={15} /> Файлаас сонгох<input type="file" accept="image/*,.svg" onChange={event => uploadImage(selection.path, event.target.files?.[0])} /></label>
+      <label className="za-upload full" aria-disabled={assetUploading === selection.path}>{assetUploading === selection.path ? <LoaderCircle className="animate-spin" size={15} /> : <Upload size={15} />} {assetUploading === selection.path ? 'Зураг байршуулж байна' : 'Файлаас сонгох'}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={Boolean(assetUploading)} onChange={event => uploadAsset(selection.path, event.target.files?.[0])} /></label>
       <Field label="Зураг URL"><textarea rows={3} value={selectedText || ''} onChange={event => changePath(selection.path, event.target.value)} /></Field>
     </>;
 
@@ -589,7 +646,8 @@ export default function WebAdmin() {
     </div>}
 
     {tab === 'form' && <FormManager cfg={cfg} changePath={changePath} applyConfig={applyConfig} />}
-    {tab === 'settings' && <SettingsPanel cfg={cfg} changePath={changePath} uploadImage={uploadImage} applyConfig={applyConfig} onAutoFitLogo={autoFitLogo} onResetLogo={resetLogoAppearance} />}
+    {tab === 'settings' && <SettingsPanel cfg={cfg} changePath={changePath} uploadAsset={uploadAsset} assetUploading={assetUploading} applyConfig={applyConfig} onAutoFitLogo={autoFitLogo} onResetLogo={resetLogoAppearance} />}
+    {tab === 'seo' && <SeoPanel cfg={cfg} changePath={changePath} uploadAsset={uploadAsset} assetUploading={assetUploading} />}
     <span className="sr-only">{historyVersion}</span>
   </div>;
 }

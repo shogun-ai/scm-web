@@ -1,9 +1,4 @@
-export const FALLBACK_IMAGES = [
-  'https://images.unsplash.com/photo-1542282088-fe8426682b8f?auto=format&fit=crop&w=1800&q=88',
-  'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1600&q=86',
-  'https://images.unsplash.com/photo-1610375461246-83df859d849d?auto=format&fit=crop&w=1400&q=86',
-  'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1400&q=86',
-];
+export const FALLBACK_IMAGES = [];
 
 export const FALLBACK_PRODUCTS = [
   {
@@ -13,7 +8,7 @@ export const FALLBACK_PRODUCTS = [
     term: '1-24 сар',
     amount: 'Үнэлгээний 70% хүртэл',
     description: 'Автомашинаа барьцаалж, өдөр тутамдаа үргэлжлүүлэн унах боломжтой.',
-    image: FALLBACK_IMAGES[0],
+    image: '',
   },
   {
     name: 'Машин байршуулах зээл',
@@ -22,7 +17,7 @@ export const FALLBACK_PRODUCTS = [
     term: '1-12 сар',
     amount: 'Үнэлгээний 80% хүртэл',
     description: 'Орлого нотлохгүйгээр автомашинаа зориулалтын талбайд байршуулж шийдвэрлүүлнэ.',
-    image: FALLBACK_IMAGES[1],
+    image: '',
   },
   {
     name: 'Үнэт металл барьцаалсан зээл',
@@ -31,7 +26,7 @@ export const FALLBACK_PRODUCTS = [
     term: '1-6 сар',
     amount: 'Үнэлгээнд суурилна',
     description: 'Алт, мөнгө болон үнэт эдлэлийн үнэлгээнд тулгуурласан шуурхай шийдэл.',
-    image: FALLBACK_IMAGES[2],
+    image: '',
   },
   {
     name: 'Барьцаагүй шуурхай зээл',
@@ -40,7 +35,7 @@ export const FALLBACK_PRODUCTS = [
     term: '1-6 сар',
     amount: 'Боломжит лимитээр',
     description: 'Богино хугацааны санхүүгийн хэрэгцээнд зориулсан хялбар хүсэлт.',
-    image: FALLBACK_IMAGES[3],
+    image: '',
   },
 ];
 
@@ -128,6 +123,17 @@ export const DEFAULT_SOCIAL = {
   faqItems: [],
 };
 
+export const DEFAULT_SEO = {
+  siteName: 'Zentro Prime Capital',
+  title: 'Автомашин барьцаалсан зээл | Zentro Prime Capital',
+  description: 'Улаанбаатар хотод автомашинаа унаж явах эсвэл байршуулан барьцаалж шуурхай зээлийн хүсэлт илгээнэ. Zentro Prime Capital.',
+  keywords: 'автомашин барьцаалсан зээл, машины барьцаатай зээл, шуурхай зээл, барьцаат зээл, ломбард, санхүү, мөнгө, car collateral loan, secured loan, finance Mongolia',
+  canonicalUrl: 'https://zentrocapitalgroup.com/',
+  socialTitle: 'Автомашин барьцаалсан шуурхай зээл | Zentro Prime Capital',
+  socialDescription: 'Машинаа унаж явах эсвэл зориулалтын талбайд байршуулан барьцаалж, зээлийн хүсэлтээ онлайнаар илгээнэ.',
+  socialImageUrl: '',
+};
+
 export const DEFAULT_SECTION_ORDER = ['hero', 'trust', 'products', 'flow', 'process', 'apply'];
 
 export const DEFAULT_SECTION_STYLES = {
@@ -181,8 +187,8 @@ export function normalizeField(field, index = 0) {
 }
 
 export function normalizeSiteConfig(raw = {}) {
-  const heroImages = normalizeImageGallery(raw.heroImages, raw.heroImage || FALLBACK_IMAGES[0]);
-  const heroImage = heroImages[0] || FALLBACK_IMAGES[0];
+  const heroImages = normalizeImageGallery(raw.heroImages, raw.heroImage || '');
+  const heroImage = heroImages[0] || '';
   const products = raw.products?.length
     ? raw.products.map((product, index) => {
       const fallback = FALLBACK_PRODUCTS[index % FALLBACK_PRODUCTS.length];
@@ -218,6 +224,7 @@ export function normalizeSiteConfig(raw = {}) {
     phone: raw.phone || '7599-1919',
     email: raw.email || 'info@zentrocapitalgroup.com',
     address: raw.address || 'Улаанбаатар хот',
+    faviconUrl: raw.faviconUrl || '',
     heroImage,
     heroImages,
     heroTitle: raw.heroTitle || DEFAULT_SITE_CONTENT.heroTitle,
@@ -234,6 +241,10 @@ export function normalizeSiteConfig(raw = {}) {
       ...(raw.social || {}),
       postTemplates: raw.social?.postTemplates?.length ? raw.social.postTemplates : DEFAULT_SOCIAL.postTemplates,
       faqItems: Array.isArray(raw.social?.faqItems) ? raw.social.faqItems : DEFAULT_SOCIAL.faqItems,
+    },
+    seo: {
+      ...DEFAULT_SEO,
+      ...(raw.seo || {}),
     },
     theme: {
       ...DEFAULT_THEME,
