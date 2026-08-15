@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from 'react';
-import { LayoutDashboard, Users, Car, FileText, CreditCard, BarChart3, ArrowLeftRight, Database, LogOut, Menu, TrendingDown, Shield, Settings, Inbox, UserCog } from 'lucide-react';
+import { LayoutDashboard, Users, Car, FileText, CreditCard, BarChart3, ArrowLeftRight, Database, LogOut, Menu, TrendingDown, Shield, Settings, Inbox, UserCog, MessagesSquare } from 'lucide-react';
 import { getPublicConfig } from '../api';
 import Dashboard from './Dashboard';
 import Clients from './Clients';
@@ -14,11 +14,12 @@ import Data from './Data';
 import WebAdmin from './WebAdmin';
 import LoanRequests from './LoanRequests';
 import UserAdmin from './UserAdmin';
+import FacebookAdmin from './FacebookAdmin';
 import { normalizeSiteConfig } from '../siteDefaults';
 
 const NAV = [
   { id: 'dashboard', label: 'Нүүр', icon: LayoutDashboard },
-  { id: 'requests', label: 'Веб хүсэлт', icon: Inbox },
+  { id: 'requests', label: 'Зээлийн хүсэлт', icon: Inbox },
   { id: 'clients', label: 'Харилцагч', icon: Users },
   { id: 'leases', label: 'Шуурхай зээл', icon: FileText },
   { id: 'collateral', label: 'Барьцаа', icon: Shield },
@@ -29,6 +30,7 @@ const NAV = [
   { id: 'funding', label: 'Эх үүсвэр', icon: TrendingDown },
   { id: 'data', label: 'Дата', icon: Database },
   { id: 'webadmin', label: 'Веб админ', icon: Settings },
+  { id: 'facebook', label: 'Facebook', icon: MessagesSquare },
   { id: 'users', label: 'Хэрэглэгч/лог', icon: UserCog },
 ];
 
@@ -56,7 +58,7 @@ export default function Shell({ user, onLogout }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [config, setConfig] = useState(null);
   useEffect(() => { getPublicConfig().then(setConfig).catch(() => {}); }, []);
-  const pages = { dashboard: Dashboard, requests: LoanRequests, clients: Clients, cars: Cars, leases: Leases, payments: Payments, transactions: Transactions, reports: Reports, funding: Funding, collateral: Collateral, data: Data, webadmin: WebAdmin, users: UserAdmin };
+  const pages = { dashboard: Dashboard, requests: LoanRequests, clients: Clients, cars: Cars, leases: Leases, payments: Payments, transactions: Transactions, reports: Reports, funding: Funding, collateral: Collateral, data: Data, webadmin: WebAdmin, facebook: FacebookAdmin, users: UserAdmin };
   const Page = pages[page] || Dashboard;
 
   const NavButtons = () => NAV.map(({ id, label, icon: Icon }) => (

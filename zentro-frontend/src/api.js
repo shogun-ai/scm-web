@@ -118,6 +118,11 @@ export const uploadAdminWebImages = (files) => {
 export const getZentroLoanRequests = (params) => api.get('/api/zentro/admin/loan-requests', { params }).then(r => r.data);
 export const updateZentroLoanRequest = (id, data) => api.put(`/api/zentro/admin/loan-requests/${id}`, data).then(r => r.data);
 export const convertZentroLoanRequest = (id) => api.post(`/api/zentro/admin/loan-requests/${id}/convert-client`).then(r => r.data);
+export const getFacebookStatus = () => api.get('/api/zentro/admin/facebook/status').then(r => r.data);
+export const testFacebookConnection = () => api.post('/api/zentro/admin/facebook/test-connection').then(r => r.data);
+export const subscribeFacebookPage = () => api.post('/api/zentro/admin/facebook/subscribe').then(r => r.data);
+export const getFacebookPostHistory = () => api.get('/api/zentro/admin/facebook/posts').then(r => r.data);
+export const publishFacebookPost = (data = {}) => api.post('/api/zentro/admin/facebook/publish', data).then(r => r.data);
 export const getUsers = () => api.get('/api/users').then(r => r.data);
 export const createUser = (data) => api.post('/api/users', data).then(r => r.data);
 export const updateUser = (id, data) => api.put(`/api/users/${id}`, data).then(r => r.data);

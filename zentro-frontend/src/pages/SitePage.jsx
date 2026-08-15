@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   KeyRound,
   Menu,
+  MessageCircle,
   Move,
   Phone,
   Scaling,
@@ -44,6 +45,15 @@ function integerDigits(value) {
 function formatIntegerInput(value) {
   const digits = integerDigits(value);
   return digits.replace(/\B(?=([0-9]{3})+(?![0-9]))/g, ',');
+}
+
+function safeSocialUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return ['https:', 'http:'].includes(url.protocol) ? url.href : '';
+  } catch {
+    return '';
+  }
 }
 
 function mongolianNameOnly(value) {
@@ -372,6 +382,8 @@ export default function SitePage({
   const config = useMemo(() => normalizeSiteConfig(rawConfig), [rawConfig]);
   const content = config.siteContent;
   const products = config.products;
+  const facebookUrl = safeSocialUrl(config.social.facebookPageUrl);
+  const messengerUrl = safeSocialUrl(config.social.messengerUrl);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [activeProduct, setActiveProduct] = useState(0);
   const [form, setForm] = useState({});
@@ -522,9 +534,10 @@ export default function SitePage({
       </main>
 
       <footer className="zp-footer" id="contact">
-        <div className="zp-container zp-footer-grid"><div><Brand config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="p" path="siteContent.footerText" value={content.footerText} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /></div><div><EditableText as="b" path="siteContent.footerContactTitle" value={content.footerContactTitle} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="span" path="address" value={config.address} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="span" path="phone" value={config.phone} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="span" path="email" value={config.email} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /></div></div>
+        <div className="zp-container zp-footer-grid"><div><Brand config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="p" path="siteContent.footerText" value={content.footerText} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /></div><div><EditableText as="b" path="siteContent.footerContactTitle" value={content.footerContactTitle} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="span" path="address" value={config.address} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="span" path="phone" value={config.phone} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /><EditableText as="span" path="email" value={config.email} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} />{facebookUrl && <a className="zp-social-link" href={facebookUrl} target="_blank" rel="noreferrer" onClick={event => { if (editor) event.preventDefault(); }}><MessageCircle size={15} /> Facebook</a>}</div></div>
         <div className="zp-footer-bottom zp-container"><span>© {new Date().getFullYear()} {config.brandName}</span><EditableText as="span" path="siteContent.footerLegal" value={content.footerLegal} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} /></div>
       </footer>
+      {messengerUrl && <a className="zp-messenger-float" href={messengerUrl} target="_blank" rel="noreferrer" title="Messenger-ээр холбогдох" onClick={event => { if (editor) event.preventDefault(); }}><MessageCircle size={21} /><span>Messenger</span></a>}
     </div>
   );
 }

@@ -109,6 +109,25 @@ export const DEFAULT_THEME = {
   flowGallerySeconds: 3.2,
 };
 
+export const DEFAULT_SOCIAL = {
+  facebookPageUrl: '',
+  messengerUrl: '',
+  autoReplyEnabled: true,
+  requestIntakeEnabled: true,
+  dailyPostEnabled: false,
+  postTime: '10:00',
+  postTimezone: 'Asia/Ulaanbaatar',
+  postUseProductImage: true,
+  welcomeMessage: 'Сайн байна уу? Zentro Prime Capital-д тавтай морил. Та зээлийн нөхцөл харах, хүсэлт өгөх эсвэл холбоо барих мэдээлэл авах боломжтой.',
+  businessHours: 'Даваа-Баасан 09:00-18:00',
+  postTemplates: [
+    '{{product}}\n\n{{description}}\n\nХүү: {{rate}}\nХугацаа: {{term}}\nЗээлийн хэмжээ: {{amount}}\n\nДэлгэрэнгүй: {{website}}/#apply\n\nЗээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна. #ZentroPrimeCapital #ШуурхайЗээл',
+    'Санхүүгийн хэрэгцээгээ цөөн алхмаар шийдээрэй.\n\n{{product}}\n{{description}}\n\nХүсэлт өгөх: {{website}}/#apply\nХолбоо барих: {{phone}}\n\n#ZentroPrimeCapital #АвтомашиныЗээл',
+    'Машинаа унаад зээлээ авах боломжийг Zentro Prime Capital-аас.\n\nӨнөөдрийн онцлох шийдэл: {{product}}\nХэмжээ: {{amount}}\nХугацаа: {{term}}\n\n{{website}}/#apply\n\nЗээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна.',
+  ],
+  faqItems: [],
+};
+
 export const DEFAULT_SECTION_ORDER = ['hero', 'trust', 'products', 'flow', 'process', 'apply'];
 
 export const DEFAULT_SECTION_STYLES = {
@@ -209,6 +228,12 @@ export function normalizeSiteConfig(raw = {}) {
       ...(raw.siteContent || {}),
       trustItems: raw.siteContent?.trustItems?.length ? raw.siteContent.trustItems : DEFAULT_SITE_CONTENT.trustItems,
       processSteps: raw.siteContent?.processSteps?.length ? raw.siteContent.processSteps : DEFAULT_SITE_CONTENT.processSteps,
+    },
+    social: {
+      ...DEFAULT_SOCIAL,
+      ...(raw.social || {}),
+      postTemplates: raw.social?.postTemplates?.length ? raw.social.postTemplates : DEFAULT_SOCIAL.postTemplates,
+      faqItems: Array.isArray(raw.social?.faqItems) ? raw.social.faqItems : DEFAULT_SOCIAL.faqItems,
     },
     theme: {
       ...DEFAULT_THEME,

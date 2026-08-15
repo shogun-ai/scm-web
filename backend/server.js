@@ -30,6 +30,7 @@ import ZentroLease from './models/ZentroLease.js';
 import ZentroPayment from './models/ZentroPayment.js';
 import ZentroTransaction from './models/ZentroTransaction.js';
 import ZentroImportBatch from './models/ZentroImportBatch.js';
+import { createZentroFacebookIntegration } from './zentroFacebook.js';
 
 const ZentroCodeRuleSchema = new mongoose.Schema({
   keyword: { type: String, required: true, unique: true },
@@ -88,6 +89,7 @@ const ZentroWebConfigSchema = new mongoose.Schema({
   heroImage: { type: String, default: 'https://images.unsplash.com/photo-1542282088-fe8426682b8f?auto=format&fit=crop&w=1400&q=80' },
   heroImages: { type: [String], default: [] },
   siteContent: { type: mongoose.Schema.Types.Mixed, default: {} },
+  social: { type: mongoose.Schema.Types.Mixed, default: {} },
   theme: { type: mongoose.Schema.Types.Mixed, default: {} },
   sectionOrder: {
     type: [String],
@@ -129,6 +131,8 @@ const ZentroLoanRequestSchema = new mongoose.Schema({
   termMonths: Number,
   collateral: String,
   answers: { type: mongoose.Schema.Types.Mixed, default: {} },
+  source: { type: String, enum: ['web', 'facebook', 'staff'], default: 'web' },
+  externalUserId: { type: String, default: '' },
   status: { type: String, enum: ['new', 'contacted', 'approved', 'rejected', 'converted'], default: 'new' },
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'ZentroClient' },
@@ -180,7 +184,12 @@ const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({
+    limit: '50mb',
+    verify: (req, res, buffer) => {
+        if (req.originalUrl?.startsWith('/api/zentro/facebook/webhook')) req.rawBody = Buffer.from(buffer);
+    },
+}));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Cloudinary Ñ‚Ð¾Ñ…Ð¸Ñ€Ð³Ð¾Ð¾
@@ -1303,6 +1312,15 @@ const requireAdmin = (req, res, next) => {
     }
     next();
 };
+
+const zentroFacebook = createZentroFacebookIntegration({
+    app,
+    ZentroWebConfig,
+    ZentroLoanRequest,
+    authenticateUser,
+    requireAdmin,
+    createLog,
+});
 
 const PERMISSION_RANK = { none: 0, view: 1, partial: 2, full: 3 };
 const COMMITTEE_PERMISSION_DEFAULTS = {
@@ -6229,6 +6247,7 @@ mongoose.connect(MONGO_URI).then(async () => {
     await configureMessengerProfile();
     syncFacebookPostKnowledgeInBackground('startup');
     cron.schedule('0 */6 * * *', () => syncFacebookPostKnowledgeInBackground('cron'));
+    zentroFacebook.start();
     // Force-update financial_date to current period value
     await SiteConfig.findOneAndUpdate(
         { key: 'financial_date' },
@@ -6735,6 +6754,7 @@ app.post('/api/zentro/public/loan-requests', async (req, res) => {
       termMonths,
       collateral: body.collateral,
       answers: body.answers || {},
+      source: 'web',
       status: 'new',
       notes: body.notes,
     });
@@ -6763,7 +6783,7 @@ app.post('/api/zentro/admin/web-images', authenticateUser, requireAdmin, (req, r
 
 app.put('/api/zentro/admin/web-config', authenticateUser, requireAdmin, async (req, res) => {
   try {
-    const allowed = ['brandName','tagline','logoUrl','heroTitle','heroText','phone','email','address','heroImage','heroImages','siteContent','theme','sectionOrder','sectionStyles','elementStyles','customSections','webWidgets','products','formFlow'];
+    const allowed = ['brandName','tagline','logoUrl','heroTitle','heroText','phone','email','address','heroImage','heroImages','siteContent','social','theme','sectionOrder','sectionStyles','elementStyles','customSections','webWidgets','products','formFlow'];
     const update = {};
     for (const key of allowed) if (key in req.body) update[key] = req.body[key];
     const doc = await ZentroWebConfig.findOneAndUpdate({ key: 'public' }, { $set: update }, { new: true, upsert: true });
