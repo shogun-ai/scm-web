@@ -2,9 +2,11 @@ import crypto from 'crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildMessengerListingElements,
   buildMessengerProfile,
   buildZentroMessengerLink,
   buildZentroPost,
+  normalizeFacebookPostImages,
   parseZentroAmount,
   processZentroMessengerEvent,
   verifyZentroWebhookSignature,
@@ -15,8 +17,37 @@ test('builds a Mongolian Messenger greeting with two entry choices', () => {
     profileGreeting: 'Сайн байна уу, {{user_first_name}}!',
   });
   assert.equal(profile.greeting[0].text, 'Сайн байна уу, {{user_first_name}}!');
-  assert.deepEqual(profile.ice_breakers.map(item => item.payload), ['ZENTRO_CAR', 'ZENTRO_LOAN']);
-  assert.deepEqual(profile.persistent_menu[0].call_to_actions.map(item => item.payload), ['ZENTRO_CAR', 'ZENTRO_LOAN']);
+  assert.deepEqual(profile.ice_breakers.map(item => item.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN']);
+  assert.deepEqual(profile.persistent_menu[0].call_to_actions.map(item => item.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN']);
+});
+
+test('builds active listing cards with Page and in-chat actions', () => {
+  const elements = buildMessengerListingElements([{
+    id: 'page_123',
+    title: 'Toyota Land Cruiser 200',
+    description: '2018 он, хар өнгө',
+    imageUrl: 'https://example.com/car.jpg',
+    permalinkUrl: 'https://facebook.com/example/posts/123',
+  }]);
+  assert.equal(elements.length, 1);
+  assert.equal(elements[0].image_url, 'https://example.com/car.jpg');
+  assert.deepEqual(elements[0].buttons.map(button => button.type), ['web_url', 'postback', 'postback']);
+  assert.equal(elements[0].buttons[2].payload, 'ZENTRO_LISTING_LOAN_page_123');
+});
+
+test('deduplicates and limits a Facebook post to five images', () => {
+  const images = normalizeFacebookPostImages(
+    ['https://example.com/1.jpg', 'https://example.com/2.jpg', 'https://example.com/1.jpg', 'https://example.com/3.jpg', 'https://example.com/4.jpg'],
+    'https://example.com/5.jpg',
+    'https://example.com/6.jpg'
+  );
+  assert.deepEqual(images, [
+    'https://example.com/1.jpg',
+    'https://example.com/2.jpg',
+    'https://example.com/3.jpg',
+    'https://example.com/4.jpg',
+    'https://example.com/5.jpg',
+  ]);
 });
 
 function createSessionModel() {
@@ -112,7 +143,28 @@ test('starts Messenger with separate car and loan choices', async () => {
   });
 
   assert.equal(sessions.get(senderId).state, 'idle');
-  assert.deepEqual(sent.at(-1).options.map(option => option.payload), ['ZENTRO_CAR', 'ZENTRO_LOAN']);
+  assert.deepEqual(sent.at(-1).options.map(option => option.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN']);
+});
+
+test('shows active Page listings when a conversation starts', async () => {
+  const senderId = 'facebook-user-listings';
+  const { model: SessionModel } = createSessionModel();
+  const sent = [];
+  const carousels = [];
+  const listings = [{ id: 'page_42', title: 'Toyota Prius 30', permalinkUrl: 'https://facebook.com/posts/42' }];
+  await processZentroMessengerEvent({
+    event: textEvent(senderId, 'listing-entry-1', 'hi'),
+    config: { products: [], social: { autoReplyEnabled: true } },
+    ZentroLoanRequest: {},
+    SessionModel,
+    send: async (recipientId, message, options = []) => sent.push({ recipientId, message, options }),
+    fetchListings: async () => listings,
+    sendListings: async (recipientId, values) => carousels.push({ recipientId, values }),
+  });
+
+  assert.equal(carousels.length, 1);
+  assert.equal(carousels[0].values[0].id, 'page_42');
+  assert.match(sent.at(-1).message, /Энэ зарыг асуух/);
 });
 
 test('hands a car inquiry to the Auto Market conversation', async () => {
@@ -123,7 +175,7 @@ test('hands a car inquiry to the Auto Market conversation', async () => {
   const config = { products: [], social: { autoReplyEnabled: true } };
   const process = event => processZentroMessengerEvent({ event, config, ZentroLoanRequest: {}, SessionModel, send });
 
-  await process({ sender: { id: senderId }, postback: { payload: 'ZENTRO_CAR' } });
+  await process({ sender: { id: senderId }, postback: { payload: 'ZENTRO_CAR_QUESTION' } });
   assert.equal(sessions.get(senderId).state, 'await_car_inquiry');
   await process(textEvent(senderId, 'car-1', 'Toyota Land Cruiser 200, 2018 оноос хойш'));
 
@@ -153,6 +205,45 @@ test('routes a post referral into the matching loan conversation', async () => {
   assert.equal(tracked.length, 1);
   assert.equal(tracked[0].filter._id, postId);
   assert.match(sent.at(-1).message, /Зээлийн мэдээллээс/);
+});
+
+test('starts and completes a loan request from a selected Page listing', async () => {
+  const senderId = 'facebook-user-listing-loan';
+  const { model: SessionModel } = createSessionModel();
+  const requests = [];
+  const listings = [{ id: 'page_99', title: 'Toyota Land Cruiser 200', permalinkUrl: 'https://facebook.com/posts/99' }];
+  const config = {
+    products: [{ name: 'Автомашин барьцаалсан зээл' }],
+    social: { autoReplyEnabled: true, requestIntakeEnabled: true },
+  };
+  const ZentroLoanRequest = {
+    async create(value) {
+      const request = { ...value, _id: '66abcdef1234567890abcdef' };
+      requests.push(request);
+      return request;
+    },
+  };
+  const process = event => processZentroMessengerEvent({
+    event,
+    config,
+    ZentroLoanRequest,
+    SessionModel,
+    send: async () => {},
+    fetchListings: async () => listings,
+    sendListings: async () => {},
+  });
+
+  await process({ sender: { id: senderId }, postback: { payload: 'ZENTRO_LISTING_LOAN_page_99' } });
+  await process(textEvent(senderId, 'listing-loan-1', 'Бат Эрдэнэ'));
+  await process(textEvent(senderId, 'listing-loan-2', '99112233'));
+  await process(quickReplyEvent(senderId, 'listing-loan-3', 'Автомашины зээл', 'ZENTRO_PRODUCT_0'));
+  await process(textEvent(senderId, 'listing-loan-4', '20 сая'));
+  await process(textEvent(senderId, 'listing-loan-5', '24'));
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].collateral, 'Toyota Land Cruiser 200');
+  assert.equal(requests[0].answers.facebookListingId, 'page_99');
+  assert.equal(requests[0].answers.facebookListingUrl, 'https://facebook.com/posts/99');
 });
 
 test('collects a Messenger application and deduplicates retried events', async () => {

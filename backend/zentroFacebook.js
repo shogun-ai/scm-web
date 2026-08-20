@@ -50,8 +50,10 @@ const FacebookPostSchema = new mongoose.Schema({
   status: { type: String, enum: ['publishing', 'published', 'failed'], default: 'publishing' },
   message: { type: String, default: '' },
   imageUrl: { type: String, default: '' },
+  imageUrls: { type: [String], default: [] },
   productName: { type: String, default: '' },
   topic: { type: String, enum: ['car', 'loan', 'general'], default: 'loan' },
+  listingActive: { type: Boolean, default: true },
   messengerLinked: { type: Boolean, default: false },
   referralCode: { type: String, default: '' },
   messengerUrl: { type: String, default: '' },
@@ -67,6 +69,8 @@ const MessengerSession = mongoose.models.ZentroMessengerSession
   || mongoose.model('ZentroMessengerSession', MessengerSessionSchema);
 const FacebookPost = mongoose.models.ZentroFacebookPost
   || mongoose.model('ZentroFacebookPost', FacebookPostSchema);
+
+let activeListingsCache = { expiresAt: 0, listings: [] };
 
 function facebookEnv() {
   return {
@@ -171,13 +175,130 @@ async function sendMessage(senderId, text, options = []) {
   });
 }
 
+function safeHttpsUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function listingTitle(message, fallback = 'Автомашины зар') {
+  const firstLine = String(message || '').split(/\r?\n/).map(line => line.trim()).find(Boolean) || fallback;
+  return firstLine.slice(0, 80);
+}
+
+function isClosedListing(message) {
+  const text = normalizedText(message);
+  return ['зарагдсан', 'борлуулагдсан', 'идэвхгүй', 'зар хаагдсан', 'sold'].some(term => text.includes(term));
+}
+
+function normalizeListing(value = {}) {
+  const message = String(value.message || '');
+  const id = String(value.id || value.metaPostId || value._id || '');
+  return {
+    id,
+    title: listingTitle(message, value.productName || 'Автомашины зар'),
+    description: message.replace(/\s+/g, ' ').trim().slice(0, 80),
+    imageUrl: safeHttpsUrl(value.full_picture || value.imageUrl || safeArray(value.imageUrls)[0]),
+    permalinkUrl: safeHttpsUrl(value.permalink_url || value.permalinkUrl),
+    createdAt: value.created_time || value.publishedAt || value.createdAt || null,
+  };
+}
+
+export function buildMessengerListingElements(listings = []) {
+  return safeArray(listings).filter(listing => listing?.id).slice(0, 10).map(listing => {
+    const id = String(listing.id).slice(0, 700);
+    const buttons = [];
+    const permalinkUrl = safeHttpsUrl(listing.permalinkUrl);
+    if (permalinkUrl) buttons.push({ type: 'web_url', url: permalinkUrl, title: 'Зарыг үзэх' });
+    buttons.push({ type: 'postback', title: 'Энэ зарыг асуух', payload: `ZENTRO_LISTING_${id}` });
+    buttons.push({ type: 'postback', title: 'Зээлээр авах', payload: `ZENTRO_LISTING_LOAN_${id}` });
+    return {
+      title: String(listing.title || 'Автомашины зар').slice(0, 80),
+      subtitle: String(listing.description || 'Дэлгэрэнгүй мэдээллийг сонгоно уу.').slice(0, 80),
+      ...(safeHttpsUrl(listing.imageUrl) ? { image_url: safeHttpsUrl(listing.imageUrl) } : {}),
+      buttons: buttons.slice(0, 3),
+    };
+  });
+}
+
+async function sendListingCarousel(senderId, listings = []) {
+  const { pageAccessToken, pageId } = facebookEnv();
+  if (!pageAccessToken) throw new Error('ZENTRO_FB_PAGE_ACCESS_TOKEN тохируулагдаагүй байна.');
+  const elements = buildMessengerListingElements(listings);
+  if (!elements.length) return false;
+  await graphPost(`${pageId || 'me'}/messages`, {
+    recipient: { id: senderId },
+    messaging_type: 'RESPONSE',
+    message: {
+      attachment: {
+        type: 'template',
+        payload: { template_type: 'generic', elements },
+      },
+    },
+  });
+  return true;
+}
+
+function clearActiveListingsCache() {
+  activeListingsCache = { expiresAt: 0, listings: [] };
+}
+
+async function fetchActivePageListings(limit = 6) {
+  const now = Date.now();
+  if (activeListingsCache.expiresAt > now) return activeListingsCache.listings.slice(0, limit);
+  const records = await FacebookPost.find({ status: 'published' })
+    .sort({ publishedAt: -1, createdAt: -1 })
+    .limit(100)
+    .lean();
+  const excludedMetaIds = new Set(records
+    .filter(record => record.topic !== 'car' || record.listingActive === false)
+    .map(record => String(record.metaPostId || ''))
+    .filter(Boolean));
+  const tracked = records
+    .filter(record => record.topic === 'car' && record.listingActive !== false && !isClosedListing(record.message))
+    .map(normalizeListing);
+  let live = [];
+  try {
+    const { pageId } = facebookEnv();
+    const response = await graphGet(`${pageId}/published_posts`, {
+      fields: 'id,message,full_picture,permalink_url,created_time',
+      limit: 20,
+    });
+    live = safeArray(response.data?.data)
+      .filter(post => !excludedMetaIds.has(String(post.id || '')) && !isClosedListing(post.message))
+      .map(normalizeListing);
+  } catch (error) {
+    console.error('Zentro active Page listings error:', cleanMetaError(error));
+  }
+  const unique = [];
+  const seen = new Set();
+  for (const listing of [...tracked, ...live]) {
+    if (!listing.id || seen.has(listing.id)) continue;
+    seen.add(listing.id);
+    unique.push(listing);
+  }
+  activeListingsCache = { expiresAt: now + 5 * 60 * 1000, listings: unique.slice(0, 10) };
+  return activeListingsCache.listings.slice(0, limit);
+}
+
 function normalizePostTopic(value, fallback = 'loan') {
   return ['car', 'loan', 'general'].includes(value) ? value : fallback;
 }
 
+export function normalizeFacebookPostImages(imageUrls = [], imageUrl = '', generatedImage = '') {
+  return [...new Set([
+    ...safeArray(imageUrls),
+    imageUrl,
+    generatedImage,
+  ].map(safeHttpsUrl).filter(Boolean))].slice(0, 5);
+}
+
 function entryOptions() {
   return [
-    { title: 'Машины талаар', payload: 'ZENTRO_CAR' },
+    { title: 'Идэвхтэй зарууд', payload: 'ZENTRO_LISTINGS' },
     { title: 'Зээлийн талаар', payload: 'ZENTRO_LOAN' },
   ];
 }
@@ -244,20 +365,56 @@ async function saveMessageId(session, messageId) {
   session.processedMessageIds = [...safeArray(session.processedMessageIds), messageId].slice(-30);
 }
 
-async function showEntryMenu(session, senderId, social, send = sendMessage) {
+async function showActiveListings(session, senderId, social, {
+  fetchListings,
+  sendListings,
+  send = sendMessage,
+} = {}) {
+  if (typeof fetchListings !== 'function' || typeof sendListings !== 'function') return;
+  session.state = 'idle';
+  session.topic = 'car';
+  session.draft = {};
+  await session.save();
+  const listings = await fetchListings(6);
+  if (!listings.length) {
+    await send(senderId, 'Одоогоор харуулах идэвхтэй автомашины зар олдсонгүй. Та сонирхож буй машинаа бичиж үлдээнэ үү.', [
+      { title: 'Машин асуух', payload: 'ZENTRO_CAR_QUESTION' },
+      { title: 'Зээлийн талаар', payload: 'ZENTRO_LOAN' },
+    ]);
+    return;
+  }
+  try {
+    await sendListings(senderId, listings);
+  } catch (error) {
+    console.error('Zentro Messenger listing carousel error:', cleanMetaError(error));
+    const fallback = listings.slice(0, 6).map((listing, index) => (
+      `${index + 1}. ${listing.title}${listing.permalinkUrl ? `\n${listing.permalinkUrl}` : ''}`
+    )).join('\n\n');
+    await send(senderId, `Идэвхтэй автомашины зарууд:\n\n${fallback}`);
+  }
+  await send(senderId, 'Зар дээрээс “Энэ зарыг асуух” эсвэл “Зээлээр авах”-ыг сонгоно уу.', [
+    { title: 'Машин асуух', payload: 'ZENTRO_CAR_QUESTION' },
+    { title: 'Зээлийн талаар', payload: 'ZENTRO_LOAN' },
+    { title: 'Үндсэн цэс', payload: 'ZENTRO_HOME' },
+  ]);
+}
+
+async function showEntryMenu(session, senderId, social, send = sendMessage, listingTools = {}) {
   session.state = 'idle';
   session.topic = '';
   session.draft = {};
   await session.save();
   await send(senderId, social.welcomeMessage, entryOptions());
+  await showActiveListings(session, senderId, social, { ...listingTools, send });
 }
 
-async function startCarInquiry(session, senderId, social, send = sendMessage) {
+async function startCarInquiry(session, senderId, social, send = sendMessage, initialDraft = {}) {
   session.state = 'await_car_inquiry';
   session.topic = 'car';
-  session.draft = {};
+  session.draft = { ...initialDraft };
   await session.save();
-  await send(senderId, social.carWelcomeMessage, [
+  const selected = initialDraft.listingTitle ? `Сонгосон зар: ${initialDraft.listingTitle}\n\n` : '';
+  await send(senderId, `${selected}${social.carWelcomeMessage}`, [
     { title: 'Зээлийн талаар', payload: 'ZENTRO_LOAN' },
     { title: 'Үндсэн цэс', payload: 'ZENTRO_HOME' },
   ]);
@@ -271,15 +428,62 @@ async function showLoanMenu(session, senderId, social, send = sendMessage) {
   await send(senderId, social.loanWelcomeMessage, loanMenuOptions(social));
 }
 
-async function startApplication(session, senderId, send = sendMessage) {
+async function startApplication(session, senderId, send = sendMessage, initialDraft = {}) {
   session.state = 'await_name';
   session.topic = 'loan';
-  session.draft = {};
+  session.draft = { ...initialDraft };
   session.lastInteractionAt = new Date();
   await session.save();
   await send(senderId, 'Зээлийн хүсэлтийг Messenger-ээр бүртгэе. Үргэлжлүүлснээр мэдээллээ хүсэлт шийдвэрлэх зорилгоор ашиглуулахыг зөвшөөрнө. Эхлээд овог, нэрээ Монгол кириллээр бичнэ үү.', [
     { title: 'Болих', payload: 'ZENTRO_CANCEL' },
   ]);
+}
+
+async function completeMessengerApplication({ session, senderId, draft, social, ZentroLoanRequest, send = sendMessage }) {
+  const recentRequest = typeof ZentroLoanRequest.findOne === 'function'
+    ? await ZentroLoanRequest.findOne({
+      source: 'facebook',
+      externalUserId: senderId,
+      createdAt: { $gte: new Date(Date.now() - 15 * 60 * 1000) },
+    }).sort({ createdAt: -1 })
+    : null;
+  if (recentRequest) {
+    session.state = 'idle';
+    session.draft = {};
+    session.completedRequestId = recentRequest._id;
+    await session.save();
+    await send(senderId, `Таны сүүлийн хүсэлт аль хэдийн бүртгэгдсэн байна. Хүсэлтийн дугаар: ${String(recentRequest._id).slice(-8).toUpperCase()}`, loanMenuOptions(social));
+    return true;
+  }
+  const request = await ZentroLoanRequest.create({
+    ...draft,
+    register: '',
+    email: '',
+    source: 'facebook',
+    externalUserId: senderId,
+    status: 'new',
+    answers: {
+      channel: 'facebook_messenger',
+      facebookSenderId: senderId,
+      facebookListingId: draft.listingId || '',
+      facebookListingUrl: draft.listingUrl || '',
+    },
+    notes: draft.listingUrl
+      ? `Facebook Messenger-ээс автоматаар бүртгэсэн хүсэлт. Сонгосон зар: ${draft.listingUrl}`
+      : 'Facebook Messenger-ээс автоматаар бүртгэсэн хүсэлт.',
+  });
+  session.state = 'idle';
+  session.draft = {};
+  session.completedRequestId = request._id;
+  await session.save();
+  await send(senderId, [
+    'Таны хүсэлтийг амжилттай бүртгэлээ.',
+    `Хүсэлтийн дугаар: ${String(request._id).slice(-8).toUpperCase()}`,
+    `Зээлийн төрөл: ${draft.productType}`,
+    `Дүн: ${formatAmount(draft.amount)} ₮`,
+    'Манай ажилтан тантай утсаар холбогдоно.',
+  ].join('\n'), loanMenuOptions(social));
+  return true;
 }
 
 async function processActiveApplication({ session, senderId, messageText, payload, config, social, ZentroLoanRequest, send = sendMessage }) {
@@ -300,7 +504,7 @@ async function processActiveApplication({ session, senderId, messageText, payloa
     }
     session.state = 'car_handoff';
     session.topic = 'car';
-    session.draft = { carInquiry: inquiry.slice(0, 1500) };
+    session.draft = { ...draft, carInquiry: inquiry.slice(0, 1500) };
     await session.save();
     await send(senderId, 'Мэдээллийг хүлээн авлаа. Auto Market Mongolia-ийн ажилтан энэ чатад үргэлжлүүлэн хариулна.', [
       { title: 'Зээлийн талаар', payload: 'ZENTRO_LOAN' },
@@ -380,6 +584,11 @@ async function processActiveApplication({ session, senderId, messageText, payloa
       return true;
     }
     draft.termMonths = termMonths;
+    if (draft.collateral) {
+      session.draft = draft;
+      await session.save();
+      return completeMessengerApplication({ session, senderId, draft, social, ZentroLoanRequest, send });
+    }
     session.state = 'await_collateral';
     session.draft = draft;
     await session.save();
@@ -394,43 +603,9 @@ async function processActiveApplication({ session, senderId, messageText, payloa
       return true;
     }
     draft.collateral = collateral.slice(0, 1000);
-    const recentRequest = typeof ZentroLoanRequest.findOne === 'function'
-      ? await ZentroLoanRequest.findOne({
-        source: 'facebook',
-        externalUserId: senderId,
-        createdAt: { $gte: new Date(Date.now() - 15 * 60 * 1000) },
-      }).sort({ createdAt: -1 })
-      : null;
-    if (recentRequest) {
-      session.state = 'idle';
-      session.draft = {};
-      session.completedRequestId = recentRequest._id;
-      await session.save();
-      await send(senderId, `Таны сүүлийн хүсэлт аль хэдийн бүртгэгдсэн байна. Хүсэлтийн дугаар: ${String(recentRequest._id).slice(-8).toUpperCase()}`, loanMenuOptions(social));
-      return true;
-    }
-    const request = await ZentroLoanRequest.create({
-      ...draft,
-      register: '',
-      email: '',
-      source: 'facebook',
-      externalUserId: senderId,
-      status: 'new',
-      answers: { channel: 'facebook_messenger', facebookSenderId: senderId },
-      notes: 'Facebook Messenger-ээс автоматаар бүртгэсэн хүсэлт.',
-    });
-    session.state = 'idle';
-    session.draft = {};
-    session.completedRequestId = request._id;
+    session.draft = draft;
     await session.save();
-    await send(senderId, [
-      'Таны хүсэлтийг амжилттай бүртгэлээ.',
-      `Хүсэлтийн дугаар: ${String(request._id).slice(-8).toUpperCase()}`,
-      `Зээлийн төрөл: ${draft.productType}`,
-      `Дүн: ${formatAmount(draft.amount)} ₮`,
-      'Манай ажилтан тантай утсаар холбогдоно.',
-    ].join('\n'), loanMenuOptions(social));
-    return true;
+    return completeMessengerApplication({ session, senderId, draft, social, ZentroLoanRequest, send });
   }
 
   return false;
@@ -457,6 +632,8 @@ export async function processZentroMessengerEvent({
   SessionModel = MessengerSession,
   PostModel = FacebookPost,
   send = sendMessage,
+  fetchListings,
+  sendListings,
 }) {
   const senderId = event.sender?.id;
   const payload = event.message?.quick_reply?.payload || event.postback?.payload || '';
@@ -467,6 +644,7 @@ export async function processZentroMessengerEvent({
 
   if (messageId && await SessionModel.exists({ senderId, processedMessageIds: messageId })) return;
   const social = normalizeZentroSocial(config.social);
+  const listingTools = { fetchListings, sendListings };
   const session = await SessionModel.findOneAndUpdate(
     { senderId },
     { $setOnInsert: { senderId, state: 'idle', topic: '', draft: {} } },
@@ -489,16 +667,21 @@ export async function processZentroMessengerEvent({
     }
     if (referral.topic === 'car') await startCarInquiry(session, senderId, social, send);
     else if (referral.topic === 'loan') await showLoanMenu(session, senderId, social, send);
-    else await showEntryMenu(session, senderId, social, send);
+    else await showEntryMenu(session, senderId, social, send, listingTools);
     return;
   }
 
   if (payload === 'ZENTRO_HOME' || payload === 'ZENTRO_GET_STARTED') {
-    await showEntryMenu(session, senderId, social, send);
+    await showEntryMenu(session, senderId, social, send, listingTools);
     return;
   }
 
-  if (payload === 'ZENTRO_CAR') {
+  if (payload === 'ZENTRO_LISTINGS' || payload === 'ZENTRO_CAR') {
+    await showActiveListings(session, senderId, social, { ...listingTools, send });
+    return;
+  }
+
+  if (payload === 'ZENTRO_CAR_QUESTION') {
     await startCarInquiry(session, senderId, social, send);
     return;
   }
@@ -508,10 +691,30 @@ export async function processZentroMessengerEvent({
     return;
   }
 
+  const listingLoanMatch = String(payload).match(/^ZENTRO_LISTING_LOAN_(.+)$/);
+  const listingQuestionMatch = String(payload).match(/^ZENTRO_LISTING_(.+)$/);
+  if (listingLoanMatch || listingQuestionMatch) {
+    const listingId = String((listingLoanMatch || listingQuestionMatch)[1] || '');
+    const listings = typeof fetchListings === 'function' ? await fetchListings(10) : [];
+    const listing = listings.find(item => String(item.id) === listingId) || {};
+    const listingDraft = {
+      listingId,
+      listingTitle: listing.title || 'Facebook автомашины зар',
+      listingUrl: listing.permalinkUrl || '',
+      collateral: listing.title || 'Facebook автомашины зар',
+    };
+    if (listingLoanMatch) await startApplication(session, senderId, send, listingDraft);
+    else await startCarInquiry(session, senderId, social, send, listingDraft);
+    return;
+  }
+
   const text = normalizedText(messageText);
   if (payload === 'ZENTRO_APPLY' || isAny(text, ['хүсэлт өгөх', 'зээлийн хүсэлт', 'хүсэлт гаргах'])) {
     if (!social.requestIntakeEnabled) {
-      await send(senderId, `Онлайн хүсэлтээ ${WEBSITE_URL}/#apply хаягаар илгээнэ үү.`, loanMenuOptions(social));
+      await send(senderId, 'Messenger хүсэлт одоогоор түр хаалттай байна. Манай ажилтантай холбогдохыг сонгоно уу.', [
+        { title: 'Холбоо барих', payload: 'ZENTRO_CONTACT' },
+        { title: 'Үндсэн цэс', payload: 'ZENTRO_HOME' },
+      ]);
       return;
     }
     await startApplication(session, senderId, send);
@@ -538,7 +741,7 @@ export async function processZentroMessengerEvent({
   }
 
   if (isAny(text, ['машины талаар', 'машин авах', 'машин сонирхож', 'автомашин худалдаа', 'авто маркет'])) {
-    await startCarInquiry(session, senderId, social, send);
+    await showActiveListings(session, senderId, social, { ...listingTools, send });
     return;
   }
 
@@ -558,7 +761,7 @@ export async function processZentroMessengerEvent({
     return;
   }
 
-  await showEntryMenu(session, senderId, social, send);
+  await showEntryMenu(session, senderId, social, send, listingTools);
 }
 
 export function buildMessengerProfile(value = {}) {
@@ -568,14 +771,14 @@ export function buildMessengerProfile(value = {}) {
     greeting: [{ locale: 'default', text: greeting }],
     get_started: { payload: 'ZENTRO_GET_STARTED' },
     ice_breakers: [
-      { question: 'Машины талаар', payload: 'ZENTRO_CAR' },
+      { question: 'Идэвхтэй зарууд', payload: 'ZENTRO_LISTINGS' },
       { question: 'Зээлийн талаар', payload: 'ZENTRO_LOAN' },
     ],
     persistent_menu: [{
       locale: 'default',
       composer_input_disabled: false,
       call_to_actions: [
-        { type: 'postback', title: 'Машины талаар', payload: 'ZENTRO_CAR' },
+        { type: 'postback', title: 'Идэвхтэй зарууд', payload: 'ZENTRO_LISTINGS' },
         { type: 'postback', title: 'Зээлийн талаар', payload: 'ZENTRO_LOAN' },
       ],
     }],
@@ -685,7 +888,9 @@ async function publishPost(config, {
   scheduleKey,
   message = '',
   imageUrl = '',
+  imageUrls = [],
   topic,
+  listingActive = true,
   linkToMessenger,
   productIndex,
 } = {}) {
@@ -695,7 +900,8 @@ async function publishPost(config, {
   const finalTopic = normalizePostTopic(topic, social.postDefaultTopic);
   const messengerLinked = linkToMessenger === undefined ? Boolean(social.postLinkToMessenger) : Boolean(linkToMessenger);
   const generated = buildZentroPost(config, new Date(), message, productIndex);
-  const finalImage = imageUrl || generated.imageUrl;
+  const finalImages = normalizeFacebookPostImages(imageUrls, imageUrl, generated.imageUrl);
+  const finalImage = finalImages[0] || '';
   const existing = scheduleKey ? await FacebookPost.findOne({ scheduleKey }).select('_id') : null;
   const recordId = existing?._id || new mongoose.Types.ObjectId();
   const referralCode = messengerLinked ? `zpc-post-${finalTopic}-${recordId}` : '';
@@ -713,8 +919,10 @@ async function publishPost(config, {
         status: 'publishing',
         message: finalMessage,
         imageUrl: finalImage,
+        imageUrls: finalImages,
         productName: generated.productName,
         topic: finalTopic,
+        listingActive: listingActive !== false,
         messengerLinked,
         referralCode,
         messengerUrl,
@@ -728,7 +936,19 @@ async function publishPost(config, {
 
   try {
     let response;
-    if (finalImage) {
+    if (finalImages.length > 1) {
+      const attachedMedia = [];
+      for (const url of finalImages) {
+        const photo = await graphPost(`${pageId}/photos`, { url, published: false });
+        const mediaId = photo.data?.id;
+        if (!mediaId) throw new Error('Meta зураг upload хийх үед media ID буцаасангүй.');
+        attachedMedia.push({ media_fbid: mediaId });
+      }
+      response = await graphPost(`${pageId}/feed`, {
+        message: finalMessage,
+        attached_media: attachedMedia,
+      });
+    } else if (finalImage) {
       response = await graphPost(`${pageId}/photos`, {
         url: finalImage,
         caption: finalMessage,
@@ -746,6 +966,7 @@ async function publishPost(config, {
     record.permalinkUrl = await resolvePermalink(metaPostId);
     record.publishedAt = new Date();
     await record.save();
+    clearActiveListingsCache();
     return record;
   } catch (error) {
     record.status = 'failed';
@@ -892,7 +1113,13 @@ export function createZentroFacebookIntegration({
           webhookActivity.events += 1;
           webhookActivity.lastEventAt = new Date();
           try {
-            await processZentroMessengerEvent({ event, config, ZentroLoanRequest });
+            await processZentroMessengerEvent({
+              event,
+              config,
+              ZentroLoanRequest,
+              fetchListings: fetchActivePageListings,
+              sendListings: sendListingCarousel,
+            });
             webhookActivity.processed += 1;
             webhookActivity.lastProcessedAt = new Date();
           } catch (error) {
@@ -956,6 +1183,11 @@ export function createZentroFacebookIntegration({
     catch (error) { res.status(500).json({ message: error.message }); }
   });
 
+  app.get('/api/zentro/admin/facebook/listings', authenticateUser, requireAdmin, async (req, res) => {
+    try { res.json(await fetchActivePageListings(10)); }
+    catch (error) { res.status(500).json({ message: cleanMetaError(error) }); }
+  });
+
   app.post('/api/zentro/admin/facebook/publish', authenticateUser, requireAdmin, async (req, res) => {
     try {
       const config = await currentConfig();
@@ -963,7 +1195,9 @@ export function createZentroFacebookIntegration({
         source: 'manual',
         message: String(req.body?.message || '').trim(),
         imageUrl: String(req.body?.imageUrl || '').trim(),
+        imageUrls: safeArray(req.body?.imageUrls).map(value => String(value || '').trim()).filter(Boolean).slice(0, 5),
         topic: normalizePostTopic(req.body?.topic, normalizeZentroSocial(config.social).postDefaultTopic),
+        listingActive: req.body?.listingActive !== false,
         linkToMessenger: req.body?.linkToMessenger !== false,
         productIndex: Number.isInteger(Number(req.body?.productIndex)) ? Number(req.body.productIndex) : undefined,
       });
@@ -971,6 +1205,22 @@ export function createZentroFacebookIntegration({
       res.status(201).json(post);
     } catch (error) {
       res.status(400).json({ message: cleanMetaError(error) });
+    }
+  });
+
+  app.patch('/api/zentro/admin/facebook/posts/:id/listing', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+      const post = await FacebookPost.findByIdAndUpdate(
+        req.params.id,
+        { $set: { listingActive: req.body?.listingActive !== false } },
+        { new: true }
+      );
+      if (!post) return res.status(404).json({ message: 'Facebook пост олдсонгүй.' });
+      clearActiveListingsCache();
+      await createLog(req.user, 'zentro_facebook_listing_updated', `${post._id}:${post.listingActive ? 'active' : 'inactive'}`);
+      return res.json(post);
+    } catch (error) {
+      return res.status(400).json({ message: cleanMetaError(error) });
     }
   });
 

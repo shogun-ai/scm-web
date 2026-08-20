@@ -28,12 +28,14 @@ import {
 import {
   getAdminWebConfig,
   getFacebookMessengerActivity,
+  getFacebookListings,
   getFacebookPostHistory,
   getFacebookStatus,
   publishFacebookPost,
   subscribeFacebookPage,
   testFacebookConnection,
   updateAdminWebConfig,
+  updateFacebookListing,
   uploadAdminWebImages,
 } from '../api';
 import { DEFAULT_SOCIAL, normalizeSiteConfig } from '../siteDefaults';
@@ -83,15 +85,18 @@ export default function FacebookAdmin() {
   const [social, setSocial] = useState(DEFAULT_SOCIAL);
   const [status, setStatus] = useState(null);
   const [messengerActivity, setMessengerActivity] = useState(null);
+  const [activeListings, setActiveListings] = useState([]);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState(null);
   const [manualMessage, setManualMessage] = useState('');
-  const [manualImageUrl, setManualImageUrl] = useState('');
+  const [manualImageUrls, setManualImageUrls] = useState([]);
+  const [manualImageInput, setManualImageInput] = useState('');
   const [manualTopic, setManualTopic] = useState('loan');
   const [manualProductIndex, setManualProductIndex] = useState(0);
   const [linkPostToMessenger, setLinkPostToMessenger] = useState(true);
+  const [listingActive, setListingActive] = useState(true);
 
   const load = async () => {
     setLoading(true);
@@ -110,6 +115,7 @@ export default function FacebookAdmin() {
       setStatus(connection);
       setMessengerActivity(activity);
       setPosts(history);
+      getFacebookListings().then(setActiveListings).catch(() => setActiveListings([]));
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Facebook тохиргоог уншиж чадсангүй.' });
     } finally {
@@ -181,14 +187,17 @@ export default function FacebookAdmin() {
       setSocial(normalized.social);
       const post = await publishFacebookPost({
         message: manualMessage.trim(),
-        imageUrl: manualImageUrl.trim(),
+        imageUrls: manualImageUrls,
         topic: manualTopic,
         productIndex: manualProductIndex,
+        listingActive: manualTopic === 'car' && listingActive,
         linkToMessenger: linkPostToMessenger,
       });
       setPosts(current => [post, ...current]);
+      getFacebookListings().then(setActiveListings).catch(() => {});
       setManualMessage('');
-      setManualImageUrl('');
+      setManualImageUrls([]);
+      setManualImageInput('');
       setNotice({ type: 'success', text: 'Facebook пост амжилттай нийтлэгдлээ.' });
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Facebook пост нийтлэхэд алдаа гарлаа.' });
@@ -205,19 +214,52 @@ export default function FacebookAdmin() {
   const removeFaq = index => change('faqItems', social.faqItems.filter((_, itemIndex) => itemIndex !== index));
 
   const uploadPostImage = async event => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files || []).slice(0, Math.max(0, 5 - manualImageUrls.length));
     event.target.value = '';
-    if (!file) return;
+    if (!files.length) return;
     setBusy('upload');
     setNotice(null);
     try {
-      const result = await uploadAdminWebImages([file]);
-      const imageUrl = result.images?.[0]?.url || '';
-      if (!imageUrl) throw new Error('Зургийн URL буцаж ирсэнгүй.');
-      setManualImageUrl(imageUrl);
-      setNotice({ type: 'success', text: 'Постын зураг бэлэн боллоо.' });
+      const result = await uploadAdminWebImages(files);
+      const imageUrls = (result.images || []).map(image => image.url).filter(Boolean);
+      if (!imageUrls.length) throw new Error('Зургийн URL буцаж ирсэнгүй.');
+      setManualImageUrls(current => [...new Set([...current, ...imageUrls])].slice(0, 5));
+      setNotice({ type: 'success', text: `${imageUrls.length} зураг постод нэмэгдлээ.` });
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || error.message || 'Зураг оруулахад алдаа гарлаа.' });
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const addPostImageUrl = () => {
+    const value = manualImageInput.trim();
+    if (!value) return;
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:') throw new Error('HTTPS зураг шаардлагатай.');
+      setManualImageUrls(current => [...new Set([...current, url.href])].slice(0, 5));
+      setManualImageInput('');
+      setNotice(null);
+    } catch {
+      setNotice({ type: 'error', text: 'Зургийн HTTPS холбоос зөв оруулна уу.' });
+    }
+  };
+
+  const togglePostImage = url => setManualImageUrls(current => (
+    current.includes(url) ? current.filter(item => item !== url) : [...current, url].slice(0, 5)
+  ));
+
+  const updateListing = async post => {
+    setBusy(`listing-${post._id}`);
+    setNotice(null);
+    try {
+      const updated = await updateFacebookListing(post._id, post.listingActive === false);
+      setPosts(current => current.map(item => item._id === updated._id ? updated : item));
+      getFacebookListings().then(setActiveListings).catch(() => {});
+      setNotice({ type: 'success', text: updated.listingActive ? 'Зарыг Messenger-д идэвхжүүллээ.' : 'Зарыг Messenger жагсаалтаас хаслаа.' });
+    } catch (error) {
+      setNotice({ type: 'error', text: error.response?.data?.message || 'Зарын төлөв өөрчилж чадсангүй.' });
     } finally {
       setBusy('');
     }
@@ -248,7 +290,9 @@ export default function FacebookAdmin() {
     selectedProduct.image,
     selectedProduct.imageUrl,
   ].filter(Boolean);
-  const previewImage = manualImageUrl || (social.postUseProductImage ? selectedProductImages[0] : '');
+  const previewImages = manualImageUrls.length
+    ? manualImageUrls
+    : (social.postUseProductImage && selectedProductImages[0] ? [selectedProductImages[0]] : []);
 
   const messengerReady = Boolean(status?.connected && status?.configured);
   const legacyOverlap = Boolean(status?.legacyMessenger?.samePage);
@@ -321,7 +365,13 @@ export default function FacebookAdmin() {
         <Toggle checked={social.requestIntakeEnabled} onChange={value => change('requestIntakeEnabled', value)} label="Messenger-ээр хүсэлт авах" detail="Хүсэлтийг Facebook эх сурвалжтайгаар CRM-д бүртгэнэ" />
         <div className="zf-chat-entry-preview">
           <span>Эхний сонголт</span>
-          <div><button type="button" tabIndex={-1}><CarFront size={15} /> Машины талаар</button><button type="button" tabIndex={-1}><Landmark size={15} /> Зээлийн талаар</button></div>
+          <div><button type="button" tabIndex={-1}><CarFront size={15} /> Идэвхтэй зарууд</button><button type="button" tabIndex={-1}><Landmark size={15} /> Зээлийн талаар</button></div>
+        </div>
+        <div className="zf-active-listings-summary">
+          <span>Messenger-д харагдах зар · {activeListings.length}</span>
+          {activeListings.length > 0
+            ? activeListings.slice(0, 4).map(listing => <div key={listing.id}>{listing.imageUrl ? <img src={listing.imageUrl} alt="" /> : <CarFront size={16} />}<b>{listing.title}</b>{listing.permalinkUrl && <a href={listing.permalinkUrl} target="_blank" rel="noreferrer" title="Facebook зар нээх"><ExternalLink size={13} /></a>}</div>)
+            : <small>Идэвхтэй автомашины зар олдсонгүй.</small>}
         </div>
         <label className="z-label">Чат нээгдэхэд харагдах мэндчилгээ</label>
         <textarea className="z-input" rows={2} maxLength={160} value={social.profileGreeting || ''} onChange={event => change('profileGreeting', event.target.value)} />
@@ -366,22 +416,25 @@ export default function FacebookAdmin() {
         <textarea className="z-input" rows={9} value={manualMessage} onChange={event => setManualMessage(event.target.value)} placeholder="Хоосон бол сонгосон бүтээгдэхүүнтэй автомат загварыг ашиглана" />
 
         <div className="zf-image-picker">
-          <div><span className="z-label">Постын зураг</span>{manualImageUrl && <button type="button" title="Сонгосон зураг арилгах" onClick={() => setManualImageUrl('')}><X size={14} /></button>}</div>
-          {previewImage ? <img src={previewImage} alt="Постын зураг" /> : <div className="zf-image-empty"><ImagePlus size={22} /><span>Зураг сонгоогүй</span></div>}
-          {selectedProductImages.length > 0 && <div className="zf-image-library">{selectedProductImages.slice(0, 5).map((url, index) => <button type="button" className={previewImage === url ? 'active' : ''} key={`${url}-${index}`} onClick={() => setManualImageUrl(url)} title={`Бүтээгдэхүүний зураг ${index + 1}`}><img src={url} alt="" /></button>)}</div>}
+          <div><span className="z-label">Постын зураг · {manualImageUrls.length}/5</span>{manualImageUrls.length > 0 && <button type="button" title="Бүх зураг арилгах" onClick={() => setManualImageUrls([])}><X size={14} /></button>}</div>
+          {manualImageUrls.length > 0
+            ? <div className="zf-selected-images">{manualImageUrls.map((url, index) => <button type="button" key={`${url}-${index}`} onClick={() => togglePostImage(url)} title={`Зураг ${index + 1}-ийг арилгах`}><img src={url} alt={`Постын зураг ${index + 1}`} /><span><X size={13} /></span></button>)}</div>
+            : <div className="zf-image-empty"><ImagePlus size={22} /><span>Зураг сонгоогүй · 5 хүртэл оруулна</span></div>}
+          {selectedProductImages.length > 0 && <div className="zf-image-library">{selectedProductImages.slice(0, 5).map((url, index) => <button type="button" className={manualImageUrls.includes(url) ? 'active' : ''} key={`${url}-${index}`} onClick={() => togglePostImage(url)} title={`Бүтээгдэхүүний зураг ${index + 1}`}><img src={url} alt="" /></button>)}</div>}
           <div className="zf-image-actions">
-            <label className="z-btn z-btn-secondary"><Upload size={14} /> {busy === 'upload' ? 'Оруулж байна...' : 'Зураг оруулах'}<input type="file" accept="image/*" onChange={uploadPostImage} disabled={Boolean(busy)} /></label>
-            <input className="z-input" type="url" value={manualImageUrl} onChange={event => setManualImageUrl(event.target.value)} placeholder="эсвэл зургийн URL" />
+            <label className="z-btn z-btn-secondary"><Upload size={14} /> {busy === 'upload' ? 'Оруулж байна...' : 'Зураг оруулах'}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={uploadPostImage} disabled={Boolean(busy) || manualImageUrls.length >= 5} /></label>
+            <div className="zf-image-url"><input className="z-input" type="url" value={manualImageInput} onChange={event => setManualImageInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addPostImageUrl(); } }} placeholder="эсвэл зургийн HTTPS URL" /><button type="button" title="URL зураг нэмэх" onClick={addPostImageUrl} disabled={!manualImageInput.trim() || manualImageUrls.length >= 5}><Plus size={15} /></button></div>
           </div>
         </div>
 
         <Toggle checked={linkPostToMessenger} onChange={setLinkPostToMessenger} label="Messenger чаттай холбох" detail="Постоос орж ирсэн хүнийг сонгосон чиглэлийн чат руу оруулна" />
+        {manualTopic === 'car' && <Toggle checked={listingActive} onChange={setListingActive} label="Идэвхтэй зар" detail="Messenger чатны автомашины жагсаалтад харуулна" />}
         <button className="z-btn z-btn-primary zf-publish-now" type="button" onClick={publish} disabled={Boolean(busy) || !status?.connected}>{busy === 'publish' ? <LoaderCircle className="animate-spin" size={14} /> : <Send size={14} />} Одоо нийтлэх</button>
       </section>
 
       <aside className="zf-publish-panel">
         <div className="zf-panel-head"><div><span>Preview</span><h2>Постын харагдац</h2></div><MessagesSquare size={19} /></div>
-        {previewImage && <img className="zf-post-preview-image" src={previewImage} alt="Нийтлэх зураг" />}
+        {previewImages.length > 0 && <div className={`zf-post-preview-images count-${previewImages.length}`}>{previewImages.map((url, index) => <img key={`${url}-${index}`} src={url} alt={`Нийтлэх зураг ${index + 1}`} />)}</div>}
         <div className="zf-post-preview"><pre>{preview}</pre></div>
         {linkPostToMessenger && <div className="zf-chat-link-state"><MessageCircle size={15} /><span><b>{manualTopic === 'car' ? 'Машины чат' : manualTopic === 'loan' ? 'Зээлийн чат' : 'Үндсэн чат'}</b><small>Referral tracking идэвхтэй</small></span></div>}
       </aside>
@@ -400,7 +453,7 @@ export default function FacebookAdmin() {
 
       <section className="zf-history">
         <div className="zf-panel-head"><div><span>History</span><h2>Нийтлэлийн түүх</h2></div><Clock3 size={19} /></div>
-        <div className="z-table-wrap"><table className="z-table"><thead><tr><th>Огноо</th><th>Эх үүсвэр</th><th>Пост</th><th>Чат</th><th>Төлөв</th><th></th></tr></thead><tbody>{posts.length === 0 && <tr><td colSpan={6} className="text-center text-slate-400 py-8">Нийтлэлийн түүх хоосон</td></tr>}{posts.map(post => <tr key={post._id}><td>{formatDate(post.publishedAt || post.createdAt)}</td><td>{post.source === 'automatic' ? 'Автомат' : 'Гараар'}</td><td><b>{post.productName || 'Facebook нийтлэл'}</b><span className="zf-history-copy">{post.message}</span></td><td>{post.messengerLinked ? <span className="zf-chat-count"><MessageCircle size={13} />{post.chatStarts || 0}</span> : '-'}</td><td><span className={`z-badge ${post.status === 'published' ? 'z-badge-green' : post.status === 'failed' ? 'z-badge-red' : 'z-badge-yellow'}`}>{post.status === 'published' ? 'Нийтэлсэн' : post.status === 'failed' ? 'Алдаа' : 'Нийтэлж байна'}</span>{post.error && <small className="zf-error-text">{post.error}</small>}</td><td>{post.permalinkUrl && <a href={post.permalinkUrl} target="_blank" rel="noreferrer" title="Пост нээх"><ExternalLink size={15} /></a>}</td></tr>)}</tbody></table></div>
+        <div className="z-table-wrap"><table className="z-table"><thead><tr><th>Огноо</th><th>Эх үүсвэр</th><th>Пост</th><th>Чат</th><th>Messenger зар</th><th>Төлөв</th><th></th></tr></thead><tbody>{posts.length === 0 && <tr><td colSpan={7} className="text-center text-slate-400 py-8">Нийтлэлийн түүх хоосон</td></tr>}{posts.map(post => <tr key={post._id}><td>{formatDate(post.publishedAt || post.createdAt)}</td><td>{post.source === 'automatic' ? 'Автомат' : 'Гараар'}</td><td><b>{post.productName || 'Facebook нийтлэл'}</b><span className="zf-history-copy">{post.message}</span></td><td>{post.messengerLinked ? <span className="zf-chat-count"><MessageCircle size={13} />{post.chatStarts || 0}</span> : '-'}</td><td>{post.topic === 'car' && post.status === 'published' ? <button type="button" className={`zf-listing-toggle ${post.listingActive === false ? '' : 'active'}`} onClick={() => updateListing(post)} disabled={Boolean(busy)} title="Messenger жагсаалтын төлөв өөрчлөх">{busy === `listing-${post._id}` ? <LoaderCircle className="animate-spin" size={13} /> : post.listingActive === false ? <X size={13} /> : <Check size={13} />}{post.listingActive === false ? 'Нуусан' : 'Идэвхтэй'}</button> : '-'}</td><td><span className={`z-badge ${post.status === 'published' ? 'z-badge-green' : post.status === 'failed' ? 'z-badge-red' : 'z-badge-yellow'}`}>{post.status === 'published' ? 'Нийтэлсэн' : post.status === 'failed' ? 'Алдаа' : 'Нийтэлж байна'}</span>{post.error && <small className="zf-error-text">{post.error}</small>}</td><td>{post.permalinkUrl && <a href={post.permalinkUrl} target="_blank" rel="noreferrer" title="Пост нээх"><ExternalLink size={15} /></a>}</td></tr>)}</tbody></table></div>
       </section>
     </div>}
   </div>;
