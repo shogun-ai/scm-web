@@ -6,10 +6,12 @@ import {
   buildMessengerProfile,
   buildZentroMessengerLink,
   buildZentroPost,
+  isMessengerListingCandidate,
   normalizeFacebookPostImages,
   parseZentroAmount,
   processZentroMessengerEvent,
   removeZentroWebsiteApplicationHandoff,
+  resolveFacebookPostImages,
   selectMetaWebhookApp,
   verifyZentroWebhookSignature,
 } from './zentroFacebook.js';
@@ -50,6 +52,37 @@ test('deduplicates and limits a Facebook post to five images', () => {
     'https://example.com/4.jpg',
     'https://example.com/5.jpg',
   ]);
+});
+
+test('does not append a product fallback when manual post images are selected', () => {
+  assert.deepEqual(resolveFacebookPostImages(
+    ['https://example.com/manual.jpg'],
+    '',
+    'https://example.com/product.jpg'
+  ), ['https://example.com/manual.jpg']);
+  assert.deepEqual(resolveFacebookPostImages(
+    [],
+    '',
+    'https://example.com/product.jpg'
+  ), ['https://example.com/product.jpg']);
+});
+
+test('keeps only informative image-backed posts in Messenger listings', () => {
+  assert.equal(isMessengerListingCandidate({
+    message: 'Toyota Land Cruiser 200, 2018 он',
+    full_picture: 'https://example.com/land-cruiser.jpg',
+  }), true);
+  assert.equal(isMessengerListingCandidate({
+    message: '',
+    full_picture: 'https://example.com/unknown.jpg',
+  }), false);
+  assert.equal(isMessengerListingCandidate({
+    message: 'Toyota Prius 30, 2015 он',
+  }), false);
+  assert.equal(isMessengerListingCandidate({
+    message: 'Toyota Prius 30 зарагдсан',
+    full_picture: 'https://example.com/prius.jpg',
+  }), false);
 });
 
 test('removes the old website application handoff from Messenger-linked posts', () => {

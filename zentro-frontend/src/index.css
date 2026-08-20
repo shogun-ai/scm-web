@@ -375,6 +375,8 @@ textarea.z-input { border-radius: 14px; }
 .zf-status > a { margin-left: auto; color: #111310; }
 .zf-notice { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 10px 12px; border: 1px solid #aad18c; border-radius: 6px; background: #f0fae9; color: #2f5e20; font-size: 12px; font-weight: 750; }
 .zf-notice.error { border-color: #efb1ab; background: #fff2f0; color: #9e2c23; }
+.zf-notice > span { min-width: 0; }
+.zf-notice > a { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: inherit; font-size: 11px; white-space: nowrap; }
 .zf-tabs { display: flex; gap: 4px; margin: 20px 0 14px; padding-bottom: 8px; border-bottom: 1px solid #d7d9d3; }
 .zf-tabs button { min-height: 38px; display: inline-flex; align-items: center; gap: 7px; padding: 0 14px; border: 0; border-radius: 4px; background: transparent; color: #666b63; font-size: 12px; font-weight: 780; cursor: pointer; }
 .zf-tabs button:hover { background: #eceee9; color: #111310; }
@@ -447,6 +449,9 @@ textarea.z-input { border-radius: 14px; }
 .zf-topic-selector button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #d1d4cd; border-radius: 5px; background: #f6f7f4; color: #555b52; font-size: 11px; font-weight: 800; cursor: pointer; }
 .zf-topic-selector button:hover { border-color: #9da297; color: #111310; }
 .zf-topic-selector button.active { border-color: #111310; background: #111310; color: #fff; }
+.zf-topic-hint { min-height: 42px; display: flex; align-items: flex-start; gap: 8px; padding: 9px 10px; border-left: 3px solid #b8e82f; background: #f5f7f1; color: #5e645a; font-size: 10px; font-weight: 650; line-height: 1.45; }
+.zf-topic-hint > svg { flex: 0 0 auto; margin-top: 1px; color: #30352d; }
+.zf-topic-hint b { display: block; color: #1e211d; font-size: 11px; }
 .zf-image-picker { display: flex; flex-direction: column; gap: 8px; }
 .zf-image-picker > div:first-child { display: flex; align-items: center; justify-content: space-between; }
 .zf-image-picker > div:first-child button { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #d1d4cd; border-radius: 4px; background: #fff; color: #9e2c23; cursor: pointer; }

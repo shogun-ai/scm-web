@@ -61,10 +61,11 @@ function Toggle({ checked, onChange, label, detail }) {
   </label>;
 }
 
-function Notice({ type = 'success', children }) {
+function Notice({ type = 'success', children, url = '' }) {
   return <div className={`zf-notice ${type}`}>
     {type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
     <span>{children}</span>
+    {url && <a href={url} target="_blank" rel="noreferrer">Facebook дээр нээх <ExternalLink size={13} /></a>}
   </div>;
 }
 
@@ -206,7 +207,7 @@ export default function FacebookAdmin() {
       setManualMessage('');
       setManualImageUrls([]);
       setManualImageInput('');
-      setNotice({ type: 'success', text: 'Facebook пост амжилттай нийтлэгдлээ.' });
+      setNotice({ type: 'success', text: 'Facebook пост амжилттай нийтлэгдлээ.', url: post.permalinkUrl || '' });
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Facebook пост нийтлэхэд алдаа гарлаа.' });
     } finally {
@@ -327,7 +328,7 @@ export default function FacebookAdmin() {
       {status?.page?.link && <a href={status.page.link} target="_blank" rel="noreferrer" title="Facebook Page нээх"><ExternalLink size={16} /></a>}
     </div>
 
-    {notice && <Notice type={notice.type}>{notice.text}</Notice>}
+    {notice && <Notice type={notice.type} url={notice.url}>{notice.text}</Notice>}
 
     <nav className="zf-tabs">{VIEWS.map(({ id, label, icon: Icon }) => <button type="button" key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}><Icon size={16} />{label}</button>)}</nav>
 
@@ -422,6 +423,11 @@ export default function FacebookAdmin() {
           <button type="button" className={manualTopic === 'loan' ? 'active' : ''} onClick={() => setManualTopic('loan')}><Landmark size={15} /> Зээл</button>
           <button type="button" className={manualTopic === 'general' ? 'active' : ''} onClick={() => setManualTopic('general')}><MessageCircle size={15} /> Ерөнхий</button>
         </div>
+        <div className="zf-topic-hint">
+          {manualTopic === 'car'
+            ? <><CarFront size={14} /><span><b>Автомашины зар</b> Зураг, мэдээлэлтэй бөгөөд “Идэвхтэй зар” асаалттай бол Messenger жагсаалтад орно.</span></>
+            : <><AlertCircle size={14} /><span><b>{manualTopic === 'loan' ? 'Зээлийн пост' : 'Ерөнхий пост'}</b> Автомашины “Идэвхтэй зарууд” жагсаалтад орохгүй.</span></>}
+        </div>
 
         <label className="z-label">Холбох бүтээгдэхүүн</label>
         <select className="z-select" value={manualProductIndex} onChange={event => setManualProductIndex(Number(event.target.value))}>
@@ -443,7 +449,7 @@ export default function FacebookAdmin() {
           </div>
         </div>
 
-        <Toggle checked={linkPostToMessenger} onChange={setLinkPostToMessenger} label="Messenger чаттай холбох" detail="Постоос орж ирсэн хүнийг сонгосон чиглэлийн чат руу оруулна" />
+        <Toggle checked={linkPostToMessenger} onChange={setLinkPostToMessenger} label="Messenger чаттай холбох" detail="Постод Messenger холбоос нэмээд Meta дэмжвэл Send Message товч харуулна" />
         {manualTopic === 'car' && <Toggle checked={listingActive} onChange={setListingActive} label="Идэвхтэй зар" detail="Messenger чатны автомашины жагсаалтад харуулна" />}
         <button className="z-btn z-btn-primary zf-publish-now" type="button" onClick={publish} disabled={Boolean(busy) || !status?.connected}>{busy === 'publish' ? <LoaderCircle className="animate-spin" size={14} /> : <Send size={14} />} Одоо нийтлэх</button>
       </section>

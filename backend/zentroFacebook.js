@@ -148,6 +148,30 @@ async function graphPostWithToken(pathname, data = {}, accessToken = '') {
   });
 }
 
+function canRetryWithoutMessengerCta(error) {
+  const status = Number(error.response?.status || 0);
+  const meta = error.response?.data?.error || {};
+  const message = String(meta.message || error.message || '').toLowerCase();
+  return status === 400 && (
+    Number(meta.code) === 100
+    || message.includes('call_to_action')
+    || message.includes('message_page')
+  );
+}
+
+async function publishPageFeed(pageId, payload, messengerLinked = false) {
+  if (!messengerLinked) return graphPost(`${pageId}/feed`, payload);
+  try {
+    return await graphPost(`${pageId}/feed`, {
+      ...payload,
+      call_to_action: { type: 'MESSAGE_PAGE', value: {} },
+    });
+  } catch (error) {
+    if (!canRetryWithoutMessengerCta(error)) throw error;
+    return graphPost(`${pageId}/feed`, payload);
+  }
+}
+
 export function verifyZentroWebhookSignature(rawBody, header, appSecret) {
   const signature = String(header || '');
   if (!appSecret || !rawBody || !signature.startsWith('sha256=')) return false;
@@ -200,6 +224,12 @@ function listingTitle(message, fallback = 'Автомашины зар') {
 function isClosedListing(message) {
   const text = normalizedText(message);
   return ['зарагдсан', 'борлуулагдсан', 'идэвхгүй', 'зар хаагдсан', 'sold'].some(term => text.includes(term));
+}
+
+export function isMessengerListingCandidate(value = {}) {
+  const message = String(value.message || value.description || '').replace(/\s+/g, ' ').trim();
+  const imageUrl = safeHttpsUrl(value.full_picture || value.imageUrl || safeArray(value.imageUrls)[0]);
+  return message.length >= 10 && Boolean(imageUrl) && !isClosedListing(message);
 }
 
 function normalizeListing(value = {}) {
@@ -266,7 +296,7 @@ async function fetchActivePageListings(limit = 6) {
     .map(record => String(record.metaPostId || ''))
     .filter(Boolean));
   const tracked = records
-    .filter(record => record.topic === 'car' && record.listingActive !== false && !isClosedListing(record.message))
+    .filter(record => record.topic === 'car' && record.listingActive !== false && isMessengerListingCandidate(record))
     .map(normalizeListing);
   let live = [];
   try {
@@ -276,7 +306,7 @@ async function fetchActivePageListings(limit = 6) {
       limit: 20,
     });
     live = safeArray(response.data?.data)
-      .filter(post => !excludedMetaIds.has(String(post.id || '')) && !isClosedListing(post.message))
+      .filter(post => !excludedMetaIds.has(String(post.id || '')) && isMessengerListingCandidate(post))
       .map(normalizeListing);
   } catch (error) {
     console.error('Zentro active Page listings error:', cleanMetaError(error));
@@ -302,6 +332,13 @@ export function normalizeFacebookPostImages(imageUrls = [], imageUrl = '', gener
     imageUrl,
     generatedImage,
   ].map(safeHttpsUrl).filter(Boolean))].slice(0, 5);
+}
+
+export function resolveFacebookPostImages(imageUrls = [], imageUrl = '', generatedImage = '') {
+  const selectedImages = normalizeFacebookPostImages(imageUrls, imageUrl);
+  return selectedImages.length
+    ? selectedImages
+    : normalizeFacebookPostImages([], '', generatedImage);
 }
 
 function entryOptions() {
@@ -949,7 +986,7 @@ async function publishPost(config, {
   const finalTopic = normalizePostTopic(topic, social.postDefaultTopic);
   const messengerLinked = linkToMessenger === undefined ? Boolean(social.postLinkToMessenger) : Boolean(linkToMessenger);
   const generated = buildZentroPost(config, new Date(), message, productIndex);
-  const finalImages = normalizeFacebookPostImages(imageUrls, imageUrl, generated.imageUrl);
+  const finalImages = resolveFacebookPostImages(imageUrls, imageUrl, generated.imageUrl);
   const finalImage = finalImages[0] || '';
   const existing = scheduleKey ? await FacebookPost.findOne({ scheduleKey }).select('_id') : null;
   const recordId = existing?._id || new mongoose.Types.ObjectId();
@@ -988,7 +1025,7 @@ async function publishPost(config, {
 
   try {
     let response;
-    if (finalImages.length > 1) {
+    if (finalImages.length > 0) {
       const attachedMedia = [];
       for (const url of finalImages) {
         const photo = await graphPost(`${pageId}/photos`, { url, published: false });
@@ -996,21 +1033,15 @@ async function publishPost(config, {
         if (!mediaId) throw new Error('Meta зураг upload хийх үед media ID буцаасангүй.');
         attachedMedia.push({ media_fbid: mediaId });
       }
-      response = await graphPost(`${pageId}/feed`, {
+      response = await publishPageFeed(pageId, {
         message: finalMessage,
         attached_media: attachedMedia,
-      });
-    } else if (finalImage) {
-      response = await graphPost(`${pageId}/photos`, {
-        url: finalImage,
-        caption: finalMessage,
-        published: true,
-      });
+      }, messengerLinked);
     } else {
-      response = await graphPost(`${pageId}/feed`, {
+      response = await publishPageFeed(pageId, {
         message: finalMessage,
         link: messengerUrl || WEBSITE_URL,
-      });
+      }, messengerLinked);
     }
     const metaPostId = response.data?.post_id || response.data?.id || '';
     record.status = 'published';
