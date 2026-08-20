@@ -305,6 +305,10 @@ export default function FacebookAdmin() {
 
   const messengerReady = Boolean(status?.connected && status?.configured);
   const legacyOverlap = Boolean(status?.legacyMessenger?.samePage);
+  const tokenExpired = /(?:access token|session).*(?:expired|хугацаа)/i.test(String(status?.error || ''));
+  const connectionDetail = tokenExpired
+    ? 'Page access token-ийн хугацаа дууссан. Meta-аас шинэ token үүсгээд Render Environment-д солино уу.'
+    : status?.error || (messengerReady ? 'Messenger болон Page API ашиглахад бэлэн' : 'Credentials-ийн төлөвийг Холболт хэсгээс харна уу');
 
   if (loading) return <div className="zf-loading"><LoaderCircle className="animate-spin" size={20} /> Facebook удирдлагыг нээж байна...</div>;
 
@@ -319,7 +323,7 @@ export default function FacebookAdmin() {
 
     <div className={`zf-status ${messengerReady ? 'connected' : ''}`}>
       <div className="zf-status-icon">{messengerReady ? <Check size={18} /> : <AlertCircle size={18} />}</div>
-      <div><b>{messengerReady ? status.page?.name || 'Facebook Page холбогдсон' : status?.connected ? `${status.page?.name || 'Facebook Page'} · webhook credentials дутуу` : 'Meta холболт хүлээгдэж байна'}</b><span>{messengerReady ? 'Messenger болон Page API ашиглахад бэлэн' : 'Credentials-ийн төлөвийг Холболт хэсгээс харна уу'}</span></div>
+      <div><b>{messengerReady ? status.page?.name || 'Facebook Page холбогдсон' : tokenExpired ? 'Facebook Page token шинэчлэх шаардлагатай' : status?.connected ? `${status.page?.name || 'Facebook Page'} · webhook credentials дутуу` : 'Meta холболт хүлээгдэж байна'}</b><span>{connectionDetail}</span></div>
       {status?.page?.link && <a href={status.page.link} target="_blank" rel="noreferrer" title="Facebook Page нээх"><ExternalLink size={16} /></a>}
     </div>
 
@@ -343,7 +347,10 @@ export default function FacebookAdmin() {
 
       <section className="zf-panel">
         <div className="zf-panel-head"><div><span>Server credentials</span><h2>Meta API төлөв</h2></div><Link2 size={19} /></div>
-        <div className="zf-credential-list">{Object.entries(CREDENTIAL_LABELS).map(([key, label]) => <div key={key}><span className={status?.credentials?.[key] ? 'ok' : ''}>{status?.credentials?.[key] ? <Check size={13} /> : <AlertCircle size={13} />}</span><b>{label}</b><small>{status?.credentials?.[key] ? 'Тохирсон' : 'Дутуу'}</small></div>)}</div>
+        <div className="zf-credential-list">{Object.entries(CREDENTIAL_LABELS).map(([key, label]) => {
+          const ready = Boolean(status?.credentials?.[key]) && !(key === 'pageAccessToken' && tokenExpired);
+          return <div key={key}><span className={ready ? 'ok' : ''}>{ready ? <Check size={13} /> : <AlertCircle size={13} />}</span><b>{label}</b><small>{key === 'pageAccessToken' && tokenExpired ? 'Хугацаа дууссан' : ready ? 'Тохирсон' : 'Дутуу'}</small></div>;
+        })}</div>
         <div className="zf-permissions">{status?.requiredPermissions?.map(permission => <code key={permission}>{permission}</code>)}</div>
         <button className="z-btn z-btn-primary" type="button" onClick={subscribe} disabled={Boolean(busy) || !messengerReady}>{busy === 'subscribe' ? <LoaderCircle className="animate-spin" size={14} /> : <Link2 size={14} />} Messenger webhook холбох</button>
       </section>
