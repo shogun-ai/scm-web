@@ -121,9 +121,9 @@ export const DEFAULT_SOCIAL = {
   welcomeMessage: 'Сайн байна уу? Zentro Prime Capital-д тавтай морил. Та ямар мэдээлэл авах вэ?',
   businessHours: 'Даваа-Баасан 09:00-18:00',
   postTemplates: [
-    '{{product}}\n\n{{description}}\n\nХүү: {{rate}}\nХугацаа: {{term}}\nЗээлийн хэмжээ: {{amount}}\n\nДэлгэрэнгүй: {{website}}/#apply\n\nЗээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна. #ZentroPrimeCapital #ШуурхайЗээл',
-    'Санхүүгийн хэрэгцээгээ цөөн алхмаар шийдээрэй.\n\n{{product}}\n{{description}}\n\nХүсэлт өгөх: {{website}}/#apply\nХолбоо барих: {{phone}}\n\n#ZentroPrimeCapital #АвтомашиныЗээл',
-    'Машинаа унаад зээлээ авах боломжийг Zentro Prime Capital-аас.\n\nӨнөөдрийн онцлох шийдэл: {{product}}\nХэмжээ: {{amount}}\nХугацаа: {{term}}\n\n{{website}}/#apply\n\nЗээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна.',
+    '{{product}}\n\n{{description}}\n\nХүү: {{rate}}\nХугацаа: {{term}}\nЗээлийн хэмжээ: {{amount}}\n\nХүсэлтээ Messenger чатаар шууд өгнө үү.\n\nЗээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна. #ZentroPrimeCapital #ШуурхайЗээл',
+    'Санхүүгийн хэрэгцээгээ цөөн алхмаар шийдээрэй.\n\n{{product}}\n{{description}}\n\nХүсэлтээ Messenger чатаар шууд өгнө үү.\nХолбоо барих: {{phone}}\n\n#ZentroPrimeCapital #АвтомашиныЗээл',
+    'Машинаа унаад зээлээ авах боломжийг Zentro Prime Capital-аас.\n\nӨнөөдрийн онцлох шийдэл: {{product}}\nХэмжээ: {{amount}}\nХугацаа: {{term}}\n\nХүсэлтээ Messenger чатаар шууд өгнө үү.\n\nЗээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна.',
   ],
   faqItems: [],
 };

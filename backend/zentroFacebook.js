@@ -6,9 +6,9 @@ import mongoose from 'mongoose';
 const WEBSITE_URL = 'https://zentrocapitalgroup.com';
 const DEFAULT_TIMEZONE = 'Asia/Ulaanbaatar';
 const DEFAULT_POST_TEMPLATES = [
-  '{{product}}\n\n{{description}}\n\nХүү: {{rate}}\nХугацаа: {{term}}\nЗээлийн хэмжээ: {{amount}}\n\nДэлгэрэнгүй: {{website}}/#apply\n\nЗээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна. #ZentroPrimeCapital #ШуурхайЗээл',
-  'Санхүүгийн хэрэгцээгээ цөөн алхмаар шийдээрэй.\n\n{{product}}\n{{description}}\n\nХүсэлт өгөх: {{website}}/#apply\nХолбоо барих: {{phone}}\n\n#ZentroPrimeCapital #АвтомашиныЗээл',
-  'Машинаа унаад зээлээ авах боломжийг Zentro Prime Capital-аас.\n\nӨнөөдрийн онцлох шийдэл: {{product}}\nХэмжээ: {{amount}}\nХугацаа: {{term}}\n\n{{website}}/#apply\n\nЗээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна.',
+  '{{product}}\n\n{{description}}\n\nХүү: {{rate}}\nХугацаа: {{term}}\nЗээлийн хэмжээ: {{amount}}\n\nХүсэлтээ Messenger чатаар шууд өгнө үү.\n\nЗээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна. #ZentroPrimeCapital #ШуурхайЗээл',
+  'Санхүүгийн хэрэгцээгээ цөөн алхмаар шийдээрэй.\n\n{{product}}\n{{description}}\n\nХүсэлтээ Messenger чатаар шууд өгнө үү.\nХолбоо барих: {{phone}}\n\n#ZentroPrimeCapital #АвтомашиныЗээл',
+  'Машинаа унаад зээлээ авах боломжийг Zentro Prime Capital-аас.\n\nӨнөөдрийн онцлох шийдэл: {{product}}\nХэмжээ: {{amount}}\nХугацаа: {{term}}\n\nХүсэлтээ Messenger чатаар шууд өгнө үү.\n\nЗээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна.',
 ];
 
 const DEFAULT_SOCIAL = {
@@ -824,8 +824,16 @@ export function buildZentroMessengerLink(social = {}, referralCode = '', pageId 
 
 function messengerLinkLabel(topic) {
   if (topic === 'car') return 'Машины талаар Messenger-ээр асуух';
-  if (topic === 'loan') return 'Зээлийн талаар Messenger-ээр асуух';
+  if (topic === 'loan') return 'Зээлийн хүсэлтээ Messenger-ээр өгөх';
   return 'Messenger-ээр холбогдох';
+}
+
+export function removeZentroWebsiteApplicationHandoff(message = '') {
+  return String(message)
+    .replace(/(?:Дэлгэрэнгүй|Хүсэлт өгөх)\s*:\s*https?:\/\/(?:www\.)?zentrocapitalgroup\.com\/?#apply[^\n]*/giu, '')
+    .replace(/https?:\/\/(?:www\.)?zentrocapitalgroup\.com\/?#apply\b/giu, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function zonedParts(date = new Date(), timezone = DEFAULT_TIMEZONE) {
@@ -906,9 +914,12 @@ async function publishPost(config, {
   const recordId = existing?._id || new mongoose.Types.ObjectId();
   const referralCode = messengerLinked ? `zpc-post-${finalTopic}-${recordId}` : '';
   const messengerUrl = messengerLinked ? buildZentroMessengerLink(social, referralCode, pageId) : '';
-  const finalMessage = messengerUrl && !generated.message.includes(messengerUrl)
-    ? `${generated.message}\n\n${messengerLinkLabel(finalTopic)}: ${messengerUrl}`
+  const postMessage = messengerLinked
+    ? removeZentroWebsiteApplicationHandoff(generated.message)
     : generated.message;
+  const finalMessage = messengerUrl && !postMessage.includes(messengerUrl)
+    ? `${postMessage}\n\n${messengerLinkLabel(finalTopic)}: ${messengerUrl}`
+    : postMessage;
   const filter = scheduleKey ? { scheduleKey } : { _id: recordId };
   const record = await FacebookPost.findOneAndUpdate(
     filter,

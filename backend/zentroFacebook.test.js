@@ -9,6 +9,7 @@ import {
   normalizeFacebookPostImages,
   parseZentroAmount,
   processZentroMessengerEvent,
+  removeZentroWebsiteApplicationHandoff,
   verifyZentroWebhookSignature,
 } from './zentroFacebook.js';
 
@@ -48,6 +49,18 @@ test('deduplicates and limits a Facebook post to five images', () => {
     'https://example.com/4.jpg',
     'https://example.com/5.jpg',
   ]);
+});
+
+test('removes the old website application handoff from Messenger-linked posts', () => {
+  const message = removeZentroWebsiteApplicationHandoff([
+    'Машин барьцаалсан шуурхай зээл',
+    '',
+    'Дэлгэрэнгүй: https://zentrocapitalgroup.com/#apply',
+    '',
+    'Зээлийн эцсийн нөхцөл гэрээгээр баталгаажна.',
+  ].join('\n'));
+  assert.doesNotMatch(message, /zentrocapitalgroup\.com\/#apply/);
+  assert.match(message, /Зээлийн эцсийн нөхцөл/);
 });
 
 function createSessionModel() {

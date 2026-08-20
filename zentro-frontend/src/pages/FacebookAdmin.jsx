@@ -79,6 +79,14 @@ function formatDate(value) {
   return value ? new Date(value).toLocaleString('mn-MN') : '-';
 }
 
+function removeWebsiteApplicationHandoff(message = '') {
+  return String(message)
+    .replace(/(?:Дэлгэрэнгүй|Хүсэлт өгөх)\s*:\s*https?:\/\/(?:www\.)?zentrocapitalgroup\.com\/?#apply[^\n]*/giu, '')
+    .replace(/https?:\/\/(?:www\.)?zentrocapitalgroup\.com\/?#apply\b/giu, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export default function FacebookAdmin() {
   const [view, setView] = useState('connection');
   const [config, setConfig] = useState(null);
@@ -278,10 +286,11 @@ export default function FacebookAdmin() {
       website: 'https://zentrocapitalgroup.com',
     });
     if (!linkPostToMessenger) return message;
+    const messengerMessage = removeWebsiteApplicationHandoff(message);
     const base = social.messengerUrl || 'https://m.me/JapanCarDealership';
     const separator = base.includes('?') ? '&' : '?';
-    const label = manualTopic === 'car' ? 'Машины талаар Messenger-ээр асуух' : manualTopic === 'loan' ? 'Зээлийн талаар Messenger-ээр асуух' : 'Messenger-ээр холбогдох';
-    return `${message}\n\n${label}: ${base}${separator}ref=post-preview`;
+    const label = manualTopic === 'car' ? 'Машины талаар Messenger-ээр асуух' : manualTopic === 'loan' ? 'Зээлийн хүсэлтээ Messenger-ээр өгөх' : 'Messenger-ээр холбогдох';
+    return `${messengerMessage}\n\n${label}: ${base}${separator}ref=post-preview`;
   }, [config, linkPostToMessenger, manualMessage, manualProductIndex, manualTopic, social.messengerUrl, social.postTemplates]);
 
   const selectedProduct = config?.products?.[manualProductIndex] || config?.products?.[0] || {};
