@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import {
   getAdminWebConfig,
+  getFacebookMessengerActivity,
   getFacebookPostHistory,
   getFacebookStatus,
   publishFacebookPost,
@@ -81,6 +82,7 @@ export default function FacebookAdmin() {
   const [config, setConfig] = useState(null);
   const [social, setSocial] = useState(DEFAULT_SOCIAL);
   const [status, setStatus] = useState(null);
+  const [messengerActivity, setMessengerActivity] = useState(null);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -94,9 +96,10 @@ export default function FacebookAdmin() {
   const load = async () => {
     setLoading(true);
     try {
-      const [rawConfig, connection, history] = await Promise.all([
+      const [rawConfig, connection, activity, history] = await Promise.all([
         getAdminWebConfig(),
         getFacebookStatus(),
+        getFacebookMessengerActivity().catch(() => null),
         getFacebookPostHistory(),
       ]);
       const normalized = normalizeSiteConfig(rawConfig);
@@ -105,6 +108,7 @@ export default function FacebookAdmin() {
       setManualTopic(normalized.social.postDefaultTopic || 'loan');
       setLinkPostToMessenger(normalized.social.postLinkToMessenger !== false);
       setStatus(connection);
+      setMessengerActivity(activity);
       setPosts(history);
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Facebook тохиргоог уншиж чадсангүй.' });
@@ -143,6 +147,8 @@ export default function FacebookAdmin() {
     try {
       const result = await testFacebookConnection();
       setStatus(result);
+      const activity = await getFacebookMessengerActivity().catch(() => null);
+      setMessengerActivity(activity);
       setNotice({ type: result.connected ? 'success' : 'error', text: result.connected ? `${result.page?.name || 'Facebook Page'} холболт хэвийн байна.` : (result.error || 'Meta credentials дутуу байна.') });
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Холболт шалгахад алдаа гарлаа.' });
@@ -298,6 +304,12 @@ export default function FacebookAdmin() {
           {status?.subscriptions?.length
             ? status.subscriptions.map(item => <div key={item.id}><b>{item.name || item.id}</b><small>{item.subscribed_fields?.join(', ') || 'Event сонгоогүй'}</small></div>)
             : <small>{status?.subscriptionError || 'Subscription мэдээлэл олдсонгүй.'}</small>}
+        </div>
+        <div className="zf-subscription-list">
+          <span>Webhook activity</span>
+          <div><b>{messengerActivity?.webhook?.events || 0} event</b><small>Сүүлд ирсэн: {formatDate(messengerActivity?.webhook?.lastEventAt)}</small></div>
+          <div><b>{messengerActivity?.totalSessions || 0} чат session</b><small>Сүүлд боловсруулсан: {formatDate(messengerActivity?.webhook?.lastProcessedAt)}</small></div>
+          {messengerActivity?.webhook?.lastError && <div><b>Сүүлийн алдаа</b><small>{messengerActivity.webhook.lastError}</small></div>}
         </div>
       </section>
     </div>}

@@ -6738,19 +6738,99 @@ async function getZentroWebConfigDoc() {
   return { ...doc, webWidgets: Array.isArray(doc.webWidgets) ? doc.webWidgets : [] };
 }
 
+const isInlineZentroImage = value => /^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(String(value || ''));
+
+function zentroPublicAssetUrl(doc, path) {
+  const baseUrl = process.env.PUBLIC_API_BASE_URL || 'https://scm-okjs.onrender.com';
+  const version = new Date(doc.updatedAt || 0).getTime() || 1;
+  return `${baseUrl}/api/zentro/public/assets/${path}?v=${version}`;
+}
+
+function compactZentroGallery(doc, values, pathForIndex) {
+  const gallery = (Array.isArray(values) ? values : []).filter(value => typeof value === 'string' && value);
+  const remote = gallery.filter(value => !isInlineZentroImage(value));
+  if (remote.length) return [...new Set(remote)].slice(0, 5);
+  return gallery.map((value, index) => (
+    isInlineZentroImage(value) ? zentroPublicAssetUrl(doc, pathForIndex(index)) : value
+  )).slice(0, 5);
+}
+
 function compactPublicZentroImages(doc) {
   const config = { ...doc };
-  if (Array.isArray(config.heroImages) && config.heroImages.length) config.heroImage = '';
-  config.products = Array.isArray(config.products) ? config.products.map(product => {
-    if (!Array.isArray(product.images) || !product.images.length) return product;
-    return { ...product, image: '', imageUrl: '' };
+  config.logoUrl = isInlineZentroImage(config.logoUrl) ? zentroPublicAssetUrl(doc, 'logo') : config.logoUrl;
+  config.faviconUrl = isInlineZentroImage(config.faviconUrl) ? zentroPublicAssetUrl(doc, 'favicon') : config.faviconUrl;
+  config.heroImages = compactZentroGallery(doc, config.heroImages, index => `hero/${index}`);
+  if (config.heroImages.length) config.heroImage = '';
+  else if (isInlineZentroImage(config.heroImage)) config.heroImage = zentroPublicAssetUrl(doc, 'hero/0');
+  config.products = Array.isArray(config.products) ? config.products.map((product, productIndex) => {
+    const images = compactZentroGallery(doc, product.images, imageIndex => `product/${productIndex}/${imageIndex}`);
+    if (images.length) return { ...product, images, image: '', imageUrl: '' };
+    const legacyImage = product.image || product.imageUrl || '';
+    return isInlineZentroImage(legacyImage)
+      ? { ...product, images: [zentroPublicAssetUrl(doc, `product/${productIndex}/0`)], image: '', imageUrl: '' }
+      : product;
   }) : config.products;
-  config.customSections = Array.isArray(config.customSections) ? config.customSections.map(section => {
-    if (!Array.isArray(section.images) || !section.images.length) return section;
-    return { ...section, image: '' };
+  config.customSections = Array.isArray(config.customSections) ? config.customSections.map((section, sectionIndex) => {
+    const images = compactZentroGallery(doc, section.images, imageIndex => `custom/${sectionIndex}/${imageIndex}`);
+    if (images.length) return { ...section, images, image: '' };
+    return isInlineZentroImage(section.image)
+      ? { ...section, images: [zentroPublicAssetUrl(doc, `custom/${sectionIndex}/0`)], image: '' }
+      : section;
   }) : config.customSections;
   return config;
 }
+
+function sendZentroInlineAsset(res, value) {
+  const match = String(value || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s);
+  if (!match) return res.sendStatus(404);
+  const body = Buffer.from(match[2], 'base64');
+  res.set({
+    'Cache-Control': 'public, max-age=31536000, immutable',
+    'Content-Type': match[1],
+    'Content-Length': String(body.length),
+  });
+  return res.send(body);
+}
+
+async function zentroInlineAssetDoc() {
+  return ZentroWebConfig.findOne({ key: 'public' }).lean();
+}
+
+app.get('/api/zentro/public/assets/logo', async (req, res) => {
+  try { return sendZentroInlineAsset(res, (await zentroInlineAssetDoc())?.logoUrl); }
+  catch (e) { return res.status(500).json({ message: e.message }); }
+});
+
+app.get('/api/zentro/public/assets/favicon', async (req, res) => {
+  try { return sendZentroInlineAsset(res, (await zentroInlineAssetDoc())?.faviconUrl); }
+  catch (e) { return res.status(500).json({ message: e.message }); }
+});
+
+app.get('/api/zentro/public/assets/hero/:imageIndex', async (req, res) => {
+  try {
+    const doc = await zentroInlineAssetDoc();
+    const index = Math.max(0, Number(req.params.imageIndex) || 0);
+    return sendZentroInlineAsset(res, doc?.heroImages?.[index] || (index === 0 ? doc?.heroImage : ''));
+  } catch (e) { return res.status(500).json({ message: e.message }); }
+});
+
+app.get('/api/zentro/public/assets/product/:productIndex/:imageIndex', async (req, res) => {
+  try {
+    const doc = await zentroInlineAssetDoc();
+    const product = doc?.products?.[Math.max(0, Number(req.params.productIndex) || 0)];
+    const index = Math.max(0, Number(req.params.imageIndex) || 0);
+    return sendZentroInlineAsset(res, product?.images?.[index] || (index === 0 ? product?.image || product?.imageUrl : ''));
+  } catch (e) { return res.status(500).json({ message: e.message }); }
+});
+
+app.get('/api/zentro/public/assets/custom/:sectionIndex/:imageIndex', async (req, res) => {
+  try {
+    const doc = await zentroInlineAssetDoc();
+    const section = doc?.customSections?.[Math.max(0, Number(req.params.sectionIndex) || 0)];
+    const index = Math.max(0, Number(req.params.imageIndex) || 0);
+    return sendZentroInlineAsset(res, section?.images?.[index] || (index === 0 ? section?.image : ''));
+  } catch (e) { return res.status(500).json({ message: e.message }); }
+});
 
 app.get('/api/zentro/public/config', async (req, res) => {
   try {

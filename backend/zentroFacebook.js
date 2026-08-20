@@ -760,7 +760,7 @@ async function legacyMessengerStatus(zentroPageId) {
   return result;
 }
 
-async function connectionStatus() {
+async function connectionStatus(webhookActivity = null) {
   const env = facebookEnv();
   const credentials = {
     pageId: Boolean(env.pageId),
@@ -776,6 +776,7 @@ async function connectionStatus() {
     subscriptions: [],
     subscriptionError: '',
     legacyMessenger: { configured: false, samePage: false, page: null, error: '' },
+    webhookActivity: webhookActivity ? { ...webhookActivity } : null,
     webhookUrl: `${process.env.PUBLIC_API_BASE_URL || 'https://scm-okjs.onrender.com'}/api/zentro/facebook/webhook`,
     requiredPermissions: ['pages_messaging', 'pages_manage_metadata', 'pages_manage_posts', 'pages_read_engagement'],
     error: '',
@@ -810,6 +811,17 @@ export function createZentroFacebookIntegration({
 }) {
   let scheduler;
   let schedulerBusy = false;
+  const webhookActivity = {
+    requests: 0,
+    events: 0,
+    processed: 0,
+    errors: 0,
+    signatureFailures: 0,
+    lastRequestAt: null,
+    lastEventAt: null,
+    lastProcessedAt: null,
+    lastError: '',
+  };
 
   async function currentConfig() {
     return ZentroWebConfig.findOneAndUpdate(
@@ -852,38 +864,75 @@ export function createZentroFacebookIntegration({
   });
 
   app.post('/api/zentro/facebook/webhook', (req, res) => {
-    if (!verifyWebhookSignature(req)) return res.status(401).send('INVALID_SIGNATURE');
+    webhookActivity.requests += 1;
+    webhookActivity.lastRequestAt = new Date();
+    if (!verifyWebhookSignature(req)) {
+      webhookActivity.signatureFailures += 1;
+      webhookActivity.lastError = 'INVALID_SIGNATURE';
+      return res.status(401).send('INVALID_SIGNATURE');
+    }
     if (req.body?.object !== 'page') return res.sendStatus(404);
     res.status(200).send('EVENT_RECEIVED');
     const entries = safeArray(req.body.entry);
     void currentConfig().then(async config => {
       for (const entry of entries) {
         for (const event of safeArray(entry.messaging)) {
+          webhookActivity.events += 1;
+          webhookActivity.lastEventAt = new Date();
           try {
             await processZentroMessengerEvent({ event, config, ZentroLoanRequest });
+            webhookActivity.processed += 1;
+            webhookActivity.lastProcessedAt = new Date();
           } catch (error) {
-            console.error('Zentro Messenger event error:', cleanMetaError(error));
+            webhookActivity.errors += 1;
+            webhookActivity.lastError = cleanMetaError(error);
+            console.error('Zentro Messenger event error:', webhookActivity.lastError);
           }
         }
       }
-    }).catch(error => console.error('Zentro Messenger config error:', error.message));
+    }).catch(error => {
+      webhookActivity.errors += 1;
+      webhookActivity.lastError = cleanMetaError(error);
+      console.error('Zentro Messenger config error:', webhookActivity.lastError);
+    });
   });
 
   app.get('/api/zentro/admin/facebook/status', authenticateUser, requireAdmin, async (req, res) => {
-    try { res.json(await connectionStatus()); }
+    try { res.json(await connectionStatus(webhookActivity)); }
     catch (error) { res.status(500).json({ message: error.message }); }
   });
 
   app.post('/api/zentro/admin/facebook/test-connection', authenticateUser, requireAdmin, async (req, res) => {
-    try { res.json(await connectionStatus()); }
+    try { res.json(await connectionStatus(webhookActivity)); }
     catch (error) { res.status(500).json({ message: error.message }); }
+  });
+
+  app.get('/api/zentro/admin/facebook/messenger-activity', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+      const [totalSessions, sessions] = await Promise.all([
+        MessengerSession.countDocuments(),
+        MessengerSession.find().sort({ lastInteractionAt: -1 }).limit(20)
+          .select('senderId state topic referralCode sourcePostId lastInteractionAt updatedAt')
+          .lean(),
+      ]);
+      res.json({
+        webhook: { ...webhookActivity },
+        totalSessions,
+        sessions: sessions.map(session => ({
+          ...session,
+          senderId: session.senderId ? `***${String(session.senderId).slice(-6)}` : '',
+        })),
+      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
   });
 
   app.post('/api/zentro/admin/facebook/subscribe', authenticateUser, requireAdmin, async (req, res) => {
     try {
       const result = await subscribePage();
       await createLog(req.user, 'zentro_facebook_subscribed', 'Connected Zentro Facebook Page webhooks and Messenger profile');
-      res.json({ success: Boolean(result?.success ?? true), status: await connectionStatus() });
+      res.json({ success: Boolean(result?.success ?? true), status: await connectionStatus(webhookActivity) });
     } catch (error) {
       res.status(400).json({ message: cleanMetaError(error) });
     }
