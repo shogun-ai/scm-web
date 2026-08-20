@@ -2,12 +2,22 @@ import crypto from 'crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildMessengerProfile,
   buildZentroMessengerLink,
   buildZentroPost,
   parseZentroAmount,
   processZentroMessengerEvent,
   verifyZentroWebhookSignature,
 } from './zentroFacebook.js';
+
+test('builds a Mongolian Messenger greeting with two entry choices', () => {
+  const profile = buildMessengerProfile({
+    profileGreeting: 'Сайн байна уу, {{user_first_name}}!',
+  });
+  assert.equal(profile.greeting[0].text, 'Сайн байна уу, {{user_first_name}}!');
+  assert.deepEqual(profile.ice_breakers.map(item => item.payload), ['ZENTRO_CAR', 'ZENTRO_LOAN']);
+  assert.deepEqual(profile.persistent_menu[0].call_to_actions.map(item => item.payload), ['ZENTRO_CAR', 'ZENTRO_LOAN']);
+});
 
 function createSessionModel() {
   const sessions = new Map();

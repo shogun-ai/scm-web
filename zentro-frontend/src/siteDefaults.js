@@ -117,6 +117,7 @@ export const DEFAULT_SOCIAL = {
   postUseProductImage: true,
   postLinkToMessenger: true,
   postDefaultTopic: 'loan',
+  profileGreeting: 'Сайн байна уу, {{user_first_name}}! Машины мэдээлэл эсвэл зээлийн хүсэлтээр танд тусалъя.',
   welcomeMessage: 'Сайн байна уу? Zentro Prime Capital-д тавтай морил. Та ямар мэдээлэл авах вэ?',
   businessHours: 'Даваа-Баасан 09:00-18:00',
   postTemplates: [

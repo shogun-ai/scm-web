@@ -24,6 +24,7 @@ const DEFAULT_SOCIAL = {
   postUseProductImage: true,
   postLinkToMessenger: true,
   postDefaultTopic: 'loan',
+  profileGreeting: 'Сайн байна уу, {{user_first_name}}! Машины мэдээлэл эсвэл зээлийн хүсэлтээр танд тусалъя.',
   welcomeMessage: 'Сайн байна уу? Zentro Prime Capital-д тавтай морил. Та ямар мэдээлэл авах вэ?',
   businessHours: 'Даваа-Баасан 09:00-18:00',
   postTemplates: DEFAULT_POST_TEMPLATES,
@@ -560,11 +561,16 @@ export async function processZentroMessengerEvent({
   await showEntryMenu(session, senderId, social, send);
 }
 
-async function configureMessengerProfile() {
-  const { pageAccessToken, pageId } = facebookEnv();
-  if (!pageAccessToken) throw new Error('Page access token тохируулагдаагүй байна.');
-  await graphPost('me/messenger_profile', {
+export function buildMessengerProfile(value = {}) {
+  const social = normalizeZentroSocial(value);
+  const greeting = String(social.profileGreeting || DEFAULT_SOCIAL.profileGreeting).trim().slice(0, 160);
+  return {
+    greeting: [{ locale: 'default', text: greeting }],
     get_started: { payload: 'ZENTRO_GET_STARTED' },
+    ice_breakers: [
+      { question: 'Машины талаар', payload: 'ZENTRO_CAR' },
+      { question: 'Зээлийн талаар', payload: 'ZENTRO_LOAN' },
+    ],
     persistent_menu: [{
       locale: 'default',
       composer_input_disabled: false,
@@ -573,16 +579,22 @@ async function configureMessengerProfile() {
         { type: 'postback', title: 'Зээлийн талаар', payload: 'ZENTRO_LOAN' },
       ],
     }],
-  });
+  };
 }
 
-async function subscribePage() {
+async function configureMessengerProfile(social = {}) {
+  const { pageAccessToken, pageId } = facebookEnv();
+  if (!pageAccessToken) throw new Error('Page access token тохируулагдаагүй байна.');
+  await graphPost('me/messenger_profile', buildMessengerProfile(social));
+}
+
+async function subscribePage(social = {}) {
   const { pageId, pageAccessToken } = facebookEnv();
   if (!pageId || !pageAccessToken) throw new Error('Page ID болон Page access token шаардлагатай.');
   const response = await graphPost(`${pageId}/subscribed_apps`, {}, {
     subscribed_fields: 'messages,messaging_postbacks,messaging_referrals',
   });
-  await configureMessengerProfile();
+  await configureMessengerProfile(social);
   return response.data;
 }
 
@@ -930,7 +942,8 @@ export function createZentroFacebookIntegration({
 
   app.post('/api/zentro/admin/facebook/subscribe', authenticateUser, requireAdmin, async (req, res) => {
     try {
-      const result = await subscribePage();
+      const config = await currentConfig();
+      const result = await subscribePage(config.social);
       await createLog(req.user, 'zentro_facebook_subscribed', 'Connected Zentro Facebook Page webhooks and Messenger profile');
       res.json({ success: Boolean(result?.success ?? true), status: await connectionStatus(webhookActivity) });
     } catch (error) {

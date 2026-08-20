@@ -323,6 +323,8 @@ export default function FacebookAdmin() {
           <span>Эхний сонголт</span>
           <div><button type="button" tabIndex={-1}><CarFront size={15} /> Машины талаар</button><button type="button" tabIndex={-1}><Landmark size={15} /> Зээлийн талаар</button></div>
         </div>
+        <label className="z-label">Чат нээгдэхэд харагдах мэндчилгээ</label>
+        <textarea className="z-input" rows={2} maxLength={160} value={social.profileGreeting || ''} onChange={event => change('profileGreeting', event.target.value)} />
         <label className="z-label">Эхний мэндчилгээ</label>
         <textarea className="z-input" rows={5} value={social.welcomeMessage} onChange={event => change('welcomeMessage', event.target.value)} />
         <label className="z-label">Машины урсгалын хариулт</label>
