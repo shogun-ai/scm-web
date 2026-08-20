@@ -2389,10 +2389,29 @@ const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || process.env.MESSENGER_VER
 const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN || process.env.MESSENGER_PAGE_ACCESS_TOKEN;
 const FB_AD_ACCOUNT_ID = String(process.env.FB_AD_ACCOUNT_ID || process.env.META_AD_ACCOUNT_ID || '').replace(/^act_/, '');
 const FB_ADS_ACCESS_TOKEN = process.env.FB_ADS_ACCESS_TOKEN || process.env.META_ADS_ACCESS_TOKEN || FB_PAGE_ACCESS_TOKEN;
+const ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD = String(process.env.ZENTRO_FB_PAGE_ID || '');
+let legacyMessengerPageIdPromise;
+
+async function getLegacyMessengerPageId() {
+    if (!FB_PAGE_ACCESS_TOKEN) return '';
+    if (!legacyMessengerPageIdPromise) {
+        const graphVersion = process.env.ZENTRO_FB_GRAPH_VERSION || FB_GRAPH_VERSION;
+        legacyMessengerPageIdPromise = axios.get(
+            `https://graph.facebook.com/${graphVersion}/me`,
+            { params: { fields: 'id', access_token: FB_PAGE_ACCESS_TOKEN }, timeout: 15000 }
+        ).then(response => String(response.data?.id || '')).catch(() => '');
+    }
+    return legacyMessengerPageIdPromise;
+}
 
 async function configureMessengerProfile() {
     if (!FB_PAGE_ACCESS_TOKEN) return;
     try {
+        const legacyPageId = await getLegacyMessengerPageId();
+        if (ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD && legacyPageId === ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD) {
+            console.log('Legacy SCM Messenger profile skipped for the Zentro Page.');
+            return;
+        }
         await axios.post(
             `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messenger_profile`,
             {
@@ -2657,6 +2676,7 @@ app.post('/api/messenger/webhook', async (req, res) => {
 
     const entries = Array.isArray(req.body.entry) ? req.body.entry : [];
     for (const entry of entries) {
+        if (ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD && String(entry.id || '') === ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD) continue;
         const events = Array.isArray(entry.messaging) ? entry.messaging : [];
         for (const event of events) {
             const senderId = event.sender?.id;

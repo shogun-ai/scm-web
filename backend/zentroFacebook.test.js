@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildZentroMessengerLink,
   buildZentroPost,
   parseZentroAmount,
   processZentroMessengerEvent,
@@ -74,6 +75,76 @@ test('builds a daily post from live product values', () => {
   assert.equal(result.imageUrl, 'https://example.com/car.jpg');
 });
 
+test('builds a Messenger referral link without dropping the Page path', () => {
+  const link = buildZentroMessengerLink(
+    { messengerUrl: 'https://m.me/JapanCarDealership' },
+    'zpc-post-loan-66abcdef1234567890abcdef'
+  );
+  assert.equal(link, 'https://m.me/JapanCarDealership?ref=zpc-post-loan-66abcdef1234567890abcdef');
+});
+
+test('starts Messenger with separate car and loan choices', async () => {
+  const senderId = 'facebook-user-entry';
+  const { model: SessionModel, sessions } = createSessionModel();
+  const sent = [];
+  const send = async (recipientId, message, options = []) => sent.push({ recipientId, message, options });
+  const config = {
+    products: [],
+    social: { autoReplyEnabled: true },
+  };
+
+  await processZentroMessengerEvent({
+    event: textEvent(senderId, 'entry-1', 'hi'),
+    config,
+    ZentroLoanRequest: {},
+    SessionModel,
+    send,
+  });
+
+  assert.equal(sessions.get(senderId).state, 'idle');
+  assert.deepEqual(sent.at(-1).options.map(option => option.payload), ['ZENTRO_CAR', 'ZENTRO_LOAN']);
+});
+
+test('hands a car inquiry to the Auto Market conversation', async () => {
+  const senderId = 'facebook-user-car';
+  const { model: SessionModel, sessions } = createSessionModel();
+  const sent = [];
+  const send = async (recipientId, message, options = []) => sent.push({ recipientId, message, options });
+  const config = { products: [], social: { autoReplyEnabled: true } };
+  const process = event => processZentroMessengerEvent({ event, config, ZentroLoanRequest: {}, SessionModel, send });
+
+  await process({ sender: { id: senderId }, postback: { payload: 'ZENTRO_CAR' } });
+  assert.equal(sessions.get(senderId).state, 'await_car_inquiry');
+  await process(textEvent(senderId, 'car-1', 'Toyota Land Cruiser 200, 2018 оноос хойш'));
+
+  assert.equal(sessions.get(senderId).state, 'car_handoff');
+  assert.match(sent.at(-1).message, /ажилтан энэ чатад/);
+});
+
+test('routes a post referral into the matching loan conversation', async () => {
+  const senderId = 'facebook-user-referral';
+  const postId = '66abcdef1234567890abcdef';
+  const { model: SessionModel, sessions } = createSessionModel();
+  const sent = [];
+  const tracked = [];
+  const send = async (recipientId, message, options = []) => sent.push({ recipientId, message, options });
+  const PostModel = { async updateOne(filter, update) { tracked.push({ filter, update }); } };
+
+  await processZentroMessengerEvent({
+    event: { sender: { id: senderId }, referral: { ref: `zpc-post-loan-${postId}` } },
+    config: { products: [], social: { autoReplyEnabled: true } },
+    ZentroLoanRequest: {},
+    SessionModel,
+    PostModel,
+    send,
+  });
+
+  assert.equal(sessions.get(senderId).topic, 'loan');
+  assert.equal(tracked.length, 1);
+  assert.equal(tracked[0].filter._id, postId);
+  assert.match(sent.at(-1).message, /Зээлийн мэдээллээс/);
+});
+
 test('collects a Messenger application and deduplicates retried events', async () => {
   const senderId = 'facebook-user-1';
   const { model: SessionModel, sessions } = createSessionModel();
@@ -119,4 +190,3 @@ test('collects a Messenger application and deduplicates retried events', async (
   assert.equal(sessions.get(senderId).state, 'idle');
   assert.match(sent.at(-1).message, /амжилттай бүртгэлээ/);
 });
-
