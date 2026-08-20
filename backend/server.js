@@ -123,6 +123,13 @@ const ZentroWebConfigSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 const ZentroWebConfig = mongoose.models.ZentroWebConfig || mongoose.model('ZentroWebConfig', ZentroWebConfigSchema);
+const ZentroWebAssetSchema = new mongoose.Schema({
+  key: { type: String, required: true, unique: true },
+  mimeType: { type: String, required: true },
+  data: { type: Buffer, required: true },
+  byteLength: { type: Number, required: true },
+}, { timestamps: true });
+const ZentroWebAsset = mongoose.models.ZentroWebAsset || mongoose.model('ZentroWebAsset', ZentroWebAssetSchema);
 const ZentroLoanRequestSchema = new mongoose.Schema({
   name: String,
   phone: String,
@@ -6252,6 +6259,8 @@ const seedAdmin = async () => {
 
 mongoose.connect(MONGO_URI).then(async () => {
     console.log('MongoDB connected.');
+    try { await migrateZentroInlineAssets(); }
+    catch (error) { console.error('Zentro inline asset migration error:', error.message); }
     await seedAdmin();
     await seedSiteConfig();
     // One-time cleanup: delete ALL team members seeded by code.
@@ -6740,10 +6749,96 @@ async function getZentroWebConfigDoc() {
 
 const isInlineZentroImage = value => /^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(String(value || ''));
 
+function parseInlineZentroImage(value) {
+  const match = String(value || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s);
+  if (!match) return null;
+  const data = Buffer.from(match[2], 'base64');
+  return { mimeType: match[1], data, byteLength: data.length };
+}
+
 function zentroPublicAssetUrl(doc, path) {
   const baseUrl = process.env.PUBLIC_API_BASE_URL || 'https://scm-okjs.onrender.com';
   const version = new Date(doc.updatedAt || 0).getTime() || 1;
   return `${baseUrl}/api/zentro/public/assets/${path}?v=${version}`;
+}
+
+async function persistZentroInlineAsset(key, value) {
+  const parsed = parseInlineZentroImage(value);
+  if (!parsed) return String(value || '');
+  const asset = await ZentroWebAsset.findOneAndUpdate(
+    { key },
+    { $set: parsed },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  ).lean();
+  return zentroPublicAssetUrl(asset, `stored/${encodeURIComponent(key)}`);
+}
+
+async function migrateZentroGallery(values, keyPrefix) {
+  const gallery = (Array.isArray(values) ? values : []).filter(value => typeof value === 'string' && value);
+  const remote = gallery.filter(value => !isInlineZentroImage(value));
+  if (remote.length) return [...new Set(remote)].slice(0, 5);
+  const migrated = [];
+  for (let index = 0; index < gallery.length; index += 1) {
+    migrated.push(isInlineZentroImage(gallery[index])
+      ? await persistZentroInlineAsset(`${keyPrefix}-${index}`, gallery[index])
+      : gallery[index]);
+  }
+  return [...new Set(migrated)].slice(0, 5);
+}
+
+async function migrateZentroInlineAssets() {
+  const doc = await ZentroWebConfig.findOne({ key: 'public' }).lean();
+  if (!doc) return;
+  const update = {};
+
+  for (const field of ['logoUrl', 'faviconUrl']) {
+    if (isInlineZentroImage(doc[field])) update[field] = await persistZentroInlineAsset(field, doc[field]);
+  }
+
+  const heroImages = await migrateZentroGallery(doc.heroImages, 'hero');
+  if (JSON.stringify(heroImages) !== JSON.stringify(doc.heroImages || [])) update.heroImages = heroImages;
+  if (isInlineZentroImage(doc.heroImage)) {
+    update.heroImage = heroImages.length ? '' : await persistZentroInlineAsset('hero-legacy', doc.heroImage);
+  }
+
+  const products = [];
+  let productsChanged = false;
+  for (let productIndex = 0; productIndex < (doc.products || []).length; productIndex += 1) {
+    const product = doc.products[productIndex] || {};
+    const next = { ...product };
+    const images = await migrateZentroGallery(product.images, `product-${productIndex}`);
+    if (JSON.stringify(images) !== JSON.stringify(product.images || [])) next.images = images;
+    const legacyImage = product.image || product.imageUrl || '';
+    if (isInlineZentroImage(legacyImage)) {
+      next.images = images.length ? images : [await persistZentroInlineAsset(`product-${productIndex}-legacy`, legacyImage)];
+      next.image = '';
+      next.imageUrl = '';
+    }
+    if (JSON.stringify(next) !== JSON.stringify(product)) productsChanged = true;
+    products.push(next);
+  }
+  if (productsChanged) update.products = products;
+
+  const customSections = [];
+  let customSectionsChanged = false;
+  for (let sectionIndex = 0; sectionIndex < (doc.customSections || []).length; sectionIndex += 1) {
+    const section = doc.customSections[sectionIndex] || {};
+    const next = { ...section };
+    const images = await migrateZentroGallery(section.images, `custom-${sectionIndex}`);
+    if (JSON.stringify(images) !== JSON.stringify(section.images || [])) next.images = images;
+    if (isInlineZentroImage(section.image)) {
+      next.images = images.length ? images : [await persistZentroInlineAsset(`custom-${sectionIndex}-legacy`, section.image)];
+      next.image = '';
+    }
+    if (JSON.stringify(next) !== JSON.stringify(section)) customSectionsChanged = true;
+    customSections.push(next);
+  }
+  if (customSectionsChanged) update.customSections = customSections;
+
+  if (Object.keys(update).length) {
+    await ZentroWebConfig.updateOne({ _id: doc._id }, { $set: update });
+    console.log(`Zentro inline assets migrated; compacted ${Object.keys(update).join(', ')}.`);
+  }
 }
 
 function compactZentroGallery(doc, values, pathForIndex) {
@@ -6781,20 +6876,33 @@ function compactPublicZentroImages(doc) {
 }
 
 function sendZentroInlineAsset(res, value) {
-  const match = String(value || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s);
-  if (!match) return res.sendStatus(404);
-  const body = Buffer.from(match[2], 'base64');
+  const parsed = parseInlineZentroImage(value);
+  if (!parsed) return res.sendStatus(404);
   res.set({
     'Cache-Control': 'public, max-age=31536000, immutable',
-    'Content-Type': match[1],
-    'Content-Length': String(body.length),
+    'Content-Type': parsed.mimeType,
+    'Content-Length': String(parsed.byteLength),
   });
-  return res.send(body);
+  return res.send(parsed.data);
 }
 
 async function zentroInlineAssetDoc() {
   return ZentroWebConfig.findOne({ key: 'public' }).lean();
 }
+
+app.get('/api/zentro/public/assets/stored/:key', async (req, res) => {
+  try {
+    if (!/^[a-zA-Z0-9-]+$/.test(req.params.key || '')) return res.sendStatus(400);
+    const asset = await ZentroWebAsset.findOne({ key: req.params.key });
+    if (!asset?.data) return res.sendStatus(404);
+    res.set({
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Content-Type': asset.mimeType,
+      'Content-Length': String(asset.byteLength || asset.data.length),
+    });
+    return res.send(asset.data);
+  } catch (e) { return res.status(500).json({ message: e.message }); }
+});
 
 app.get('/api/zentro/public/assets/logo', async (req, res) => {
   try { return sendZentroInlineAsset(res, (await zentroInlineAssetDoc())?.logoUrl); }
