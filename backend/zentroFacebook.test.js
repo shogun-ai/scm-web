@@ -10,6 +10,7 @@ import {
   parseZentroAmount,
   processZentroMessengerEvent,
   removeZentroWebsiteApplicationHandoff,
+  selectMetaWebhookApp,
   verifyZentroWebhookSignature,
 } from './zentroFacebook.js';
 
@@ -61,6 +62,15 @@ test('removes the old website application handoff from Messenger-linked posts', 
   ].join('\n'));
   assert.doesNotMatch(message, /zentrocapitalgroup\.com\/#apply/);
   assert.match(message, /Зээлийн эцсийн нөхцөл/);
+});
+
+test('selects the Zentro Meta app for app-level webhook configuration', () => {
+  const apps = [
+    { id: 'legacy', name: 'Legacy Messenger' },
+    { id: '1031086889986131', name: 'ZPC loan bot' },
+  ];
+  assert.equal(selectMetaWebhookApp(apps)?.id, '1031086889986131');
+  assert.equal(selectMetaWebhookApp(apps, 'legacy')?.id, 'legacy');
 });
 
 function createSessionModel() {

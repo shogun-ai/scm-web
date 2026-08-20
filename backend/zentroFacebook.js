@@ -78,6 +78,7 @@ function facebookEnv() {
     verifyToken: process.env.ZENTRO_FB_VERIFY_TOKEN || '',
     pageAccessToken: process.env.ZENTRO_FB_PAGE_ACCESS_TOKEN || '',
     pageId: process.env.ZENTRO_FB_PAGE_ID || '',
+    appId: process.env.ZENTRO_META_APP_ID || '',
     appSecret: process.env.ZENTRO_META_APP_SECRET || '',
   };
 }
@@ -136,6 +137,13 @@ async function graphPost(pathname, data = {}, params = {}) {
   const { pageAccessToken } = facebookEnv();
   return axios.post(graphUrl(pathname), data, {
     params: { ...params, access_token: pageAccessToken },
+    timeout: 30000,
+  });
+}
+
+async function graphPostWithToken(pathname, data = {}, accessToken = '') {
+  return axios.post(graphUrl(pathname), data, {
+    params: { access_token: accessToken },
     timeout: 30000,
   });
 }
@@ -791,14 +799,47 @@ async function configureMessengerProfile(social = {}) {
   await graphPost('me/messenger_profile', buildMessengerProfile(social));
 }
 
+export function selectMetaWebhookApp(apps = [], preferredId = '') {
+  const values = safeArray(apps).filter(app => app?.id);
+  if (preferredId) return values.find(app => String(app.id) === String(preferredId)) || null;
+  return values.find(app => /\bzpc\b|zentro/i.test(String(app.name || '')))
+    || (values.length === 1 ? values[0] : null);
+}
+
+async function configureAppWebhook() {
+  const env = facebookEnv();
+  if (!env.appSecret || !env.verifyToken) throw new Error('Meta App secret болон webhook verify token шаардлагатай.');
+  const subscriptions = await graphGet(`${env.pageId}/subscribed_apps`, {
+    fields: 'id,name,subscribed_fields',
+  });
+  const app = selectMetaWebhookApp(subscriptions.data?.data, env.appId);
+  if (!app) throw new Error('Meta app-ийг автоматаар тодорхойлж чадсангүй. ZENTRO_META_APP_ID тохируулна уу.');
+  const fields = ['messages', 'messaging_postbacks', 'messaging_referrals'];
+  const callbackUrl = `${process.env.PUBLIC_API_BASE_URL || 'https://scm-okjs.onrender.com'}/api/zentro/facebook/webhook`;
+  const response = await graphPostWithToken(`${app.id}/subscriptions`, {
+    object: 'page',
+    callback_url: callbackUrl,
+    fields: fields.join(','),
+    verify_token: env.verifyToken,
+  }, `${app.id}|${env.appSecret}`);
+  return {
+    success: Boolean(response.data?.success ?? true),
+    appId: String(app.id),
+    appName: String(app.name || ''),
+    callbackUrl,
+    fields,
+  };
+}
+
 async function subscribePage(social = {}) {
   const { pageId, pageAccessToken } = facebookEnv();
   if (!pageId || !pageAccessToken) throw new Error('Page ID болон Page access token шаардлагатай.');
   const response = await graphPost(`${pageId}/subscribed_apps`, {}, {
     subscribed_fields: 'messages,messaging_postbacks,messaging_referrals',
   });
+  const appWebhook = await configureAppWebhook();
   await configureMessengerProfile(social);
-  return response.data;
+  return { ...response.data, appWebhook };
 }
 
 function replaceTemplate(template, values) {
@@ -1183,7 +1224,7 @@ export function createZentroFacebookIntegration({
       const config = await currentConfig();
       const result = await subscribePage(config.social);
       await createLog(req.user, 'zentro_facebook_subscribed', 'Connected Zentro Facebook Page webhooks and Messenger profile');
-      res.json({ success: Boolean(result?.success ?? true), status: await connectionStatus(webhookActivity) });
+      res.json({ success: Boolean(result?.success ?? true), appWebhook: result?.appWebhook || null, status: await connectionStatus(webhookActivity) });
     } catch (error) {
       res.status(400).json({ message: cleanMetaError(error) });
     }
