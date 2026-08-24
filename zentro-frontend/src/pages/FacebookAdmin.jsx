@@ -54,6 +54,18 @@ const CREDENTIAL_LABELS = {
   appSecret: 'Meta App secret',
 };
 
+const POST_CTA_OPTIONS = [
+  { value: 'MESSAGE_PAGE', label: 'Send Message', detail: 'Messenger чатбот руу оруулна', icon: MessageCircle },
+  { value: 'APPLY_NOW', label: 'Apply Now', detail: 'Веб хүсэлт рүү оруулна', icon: FileText },
+  { value: 'NONE', label: 'Товчгүй', detail: 'Зөвхөн пост нийтэлнэ', icon: X },
+];
+
+function facebookCtaLabel(value) {
+  if (value === 'MESSAGE_PAGE') return 'Send Message';
+  if (value === 'APPLY_NOW') return 'Apply Now';
+  return 'Товчгүй';
+}
+
 function Toggle({ checked, onChange, label, detail }) {
   return <label className="zf-toggle-row">
     <span><b>{label}</b>{detail && <small>{detail}</small>}</span>
@@ -105,7 +117,7 @@ export default function FacebookAdmin() {
   const [manualImageInput, setManualImageInput] = useState('');
   const [manualTopic, setManualTopic] = useState('loan');
   const [manualProductIndex, setManualProductIndex] = useState(0);
-  const [linkPostToMessenger, setLinkPostToMessenger] = useState(true);
+  const [manualCtaType, setManualCtaType] = useState('MESSAGE_PAGE');
   const [listingActive, setListingActive] = useState(true);
 
   const load = async () => {
@@ -121,7 +133,7 @@ export default function FacebookAdmin() {
       setConfig(normalized);
       setSocial(normalized.social);
       setManualTopic(normalized.social.postDefaultTopic || 'loan');
-      setLinkPostToMessenger(normalized.social.postLinkToMessenger !== false);
+      setManualCtaType(normalized.social.postCtaType || 'MESSAGE_PAGE');
       setStatus(connection);
       setMessengerActivity(activity);
       setPosts(history);
@@ -201,14 +213,24 @@ export default function FacebookAdmin() {
         topic: manualTopic,
         productIndex: manualProductIndex,
         listingActive: manualTopic === 'car' && listingActive,
-        linkToMessenger: linkPostToMessenger,
+        ctaType: manualCtaType,
       });
       setPosts(current => [post, ...current]);
       getFacebookListings().then(setActiveListings).catch(() => {});
       setManualMessage('');
       setManualImageUrls([]);
       setManualImageInput('');
-      setNotice({ type: 'success', text: 'Facebook пост амжилттай нийтлэгдлээ.', url: post.permalinkUrl || '' });
+      const publishedCtaType = post.ctaType || manualCtaType;
+      if (publishedCtaType !== 'NONE' && !post.ctaApplied) {
+        setNotice({
+          type: 'warning',
+          text: `Пост нийтлэгдсэн боловч Meta ${facebookCtaLabel(publishedCtaType)} товчийг зөвшөөрсөнгүй. Холбоос постын текстэд үлдсэн.`,
+          url: post.permalinkUrl || '',
+        });
+      } else {
+        const suffix = post.ctaApplied ? ` · ${facebookCtaLabel(publishedCtaType)} товчтой` : '';
+        setNotice({ type: 'success', text: `Facebook пост амжилттай нийтлэгдлээ${suffix}.`, url: post.permalinkUrl || '' });
+      }
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Facebook пост нийтлэхэд алдаа гарлаа.' });
     } finally {
@@ -304,13 +326,17 @@ export default function FacebookAdmin() {
       phone: config.phone,
       website: 'https://zentrocapitalgroup.com',
     });
-    if (!linkPostToMessenger) return message;
+    if (manualCtaType === 'NONE') return message;
+    if (manualCtaType === 'APPLY_NOW') {
+      const applicationUrl = 'https://zentrocapitalgroup.com/#apply';
+      return message.includes(applicationUrl) ? message : `${message}\n\nЗээлийн хүсэлт өгөх: ${applicationUrl}`;
+    }
     const messengerMessage = removeWebsiteApplicationHandoff(message);
     const base = social.messengerUrl || 'https://m.me/JapanCarDealership';
     const separator = base.includes('?') ? '&' : '?';
     const label = manualTopic === 'car' ? 'Машины талаар Messenger-ээр асуух' : manualTopic === 'loan' ? 'Зээлийн хүсэлтээ Messenger-ээр өгөх' : 'Messenger-ээр холбогдох';
     return `${messengerMessage}\n\n${label}: ${base}${separator}ref=post-preview`;
-  }, [config, linkPostToMessenger, manualMessage, manualProductIndex, manualTopic, social.messengerUrl, social.postTemplates]);
+  }, [config, manualCtaType, manualMessage, manualProductIndex, manualTopic, social.messengerUrl, social.postTemplates]);
 
   const selectedProduct = config?.products?.[manualProductIndex] || config?.products?.[0] || {};
   const selectedProductImages = [
@@ -468,7 +494,23 @@ export default function FacebookAdmin() {
           </div>
         </div>
 
-        <Toggle checked={linkPostToMessenger} onChange={setLinkPostToMessenger} label="Messenger чаттай холбох" detail="Постод Messenger холбоос нэмээд Meta дэмжвэл Send Message товч харуулна" />
+        <label className="z-label">Постын үйлдлийн товч</label>
+        <div className="zf-cta-selector" role="radiogroup" aria-label="Facebook постын үйлдлийн товч">
+          {POST_CTA_OPTIONS.map(option => {
+            const Icon = option.icon;
+            return <button
+              type="button"
+              role="radio"
+              aria-checked={manualCtaType === option.value}
+              className={manualCtaType === option.value ? 'active' : ''}
+              onClick={() => setManualCtaType(option.value)}
+              key={option.value}
+            >
+              <Icon size={15} />
+              <span><b>{option.label}</b><small>{option.detail}</small></span>
+            </button>;
+          })}
+        </div>
         {manualTopic === 'car' && <Toggle checked={listingActive} onChange={setListingActive} label="Идэвхтэй зар" detail="Messenger чатны автомашины жагсаалтад харуулна" />}
         <button className="z-btn z-btn-primary zf-publish-now" type="button" onClick={publish} disabled={Boolean(busy) || !status?.connected}>{busy === 'publish' ? <LoaderCircle className="animate-spin" size={14} /> : <Send size={14} />} Одоо нийтлэх</button>
         </section>
@@ -477,7 +519,8 @@ export default function FacebookAdmin() {
           <div className="zf-panel-head"><div><span>Preview</span><h2>Постын харагдац</h2></div><MessagesSquare size={19} /></div>
           {previewImages.length > 0 && <div className={`zf-post-preview-images count-${previewImages.length}`}>{previewImages.map((url, index) => <img key={`${url}-${index}`} src={url} alt={`Нийтлэх зураг ${index + 1}`} />)}</div>}
           <div className="zf-post-preview"><pre>{preview}</pre></div>
-          {linkPostToMessenger && <div className="zf-chat-link-state"><MessageCircle size={15} /><span><b>{manualTopic === 'car' ? 'Машины чат' : manualTopic === 'loan' ? 'Зээлийн чат' : 'Үндсэн чат'}</b><small>Referral tracking идэвхтэй</small></span></div>}
+          {manualCtaType !== 'NONE' && <div className="zf-post-cta-preview"><span>zentrocapitalgroup.com</span><button type="button" tabIndex={-1}>{manualCtaType === 'MESSAGE_PAGE' ? <MessageCircle size={14} /> : <FileText size={14} />}{facebookCtaLabel(manualCtaType)}</button></div>}
+          {manualCtaType === 'MESSAGE_PAGE' && <div className="zf-chat-link-state"><MessageCircle size={15} /><span><b>{manualTopic === 'car' ? 'Машины чат' : manualTopic === 'loan' ? 'Зээлийн чат' : 'Үндсэн чат'}</b><small>Referral tracking идэвхтэй</small></span></div>}
         </aside>
       </div>
 
@@ -486,7 +529,7 @@ export default function FacebookAdmin() {
         <div className="zf-schedule-options">
           <Toggle checked={social.dailyPostEnabled} onChange={value => change('dailyPostEnabled', value)} label="Өдөр бүр автоматаар постлох" detail="Тухайн өдөр амжилттай нийтэлсэн бол давтан постлохгүй" />
           <Toggle checked={social.postUseProductImage} onChange={value => change('postUseProductImage', value)} label="Бүтээгдэхүүний зураг ашиглах" detail="Веб админаас оруулсан эхний зургийг сонгоно" />
-          <Toggle checked={social.postLinkToMessenger !== false} onChange={value => change('postLinkToMessenger', value)} label="Автомат постыг чаттай холбох" detail="Пост бүрт тусдаа referral холбоос үүсгэнэ" />
+          <label className="zf-schedule-cta"><span><b>Автомат постын товч</b><small>Өдөр тутмын пост бүрт ашиглана</small></span><select className="z-select" value={social.postCtaType || 'MESSAGE_PAGE'} onChange={event => change('postCtaType', event.target.value)}><option value="MESSAGE_PAGE">Send Message</option><option value="APPLY_NOW">Apply Now</option><option value="NONE">Товчгүй</option></select></label>
         </div>
         <div className="zf-time-grid"><label><span className="z-label">Постлох цаг</span><input className="z-input" type="time" value={social.postTime} onChange={event => change('postTime', event.target.value)} /></label><label><span className="z-label">Чатын чиглэл</span><select className="z-select" value={social.postDefaultTopic || 'loan'} onChange={event => change('postDefaultTopic', event.target.value)}><option value="loan">Зээлийн чат</option><option value="car">Машины чат</option><option value="general">Үндсэн чат</option></select></label><label><span className="z-label">Цагийн бүс</span><select className="z-select" value={social.postTimezone} onChange={event => change('postTimezone', event.target.value)}><option value="Asia/Ulaanbaatar">Asia/Ulaanbaatar</option></select></label></div>
         <div className="zf-template-list">{social.postTemplates.map((template, index) => <div key={index}><span>Загвар {index + 1}</span><textarea className="z-input" rows={7} value={template} onChange={event => updateTemplate(index, event.target.value)} /><button type="button" title="Загвар устгах" onClick={() => removeTemplate(index)} disabled={social.postTemplates.length <= 1}><Trash2 size={14} /></button></div>)}</div>
@@ -495,7 +538,27 @@ export default function FacebookAdmin() {
 
       <section className="zf-history">
         <div className="zf-panel-head"><div><span>History</span><h2>Нийтлэлийн түүх</h2></div><Clock3 size={19} /></div>
-        <div className="z-table-wrap"><table className="z-table"><thead><tr><th>Огноо</th><th>Эх үүсвэр</th><th>Пост</th><th>Чат</th><th>Messenger зар</th><th>Төлөв</th><th></th></tr></thead><tbody>{posts.length === 0 && <tr><td colSpan={7} className="text-center text-slate-400 py-8">Нийтлэлийн түүх хоосон</td></tr>}{posts.map(post => <tr key={post._id}><td>{formatDate(post.publishedAt || post.createdAt)}</td><td>{post.source === 'automatic' ? 'Автомат' : 'Гараар'}</td><td><b>{post.productName || 'Facebook нийтлэл'}</b><span className="zf-history-copy">{post.message}</span></td><td>{post.messengerLinked ? <span className="zf-chat-count"><MessageCircle size={13} />{post.chatStarts || 0}</span> : '-'}</td><td>{post.topic === 'car' && post.status === 'published' ? <button type="button" className={`zf-listing-toggle ${post.listingActive === false ? '' : 'active'}`} onClick={() => updateListing(post)} disabled={Boolean(busy)} title="Messenger жагсаалтын төлөв өөрчлөх">{busy === `listing-${post._id}` ? <LoaderCircle className="animate-spin" size={13} /> : post.listingActive === false ? <X size={13} /> : <Check size={13} />}{post.listingActive === false ? 'Нуусан' : 'Идэвхтэй'}</button> : '-'}</td><td><span className={`z-badge ${post.status === 'published' ? 'z-badge-green' : post.status === 'failed' ? 'z-badge-red' : post.status === 'deleted' ? 'z-badge-gray' : 'z-badge-yellow'}`}>{post.status === 'published' ? 'Нийтэлсэн' : post.status === 'failed' ? 'Алдаа' : post.status === 'deleted' ? 'Устгасан' : 'Нийтэлж байна'}</span>{post.status === 'deleted' && <small className="zf-deleted-at">{formatDate(post.deletedAt)}</small>}{post.error && <small className="zf-error-text">{post.error}</small>}</td><td><div className="zf-history-actions">{post.permalinkUrl && post.status !== 'deleted' && <a href={post.permalinkUrl} target="_blank" rel="noreferrer" title="Пост нээх"><ExternalLink size={15} /></a>}{post.status !== 'deleted' && <button type="button" onClick={() => removePost(post)} disabled={Boolean(busy)} title="Facebook пост устгах">{busy === `delete-${post._id}` ? <LoaderCircle className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>}</div></td></tr>)}</tbody></table></div>
+        <div className="z-table-wrap">
+          <table className="z-table">
+            <thead><tr><th>Огноо</th><th>Эх үүсвэр</th><th>Пост</th><th>Товч</th><th>Чат</th><th>Messenger зар</th><th>Төлөв</th><th></th></tr></thead>
+            <tbody>
+              {posts.length === 0 && <tr><td colSpan={8} className="text-center text-slate-400 py-8">Нийтлэлийн түүх хоосон</td></tr>}
+              {posts.map(post => {
+                const ctaType = post.ctaType || (post.messengerLinked ? 'MESSAGE_PAGE' : 'NONE');
+                return <tr key={post._id}>
+                  <td>{formatDate(post.publishedAt || post.createdAt)}</td>
+                  <td>{post.source === 'automatic' ? 'Автомат' : 'Гараар'}</td>
+                  <td><b>{post.productName || 'Facebook нийтлэл'}</b><span className="zf-history-copy">{post.message}</span></td>
+                  <td>{ctaType === 'NONE' ? '-' : <><span className={`zf-cta-status ${post.ctaApplied ? 'active' : 'missing'}`} title={post.ctaError || ''}>{post.ctaApplied ? <Check size={12} /> : <AlertCircle size={12} />}{facebookCtaLabel(ctaType)}</span>{post.ctaError && <small className="zf-error-text">{post.ctaError}</small>}</>}</td>
+                  <td>{post.messengerLinked ? <span className="zf-chat-count"><MessageCircle size={13} />{post.chatStarts || 0}</span> : '-'}</td>
+                  <td>{post.topic === 'car' && post.status === 'published' ? <button type="button" className={`zf-listing-toggle ${post.listingActive === false ? '' : 'active'}`} onClick={() => updateListing(post)} disabled={Boolean(busy)} title="Messenger жагсаалтын төлөв өөрчлөх">{busy === `listing-${post._id}` ? <LoaderCircle className="animate-spin" size={13} /> : post.listingActive === false ? <X size={13} /> : <Check size={13} />}{post.listingActive === false ? 'Нуусан' : 'Идэвхтэй'}</button> : '-'}</td>
+                  <td><span className={`z-badge ${post.status === 'published' ? 'z-badge-green' : post.status === 'failed' ? 'z-badge-red' : post.status === 'deleted' ? 'z-badge-gray' : 'z-badge-yellow'}`}>{post.status === 'published' ? 'Нийтэлсэн' : post.status === 'failed' ? 'Алдаа' : post.status === 'deleted' ? 'Устгасан' : 'Нийтэлж байна'}</span>{post.status === 'deleted' && <small className="zf-deleted-at">{formatDate(post.deletedAt)}</small>}{post.error && <small className="zf-error-text">{post.error}</small>}</td>
+                  <td><div className="zf-history-actions">{post.permalinkUrl && post.status !== 'deleted' && <a href={post.permalinkUrl} target="_blank" rel="noreferrer" title="Пост нээх"><ExternalLink size={15} /></a>}{post.status !== 'deleted' && <button type="button" onClick={() => removePost(post)} disabled={Boolean(busy)} title="Facebook пост устгах">{busy === `delete-${post._id}` ? <LoaderCircle className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>}</div></td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>}
   </div>;

@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 
 const WEBSITE_URL = 'https://zentrocapitalgroup.com';
 const DEFAULT_TIMEZONE = 'Asia/Ulaanbaatar';
+const FACEBOOK_POST_CTA_TYPES = new Set(['NONE', 'MESSAGE_PAGE', 'APPLY_NOW']);
 const DEFAULT_POST_TEMPLATES = [
   '{{product}}\n\n{{description}}\n\nХүү: {{rate}}\nХугацаа: {{term}}\nЗээлийн хэмжээ: {{amount}}\n\nХүсэлтээ Messenger чатаар шууд өгнө үү.\n\nЗээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна. #ZentroPrimeCapital #ШуурхайЗээл',
   'Санхүүгийн хэрэгцээгээ цөөн алхмаар шийдээрэй.\n\n{{product}}\n{{description}}\n\nХүсэлтээ Messenger чатаар шууд өгнө үү.\nХолбоо барих: {{phone}}\n\n#ZentroPrimeCapital #АвтомашиныЗээл',
@@ -23,6 +24,7 @@ const DEFAULT_SOCIAL = {
   postTimezone: DEFAULT_TIMEZONE,
   postUseProductImage: true,
   postLinkToMessenger: true,
+  postCtaType: 'MESSAGE_PAGE',
   postDefaultTopic: 'loan',
   profileGreeting: 'Сайн байна уу, {{user_first_name}}! Машины мэдээлэл эсвэл зээлийн хүсэлтээр танд тусалъя.',
   welcomeMessage: 'Сайн байна уу? Zentro Prime Capital-д тавтай морил. Та ямар мэдээлэл авах вэ?',
@@ -57,6 +59,10 @@ const FacebookPostSchema = new mongoose.Schema({
   messengerLinked: { type: Boolean, default: false },
   referralCode: { type: String, default: '' },
   messengerUrl: { type: String, default: '' },
+  ctaType: { type: String, enum: ['NONE', 'MESSAGE_PAGE', 'APPLY_NOW'], default: 'NONE' },
+  ctaUrl: { type: String, default: '' },
+  ctaApplied: { type: Boolean, default: false },
+  ctaError: { type: String, default: '' },
   chatStarts: { type: Number, default: 0 },
   metaPostId: { type: String, default: '' },
   permalinkUrl: { type: String, default: '' },
@@ -105,15 +111,26 @@ export function normalizeZentroSocial(value = {}) {
   const faqItems = safeArray(value.faqItems)
     .filter(item => item && item.enabled !== false && item.answer)
     .slice(0, 20);
+  const legacyCtaType = value.postLinkToMessenger === false ? 'NONE' : DEFAULT_SOCIAL.postCtaType;
+  const postCtaType = normalizeFacebookPostCtaType(value.postCtaType, legacyCtaType);
   return {
     ...DEFAULT_SOCIAL,
     ...value,
     postDefaultTopic: ['car', 'loan', 'general'].includes(value.postDefaultTopic) ? value.postDefaultTopic : DEFAULT_SOCIAL.postDefaultTopic,
     postTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value.postTime || '')) ? value.postTime : DEFAULT_SOCIAL.postTime,
     postTimezone: validTimezone(value.postTimezone || DEFAULT_TIMEZONE),
+    postCtaType,
+    postLinkToMessenger: postCtaType === 'MESSAGE_PAGE',
     postTemplates: postTemplates.length ? postTemplates : DEFAULT_POST_TEMPLATES,
     faqItems,
   };
+}
+
+export function normalizeFacebookPostCtaType(value, fallback = 'NONE') {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (FACEBOOK_POST_CTA_TYPES.has(normalized)) return normalized;
+  const normalizedFallback = String(fallback || '').trim().toUpperCase();
+  return FACEBOOK_POST_CTA_TYPES.has(normalizedFallback) ? normalizedFallback : 'NONE';
 }
 
 function cleanMetaError(error) {
@@ -157,14 +174,17 @@ async function graphPostWithToken(pathname, data = {}, accessToken = '') {
   });
 }
 
-function canRetryWithoutMessengerCta(error) {
+function canRetryWithoutPostCta(error) {
   const status = Number(error.response?.status || 0);
   const meta = error.response?.data?.error || {};
   const message = String(meta.message || error.message || '').toLowerCase();
   return status === 400 && (
     Number(meta.code) === 100
     || message.includes('call_to_action')
+    || message.includes('cta_type')
+    || message.includes('cta_link')
     || message.includes('message_page')
+    || message.includes('apply_now')
   );
 }
 
@@ -182,16 +202,50 @@ export function isMissingMetaPostError(error) {
     );
 }
 
-async function publishPageFeed(pageId, payload, messengerLinked = false) {
-  if (!messengerLinked) return graphPost(`${pageId}/feed`, payload);
+export function buildFacebookPostCtaPayload(ctaType, ctaLink, legacy = false) {
+  const type = normalizeFacebookPostCtaType(ctaType);
+  const link = String(ctaLink || '').trim();
+  if (type === 'NONE' || !link) return {};
+  if (legacy) return { call_to_action: { type, value: { link } } };
+  return { cta_type: type, cta_link: link };
+}
+
+async function publishPageFeed(pageId, payload, ctaType = 'NONE', ctaLink = '') {
+  const basePayload = { ...payload, published: true };
+  const modernCta = buildFacebookPostCtaPayload(ctaType, ctaLink);
+  if (!Object.keys(modernCta).length) {
+    return {
+      response: await graphPost(`${pageId}/feed`, basePayload),
+      ctaApplied: false,
+      ctaError: '',
+    };
+  }
+
   try {
-    return await graphPost(`${pageId}/feed`, {
-      ...payload,
-      call_to_action: { type: 'MESSAGE_PAGE', value: {} },
-    });
-  } catch (error) {
-    if (!canRetryWithoutMessengerCta(error)) throw error;
-    return graphPost(`${pageId}/feed`, payload);
+    return {
+      response: await graphPost(`${pageId}/feed`, { ...basePayload, ...modernCta }),
+      ctaApplied: true,
+      ctaError: '',
+    };
+  } catch (modernError) {
+    if (!canRetryWithoutPostCta(modernError)) throw modernError;
+    try {
+      return {
+        response: await graphPost(`${pageId}/feed`, {
+          ...basePayload,
+          ...buildFacebookPostCtaPayload(ctaType, ctaLink, true),
+        }),
+        ctaApplied: true,
+        ctaError: '',
+      };
+    } catch (legacyError) {
+      if (!canRetryWithoutPostCta(legacyError)) throw legacyError;
+      return {
+        response: await graphPost(`${pageId}/feed`, basePayload),
+        ctaApplied: false,
+        ctaError: cleanMetaError(legacyError),
+      };
+    }
   }
 }
 
@@ -1001,13 +1055,18 @@ async function publishPost(config, {
   topic,
   listingActive = true,
   linkToMessenger,
+  ctaType,
   productIndex,
 } = {}) {
   const { pageId, pageAccessToken } = facebookEnv();
   if (!pageId || !pageAccessToken) throw new Error('Zentro Facebook Page ID болон access token тохируулагдаагүй байна.');
   const social = normalizeZentroSocial(config.social);
   const finalTopic = normalizePostTopic(topic, social.postDefaultTopic);
-  const messengerLinked = linkToMessenger === undefined ? Boolean(social.postLinkToMessenger) : Boolean(linkToMessenger);
+  const legacyCtaType = linkToMessenger === undefined
+    ? social.postCtaType
+    : (linkToMessenger ? 'MESSAGE_PAGE' : 'NONE');
+  const finalCtaType = normalizeFacebookPostCtaType(ctaType, legacyCtaType);
+  const messengerLinked = finalCtaType === 'MESSAGE_PAGE';
   const generated = buildZentroPost(config, new Date(), message, productIndex);
   const finalImages = resolveFacebookPostImages(imageUrls, imageUrl, generated.imageUrl);
   const finalImage = finalImages[0] || '';
@@ -1015,11 +1074,17 @@ async function publishPost(config, {
   const recordId = existing?._id || new mongoose.Types.ObjectId();
   const referralCode = messengerLinked ? `zpc-post-${finalTopic}-${recordId}` : '';
   const messengerUrl = messengerLinked ? buildZentroMessengerLink(social, referralCode, pageId) : '';
+  const ctaUrl = finalCtaType === 'MESSAGE_PAGE'
+    ? messengerUrl
+    : (finalCtaType === 'APPLY_NOW' ? `${WEBSITE_URL}/#apply` : '');
   const postMessage = messengerLinked
     ? removeZentroWebsiteApplicationHandoff(generated.message)
     : generated.message;
-  const finalMessage = messengerUrl && !postMessage.includes(messengerUrl)
-    ? `${postMessage}\n\n${messengerLinkLabel(finalTopic)}: ${messengerUrl}`
+  const ctaLinkLabel = finalCtaType === 'MESSAGE_PAGE'
+    ? messengerLinkLabel(finalTopic)
+    : 'Зээлийн хүсэлт өгөх';
+  const finalMessage = ctaUrl && !postMessage.includes(ctaUrl)
+    ? `${postMessage}\n\n${ctaLinkLabel}: ${ctaUrl}`
     : postMessage;
   const filter = scheduleKey ? { scheduleKey } : { _id: recordId };
   const record = await FacebookPost.findOneAndUpdate(
@@ -1038,6 +1103,10 @@ async function publishPost(config, {
         messengerLinked,
         referralCode,
         messengerUrl,
+        ctaType: finalCtaType,
+        ctaUrl,
+        ctaApplied: false,
+        ctaError: '',
         error: '',
       },
       $inc: { attempts: 1 },
@@ -1047,7 +1116,7 @@ async function publishPost(config, {
   );
 
   try {
-    let response;
+    let publishResult;
     if (finalImages.length > 0) {
       const attachedMedia = [];
       for (const url of finalImages) {
@@ -1056,19 +1125,22 @@ async function publishPost(config, {
         if (!mediaId) throw new Error('Meta зураг upload хийх үед media ID буцаасангүй.');
         attachedMedia.push({ media_fbid: mediaId });
       }
-      response = await publishPageFeed(pageId, {
+      publishResult = await publishPageFeed(pageId, {
         message: finalMessage,
         attached_media: attachedMedia,
-      }, messengerLinked);
+      }, finalCtaType, ctaUrl);
     } else {
-      response = await publishPageFeed(pageId, {
+      publishResult = await publishPageFeed(pageId, {
         message: finalMessage,
-        link: messengerUrl || WEBSITE_URL,
-      }, messengerLinked);
+        link: ctaUrl || WEBSITE_URL,
+      }, finalCtaType, ctaUrl);
     }
+    const response = publishResult.response;
     const metaPostId = response.data?.post_id || response.data?.id || '';
     record.status = 'published';
     record.metaPostId = metaPostId;
+    record.ctaApplied = publishResult.ctaApplied;
+    record.ctaError = publishResult.ctaError;
     record.permalinkUrl = await resolvePermalink(metaPostId);
     record.publishedAt = new Date();
     await record.save();
@@ -1305,6 +1377,7 @@ export function createZentroFacebookIntegration({
         topic: normalizePostTopic(req.body?.topic, normalizeZentroSocial(config.social).postDefaultTopic),
         listingActive: req.body?.listingActive !== false,
         linkToMessenger: req.body?.linkToMessenger !== false,
+        ctaType: normalizeFacebookPostCtaType(req.body?.ctaType, req.body?.linkToMessenger === false ? 'NONE' : 'MESSAGE_PAGE'),
         productIndex: Number.isInteger(Number(req.body?.productIndex)) ? Number(req.body.productIndex) : undefined,
       });
       await createLog(req.user, 'zentro_facebook_post_published', post.metaPostId || String(post._id));

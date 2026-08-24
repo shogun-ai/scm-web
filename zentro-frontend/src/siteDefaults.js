@@ -116,6 +116,7 @@ export const DEFAULT_SOCIAL = {
   postTimezone: 'Asia/Ulaanbaatar',
   postUseProductImage: true,
   postLinkToMessenger: true,
+  postCtaType: 'MESSAGE_PAGE',
   postDefaultTopic: 'loan',
   profileGreeting: 'Сайн байна уу, {{user_first_name}}! Машины мэдээлэл эсвэл зээлийн хүсэлтээр танд тусалъя.',
   welcomeMessage: 'Сайн байна уу? Zentro Prime Capital-д тавтай морил. Та ямар мэдээлэл авах вэ?',
@@ -221,6 +222,10 @@ export function normalizeSiteConfig(raw = {}) {
   const sectionOrder = [...validOrder];
   for (const id of DEFAULT_SECTION_ORDER) if (!sectionOrder.includes(id)) sectionOrder.push(id);
   for (const section of customSections) if (!sectionOrder.includes(section.id)) sectionOrder.splice(Math.max(0, sectionOrder.indexOf('apply')), 0, section.id);
+  const rawPostCtaType = String(raw.social?.postCtaType || '').toUpperCase();
+  const postCtaType = ['NONE', 'MESSAGE_PAGE', 'APPLY_NOW'].includes(rawPostCtaType)
+    ? rawPostCtaType
+    : (raw.social?.postLinkToMessenger === false ? 'NONE' : DEFAULT_SOCIAL.postCtaType);
 
   return {
     ...raw,
@@ -244,6 +249,8 @@ export function normalizeSiteConfig(raw = {}) {
     social: {
       ...DEFAULT_SOCIAL,
       ...(raw.social || {}),
+      postCtaType,
+      postLinkToMessenger: postCtaType === 'MESSAGE_PAGE',
       postTemplates: raw.social?.postTemplates?.length ? raw.social.postTemplates : DEFAULT_SOCIAL.postTemplates,
       faqItems: Array.isArray(raw.social?.faqItems) ? raw.social.faqItems : DEFAULT_SOCIAL.faqItems,
     },

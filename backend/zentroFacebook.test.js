@@ -2,12 +2,14 @@ import crypto from 'crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildFacebookPostCtaPayload,
   buildMessengerListingElements,
   buildMessengerProfile,
   buildZentroMessengerLink,
   buildZentroPost,
   isMissingMetaPostError,
   isMessengerListingCandidate,
+  normalizeFacebookPostCtaType,
   normalizeFacebookPostImages,
   parseZentroAmount,
   processZentroMessengerEvent,
@@ -16,6 +18,22 @@ import {
   selectMetaWebhookApp,
   verifyZentroWebhookSignature,
 } from './zentroFacebook.js';
+
+test('builds current and legacy Facebook post CTA payloads', () => {
+  const messengerUrl = 'https://m.me/JapanCarDealership?ref=zpc-post-loan-123';
+  assert.deepEqual(buildFacebookPostCtaPayload('MESSAGE_PAGE', messengerUrl), {
+    cta_type: 'MESSAGE_PAGE',
+    cta_link: messengerUrl,
+  });
+  assert.deepEqual(buildFacebookPostCtaPayload('APPLY_NOW', 'https://zentrocapitalgroup.com/#apply', true), {
+    call_to_action: {
+      type: 'APPLY_NOW',
+      value: { link: 'https://zentrocapitalgroup.com/#apply' },
+    },
+  });
+  assert.deepEqual(buildFacebookPostCtaPayload('NONE', messengerUrl), {});
+  assert.equal(normalizeFacebookPostCtaType('invalid', 'MESSAGE_PAGE'), 'MESSAGE_PAGE');
+});
 
 test('builds a Mongolian Messenger greeting with two entry choices', () => {
   const profile = buildMessengerProfile({
