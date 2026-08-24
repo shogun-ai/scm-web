@@ -4,6 +4,7 @@ import './site.css';
 import Login from './pages/Login';
 import Shell from './pages/Shell';
 import PublicSite from './pages/PublicSite';
+import LegalPage from './pages/LegalPage';
 import { API } from './api';
 import { applyPrivateMetadata } from './siteMetadata';
 
@@ -50,7 +51,10 @@ export default function App() {
     else if (path === '/login') applyPrivateMetadata('Нэвтрэх');
   }, [path]);
 
+  const routePath = path.replace(/\/+$/, '') || '/';
   if (path === '/login') return <Login onLogin={handleLogin} onBack={() => go('/')} />;
   if (token && user && path.startsWith('/admin')) return <Shell user={user} onLogout={handleLogout} />;
+  if (routePath === '/privacy') return <LegalPage type="privacy" />;
+  if (routePath === '/data-deletion') return <LegalPage type="deletion" />;
   return <PublicSite onLogin={() => go('/login')} />;
 }

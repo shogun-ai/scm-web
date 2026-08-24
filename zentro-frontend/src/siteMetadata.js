@@ -158,3 +158,28 @@ export function applyPrivateMetadata(title) {
   upsertMeta('meta[name="robots"]', { name: 'robots' }, 'noindex, nofollow, noarchive');
   document.getElementById('zentro-structured-data')?.remove();
 }
+
+export function applyLegalMetadata(title, description, path, faviconUrl = '') {
+  if (typeof document === 'undefined') return;
+  const canonicalUrl = `https://zentrocapitalgroup.com${path}`;
+  const fullTitle = `${title} | Zentro Prime Capital`;
+  document.documentElement.lang = 'mn';
+  document.title = fullTitle;
+  upsertMeta('meta[name="description"]', { name: 'description' }, description);
+  upsertMeta('meta[name="keywords"]', { name: 'keywords' }, 'Zentro Prime Capital, нууцлал, хувийн мэдээлэл');
+  upsertMeta('meta[name="robots"]', { name: 'robots' }, 'index, follow');
+  upsertMeta('meta[property="og:type"]', { property: 'og:type' }, 'website');
+  upsertMeta('meta[property="og:locale"]', { property: 'og:locale' }, 'mn_MN');
+  upsertMeta('meta[property="og:site_name"]', { property: 'og:site_name' }, 'Zentro Prime Capital');
+  upsertMeta('meta[property="og:title"]', { property: 'og:title' }, fullTitle);
+  upsertMeta('meta[property="og:description"]', { property: 'og:description' }, description);
+  upsertMeta('meta[property="og:url"]', { property: 'og:url' }, canonicalUrl);
+  upsertMeta('meta[property="og:image"]', { property: 'og:image' }, '');
+  upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card' }, 'summary');
+  upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title' }, fullTitle);
+  upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description' }, description);
+  upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image' }, '');
+  upsertLink('canonical', canonicalUrl);
+  applyFavicon(faviconUrl);
+  document.getElementById('zentro-structured-data')?.remove();
+}
