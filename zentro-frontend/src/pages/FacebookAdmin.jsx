@@ -432,7 +432,8 @@ export default function FacebookAdmin() {
     </div>}
 
     {view === 'posts' && <div className="zf-post-layout">
-      <section className="zf-panel zf-compose-panel">
+      <div className="zf-compose-workspace">
+        <section className="zf-panel zf-compose-panel">
         <div className="zf-panel-head"><div><span>Composer</span><h2>Facebook пост оруулах</h2></div><Send size={20} /></div>
 
         <label className="z-label">Постын чиглэл</label>
@@ -470,14 +471,15 @@ export default function FacebookAdmin() {
         <Toggle checked={linkPostToMessenger} onChange={setLinkPostToMessenger} label="Messenger чаттай холбох" detail="Постод Messenger холбоос нэмээд Meta дэмжвэл Send Message товч харуулна" />
         {manualTopic === 'car' && <Toggle checked={listingActive} onChange={setListingActive} label="Идэвхтэй зар" detail="Messenger чатны автомашины жагсаалтад харуулна" />}
         <button className="z-btn z-btn-primary zf-publish-now" type="button" onClick={publish} disabled={Boolean(busy) || !status?.connected}>{busy === 'publish' ? <LoaderCircle className="animate-spin" size={14} /> : <Send size={14} />} Одоо нийтлэх</button>
-      </section>
+        </section>
 
-      <aside className="zf-publish-panel">
-        <div className="zf-panel-head"><div><span>Preview</span><h2>Постын харагдац</h2></div><MessagesSquare size={19} /></div>
-        {previewImages.length > 0 && <div className={`zf-post-preview-images count-${previewImages.length}`}>{previewImages.map((url, index) => <img key={`${url}-${index}`} src={url} alt={`Нийтлэх зураг ${index + 1}`} />)}</div>}
-        <div className="zf-post-preview"><pre>{preview}</pre></div>
-        {linkPostToMessenger && <div className="zf-chat-link-state"><MessageCircle size={15} /><span><b>{manualTopic === 'car' ? 'Машины чат' : manualTopic === 'loan' ? 'Зээлийн чат' : 'Үндсэн чат'}</b><small>Referral tracking идэвхтэй</small></span></div>}
-      </aside>
+        <aside className="zf-publish-panel">
+          <div className="zf-panel-head"><div><span>Preview</span><h2>Постын харагдац</h2></div><MessagesSquare size={19} /></div>
+          {previewImages.length > 0 && <div className={`zf-post-preview-images count-${previewImages.length}`}>{previewImages.map((url, index) => <img key={`${url}-${index}`} src={url} alt={`Нийтлэх зураг ${index + 1}`} />)}</div>}
+          <div className="zf-post-preview"><pre>{preview}</pre></div>
+          {linkPostToMessenger && <div className="zf-chat-link-state"><MessageCircle size={15} /><span><b>{manualTopic === 'car' ? 'Машины чат' : manualTopic === 'loan' ? 'Зээлийн чат' : 'Үндсэн чат'}</b><small>Referral tracking идэвхтэй</small></span></div>}
+        </aside>
+      </div>
 
       <section className="zf-panel zf-post-settings">
         <div className="zf-panel-head"><div><span>Scheduler</span><h2>Өдөр тутмын нийтлэл</h2></div><CalendarClock size={20} /></div>
