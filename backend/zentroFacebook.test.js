@@ -6,6 +6,7 @@ import {
   buildMessengerProfile,
   buildZentroMessengerLink,
   buildZentroPost,
+  isMissingMetaPostError,
   isMessengerListingCandidate,
   normalizeFacebookPostImages,
   parseZentroAmount,
@@ -82,6 +83,21 @@ test('keeps only informative image-backed posts in Messenger listings', () => {
   assert.equal(isMessengerListingCandidate({
     message: 'Toyota Prius 30 зарагдсан',
     full_picture: 'https://example.com/prius.jpg',
+  }), false);
+});
+
+test('recognizes an already missing Meta post without hiding auth failures', () => {
+  assert.equal(isMissingMetaPostError({
+    response: {
+      status: 400,
+      data: { error: { code: 100, message: 'Unsupported post request. Object does not exist.' } },
+    },
+  }), true);
+  assert.equal(isMissingMetaPostError({
+    response: {
+      status: 400,
+      data: { error: { code: 190, message: 'Error validating access token.' } },
+    },
   }), false);
 });
 

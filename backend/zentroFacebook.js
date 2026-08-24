@@ -47,7 +47,7 @@ const FacebookPostSchema = new mongoose.Schema({
   scheduleKey: { type: String, unique: true, sparse: true },
   dateKey: { type: String, default: '' },
   source: { type: String, enum: ['automatic', 'manual'], default: 'manual' },
-  status: { type: String, enum: ['publishing', 'published', 'failed'], default: 'publishing' },
+  status: { type: String, enum: ['publishing', 'published', 'failed', 'deleted'], default: 'publishing' },
   message: { type: String, default: '' },
   imageUrl: { type: String, default: '' },
   imageUrls: { type: [String], default: [] },
@@ -63,6 +63,7 @@ const FacebookPostSchema = new mongoose.Schema({
   error: { type: String, default: '' },
   attempts: { type: Number, default: 0 },
   publishedAt: Date,
+  deletedAt: Date,
 }, { timestamps: true });
 
 const MessengerSession = mongoose.models.ZentroMessengerSession
@@ -141,6 +142,14 @@ async function graphPost(pathname, data = {}, params = {}) {
   });
 }
 
+async function graphDelete(pathname, params = {}) {
+  const { pageAccessToken } = facebookEnv();
+  return axios.delete(graphUrl(pathname), {
+    params: { ...params, access_token: pageAccessToken },
+    timeout: 30000,
+  });
+}
+
 async function graphPostWithToken(pathname, data = {}, accessToken = '') {
   return axios.post(graphUrl(pathname), data, {
     params: { access_token: accessToken },
@@ -157,6 +166,20 @@ function canRetryWithoutMessengerCta(error) {
     || message.includes('call_to_action')
     || message.includes('message_page')
   );
+}
+
+export function isMissingMetaPostError(error) {
+  const meta = error?.response?.data?.error || {};
+  const message = String(meta.message || '').toLowerCase();
+  return Number(error?.response?.status || 0) === 400
+    && [100, 803].includes(Number(meta.code))
+    && (
+      message.includes('does not exist')
+      || message.includes('cannot be loaded')
+      || message.includes('unsupported get request')
+      || message.includes('unsupported post request')
+      || message.includes('unknown path components')
+    );
 }
 
 async function publishPageFeed(pageId, payload, messengerLinked = false) {
@@ -1161,7 +1184,7 @@ export function createZentroFacebookIntegration({
       if (local.minutes < hour * 60 + minute) return;
       const scheduleKey = `daily:${local.dateKey}`;
       const existing = await FacebookPost.findOne({ scheduleKey });
-      if (existing?.status === 'published' || existing?.status === 'publishing' || Number(existing?.attempts || 0) >= 3) return;
+      if (['published', 'publishing', 'deleted'].includes(existing?.status) || Number(existing?.attempts || 0) >= 3) return;
       await publishPost(config, { source: 'automatic', scheduleKey });
     } catch (error) {
       console.error('Zentro daily Facebook post error:', error.message);
@@ -1301,6 +1324,37 @@ export function createZentroFacebookIntegration({
       if (!post) return res.status(404).json({ message: 'Facebook пост олдсонгүй.' });
       clearActiveListingsCache();
       await createLog(req.user, 'zentro_facebook_listing_updated', `${post._id}:${post.listingActive ? 'active' : 'inactive'}`);
+      return res.json(post);
+    } catch (error) {
+      return res.status(400).json({ message: cleanMetaError(error) });
+    }
+  });
+
+  app.delete('/api/zentro/admin/facebook/posts/:id', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+      const post = await FacebookPost.findById(req.params.id);
+      if (!post) return res.status(404).json({ message: 'Facebook пост олдсонгүй.' });
+      if (post.status === 'deleted') return res.json(post);
+      if (post.status === 'published' && !post.metaPostId) {
+        return res.status(409).json({ message: 'Facebook Post ID олдсонгүй. Постыг Facebook Page дээрээс гараар устгана уу.' });
+      }
+
+      if (post.metaPostId) {
+        try {
+          const response = await graphDelete(post.metaPostId);
+          if (response.data?.success === false) throw new Error('Meta постыг устгасангүй.');
+        } catch (error) {
+          if (!isMissingMetaPostError(error)) throw error;
+        }
+      }
+
+      post.status = 'deleted';
+      post.listingActive = false;
+      post.deletedAt = new Date();
+      post.error = '';
+      await post.save();
+      clearActiveListingsCache();
+      await createLog(req.user, 'zentro_facebook_post_deleted', post.metaPostId || String(post._id));
       return res.json(post);
     } catch (error) {
       return res.status(400).json({ message: cleanMetaError(error) });

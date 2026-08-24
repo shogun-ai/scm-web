@@ -494,6 +494,13 @@ textarea.z-input { border-radius: 14px; }
 .zf-history .z-table-wrap { overflow-x: auto; border: 0; border-radius: 0; }
 .zf-history-copy { max-width: 420px; display: block; margin-top: 3px; overflow: hidden; color: #777c73; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .zf-error-text { max-width: 260px; display: block; margin-top: 4px; color: #a02f26; font-size: 9px; }
+.zf-deleted-at { display: block; margin-top: 4px; color: #777c73; font-size: 9px; font-weight: 650; }
+.zf-history-actions { min-width: 68px; display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
+.zf-history-actions > a, .zf-history-actions > button { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid #d2d5ce; border-radius: 4px; background: #fff; color: #555b52; cursor: pointer; }
+.zf-history-actions > button { color: #a02f26; }
+.zf-history-actions > a:hover { border-color: #8e938a; color: #111310; }
+.zf-history-actions > button:hover { border-color: #d99791; background: #fff4f2; }
+.zf-history-actions > button:disabled { opacity: .5; cursor: not-allowed; }
 .zf-listing-toggle { min-width: 78px; min-height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid #d2d5ce; border-radius: 4px; background: #f4f5f2; color: #73786f; font-size: 10px; font-weight: 800; cursor: pointer; }
 .zf-listing-toggle.active { border-color: #9fbd65; background: #f2f8e9; color: #315c22; }
 

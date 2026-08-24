@@ -126,6 +126,7 @@ export const getFacebookPostHistory = () => api.get('/api/zentro/admin/facebook/
 export const getFacebookListings = () => api.get('/api/zentro/admin/facebook/listings').then(r => r.data);
 export const publishFacebookPost = (data = {}) => api.post('/api/zentro/admin/facebook/publish', data).then(r => r.data);
 export const updateFacebookListing = (id, listingActive) => api.patch(`/api/zentro/admin/facebook/posts/${id}/listing`, { listingActive }).then(r => r.data);
+export const deleteFacebookPost = id => api.delete(`/api/zentro/admin/facebook/posts/${id}`).then(r => r.data);
 export const getUsers = () => api.get('/api/users').then(r => r.data);
 export const createUser = (data) => api.post('/api/users', data).then(r => r.data);
 export const updateUser = (id, data) => api.put(`/api/users/${id}`, data).then(r => r.data);
