@@ -1242,19 +1242,19 @@ function numericInsightValue(response) {
 
 async function fetchMetaPostInsights(metaPostId) {
   const metrics = {
-    post_impressions: 'impressions',
-    post_impressions_unique: 'reach',
-    post_engaged_users: 'engagedUsers',
+    post_media_view: 'views',
+    post_total_media_view_unique: 'viewers',
     post_clicks: 'clicks',
+    post_reactions_by_type_total: 'reactions',
   };
   const output = {
-    impressions: 0,
-    reach: 0,
-    engagedUsers: 0,
-    clicks: 0,
-    reactions: 0,
-    comments: 0,
-    shares: 0,
+    views: null,
+    viewers: null,
+    actions: null,
+    clicks: null,
+    reactions: null,
+    comments: null,
+    shares: null,
     error: '',
   };
   if (!metaPostId) return { ...output, error: 'Meta Post ID олдсонгүй.' };
@@ -1266,19 +1266,21 @@ async function fetchMetaPostInsights(metaPostId) {
   Object.entries(metrics).forEach(([metric, key], index) => {
     const result = metricResults[index];
     if (result.status === 'fulfilled') output[key] = numericInsightValue(result.value);
-    else errors.push(cleanMetaError(result.reason));
+    else errors.push(`${metric}: ${cleanMetaError(result.reason)}`);
   });
 
   try {
     const engagement = await graphGet(metaPostId, {
-      fields: 'reactions.limit(0).summary(true),comments.limit(0).summary(true),shares',
+      fields: 'comments.limit(0).summary(true),shares',
     });
-    output.reactions = Number(engagement.data?.reactions?.summary?.total_count || 0);
     output.comments = Number(engagement.data?.comments?.summary?.total_count || 0);
     output.shares = Number(engagement.data?.shares?.count || 0);
   } catch (error) {
-    errors.push(cleanMetaError(error));
+    errors.push(`comments/shares: ${cleanMetaError(error)}`);
   }
+  const actionValues = [output.clicks, output.reactions, output.comments, output.shares]
+    .filter(value => Number.isFinite(value));
+  output.actions = actionValues.length ? actionValues.reduce((sum, value) => sum + value, 0) : null;
   output.error = [...new Set(errors.filter(Boolean))].join(' · ').slice(0, 500);
   return output;
 }
@@ -1431,7 +1433,7 @@ async function connectionStatus(webhookActivity = null) {
     legacyMessenger: { configured: false, samePage: false, page: null, error: '' },
     webhookActivity: webhookActivity ? { ...webhookActivity } : null,
     webhookUrl: `${process.env.PUBLIC_API_BASE_URL || 'https://scm-okjs.onrender.com'}/api/zentro/facebook/webhook`,
-    requiredPermissions: ['pages_messaging', 'pages_manage_metadata', 'pages_manage_posts', 'pages_read_engagement', 'read_insights'],
+    requiredPermissions: ['pages_messaging', 'pages_manage_metadata', 'pages_manage_posts', 'pages_read_engagement', 'read_insights', 'pages_read_user_content'],
     error: '',
   };
   if (!env.pageId || !env.pageAccessToken) return status;
@@ -1628,7 +1630,7 @@ export function createZentroFacebookIntegration({
 
       const chatStarts = Math.max(Number(post.chatStarts || 0), Number(uniqueChatters || 0));
       const leadCount = leads.length;
-      const denominator = Number(meta.reach || chatStarts || 0);
+      const denominator = Number(meta.viewers || chatStarts || 0);
       return res.json({
         post: {
           id: post._id,
@@ -1645,7 +1647,7 @@ export function createZentroFacebookIntegration({
           leads: leadCount,
           marketingConsentedLeads: leads.filter(lead => lead.answers?.marketingConsent === true).length,
           conversionRate: denominator > 0 ? Math.round((leadCount / denominator) * 10000) / 100 : 0,
-          conversionBase: meta.reach > 0 ? 'reach' : 'chat_starts',
+          conversionBase: meta.viewers > 0 ? 'viewers' : 'chat_starts',
         },
         leads: leads.map(lead => ({
           id: lead._id,

@@ -97,6 +97,7 @@ function formatDate(value) {
 }
 
 function formatNumber(value) {
+  if (value === null || value === undefined || value === '') return '-';
   return Number(value || 0).toLocaleString('mn-MN');
 }
 
@@ -470,7 +471,7 @@ export default function FacebookAdmin() {
           <div><span><BarChart3 size={13} /></span><b>Постын үзүүлэлт</b><small>Постын түүхээс статистик нээнэ</small></div>
           <div><span><ShieldAlert size={13} /></span><b>Холбоо барих мэдээлэл</b><small>Зөвхөн хүсэлтээр сайн дураар өгсөн утас, имэйл</small></div>
         </div>
-        <small className="zf-panel-note">Meta-ийн нийт үзүүлэлтэд <code>read_insights</code> эрх шаардлагатай. Пост үзсэн бүх хүний нэр, утас, имэйл ирэхгүй.</small>
+        <small className="zf-panel-note">View, click-д <code>read_insights</code>, comment/share-д <code>pages_read_user_content</code> эрх шаардлагатай. Пост үзсэн бүх хүний нэр, утас, имэйл ирэхгүй.</small>
       </section>
 
       <section className="zf-panel zf-diagnostic-panel">
@@ -651,9 +652,9 @@ export default function FacebookAdmin() {
         </header>
 
         <div className="zf-insight-metrics">
-          <div><span>Харуулалт</span><b>{formatNumber(postInsights.meta?.impressions)}</b></div>
-          <div><span>Хүрэлт</span><b>{formatNumber(postInsights.meta?.reach)}</b></div>
-          <div><span>Оролцоо</span><b>{formatNumber(postInsights.meta?.engagedUsers)}</b></div>
+          <div><span>Үзэлт</span><b>{formatNumber(postInsights.meta?.views)}</b></div>
+          <div><span>Үзсэн хүн</span><b>{formatNumber(postInsights.meta?.viewers)}</b></div>
+          <div><span>Нийт үйлдэл</span><b>{formatNumber(postInsights.meta?.actions)}</b></div>
           <div><span>Даралт</span><b>{formatNumber(postInsights.meta?.clicks)}</b></div>
           <div><span>Reaction</span><b>{formatNumber(postInsights.meta?.reactions)}</b></div>
           <div><span>Сэтгэгдэл</span><b>{formatNumber(postInsights.meta?.comments)}</b></div>
