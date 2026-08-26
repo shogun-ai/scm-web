@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildFacebookPostCtaPayload,
+  buildFacebookOrganicPostPayload,
   buildMessengerListingElements,
   buildMessengerProfile,
   buildZentroMessengerLink,
@@ -19,24 +19,19 @@ import {
   verifyZentroWebhookSignature,
 } from './zentroFacebook.js';
 
-test('builds only the documented Facebook post CTA payload', () => {
-  const messengerUrl = 'https://m.me/JapanCarDealership?ref=zpc-post-loan-123';
-  // cta_type/cta_link нь /feed-ийн параметр биш. Meta танихгүй параметрийг алдаа
-  // буцаалгүй хаядаг тул илгээвэл товч тавигдсан мэт худал амжилт үүсдэг.
-  assert.deepEqual(buildFacebookPostCtaPayload('MESSAGE_PAGE', messengerUrl), {
-    call_to_action: {
-      type: 'MESSAGE_PAGE',
-      value: { link: messengerUrl },
-    },
+test('keeps selected media and strips CTA fields from organic Facebook posts', () => {
+  const attachedMedia = [{ media_fbid: 'photo-123' }];
+  assert.deepEqual(buildFacebookOrganicPostPayload({
+    message: 'Loan post',
+    attached_media: attachedMedia,
+    call_to_action: { type: 'MESSAGE_PAGE', value: { link: 'https://m.me/example' } },
+    cta_type: 'MESSAGE_PAGE',
+    cta_link: 'https://m.me/example',
+  }), {
+    message: 'Loan post',
+    attached_media: attachedMedia,
+    published: true,
   });
-  assert.deepEqual(buildFacebookPostCtaPayload('APPLY_NOW', 'https://zentrocapitalgroup.com/#apply'), {
-    call_to_action: {
-      type: 'APPLY_NOW',
-      value: { link: 'https://zentrocapitalgroup.com/#apply' },
-    },
-  });
-  assert.deepEqual(buildFacebookPostCtaPayload('NONE', messengerUrl), {});
-  assert.deepEqual(buildFacebookPostCtaPayload('MESSAGE_PAGE', ''), {});
   assert.equal(normalizeFacebookPostCtaType('invalid', 'MESSAGE_PAGE'), 'MESSAGE_PAGE');
 });
 

@@ -183,20 +183,6 @@ async function graphPostWithToken(pathname, data = {}, accessToken = '') {
   });
 }
 
-function canRetryWithoutPostCta(error) {
-  const status = Number(error.response?.status || 0);
-  const meta = error.response?.data?.error || {};
-  const message = String(meta.message || error.message || '').toLowerCase();
-  return status === 400 && (
-    Number(meta.code) === 100
-    || message.includes('call_to_action')
-    || message.includes('cta_type')
-    || message.includes('cta_link')
-    || message.includes('message_page')
-    || message.includes('apply_now')
-  );
-}
-
 export function isMissingMetaPostError(error) {
   const meta = error?.response?.data?.error || {};
   const message = String(meta.message || '').toLowerCase();
@@ -212,36 +198,23 @@ export function isMissingMetaPostError(error) {
 }
 
 // Meta органик Page постод CTA товч нэмэх боломжийг хаасан. `call_to_action` нь
-// зөвхөн зар (boost/Click-to-Messenger) дээр ажиллана. Постыг нийтэлсний дараа
-// Meta-гаас буцааж уншиж баталгаажуулдаг тул энд амжилттай гэж таамаглахгүй.
+// attached_media-г Messenger link preview-ээр сольж болдог тул органик publish
+// payload-д CTA төрлийн ямар ч field дамжуулахгүй.
 export const FACEBOOK_ORGANIC_CTA_NOTE = 'Meta органик пост дээр товч зөвшөөрдөггүй. Send Message товч зөвхөн энэ постыг зар (boost) болгосон үед харагдана.';
 
-export function buildFacebookPostCtaPayload(ctaType, ctaLink) {
-  const type = normalizeFacebookPostCtaType(ctaType);
-  const link = String(ctaLink || '').trim();
-  if (type === 'NONE' || !link) return {};
-  return { call_to_action: { type, value: { link } } };
+export function buildFacebookOrganicPostPayload(payload = {}) {
+  const organicPayload = { ...payload, published: true };
+  delete organicPayload.call_to_action;
+  delete organicPayload.cta_type;
+  delete organicPayload.cta_link;
+  return organicPayload;
 }
 
-async function publishPageFeed(pageId, payload, ctaType = 'NONE', ctaLink = '') {
-  const basePayload = { ...payload, published: true };
-  const ctaPayload = buildFacebookPostCtaPayload(ctaType, ctaLink);
-  if (!Object.keys(ctaPayload).length) {
-    return { response: await graphPost(`${pageId}/feed`, basePayload), ctaError: '' };
-  }
-
-  try {
-    return {
-      response: await graphPost(`${pageId}/feed`, { ...basePayload, ...ctaPayload }),
-      ctaError: '',
-    };
-  } catch (ctaRequestError) {
-    if (!canRetryWithoutPostCta(ctaRequestError)) throw ctaRequestError;
-    return {
-      response: await graphPost(`${pageId}/feed`, basePayload),
-      ctaError: cleanMetaError(ctaRequestError),
-    };
-  }
+async function publishPageFeed(pageId, payload) {
+  return {
+    response: await graphPost(`${pageId}/feed`, buildFacebookOrganicPostPayload(payload)),
+    ctaError: '',
+  };
 }
 
 // Meta танихгүй параметрийг алдаа буцаалгүй чимээгүй хаядаг тул нийтэлсэн
@@ -1370,12 +1343,12 @@ async function publishPost(config, {
       publishResult = await publishPageFeed(pageId, {
         message: finalMessage,
         attached_media: attachedMedia,
-      }, finalCtaType, ctaUrl);
+      });
     } else {
       publishResult = await publishPageFeed(pageId, {
         message: finalMessage,
         link: ctaUrl || WEBSITE_URL,
-      }, finalCtaType, ctaUrl);
+      });
     }
     const response = publishResult.response;
     const metaPostId = response.data?.post_id || response.data?.id || '';
