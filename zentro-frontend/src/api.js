@@ -123,7 +123,8 @@ export const getFacebookMessengerActivity = () => api.get('/api/zentro/admin/fac
 export const testFacebookConnection = () => api.post('/api/zentro/admin/facebook/test-connection').then(r => r.data);
 export const subscribeFacebookPage = () => api.post('/api/zentro/admin/facebook/subscribe').then(r => r.data);
 export const getFacebookPostHistory = () => api.get('/api/zentro/admin/facebook/posts').then(r => r.data);
-export const getFacebookListings = () => api.get('/api/zentro/admin/facebook/listings').then(r => r.data);
+export const getFacebookListings = (topic = 'car') => api.get('/api/zentro/admin/facebook/listings', { params: { topic } }).then(r => r.data);
+export const getFacebookPostInsights = id => api.get(`/api/zentro/admin/facebook/posts/${id}/insights`).then(r => r.data);
 export const publishFacebookPost = (data = {}) => api.post('/api/zentro/admin/facebook/publish', data).then(r => r.data);
 export const updateFacebookListing = (id, listingActive) => api.patch(`/api/zentro/admin/facebook/posts/${id}/listing`, { listingActive }).then(r => r.data);
 export const deleteFacebookPost = id => api.delete(`/api/zentro/admin/facebook/posts/${id}`).then(r => r.data);

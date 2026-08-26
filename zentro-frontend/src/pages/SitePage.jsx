@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { normalizeField, normalizeGallerySeconds, normalizeSiteConfig } from '../siteDefaults';
+import { grantMarketingConsent, hasMarketingConsent, trackMetaLead, trackMetaPageView } from '../metaPixel';
 
 const SECTION_LABELS = {
   hero: 'Нүүр хэсэг',
@@ -415,6 +416,12 @@ export default function SitePage({
     return () => window.clearInterval(timer);
   }, [editor, products.length]);
 
+  useEffect(() => {
+    if (!editor && config.social.metaPixelId && hasMarketingConsent()) {
+      trackMetaPageView(config.social.metaPixelId);
+    }
+  }, [config.social.metaPixelId, editor]);
+
   const setValue = (id, value) => setForm(current => ({ ...current, [id]: value }));
   const submit = async event => {
     event.preventDefault();
@@ -425,7 +432,21 @@ export default function SitePage({
     try {
       const answers = {};
       Object.entries(form).forEach(([key, value]) => { if (!CORE_FIELDS.includes(key)) answers[key] = value; });
+      const params = new URLSearchParams(window.location.search);
+      const facebookSourcePostId = params.get('fb_post') || '';
+      const marketingConsent = form.marketingConsent === true;
+      answers.facebookSourcePostId = /^[a-f0-9]{24}$/i.test(facebookSourcePostId) ? facebookSourcePostId.toLowerCase() : '';
+      answers.marketingConsent = marketingConsent;
+      answers.utmSource = params.get('utm_source') || (answers.facebookSourcePostId ? 'facebook' : '');
       await onSubmit({ ...form, answers: { ...answers, source: 'zentrocapitalgroup.com' } });
+      if (marketingConsent) {
+        grantMarketingConsent();
+        trackMetaPageView(config.social.metaPixelId);
+        trackMetaLead(config.social.metaPixelId, {
+          content_name: form.productType || 'Zentro loan application',
+          content_category: 'loan_application',
+        });
+      }
       setForm({});
       setSent(true);
     } catch (error) {
@@ -502,6 +523,7 @@ export default function SitePage({
             const definition = normalizeField(field, fieldIndex);
             return <DynamicField key={`${definition.id}-${fieldIndex}`} field={field} stepIndex={stepIndex} fieldIndex={fieldIndex} products={products} value={form[definition.id]} onValue={setValue} editor={editor} onSelect={onSelect} />;
           })}</div></fieldset>)}
+          <label className="zp-marketing-consent"><input type="checkbox" checked={form.marketingConsent === true} onChange={event => setValue('marketingConsent', event.target.checked)} disabled={editor} /><span><b>Санал, шинэ мэдээлэл авахыг зөвшөөрнө</b><small>Зөвшөөрөл нь сайн дурын бөгөөд хүссэн үедээ цуцалж болно. <a href="/privacy" target="_blank" rel="noreferrer">Нууцлалын бодлого</a></small></span></label>
           <button type="submit" disabled={saving || editor}><span>{saving ? content.formSending : content.formButton}</span><ArrowRight size={17} /></button>
           <EditableText as="p" path="siteContent.formPrivacy" value={content.formPrivacy} config={config} editor={editor} selection={selection} onSelect={onSelect} onChange={onChange} className="zp-privacy" />
         </form>

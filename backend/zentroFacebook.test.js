@@ -35,13 +35,13 @@ test('builds current and legacy Facebook post CTA payloads', () => {
   assert.equal(normalizeFacebookPostCtaType('invalid', 'MESSAGE_PAGE'), 'MESSAGE_PAGE');
 });
 
-test('builds a Mongolian Messenger greeting with two entry choices', () => {
+test('builds a Mongolian Messenger greeting with car, active loan, and loan choices', () => {
   const profile = buildMessengerProfile({
     profileGreeting: 'Сайн байна уу, {{user_first_name}}!',
   });
   assert.equal(profile.greeting[0].text, 'Сайн байна уу, {{user_first_name}}!');
-  assert.deepEqual(profile.ice_breakers.map(item => item.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN']);
-  assert.deepEqual(profile.persistent_menu[0].call_to_actions.map(item => item.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN']);
+  assert.deepEqual(profile.ice_breakers.map(item => item.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN_OFFERS', 'ZENTRO_LOAN']);
+  assert.deepEqual(profile.persistent_menu[0].call_to_actions.map(item => item.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN_OFFERS', 'ZENTRO_LOAN']);
 });
 
 test('builds active listing cards with Page and in-chat actions', () => {
@@ -56,6 +56,21 @@ test('builds active listing cards with Page and in-chat actions', () => {
   assert.equal(elements[0].image_url, 'https://example.com/car.jpg');
   assert.deepEqual(elements[0].buttons.map(button => button.type), ['web_url', 'postback', 'postback']);
   assert.equal(elements[0].buttons[2].payload, 'ZENTRO_LISTING_LOAN_page_123');
+});
+
+test('builds active loan cards with conditions and application actions', () => {
+  const elements = buildMessengerListingElements([{
+    id: '66abcdef1234567890abcdef',
+    topic: 'loan',
+    title: 'Автомашин барьцаалсан шуурхай зээл',
+    description: 'Машинаа унаад зээлээ авна.',
+    imageUrl: 'https://example.com/loan.jpg',
+    permalinkUrl: 'https://facebook.com/example/posts/456',
+  }]);
+  assert.equal(elements.length, 1);
+  assert.deepEqual(elements[0].buttons.map(button => button.type), ['web_url', 'postback', 'postback']);
+  assert.equal(elements[0].buttons[1].payload, 'ZENTRO_LOAN_OFFER_66abcdef1234567890abcdef');
+  assert.equal(elements[0].buttons[2].payload, 'ZENTRO_LOAN_OFFER_APPLY_66abcdef1234567890abcdef');
 });
 
 test('deduplicates and limits a Facebook post to five images', () => {
@@ -214,7 +229,7 @@ test('builds a Messenger referral link without dropping the Page path', () => {
   assert.equal(link, 'https://m.me/JapanCarDealership?ref=zpc-post-loan-66abcdef1234567890abcdef');
 });
 
-test('starts Messenger with separate car and loan choices', async () => {
+test('starts Messenger with separate car, active loan, and loan choices', async () => {
   const senderId = 'facebook-user-entry';
   const { model: SessionModel, sessions } = createSessionModel();
   const sent = [];
@@ -233,7 +248,30 @@ test('starts Messenger with separate car and loan choices', async () => {
   });
 
   assert.equal(sessions.get(senderId).state, 'idle');
-  assert.deepEqual(sent.at(-1).options.map(option => option.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN']);
+  assert.deepEqual(sent.at(-1).options.map(option => option.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN_OFFERS', 'ZENTRO_LOAN']);
+});
+
+test('shows active loan offers from the Messenger menu', async () => {
+  const senderId = 'facebook-user-loan-offers';
+  const { model: SessionModel, sessions } = createSessionModel();
+  const sent = [];
+  const carousels = [];
+  const offers = [{ id: '66abcdef1234567890abcdef', topic: 'loan', title: 'Автомашин барьцаалсан зээл' }];
+
+  await processZentroMessengerEvent({
+    event: { sender: { id: senderId }, postback: { payload: 'ZENTRO_LOAN_OFFERS' } },
+    config: { products: [], social: { autoReplyEnabled: true, requestIntakeEnabled: true } },
+    ZentroLoanRequest: {},
+    SessionModel,
+    send: async (recipientId, message, options = []) => sent.push({ recipientId, message, options }),
+    fetchLoanOffers: async () => offers,
+    sendLoanOffers: async (recipientId, values) => carousels.push({ recipientId, values }),
+  });
+
+  assert.equal(sessions.get(senderId).topic, 'loan');
+  assert.equal(carousels.length, 1);
+  assert.equal(carousels[0].values[0].id, '66abcdef1234567890abcdef');
+  assert.match(sent.at(-1).message, /Нөхцөл асуух/);
 });
 
 test('shows active Page listings when a conversation starts', async () => {
@@ -380,4 +418,43 @@ test('collects a Messenger application and deduplicates retried events', async (
   assert.equal(requests[0].source, 'facebook');
   assert.equal(sessions.get(senderId).state, 'idle');
   assert.match(sent.at(-1).message, /амжилттай бүртгэлээ/);
+});
+
+test('stores optional email and explicit marketing consent from Messenger', async () => {
+  const senderId = 'facebook-user-consent';
+  const { model: SessionModel } = createSessionModel();
+  const requests = [];
+  const ZentroLoanRequest = {
+    async create(value) {
+      const request = { ...value, _id: '66abcdef1234567890abcdef' };
+      requests.push(request);
+      return request;
+    },
+  };
+  const config = {
+    products: [{ name: 'Автомашин барьцаалсан зээл' }],
+    social: { autoReplyEnabled: true, requestIntakeEnabled: true },
+  };
+  const process = event => processZentroMessengerEvent({
+    event,
+    config,
+    ZentroLoanRequest,
+    SessionModel,
+    send: async () => {},
+  });
+
+  await process({ sender: { id: senderId }, postback: { payload: 'ZENTRO_APPLY' } });
+  await process(textEvent(senderId, 'consent-1', 'Бат Эрдэнэ'));
+  await process(textEvent(senderId, 'consent-2', '99112233'));
+  await process(textEvent(senderId, 'consent-3', 'bat@example.com'));
+  await process(quickReplyEvent(senderId, 'consent-4', 'Тийм', 'ZENTRO_MARKETING_YES'));
+  await process(quickReplyEvent(senderId, 'consent-5', 'Автомашины зээл', 'ZENTRO_PRODUCT_0'));
+  await process(textEvent(senderId, 'consent-6', '15 сая'));
+  await process(textEvent(senderId, 'consent-7', '18'));
+  await process(textEvent(senderId, 'consent-8', 'Toyota Prius 2018'));
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].email, 'bat@example.com');
+  assert.equal(requests[0].answers.marketingConsent, true);
+  assert.match(requests[0].answers.marketingConsentAt, /^\d{4}-\d{2}-\d{2}T/);
 });

@@ -133,6 +133,12 @@ button, input, textarea, select { font-family: inherit; }
 .zp-file-field span { color: rgba(255,255,255,.65); font-size: 12px; }
 .zp-form > button { min-height: 50px; display: flex; align-items: center; justify-content: center; gap: 11px; padding: 0 20px; border: 0; border-radius: 4px; background: var(--zp-accent); color: var(--zp-ink); font-size: 13px; font-weight: 800; cursor: pointer; }
 .zp-form > button:disabled { opacity: .62; cursor: default; }
+.zp-marketing-consent { display: grid; grid-template-columns: 18px minmax(0,1fr); align-items: start; gap: 10px; color: rgba(255,255,255,.82); cursor: pointer; }
+.zp-marketing-consent input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--zp-accent); }
+.zp-marketing-consent span { display: flex; flex-direction: column; gap: 3px; }
+.zp-marketing-consent b { font-size: 11px; line-height: 1.35; }
+.zp-marketing-consent small { color: rgba(255,255,255,.5); font-size: 9px; font-weight: 600; line-height: 1.5; }
+.zp-marketing-consent a { color: rgba(255,255,255,.78); text-decoration: underline; }
 .zp-apply .zp-privacy { margin: -10px 0 0; color: rgba(255,255,255,.45); font-size: 10px; line-height: 1.5; text-align: center; }
 .zp-success { display: flex; align-items: center; gap: 9px; margin: 0; padding: 12px 14px; border: 1px solid rgba(201,244,91,.45); border-radius: 4px; background: rgba(201,244,91,.12); color: var(--zp-accent); font-size: 12px; font-weight: 700; }
 .zp-form-error { margin: 0; padding: 12px 14px; border: 1px solid rgba(255,126,112,.5); border-radius: 4px; background: rgba(255,126,112,.1); color: #ffb3aa; font-size: 12px; font-weight: 650; line-height: 1.5; }

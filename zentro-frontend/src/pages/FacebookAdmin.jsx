@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
+  BarChart3,
   Bot,
   CalendarClock,
   CarFront,
@@ -8,6 +9,7 @@ import {
   CheckCircle2,
   Clock3,
   Copy,
+  Download,
   ExternalLink,
   FileText,
   ImagePlus,
@@ -31,6 +33,7 @@ import {
   getFacebookMessengerActivity,
   getFacebookListings,
   getFacebookPostHistory,
+  getFacebookPostInsights,
   getFacebookStatus,
   publishFacebookPost,
   subscribeFacebookPage,
@@ -55,7 +58,7 @@ const CREDENTIAL_LABELS = {
 };
 
 const POST_CTA_OPTIONS = [
-  { value: 'MESSAGE_PAGE', label: 'Send Message', detail: 'Messenger чатбот руу оруулна', icon: MessageCircle },
+  { value: 'MESSAGE_PAGE', label: 'Send Message', detail: 'Чат нээнэ, онлайн хүсэлтийн линк текстэд үлдэнэ', icon: MessageCircle },
   { value: 'APPLY_NOW', label: 'Apply Now', detail: 'Веб хүсэлт рүү оруулна', icon: FileText },
   { value: 'NONE', label: 'Товчгүй', detail: 'Зөвхөн пост нийтэлнэ', icon: X },
 ];
@@ -93,6 +96,14 @@ function formatDate(value) {
   return value ? new Date(value).toLocaleString('mn-MN') : '-';
 }
 
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('mn-MN');
+}
+
+function csvCell(value) {
+  return `"${String(value ?? '').replaceAll('"', '""')}"`;
+}
+
 function removeWebsiteApplicationHandoff(message = '') {
   return String(message)
     .replace(/(?:Дэлгэрэнгүй|Хүсэлт өгөх)\s*:\s*https?:\/\/(?:www\.)?zentrocapitalgroup\.com\/?#apply[^\n]*/giu, '')
@@ -108,7 +119,9 @@ export default function FacebookAdmin() {
   const [status, setStatus] = useState(null);
   const [messengerActivity, setMessengerActivity] = useState(null);
   const [activeListings, setActiveListings] = useState([]);
+  const [activeLoanOffers, setActiveLoanOffers] = useState([]);
   const [posts, setPosts] = useState([]);
+  const [postInsights, setPostInsights] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState(null);
@@ -138,6 +151,7 @@ export default function FacebookAdmin() {
       setMessengerActivity(activity);
       setPosts(history);
       getFacebookListings().then(setActiveListings).catch(() => setActiveListings([]));
+      getFacebookListings('loan').then(setActiveLoanOffers).catch(() => setActiveLoanOffers([]));
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Facebook тохиргоог уншиж чадсангүй.' });
     } finally {
@@ -146,6 +160,20 @@ export default function FacebookAdmin() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (!postInsights) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') setPostInsights(null);
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [postInsights]);
 
   const change = (key, value) => {
     setSocial(current => ({ ...current, [key]: value }));
@@ -212,11 +240,12 @@ export default function FacebookAdmin() {
         imageUrls: manualImageUrls,
         topic: manualTopic,
         productIndex: manualProductIndex,
-        listingActive: manualTopic === 'car' && listingActive,
+        listingActive: manualTopic !== 'general' && listingActive,
         ctaType: manualCtaType,
       });
       setPosts(current => [post, ...current]);
       getFacebookListings().then(setActiveListings).catch(() => {});
+      getFacebookListings('loan').then(setActiveLoanOffers).catch(() => {});
       setManualMessage('');
       setManualImageUrls([]);
       setManualImageInput('');
@@ -289,7 +318,9 @@ export default function FacebookAdmin() {
       const updated = await updateFacebookListing(post._id, post.listingActive === false);
       setPosts(current => current.map(item => item._id === updated._id ? updated : item));
       getFacebookListings().then(setActiveListings).catch(() => {});
-      setNotice({ type: 'success', text: updated.listingActive ? 'Зарыг Messenger-д идэвхжүүллээ.' : 'Зарыг Messenger жагсаалтаас хаслаа.' });
+      getFacebookListings('loan').then(setActiveLoanOffers).catch(() => {});
+      const itemLabel = updated.topic === 'loan' ? 'Зээлийн саналыг' : 'Зарыг';
+      setNotice({ type: 'success', text: updated.listingActive ? `${itemLabel} Messenger-д идэвхжүүллээ.` : `${itemLabel} Messenger жагсаалтаас хаслаа.` });
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Зарын төлөв өөрчилж чадсангүй.' });
     } finally {
@@ -306,12 +337,41 @@ export default function FacebookAdmin() {
       const deleted = await deleteFacebookPost(post._id);
       setPosts(current => current.map(item => item._id === deleted._id ? deleted : item));
       getFacebookListings().then(setActiveListings).catch(() => {});
+      getFacebookListings('loan').then(setActiveLoanOffers).catch(() => {});
       setNotice({ type: 'success', text: 'Facebook постыг устгалаа. Аудитын түүх хадгалагдсан.' });
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Facebook постыг устгаж чадсангүй.' });
     } finally {
       setBusy('');
     }
+  };
+
+  const openPostInsights = async post => {
+    setBusy(`insights-${post._id}`);
+    setNotice(null);
+    try {
+      setPostInsights(await getFacebookPostInsights(post._id));
+    } catch (error) {
+      setNotice({ type: 'error', text: error.response?.data?.message || 'Постын статистик уншиж чадсангүй.' });
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const downloadConsentedLeads = () => {
+    const leads = (postInsights?.leads || []).filter(lead => lead.marketingConsent && (lead.phone || lead.email));
+    if (!leads.length) return;
+    const rows = [
+      ['name', 'phone', 'email', 'consent_at', 'source', 'status'],
+      ...leads.map(lead => [lead.name, lead.phone, lead.email, lead.marketingConsentAt, lead.source, lead.status]),
+    ];
+    const csv = `\uFEFF${rows.map(row => row.map(csvCell).join(',')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `zentro-consented-leads-${postInsights?.post?.id || 'post'}.csv`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const preview = useMemo(() => {
@@ -335,7 +395,7 @@ export default function FacebookAdmin() {
     const base = social.messengerUrl || 'https://m.me/JapanCarDealership';
     const separator = base.includes('?') ? '&' : '?';
     const label = manualTopic === 'car' ? 'Машины талаар Messenger-ээр асуух' : manualTopic === 'loan' ? 'Зээлийн хүсэлтээ Messenger-ээр өгөх' : 'Messenger-ээр холбогдох';
-    return `${messengerMessage}\n\n${label}: ${base}${separator}ref=post-preview`;
+    return `${messengerMessage}\n\n${label}: ${base}${separator}ref=post-preview\nОнлайнаар хүсэлт өгөх: https://zentrocapitalgroup.com/?fb_post=post-id#apply`;
   }, [config, manualCtaType, manualMessage, manualProductIndex, manualTopic, social.messengerUrl, social.postTemplates]);
 
   const selectedProduct = config?.products?.[manualProductIndex] || config?.products?.[0] || {};
@@ -349,6 +409,7 @@ export default function FacebookAdmin() {
     : (social.postUseProductImage && selectedProductImages[0] ? [selectedProductImages[0]] : []);
 
   const messengerReady = Boolean(status?.connected && status?.configured);
+  const pixelReady = /^\d{5,30}$/.test(String(social.metaPixelId || '').trim());
   const legacyOverlap = Boolean(status?.legacyMessenger?.samePage);
   const tokenExpired = /(?:access token|session).*(?:expired|хугацаа)/i.test(String(status?.error || ''));
   const connectionDetail = tokenExpired
@@ -400,6 +461,18 @@ export default function FacebookAdmin() {
         <button className="z-btn z-btn-primary" type="button" onClick={subscribe} disabled={Boolean(busy) || !messengerReady}>{busy === 'subscribe' ? <LoaderCircle className="animate-spin" size={14} /> : <Link2 size={14} />} Messenger webhook холбох</button>
       </section>
 
+      <section className="zf-panel zf-marketing-panel">
+        <div className="zf-panel-head"><div><span>Measurement</span><h2>Статистик ба маркетинг</h2></div><BarChart3 size={19} /></div>
+        <label className="z-label">Meta Pixel ID</label>
+        <input className="z-input" inputMode="numeric" value={social.metaPixelId || ''} onChange={event => change('metaPixelId', event.target.value.replace(/\D/g, '').slice(0, 30))} placeholder="Жишээ: 123456789012345" />
+        <div className="zf-marketing-list">
+          <div><span className={pixelReady ? 'ready' : ''}>{pixelReady ? <Check size={13} /> : <AlertCircle size={13} />}</span><b>Вебийн Pixel</b><small>{pixelReady ? 'Зөвшөөрөл өгсөн хэрэглэгч дээр идэвхжинэ' : 'Pixel ID оруулаагүй'}</small></div>
+          <div><span><BarChart3 size={13} /></span><b>Постын үзүүлэлт</b><small>Постын түүхээс статистик нээнэ</small></div>
+          <div><span><ShieldAlert size={13} /></span><b>Холбоо барих мэдээлэл</b><small>Зөвхөн хүсэлтээр сайн дураар өгсөн утас, имэйл</small></div>
+        </div>
+        <small className="zf-panel-note">Meta-ийн нийт үзүүлэлтэд <code>read_insights</code> эрх шаардлагатай. Пост үзсэн бүх хүний нэр, утас, имэйл ирэхгүй.</small>
+      </section>
+
       <section className="zf-panel zf-diagnostic-panel">
         <div className="zf-panel-head"><div><span>Routing diagnostics</span><h2>Давхар автоматжуулалт</h2></div><ShieldAlert size={19} /></div>
         {legacyOverlap && <div className="zf-route-warning"><AlertCircle size={16} /><span><b>Хуучин SCM Messenger мөн энэ Page-ийг зааж байна.</b><small>Шинэ хувилбар Zentro Page-ийн event-ийг хуучин webhook дээр автоматаар алгасана.</small></span></div>}
@@ -426,13 +499,19 @@ export default function FacebookAdmin() {
         <Toggle checked={social.requestIntakeEnabled} onChange={value => change('requestIntakeEnabled', value)} label="Messenger-ээр хүсэлт авах" detail="Хүсэлтийг Facebook эх сурвалжтайгаар CRM-д бүртгэнэ" />
         <div className="zf-chat-entry-preview">
           <span>Эхний сонголт</span>
-          <div><button type="button" tabIndex={-1}><CarFront size={15} /> Идэвхтэй зарууд</button><button type="button" tabIndex={-1}><Landmark size={15} /> Зээлийн талаар</button></div>
+          <div><button type="button" tabIndex={-1}><CarFront size={15} /> Машины зарууд</button><button type="button" tabIndex={-1}><Landmark size={15} /> Идэвхтэй зээл</button><button type="button" tabIndex={-1}><MessageCircle size={15} /> Зээлийн талаар</button></div>
         </div>
         <div className="zf-active-listings-summary">
           <span>Messenger-д харагдах зар · {activeListings.length}</span>
           {activeListings.length > 0
             ? activeListings.slice(0, 4).map(listing => <div key={listing.id}>{listing.imageUrl ? <img src={listing.imageUrl} alt="" /> : <CarFront size={16} />}<b>{listing.title}</b>{listing.permalinkUrl && <a href={listing.permalinkUrl} target="_blank" rel="noreferrer" title="Facebook зар нээх"><ExternalLink size={13} /></a>}</div>)
             : <small>Идэвхтэй автомашины зар олдсонгүй.</small>}
+        </div>
+        <div className="zf-active-listings-summary">
+          <span>Messenger-д харагдах зээл · {activeLoanOffers.length}</span>
+          {activeLoanOffers.length > 0
+            ? activeLoanOffers.slice(0, 4).map(offer => <div key={offer.id}>{offer.imageUrl ? <img src={offer.imageUrl} alt="" /> : <Landmark size={16} />}<b>{offer.title}</b>{offer.permalinkUrl && <a href={offer.permalinkUrl} target="_blank" rel="noreferrer" title="Facebook зээлийн пост нээх"><ExternalLink size={13} /></a>}</div>)
+            : <small>Идэвхтэй зээлийн санал олдсонгүй.</small>}
         </div>
         <label className="z-label">Чат нээгдэхэд харагдах мэндчилгээ</label>
         <textarea className="z-input" rows={2} maxLength={160} value={social.profileGreeting || ''} onChange={event => change('profileGreeting', event.target.value)} />
@@ -471,7 +550,9 @@ export default function FacebookAdmin() {
         <div className="zf-topic-hint">
           {manualTopic === 'car'
             ? <><CarFront size={14} /><span><b>Автомашины зар</b> Зураг, мэдээлэлтэй бөгөөд “Идэвхтэй зар” асаалттай бол Messenger жагсаалтад орно.</span></>
-            : <><AlertCircle size={14} /><span><b>{manualTopic === 'loan' ? 'Зээлийн пост' : 'Ерөнхий пост'}</b> Автомашины “Идэвхтэй зарууд” жагсаалтад орохгүй.</span></>}
+            : manualTopic === 'loan'
+              ? <><Landmark size={14} /><span><b>Зээлийн пост</b> “Идэвхтэй зээл” асаалттай бол Messenger-ийн зээлийн саналд орно.</span></>
+              : <><AlertCircle size={14} /><span><b>Ерөнхий пост</b> Messenger-ийн идэвхтэй жагсаалтад орохгүй.</span></>}
         </div>
 
         <label className="z-label">Холбох бүтээгдэхүүн</label>
@@ -511,7 +592,7 @@ export default function FacebookAdmin() {
             </button>;
           })}
         </div>
-        {manualTopic === 'car' && <Toggle checked={listingActive} onChange={setListingActive} label="Идэвхтэй зар" detail="Messenger чатны автомашины жагсаалтад харуулна" />}
+        {manualTopic !== 'general' && <Toggle checked={listingActive} onChange={setListingActive} label={manualTopic === 'loan' ? 'Идэвхтэй зээл' : 'Идэвхтэй зар'} detail={manualTopic === 'loan' ? 'Messenger чатны зээлийн саналд харуулна' : 'Messenger чатны автомашины жагсаалтад харуулна'} />}
         <button className="z-btn z-btn-primary zf-publish-now" type="button" onClick={publish} disabled={Boolean(busy) || !status?.connected}>{busy === 'publish' ? <LoaderCircle className="animate-spin" size={14} /> : <Send size={14} />} Одоо нийтлэх</button>
         </section>
 
@@ -540,7 +621,7 @@ export default function FacebookAdmin() {
         <div className="zf-panel-head"><div><span>History</span><h2>Нийтлэлийн түүх</h2></div><Clock3 size={19} /></div>
         <div className="z-table-wrap">
           <table className="z-table">
-            <thead><tr><th>Огноо</th><th>Эх үүсвэр</th><th>Пост</th><th>Товч</th><th>Чат</th><th>Messenger зар</th><th>Төлөв</th><th></th></tr></thead>
+            <thead><tr><th>Огноо</th><th>Эх үүсвэр</th><th>Пост</th><th>Товч</th><th>Чат</th><th>Messenger жагсаалт</th><th>Төлөв</th><th></th></tr></thead>
             <tbody>
               {posts.length === 0 && <tr><td colSpan={8} className="text-center text-slate-400 py-8">Нийтлэлийн түүх хоосон</td></tr>}
               {posts.map(post => {
@@ -551,11 +632,51 @@ export default function FacebookAdmin() {
                   <td><b>{post.productName || 'Facebook нийтлэл'}</b><span className="zf-history-copy">{post.message}</span></td>
                   <td>{ctaType === 'NONE' ? '-' : <><span className={`zf-cta-status ${post.ctaApplied ? 'active' : 'missing'}`} title={post.ctaError || ''}>{post.ctaApplied ? <Check size={12} /> : <AlertCircle size={12} />}{facebookCtaLabel(ctaType)}</span>{post.ctaError && <small className="zf-error-text">{post.ctaError}</small>}</>}</td>
                   <td>{post.messengerLinked ? <span className="zf-chat-count"><MessageCircle size={13} />{post.chatStarts || 0}</span> : '-'}</td>
-                  <td>{post.topic === 'car' && post.status === 'published' ? <button type="button" className={`zf-listing-toggle ${post.listingActive === false ? '' : 'active'}`} onClick={() => updateListing(post)} disabled={Boolean(busy)} title="Messenger жагсаалтын төлөв өөрчлөх">{busy === `listing-${post._id}` ? <LoaderCircle className="animate-spin" size={13} /> : post.listingActive === false ? <X size={13} /> : <Check size={13} />}{post.listingActive === false ? 'Нуусан' : 'Идэвхтэй'}</button> : '-'}</td>
+                  <td>{post.topic !== 'general' && post.status === 'published' ? <button type="button" className={`zf-listing-toggle ${post.listingActive === false ? '' : 'active'}`} onClick={() => updateListing(post)} disabled={Boolean(busy)} title="Messenger жагсаалтын төлөв өөрчлөх">{busy === `listing-${post._id}` ? <LoaderCircle className="animate-spin" size={13} /> : post.listingActive === false ? <X size={13} /> : <Check size={13} />}{post.listingActive === false ? 'Нуусан' : post.topic === 'loan' ? 'Идэвхтэй зээл' : 'Идэвхтэй зар'}</button> : '-'}</td>
                   <td><span className={`z-badge ${post.status === 'published' ? 'z-badge-green' : post.status === 'failed' ? 'z-badge-red' : post.status === 'deleted' ? 'z-badge-gray' : 'z-badge-yellow'}`}>{post.status === 'published' ? 'Нийтэлсэн' : post.status === 'failed' ? 'Алдаа' : post.status === 'deleted' ? 'Устгасан' : 'Нийтэлж байна'}</span>{post.status === 'deleted' && <small className="zf-deleted-at">{formatDate(post.deletedAt)}</small>}{post.error && <small className="zf-error-text">{post.error}</small>}</td>
-                  <td><div className="zf-history-actions">{post.permalinkUrl && post.status !== 'deleted' && <a href={post.permalinkUrl} target="_blank" rel="noreferrer" title="Пост нээх"><ExternalLink size={15} /></a>}{post.status !== 'deleted' && <button type="button" onClick={() => removePost(post)} disabled={Boolean(busy)} title="Facebook пост устгах">{busy === `delete-${post._id}` ? <LoaderCircle className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>}</div></td>
+                  <td><div className="zf-history-actions">{post.status === 'published' && <button className="stats" type="button" onClick={() => openPostInsights(post)} disabled={Boolean(busy)} title="Постын статистик">{busy === `insights-${post._id}` ? <LoaderCircle className="animate-spin" size={14} /> : <BarChart3 size={14} />}</button>}{post.permalinkUrl && post.status !== 'deleted' && <a href={post.permalinkUrl} target="_blank" rel="noreferrer" title="Пост нээх"><ExternalLink size={15} /></a>}{post.status !== 'deleted' && <button className="delete" type="button" onClick={() => removePost(post)} disabled={Boolean(busy)} title="Facebook пост устгах">{busy === `delete-${post._id}` ? <LoaderCircle className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>}</div></td>
                 </tr>;
               })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>}
+
+    {postInsights && <div className="zf-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setPostInsights(null); }}>
+      <section className="zf-insights-dialog" role="dialog" aria-modal="true" aria-labelledby="zf-insights-title">
+        <header>
+          <div><span>Post performance</span><h2 id="zf-insights-title">{postInsights.post?.productName || 'Facebook постын статистик'}</h2><small>{formatDate(postInsights.post?.publishedAt)}</small></div>
+          <div>{postInsights.post?.permalinkUrl && <a href={postInsights.post.permalinkUrl} target="_blank" rel="noreferrer" title="Facebook пост нээх"><ExternalLink size={15} /></a>}<button type="button" title="Хаах" onClick={() => setPostInsights(null)}><X size={17} /></button></div>
+        </header>
+
+        <div className="zf-insight-metrics">
+          <div><span>Харуулалт</span><b>{formatNumber(postInsights.meta?.impressions)}</b></div>
+          <div><span>Хүрэлт</span><b>{formatNumber(postInsights.meta?.reach)}</b></div>
+          <div><span>Оролцоо</span><b>{formatNumber(postInsights.meta?.engagedUsers)}</b></div>
+          <div><span>Даралт</span><b>{formatNumber(postInsights.meta?.clicks)}</b></div>
+          <div><span>Reaction</span><b>{formatNumber(postInsights.meta?.reactions)}</b></div>
+          <div><span>Сэтгэгдэл</span><b>{formatNumber(postInsights.meta?.comments)}</b></div>
+          <div><span>Share</span><b>{formatNumber(postInsights.meta?.shares)}</b></div>
+        </div>
+        {postInsights.meta?.error && <div className="zf-insight-warning"><AlertCircle size={15} /><span><b>Meta статистик бүрэн ирсэнгүй.</b><small>{postInsights.meta.error}</small></span></div>}
+
+        <div className="zf-funnel-strip">
+          <div><MessageCircle size={16} /><span><b>{formatNumber(postInsights.funnel?.chatStarts)}</b><small>Чат эхлүүлсэн</small></span></div>
+          <div><FileText size={16} /><span><b>{formatNumber(postInsights.funnel?.leads)}</b><small>Хүсэлт болсон</small></span></div>
+          <div><BarChart3 size={16} /><span><b>{formatNumber(postInsights.funnel?.conversionRate)}%</b><small>Хөрвөлт</small></span></div>
+          <div><Check size={16} /><span><b>{formatNumber(postInsights.funnel?.marketingConsentedLeads)}</b><small>Маркетинг зөвшөөрсөн</small></span></div>
+        </div>
+
+        <div className="zf-privacy-note"><ShieldAlert size={17} /><span><b>Үзсэн хүний хувийн мэдээлэл харагдахгүй.</b><small>Доорх утас, имэйл нь Messenger эсвэл веб хүсэлтээр өөрсдөө өгсөн харилцагчдын мэдээлэл.</small></span></div>
+
+        <div className="zf-lead-head"><div><span>Attributed leads</span><h3>Энэ постоос ирсэн хүсэлт · {postInsights.leads?.length || 0}</h3></div><button className="z-btn z-btn-secondary" type="button" onClick={downloadConsentedLeads} disabled={!postInsights.funnel?.marketingConsentedLeads}><Download size={14} /> Зөвшөөрөлтэй CSV</button></div>
+        <div className="zf-lead-table-wrap">
+          <table className="zf-lead-table">
+            <thead><tr><th>Огноо</th><th>Харилцагч</th><th>Утас</th><th>И-мэйл</th><th>Суваг</th><th>Маркетинг</th></tr></thead>
+            <tbody>
+              {!postInsights.leads?.length && <tr><td colSpan={6}>Одоогоор энэ посттой холбогдсон хүсэлт алга.</td></tr>}
+              {postInsights.leads?.map(lead => <tr key={lead.id}><td>{formatDate(lead.createdAt)}</td><td><b>{lead.name || '-'}</b><small>{lead.status || 'new'}</small></td><td>{lead.phone || '-'}</td><td>{lead.email || '-'}</td><td>{lead.source === 'facebook' ? 'Messenger' : 'Веб'}</td><td>{lead.marketingConsent ? <span className="zf-consent yes"><Check size={12} /> Зөвшөөрсөн</span> : <span className="zf-consent">Үгүй</span>}</td></tr>)}
             </tbody>
           </table>
         </div>

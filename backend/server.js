@@ -6962,6 +6962,7 @@ app.post('/api/zentro/public/loan-requests', async (req, res) => {
     const name = String(body.name || '').trim().replace(/\s+/g, ' ');
     const phone = String(body.phone || '').trim();
     const register = String(body.register || '').trim().replace(/\s+/g, '').toUpperCase();
+    const email = String(body.email || '').trim().toLowerCase();
     const amount = publicInteger(body.amount);
     const termMonths = publicInteger(body.termMonths);
 
@@ -6969,18 +6970,26 @@ app.post('/api/zentro/public/loan-requests', async (req, res) => {
     if (!/^[А-Яа-яЁёӨөҮү]+(?:[ -][А-Яа-яЁёӨөҮү]+)*$/.test(name)) return res.status(400).json({ message: 'Овог, нэрийг зөвхөн Монгол кирилл үсгээр бичнэ үү' });
     if (!/^[0-9]{8}$/.test(phone)) return res.status(400).json({ message: 'Утасны дугаар яг 8 оронтой байна' });
     if (register && !/^[А-ЯЁӨҮ]{2}[0-9]{8}$/.test(register)) return res.status(400).json({ message: 'Регистрийн дугаарыг 2 Монгол кирилл үсэг, 8 цифрээр бичнэ үү' });
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ message: 'И-мэйл хаягаа зөв оруулна уу' });
     if (!Number.isFinite(amount) || !Number.isFinite(termMonths)) return res.status(400).json({ message: 'Дүн болон хугацааг зөвхөн цифрээр оруулна уу' });
+
+    const answers = { ...(body.answers || {}) };
+    answers.facebookSourcePostId = /^[a-f0-9]{24}$/i.test(String(answers.facebookSourcePostId || ''))
+      ? String(answers.facebookSourcePostId).toLowerCase()
+      : '';
+    answers.marketingConsent = answers.marketingConsent === true;
+    answers.marketingConsentAt = answers.marketingConsent ? new Date().toISOString() : '';
 
     const request = await ZentroLoanRequest.create({
       name,
       phone,
       register,
-      email: body.email,
+      email,
       productType: body.productType,
       amount,
       termMonths,
       collateral: body.collateral,
-      answers: body.answers || {},
+      answers,
       source: 'web',
       status: 'new',
       notes: body.notes,
