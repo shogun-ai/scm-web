@@ -211,50 +211,48 @@ export function isMissingMetaPostError(error) {
     );
 }
 
-export function buildFacebookPostCtaPayload(ctaType, ctaLink, legacy = false) {
+// Meta органик Page постод CTA товч нэмэх боломжийг хаасан. `call_to_action` нь
+// зөвхөн зар (boost/Click-to-Messenger) дээр ажиллана. Постыг нийтэлсний дараа
+// Meta-гаас буцааж уншиж баталгаажуулдаг тул энд амжилттай гэж таамаглахгүй.
+export const FACEBOOK_ORGANIC_CTA_NOTE = 'Meta органик пост дээр товч зөвшөөрдөггүй. Send Message товч зөвхөн энэ постыг зар (boost) болгосон үед харагдана.';
+
+export function buildFacebookPostCtaPayload(ctaType, ctaLink) {
   const type = normalizeFacebookPostCtaType(ctaType);
   const link = String(ctaLink || '').trim();
   if (type === 'NONE' || !link) return {};
-  if (legacy) return { call_to_action: { type, value: { link } } };
-  return { cta_type: type, cta_link: link };
+  return { call_to_action: { type, value: { link } } };
 }
 
 async function publishPageFeed(pageId, payload, ctaType = 'NONE', ctaLink = '') {
   const basePayload = { ...payload, published: true };
-  const modernCta = buildFacebookPostCtaPayload(ctaType, ctaLink);
-  if (!Object.keys(modernCta).length) {
-    return {
-      response: await graphPost(`${pageId}/feed`, basePayload),
-      ctaApplied: false,
-      ctaError: '',
-    };
+  const ctaPayload = buildFacebookPostCtaPayload(ctaType, ctaLink);
+  if (!Object.keys(ctaPayload).length) {
+    return { response: await graphPost(`${pageId}/feed`, basePayload), ctaError: '' };
   }
 
   try {
     return {
-      response: await graphPost(`${pageId}/feed`, { ...basePayload, ...modernCta }),
-      ctaApplied: true,
+      response: await graphPost(`${pageId}/feed`, { ...basePayload, ...ctaPayload }),
       ctaError: '',
     };
-  } catch (modernError) {
-    if (!canRetryWithoutPostCta(modernError)) throw modernError;
-    try {
-      return {
-        response: await graphPost(`${pageId}/feed`, {
-          ...basePayload,
-          ...buildFacebookPostCtaPayload(ctaType, ctaLink, true),
-        }),
-        ctaApplied: true,
-        ctaError: '',
-      };
-    } catch (legacyError) {
-      if (!canRetryWithoutPostCta(legacyError)) throw legacyError;
-      return {
-        response: await graphPost(`${pageId}/feed`, basePayload),
-        ctaApplied: false,
-        ctaError: cleanMetaError(legacyError),
-      };
-    }
+  } catch (ctaRequestError) {
+    if (!canRetryWithoutPostCta(ctaRequestError)) throw ctaRequestError;
+    return {
+      response: await graphPost(`${pageId}/feed`, basePayload),
+      ctaError: cleanMetaError(ctaRequestError),
+    };
+  }
+}
+
+// Meta танихгүй параметрийг алдаа буцаалгүй чимээгүй хаядаг тул нийтэлсэн
+// постоос call_to_action-ыг буцааж уншиж, товч үнэхээр тавигдсан эсэхийг шалгана.
+export async function verifyPostCta(metaPostId) {
+  if (!metaPostId) return { applied: false, error: '' };
+  try {
+    const response = await graphGet(metaPostId, { fields: 'call_to_action' });
+    return { applied: Boolean(response.data?.call_to_action?.type), error: '' };
+  } catch (error) {
+    return { applied: false, error: cleanMetaError(error) };
   }
 }
 
@@ -1383,8 +1381,14 @@ async function publishPost(config, {
     const metaPostId = response.data?.post_id || response.data?.id || '';
     record.status = 'published';
     record.metaPostId = metaPostId;
-    record.ctaApplied = publishResult.ctaApplied;
-    record.ctaError = publishResult.ctaError;
+    const ctaCheck = finalCtaType === 'NONE'
+      ? { applied: false, error: '' }
+      : await verifyPostCta(metaPostId);
+    record.ctaApplied = ctaCheck.applied;
+    record.ctaError = ctaCheck.applied
+      ? ''
+      : [publishResult.ctaError, ctaCheck.error, finalCtaType === 'NONE' ? '' : FACEBOOK_ORGANIC_CTA_NOTE]
+        .filter(Boolean).join(' · ').slice(0, 500);
     record.permalinkUrl = await resolvePermalink(metaPostId);
     record.publishedAt = new Date();
     await record.save();

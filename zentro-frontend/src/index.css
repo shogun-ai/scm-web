@@ -517,6 +517,8 @@ textarea.z-input { border-radius: 14px; }
 .zf-cta-status { min-width: 88px; display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 800; white-space: nowrap; }
 .zf-cta-status.active { color: #315c22; }
 .zf-cta-status.missing { color: #9e2c23; }
+.zf-cta-status.boost { color: #7a6412; }
+.zf-cta-hint { max-width: 260px; display: block; margin-top: 3px; color: #777c73; font-size: 9px; font-weight: 650; line-height: 1.4; }
 .zf-history { width: 100%; padding: 0; overflow: hidden; box-sizing: border-box; }
 .zf-history > .zf-panel-head { padding: 16px 18px 10px; }
 .zf-history .z-table-wrap { overflow-x: auto; border: 0; border-radius: 0; }

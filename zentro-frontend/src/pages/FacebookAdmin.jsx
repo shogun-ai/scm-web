@@ -16,6 +16,7 @@ import {
   Landmark,
   Link2,
   LoaderCircle,
+  Megaphone,
   MessageCircle,
   MessagesSquare,
   Plus,
@@ -58,10 +59,14 @@ const CREDENTIAL_LABELS = {
 };
 
 const POST_CTA_OPTIONS = [
-  { value: 'MESSAGE_PAGE', label: 'Send Message', detail: 'Чат нээнэ, онлайн хүсэлтийн линк текстэд үлдэнэ', icon: MessageCircle },
-  { value: 'APPLY_NOW', label: 'Apply Now', detail: 'Веб хүсэлт рүү оруулна', icon: FileText },
+  { value: 'MESSAGE_PAGE', label: 'Send Message', detail: 'ref-тэй m.me холбоос текстэд орно, товч нь зар болгосон үед гарна', icon: MessageCircle },
+  { value: 'APPLY_NOW', label: 'Apply Now', detail: 'Веб хүсэлтийн холбоос текстэд орно', icon: FileText },
   { value: 'NONE', label: 'Товчгүй', detail: 'Зөвхөн пост нийтэлнэ', icon: X },
 ];
+
+// Meta органик Page постод CTA товч тавихыг хаасан. Товч зөвхөн boost хийсэн
+// (Click-to-Messenger) зар дээр гарах тул админ дээр үүнийг алдаа биш гэж үзнэ.
+const ORGANIC_CTA_HINT = 'Meta органик пост дээр товч зөвшөөрдөггүй. Товч гаргахын тулд Facebook дээрх постоо Create ad → Get more messages → Send Message болгож зар болгоно.';
 
 function facebookCtaLabel(value) {
   if (value === 'MESSAGE_PAGE') return 'Send Message';
@@ -254,7 +259,7 @@ export default function FacebookAdmin() {
       if (publishedCtaType !== 'NONE' && !post.ctaApplied) {
         setNotice({
           type: 'warning',
-          text: `Пост нийтлэгдсэн боловч Meta ${facebookCtaLabel(publishedCtaType)} товчийг зөвшөөрсөнгүй. Холбоос постын текстэд үлдсэн.`,
+          text: `Пост нийтлэгдлээ. ${facebookCtaLabel(publishedCtaType)} товч органик постод гарахгүй — холбоос текстэд үлдсэн. Товч гаргах бол постоо зар болгоно уу.`,
           url: post.permalinkUrl || '',
         });
       } else {
@@ -593,6 +598,7 @@ export default function FacebookAdmin() {
             </button>;
           })}
         </div>
+        <small className="zf-panel-note">{ORGANIC_CTA_HINT} Сонгосон холбоос постын текстэд ямар ч тохиолдолд орно. Page-ийн нүүрэнд байнгын товч нэмэх бол: Page → <code>Edit action button</code> → <code>Send Message</code>.</small>
         {manualTopic !== 'general' && <Toggle checked={listingActive} onChange={setListingActive} label={manualTopic === 'loan' ? 'Идэвхтэй зээл' : 'Идэвхтэй зар'} detail={manualTopic === 'loan' ? 'Messenger чатны зээлийн саналд харуулна' : 'Messenger чатны автомашины жагсаалтад харуулна'} />}
         <button className="z-btn z-btn-primary zf-publish-now" type="button" onClick={publish} disabled={Boolean(busy) || !status?.connected}>{busy === 'publish' ? <LoaderCircle className="animate-spin" size={14} /> : <Send size={14} />} Одоо нийтлэх</button>
         </section>
@@ -631,7 +637,7 @@ export default function FacebookAdmin() {
                   <td>{formatDate(post.publishedAt || post.createdAt)}</td>
                   <td>{post.source === 'automatic' ? 'Автомат' : 'Гараар'}</td>
                   <td><b>{post.productName || 'Facebook нийтлэл'}</b><span className="zf-history-copy">{post.message}</span></td>
-                  <td>{ctaType === 'NONE' ? '-' : <><span className={`zf-cta-status ${post.ctaApplied ? 'active' : 'missing'}`} title={post.ctaError || ''}>{post.ctaApplied ? <Check size={12} /> : <AlertCircle size={12} />}{facebookCtaLabel(ctaType)}</span>{post.ctaError && <small className="zf-error-text">{post.ctaError}</small>}</>}</td>
+                  <td>{ctaType === 'NONE' ? '-' : <><span className={`zf-cta-status ${post.ctaApplied ? 'active' : 'boost'}`} title={post.ctaError || ORGANIC_CTA_HINT}>{post.ctaApplied ? <Check size={12} /> : <Megaphone size={12} />}{post.ctaApplied ? facebookCtaLabel(ctaType) : 'Зар болгоход'}</span><small className="zf-cta-hint">{post.ctaApplied ? '' : `${facebookCtaLabel(ctaType)} товч зар дээр гарна`}</small></>}</td>
                   <td>{post.messengerLinked ? <span className="zf-chat-count"><MessageCircle size={13} />{post.chatStarts || 0}</span> : '-'}</td>
                   <td>{post.topic !== 'general' && post.status === 'published' ? <button type="button" className={`zf-listing-toggle ${post.listingActive === false ? '' : 'active'}`} onClick={() => updateListing(post)} disabled={Boolean(busy)} title="Messenger жагсаалтын төлөв өөрчлөх">{busy === `listing-${post._id}` ? <LoaderCircle className="animate-spin" size={13} /> : post.listingActive === false ? <X size={13} /> : <Check size={13} />}{post.listingActive === false ? 'Нуусан' : post.topic === 'loan' ? 'Идэвхтэй зээл' : 'Идэвхтэй зар'}</button> : '-'}</td>
                   <td><span className={`z-badge ${post.status === 'published' ? 'z-badge-green' : post.status === 'failed' ? 'z-badge-red' : post.status === 'deleted' ? 'z-badge-gray' : 'z-badge-yellow'}`}>{post.status === 'published' ? 'Нийтэлсэн' : post.status === 'failed' ? 'Алдаа' : post.status === 'deleted' ? 'Устгасан' : 'Нийтэлж байна'}</span>{post.status === 'deleted' && <small className="zf-deleted-at">{formatDate(post.deletedAt)}</small>}{post.error && <small className="zf-error-text">{post.error}</small>}</td>
