@@ -246,13 +246,22 @@ test('builds three editable daily plan fallbacks with separate time slots', () =
     }],
     social: { postTemplates: ['{{product}} | {{description}} | {{phone}}'] },
   }, {
-    subject: 'Өнөөдрийн зээлийн боломж',
+    subjects: [
+      'Машинаа унаад авах зээлийн давуу тал',
+      'Зээлийн хүсэлтэд бүрдүүлэх материал',
+      'Машин байршуулсан зээлийн нөхцөл',
+    ],
     audience: 'Автомашин эзэмшигчид',
     requirements: 'Иргэний үнэмлэхтэй байх',
     visualType: 'mixed',
   });
 
   assert.equal(drafts.length, 3);
+  assert.deepEqual(drafts.map(draft => draft.subject), [
+    'Машинаа унаад авах зээлийн давуу тал',
+    'Зээлийн хүсэлтэд бүрдүүлэх материал',
+    'Машин байршуулсан зээлийн нөхцөл',
+  ]);
   assert.deepEqual(drafts.map(draft => draft.scheduledTime), ['09:30', '13:00', '17:30']);
   assert.deepEqual(drafts.map(draft => draft.visualType), ['photo', 'infographic', 'photo']);
   assert.equal(drafts[0].imageUrls[0], 'https://example.com/car.jpg');

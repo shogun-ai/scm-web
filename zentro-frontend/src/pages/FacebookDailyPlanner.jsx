@@ -74,6 +74,7 @@ function ulaanbaatarDateKey() {
 
 function planPayload(plan) {
   return {
+    subject: plan.subject,
     title: plan.title,
     message: plan.message,
     visualHeadline: plan.visualHeadline,
@@ -101,7 +102,7 @@ export default function FacebookDailyPlanner({
   const [plans, setPlans] = useState([]);
   const [busy, setBusy] = useState('');
   const [brief, setBrief] = useState({
-    subject: '',
+    subjects: ['', '', ''],
     objective: OBJECTIVES[0],
     audience: AUDIENCES[0],
     requirements: '',
@@ -125,11 +126,27 @@ export default function FacebookDailyPlanner({
 
   useEffect(() => { loadPlans(dateKey); }, [dateKey, loadPlans]);
 
+  const normalizedSubjects = brief.subjects.map(value => value.trim());
+  const filledSubjectCount = normalizedSubjects.filter(Boolean).length;
+  const subjectsAreUnique = new Set(normalizedSubjects.filter(Boolean).map(value => value.toLocaleLowerCase('mn-MN'))).size === filledSubjectCount;
+  const subjectsReady = filledSubjectCount === 3 && subjectsAreUnique;
+
+  const updateBriefSubject = (index, value) => {
+    setBrief(current => ({
+      ...current,
+      subjects: current.subjects.map((subject, subjectIndex) => subjectIndex === index ? value : subject),
+    }));
+  };
+
   const updateLocal = (id, key, value) => {
     setPlans(current => current.map(plan => plan._id === id ? { ...plan, [key]: value } : plan));
   };
 
   const generate = async () => {
+    if (!subjectsReady) {
+      notify('error', filledSubjectCount < 3 ? '3 пост тус бүрийн сэдвийг оруулна уу.' : '3 постын сэдэв хоорондоо өөр байна.');
+      return;
+    }
     setBusy('generate');
     try {
       const result = await generateFacebookPostPlans({
@@ -290,8 +307,19 @@ export default function FacebookDailyPlanner({
       <button className="z-btn z-btn-secondary" type="button" onClick={() => loadPlans(dateKey)} disabled={Boolean(busy)} title="Төлөвлөгөө шинэчлэх">{busy === 'load' ? <LoaderCircle className="animate-spin" size={14} /> : <RefreshCw size={14} />} Шинэчлэх</button>
     </div>
 
+    <div className="zf-subject-board">
+      <div className="zf-subject-board-head"><span>Постын 3 өөр сэдэв</span><b className={subjectsReady ? 'ready' : ''}>{filledSubjectCount}/3</b></div>
+      <div className="zf-subject-grid">
+        {[
+          'Машинаа унаад авах зээлийн давуу тал',
+          'Зээлийн хүсэлтэд бүрдүүлэх материал',
+          'Машин байршуулсан зээлийн нөхцөл',
+        ].map((placeholder, index) => <label className="zf-subject-field" key={index}><span><b>{String(index + 1).padStart(2, '0')}</b> Пост {index + 1}</span><textarea rows={3} value={brief.subjects[index]} onChange={event => updateBriefSubject(index, event.target.value)} placeholder={placeholder} /></label>)}
+      </div>
+      {!subjectsAreUnique && filledSubjectCount > 1 && <small className="zf-subject-error"><AlertCircle size={13} /> Давхардсан сэдвийг өөрчилнө үү.</small>}
+    </div>
+
     <div className="zf-brief-grid">
-      <label className="wide"><span className="z-label">Сэдэв</span><input className="z-input" value={brief.subject} onChange={event => setBrief(current => ({ ...current, subject: event.target.value }))} placeholder="Жишээ: Машинаа унаад авах зээлийн давуу тал" /></label>
       <label><span className="z-label">Зорилго</span><select className="z-select" value={brief.objective} onChange={event => setBrief(current => ({ ...current, objective: event.target.value }))}>{OBJECTIVES.map(value => <option key={value}>{value}</option>)}</select></label>
       <label><span className="z-label">Зорилтот хүрээ</span><select className="z-select" value={brief.audience} onChange={event => setBrief(current => ({ ...current, audience: event.target.value }))}>{AUDIENCES.map(value => <option key={value}>{value}</option>)}</select></label>
       <label><span className="z-label">Бүтээгдэхүүн</span><select className="z-select" value={brief.productIndex} onChange={event => setBrief(current => ({ ...current, productIndex: Number(event.target.value) }))}>{(config?.products || []).map((product, index) => <option value={index} key={`${product.name}-${index}`}>{product.name}</option>)}</select></label>
@@ -302,16 +330,16 @@ export default function FacebookDailyPlanner({
     <div className="zf-brief-modes">
       <div><span>Өнгө аяс</span>{STYLES.map(option => <button type="button" className={brief.contentStyle === option.value ? 'active' : ''} onClick={() => setBrief(current => ({ ...current, contentStyle: option.value }))} key={option.value}>{option.label}</button>)}</div>
       <div><span>Дүрслэл</span>{VISUALS.map(option => <button type="button" className={brief.visualType === option.value ? 'active' : ''} onClick={() => setBrief(current => ({ ...current, visualType: option.value }))} key={option.value}>{option.label}</button>)}</div>
-      <button className="z-btn z-btn-primary" type="button" onClick={generate} disabled={Boolean(busy) || !brief.subject.trim()}>{busy === 'generate' ? <LoaderCircle className="animate-spin" size={15} /> : <Sparkles size={15} />} 3 пост бэлтгэх</button>
+      <button className="z-btn z-btn-primary" type="button" onClick={generate} disabled={Boolean(busy) || !subjectsReady} title={!subjectsReady ? '3 өөр сэдвийг бүрэн оруулна уу' : '3 тусдаа пост бэлтгэх'}>{busy === 'generate' ? <LoaderCircle className="animate-spin" size={15} /> : <Sparkles size={15} />} 3 пост бэлтгэх</button>
     </div>
 
-    {plans.length === 0 ? <div className="zf-plan-empty"><Sparkles size={25} /><b>Өдрийн төлөвлөгөө хоосон байна</b><span>Сэдвээ оруулаад 3 пост бэлтгэнэ.</span></div> : <div className="zf-plan-list">
+    {plans.length === 0 ? <div className="zf-plan-empty"><Sparkles size={25} /><b>Өдрийн төлөвлөгөө хоосон байна</b><span>3 өөр сэдвээ оруулаад постуудаа бэлтгэнэ.</span></div> : <div className="zf-plan-list">
       {plans.map(plan => {
         const locked = ['publishing', 'published'].includes(plan.status);
         const planBusy = busy.endsWith(plan._id);
         const infographicMissing = plan.visualType === 'infographic' && !(plan.imageUrls || []).length;
         return <article className={`zf-plan-item status-${plan.status}`} key={plan._id}>
-          <header><div className="zf-plan-slot">{String(plan.slot).padStart(2, '0')}</div><div><input value={plan.title || ''} onChange={event => updateLocal(plan._id, 'title', event.target.value)} disabled={locked} aria-label={`${plan.slot}-р постын гарчиг`} /><span>{plan.productName || 'Facebook нийтлэл'} · {plan.generatedBy === 'ai' ? 'AI' : 'Загвар'}</span></div><span className={`zf-plan-status ${plan.status}`}>{STATUS_LABELS[plan.status] || plan.status}</span></header>
+          <header><div className="zf-plan-slot">{String(plan.slot).padStart(2, '0')}</div><div className="zf-plan-heading"><span>Пост {plan.slot}-ийн сэдэв</span><input value={plan.subject || ''} onChange={event => updateLocal(plan._id, 'subject', event.target.value)} disabled={locked} aria-label={`${plan.slot}-р постын сэдэв`} /><small>{plan.title || plan.productName || 'Facebook нийтлэл'} · {plan.generatedBy === 'ai' ? 'AI' : 'Загвар'}</small></div><span className={`zf-plan-status ${plan.status}`}>{STATUS_LABELS[plan.status] || plan.status}</span></header>
           <div className="zf-plan-body">
             <div className="zf-plan-copy">
               <label><span>Постын текст</span><textarea rows={11} value={plan.message || ''} onChange={event => updateLocal(plan._id, 'message', event.target.value)} disabled={locked} /></label>
