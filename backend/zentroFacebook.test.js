@@ -264,6 +264,7 @@ test('builds three editable daily plan fallbacks with separate time slots', () =
   ]);
   assert.deepEqual(drafts.map(draft => draft.scheduledTime), ['09:30', '13:00', '17:30']);
   assert.deepEqual(drafts.map(draft => draft.visualType), ['photo', 'infographic', 'photo']);
+  assert.deepEqual(drafts.map(draft => draft.visualVariant), [0, 8, 16]);
   assert.equal(drafts[0].imageUrls[0], 'https://example.com/car.jpg');
   assert.match(drafts[1].message, /Иргэний үнэмлэхтэй байх/);
 });

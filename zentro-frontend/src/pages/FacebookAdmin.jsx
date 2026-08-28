@@ -19,11 +19,13 @@ import {
   Megaphone,
   MessageCircle,
   MessagesSquare,
+  Paintbrush,
   Plus,
   RefreshCw,
   Save,
   Send,
   ShieldAlert,
+  Sparkles,
   Trash2,
   Upload,
   X,
@@ -45,6 +47,7 @@ import {
 } from '../api';
 import { DEFAULT_SOCIAL, normalizeSiteConfig } from '../siteDefaults';
 import FacebookDailyPlanner from './FacebookDailyPlanner';
+import FacebookImageEditor from './FacebookImageEditor';
 
 const VIEWS = [
   { id: 'connection', label: 'Холболт', icon: Link2 },
@@ -140,6 +143,7 @@ export default function FacebookAdmin() {
   const [manualCtaType, setManualCtaType] = useState('MESSAGE_PAGE');
   const [listingActive, setListingActive] = useState(true);
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
+  const [imageEditorOpen, setImageEditorOpen] = useState(false);
 
   const refreshActiveListings = useCallback(() => getFacebookListings('all', 100, 0)
     .then(listings => {
@@ -427,6 +431,7 @@ export default function FacebookAdmin() {
   const previewImages = manualImageUrls.length
     ? manualImageUrls
     : (social.postUseProductImage && selectedProductImages[0] ? [selectedProductImages[0]] : []);
+  const imageEditorSource = manualImageUrls[0] || selectedProductImages[0] || '';
   const selectedTemplatePreview = replaceTemplate(social.postTemplates?.[selectedTemplateIndex] || '', {
     product: selectedProduct.name,
     description: selectedProduct.description,
@@ -436,6 +441,23 @@ export default function FacebookAdmin() {
     phone: config?.phone,
     website: 'https://zentrocapitalgroup.com',
   });
+
+  const saveImageDesign = async file => {
+    setBusy('design-upload');
+    try {
+      const result = await uploadAdminWebImages([file]);
+      const imageUrl = result.images?.[0]?.url;
+      if (!imageUrl) throw new Error('Дизайны зураг серверт хадгалагдсангүй.');
+      setManualImageUrls(current => [imageUrl, ...(current.length ? current.slice(1) : [])].slice(0, 5));
+      setImageEditorOpen(false);
+      setNotice({ type: 'success', text: 'Зураг дээрх дизайн PNG болж постын эхний зурагт орлоо.' });
+    } catch (error) {
+      setNotice({ type: 'error', text: error.response?.data?.message || error.message || 'Зургийн дизайныг хадгалж чадсангүй.' });
+      throw error;
+    } finally {
+      setBusy('');
+    }
+  };
 
   const messengerReady = Boolean(status?.connected && status?.configured);
   const pixelReady = /^\d{5,30}$/.test(String(social.metaPixelId || '').trim());
@@ -596,6 +618,7 @@ export default function FacebookAdmin() {
           <div className="zf-image-actions">
             <label className="z-btn z-btn-secondary"><Upload size={14} /> {busy === 'upload' ? 'Оруулж байна...' : 'Зураг оруулах'}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={uploadPostImage} disabled={Boolean(busy) || manualImageUrls.length >= 5} /></label>
             <div className="zf-image-url"><input className="z-input" type="url" value={manualImageInput} onChange={event => setManualImageInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addPostImageUrl(); } }} placeholder="эсвэл зургийн HTTPS URL" /><button type="button" title="URL зураг нэмэх" onClick={addPostImageUrl} disabled={!manualImageInput.trim() || manualImageUrls.length >= 5}><Plus size={15} /></button></div>
+            <button className="z-btn z-btn-secondary zf-design-launch" type="button" onClick={() => setImageEditorOpen(true)} disabled={!imageEditorSource || Boolean(busy)}><Paintbrush size={14} /> Зураг дээр текст, лого дизайн хийх</button>
           </div>
         </div>
 
@@ -635,7 +658,7 @@ export default function FacebookAdmin() {
         <div className="zf-automation-controls">
           <Toggle checked={social.dailyPostEnabled} onChange={value => change('dailyPostEnabled', value)} label="Баталсан постыг автоматаар нийтлэх" detail="Пост бүрийн сонгосон цагийг Asia/Ulaanbaatar бүсээр шалгана" />
           <Toggle checked={social.postUseProductImage} onChange={value => change('postUseProductImage', value)} label="Бүтээгдэхүүний зураг ашиглах" detail="Зурагт постод веб админы бүтээгдэхүүний зургийг санал болгоно" />
-          <label className="zf-schedule-cta"><span><b>Автомат постын үйлдэл</b><small>Төлөвлөсөн пост бүрийн үндсэн CTA</small></span><select className="z-select" value={social.postCtaType || 'MESSAGE_PAGE'} onChange={event => change('postCtaType', event.target.value)}><option value="MESSAGE_PAGE">Send Message</option><option value="APPLY_NOW">Apply Now</option><option value="NONE">Товчгүй</option></select></label>
+          <div className="zf-educational-mode"><Sparkles size={17} /><span><b>AI танин мэдэхүйн горим</b><small>Зарын CTA болон идэвхтэй зарын жагсаалт ашиглахгүй</small></span></div>
         </div>
         <div className="zf-template-picker" role="tablist" aria-label="Facebook постын загвар">
           {social.postTemplates.map((template, index) => <button type="button" role="tab" aria-selected={selectedTemplateIndex === index} className={selectedTemplateIndex === index ? 'active' : ''} onClick={() => setSelectedTemplateIndex(index)} key={index}><span>Загвар {index + 1}</span><p>{replaceTemplate(template, { product: selectedProduct.name, description: selectedProduct.description, rate: selectedProduct.rate, term: selectedProduct.term, amount: selectedProduct.amount, phone: config?.phone, website: 'zentrocapitalgroup.com' }).slice(0, 150)}</p>{selectedTemplateIndex === index && <Check size={14} />}</button>)}
@@ -654,7 +677,6 @@ export default function FacebookAdmin() {
       <FacebookDailyPlanner
         config={config}
         social={social}
-        selectedTemplateIndex={selectedTemplateIndex}
         onSocialChange={nextSocial => {
           setSocial(nextSocial);
           setConfig(current => current ? { ...current, social: nextSocial } : current);
@@ -691,6 +713,16 @@ export default function FacebookAdmin() {
         </div>
       </section>
     </div>}
+
+    {imageEditorOpen && <FacebookImageEditor
+      imageUrl={imageEditorSource}
+      logoUrl={config?.logoUrl}
+      headline={manualMessage.trim().split('\n').find(Boolean) || selectedProduct.name || 'Zentro Prime Capital'}
+      subtext={selectedProduct.description || config?.heroText || ''}
+      cta={manualCtaType === 'APPLY_NOW' ? 'Зээлийн хүсэлт өгөх' : manualCtaType === 'MESSAGE_PAGE' ? 'Messenger-ээр мэдээлэл авах' : config?.phone || 'Дэлгэрэнгүй мэдээлэл'}
+      onClose={() => setImageEditorOpen(false)}
+      onExport={saveImageDesign}
+    />}
 
     {postInsights && <div className="zf-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setPostInsights(null); }}>
       <section className="zf-insights-dialog" role="dialog" aria-modal="true" aria-labelledby="zf-insights-title">

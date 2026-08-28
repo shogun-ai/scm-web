@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   CalendarCheck,
@@ -19,6 +19,7 @@ import {
   approveFacebookPostPlan,
   deleteFacebookPostPlan,
   generateFacebookPostPlans,
+  getFacebookPlanCapabilities,
   getFacebookPostPlans,
   publishFacebookPostPlan,
   unapproveFacebookPostPlan,
@@ -26,13 +27,13 @@ import {
   updateFacebookPostPlan,
   uploadAdminWebImages,
 } from '../api';
-import { createZentroInfographicFile } from '../facebookInfographic';
+import { createZentroInfographicFile, INFOGRAPHIC_VARIANT_COUNT } from '../facebookInfographic';
 
 const OBJECTIVES = [
-  'Зээлийн хүсэлт нэмэгдүүлэх',
-  'Бүтээгдэхүүний нөхцөл тайлбарлах',
-  'Брэндийн итгэлцэл нэмэгдүүлэх',
-  'Messenger яриа эхлүүлэх',
+  'Санхүүгийн боловсрол',
+  'Автомашины барьцааны ойлголт',
+  'Зээлийн эрсдэл ба хариуцлага',
+  'Өрхийн мөнгөн урсгал ба төсөв',
 ];
 
 const AUDIENCES = [
@@ -82,6 +83,7 @@ function planPayload(plan) {
     imageUrls: plan.imageUrls || [],
     scheduledTime: plan.scheduledTime,
     visualType: plan.visualType,
+    visualVariant: plan.visualVariant,
     topic: plan.topic,
     ctaType: plan.ctaType,
     listingActive: plan.listingActive,
@@ -92,7 +94,6 @@ function planPayload(plan) {
 export default function FacebookDailyPlanner({
   config,
   social,
-  selectedTemplateIndex,
   onSocialChange,
   onNotice,
   onPublished,
@@ -101,13 +102,15 @@ export default function FacebookDailyPlanner({
   const [dateKey, setDateKey] = useState(today);
   const [plans, setPlans] = useState([]);
   const [busy, setBusy] = useState('');
+  const [capabilities, setCapabilities] = useState(null);
+  const [plannerMessage, setPlannerMessage] = useState(null);
+  const resultsRef = useRef(null);
   const [brief, setBrief] = useState({
     subjects: ['', '', ''],
     objective: OBJECTIVES[0],
     audience: AUDIENCES[0],
     requirements: '',
     productIndex: 0,
-    topic: 'loan',
     contentStyle: 'professional',
     visualType: 'mixed',
   });
@@ -125,6 +128,9 @@ export default function FacebookDailyPlanner({
   }, [notify]);
 
   useEffect(() => { loadPlans(dateKey); }, [dateKey, loadPlans]);
+  useEffect(() => {
+    getFacebookPlanCapabilities().then(setCapabilities).catch(() => setCapabilities({ aiReady: false, mode: 'educational', infographicVariants: INFOGRAPHIC_VARIANT_COUNT }));
+  }, []);
 
   const normalizedSubjects = brief.subjects.map(value => value.trim());
   const filledSubjectCount = normalizedSubjects.filter(Boolean).length;
@@ -132,6 +138,7 @@ export default function FacebookDailyPlanner({
   const subjectsReady = filledSubjectCount === 3 && subjectsAreUnique;
 
   const updateBriefSubject = (index, value) => {
+    setPlannerMessage(null);
     setBrief(current => ({
       ...current,
       subjects: current.subjects.map((subject, subjectIndex) => subjectIndex === index ? value : subject),
@@ -144,22 +151,31 @@ export default function FacebookDailyPlanner({
 
   const generate = async () => {
     if (!subjectsReady) {
-      notify('error', filledSubjectCount < 3 ? '3 пост тус бүрийн сэдвийг оруулна уу.' : '3 постын сэдэв хоорондоо өөр байна.');
+      const text = filledSubjectCount < 3 ? '3 пост тус бүрийн сэдвийг оруулна уу.' : '3 постын сэдэв хоорондоо өөр байна.';
+      setPlannerMessage({ type: 'error', text });
+      notify('error', text);
       return;
     }
+    setPlannerMessage(null);
     setBusy('generate');
     try {
       const result = await generateFacebookPostPlans({
         ...brief,
         dateKey,
-        templateIndex: selectedTemplateIndex,
-        ctaType: social.postCtaType || 'MESSAGE_PAGE',
-        listingActive: brief.topic !== 'general',
+        topic: 'general',
+        ctaType: 'NONE',
+        listingActive: false,
       });
-      setPlans(result.plans || []);
-      notify(result.warning ? 'warning' : 'success', result.warning || `${dateKey}-ны 3 пост бэлтгэгдлээ. Текст, зураг, цагийг шалгаад батална уу.`);
+      const generatedPlans = result.plans || [];
+      if (!generatedPlans.length) throw new Error('AI постын төлөвлөгөө буцаасангүй.');
+      setPlans(generatedPlans);
+      setPlannerMessage({ type: 'success', text: `${generatedPlans.length} постын агуулга AI-аар шинэчлэгдлээ.` });
+      notify('success', `${dateKey}-ны танин мэдэхүйн ${generatedPlans.length} пост AI-аар шинэчлэгдлээ.`);
+      window.setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
     } catch (error) {
-      notify('error', error.response?.data?.message || 'Өдрийн 3 пост үүсгэж чадсангүй.');
+      const text = error.response?.data?.message || error.message || 'Өдрийн 3 постыг AI-аар үүсгэж чадсангүй.';
+      setPlannerMessage({ type: 'error', text });
+      notify('error', text);
     } finally {
       setBusy('');
     }
@@ -263,16 +279,17 @@ export default function FacebookDailyPlanner({
     }
   };
 
-  const generateInfographic = async plan => {
+  const generateInfographic = async (plan, requestedVariant = plan.visualVariant || 0) => {
     setBusy(`infographic-${plan._id}`);
     try {
-      const file = await createZentroInfographicFile(plan, config);
+      const visualVariant = ((Number(requestedVariant) || 0) % INFOGRAPHIC_VARIANT_COUNT + INFOGRAPHIC_VARIANT_COUNT) % INFOGRAPHIC_VARIANT_COUNT;
+      const file = await createZentroInfographicFile({ ...plan, visualVariant }, config, { variantIndex: visualVariant });
       const uploaded = await uploadAdminWebImages([file]);
       const imageUrl = uploaded.images?.[0]?.url;
       if (!imageUrl) throw new Error('Инфографикийн URL буцаж ирсэнгүй.');
-      const updated = await updateFacebookPostPlan(plan._id, { imageUrls: [imageUrl], visualType: 'infographic' });
+      const updated = await updateFacebookPostPlan(plan._id, { imageUrls: [imageUrl], visualType: 'infographic', visualVariant });
       setPlans(current => current.map(item => item._id === updated._id ? updated : item));
-      notify('success', `${updated.slot}-р постын инфографик бэлэн боллоо.`);
+      notify('success', `${updated.slot}-р постын инфографик ${visualVariant + 1}/${INFOGRAPHIC_VARIANT_COUNT} хувилбараар шинэчлэгдлээ.`);
     } catch (error) {
       notify('error', error.response?.data?.message || error.message || 'Инфографик үүсгэж чадсангүй.');
     } finally {
@@ -303,7 +320,7 @@ export default function FacebookDailyPlanner({
 
     <div className="zf-planner-toolbar">
       <label><span className="z-label">Төлөвлөх өдөр</span><input className="z-input" type="date" min={today} value={dateKey} onChange={event => setDateKey(event.target.value)} /></label>
-      <div className={`zf-scheduler-state ${social.dailyPostEnabled ? 'active' : ''}`}><CalendarCheck size={17} /><span><b>{schedulerLabel}</b><small>Asia/Ulaanbaatar · минут тутам шалгана</small></span></div>
+      <div className={`zf-scheduler-state ${capabilities?.aiReady ? 'active' : ''}`}><Sparkles size={17} /><span><b>{capabilities?.aiReady ? 'AI танин мэдэхүйн генератор бэлэн' : capabilities ? 'AI серверийн тохиргоо дутуу' : 'AI төлөв шалгаж байна'}</b><small>{schedulerLabel} · Asia/Ulaanbaatar</small></span></div>
       <button className="z-btn z-btn-secondary" type="button" onClick={() => loadPlans(dateKey)} disabled={Boolean(busy)} title="Төлөвлөгөө шинэчлэх">{busy === 'load' ? <LoaderCircle className="animate-spin" size={14} /> : <RefreshCw size={14} />} Шинэчлэх</button>
     </div>
 
@@ -320,19 +337,20 @@ export default function FacebookDailyPlanner({
     </div>
 
     <div className="zf-brief-grid">
-      <label><span className="z-label">Зорилго</span><select className="z-select" value={brief.objective} onChange={event => setBrief(current => ({ ...current, objective: event.target.value }))}>{OBJECTIVES.map(value => <option key={value}>{value}</option>)}</select></label>
+      <label><span className="z-label">Танин мэдэхүйн чиглэл</span><select className="z-select" value={brief.objective} onChange={event => setBrief(current => ({ ...current, objective: event.target.value }))}>{OBJECTIVES.map(value => <option key={value}>{value}</option>)}</select></label>
       <label><span className="z-label">Зорилтот хүрээ</span><select className="z-select" value={brief.audience} onChange={event => setBrief(current => ({ ...current, audience: event.target.value }))}>{AUDIENCES.map(value => <option key={value}>{value}</option>)}</select></label>
       <label><span className="z-label">Бүтээгдэхүүн</span><select className="z-select" value={brief.productIndex} onChange={event => setBrief(current => ({ ...current, productIndex: Number(event.target.value) }))}>{(config?.products || []).map((product, index) => <option value={index} key={`${product.name}-${index}`}>{product.name}</option>)}</select></label>
-      <label><span className="z-label">Чатын чиглэл</span><select className="z-select" value={brief.topic} onChange={event => setBrief(current => ({ ...current, topic: event.target.value }))}><option value="loan">Зээлийн чат</option><option value="car">Машины чат</option><option value="general">Ерөнхий чат</option></select></label>
       <label className="wide"><span className="z-label">Заавал тусгах шаардлага</span><textarea className="z-input" rows={3} value={brief.requirements} onChange={event => setBrief(current => ({ ...current, requirements: event.target.value }))} placeholder="Жишээ: Орлого нотлохгүй гэдгийг зөвхөн машин байршуулах бүтээгдэхүүнд ашиглах; 18 нас хүрсэн байх" /></label>
     </div>
 
     <div className="zf-brief-modes">
       <div><span>Өнгө аяс</span>{STYLES.map(option => <button type="button" className={brief.contentStyle === option.value ? 'active' : ''} onClick={() => setBrief(current => ({ ...current, contentStyle: option.value }))} key={option.value}>{option.label}</button>)}</div>
       <div><span>Дүрслэл</span>{VISUALS.map(option => <button type="button" className={brief.visualType === option.value ? 'active' : ''} onClick={() => setBrief(current => ({ ...current, visualType: option.value }))} key={option.value}>{option.label}</button>)}</div>
-      <button className="z-btn z-btn-primary" type="button" onClick={generate} disabled={Boolean(busy) || !subjectsReady} title={!subjectsReady ? '3 өөр сэдвийг бүрэн оруулна уу' : '3 тусдаа пост бэлтгэх'}>{busy === 'generate' ? <LoaderCircle className="animate-spin" size={15} /> : <Sparkles size={15} />} 3 пост бэлтгэх</button>
+      <button className="z-btn z-btn-primary" type="button" onClick={generate} disabled={Boolean(busy)} title="3 тусдаа танин мэдэхүйн пост AI-аар бэлтгэх">{busy === 'generate' ? <LoaderCircle className="animate-spin" size={15} /> : <Sparkles size={15} />} {busy === 'generate' ? 'AI бэлтгэж байна...' : '3 пост бэлтгэх'}</button>
     </div>
+    {plannerMessage && <div className={`zf-planner-message ${plannerMessage.type}`}><AlertCircle size={14} /><span>{plannerMessage.text}</span></div>}
 
+    <div ref={resultsRef} />
     {plans.length === 0 ? <div className="zf-plan-empty"><Sparkles size={25} /><b>Өдрийн төлөвлөгөө хоосон байна</b><span>3 өөр сэдвээ оруулаад постуудаа бэлтгэнэ.</span></div> : <div className="zf-plan-list">
       {plans.map(plan => {
         const locked = ['publishing', 'published'].includes(plan.status);
@@ -347,7 +365,7 @@ export default function FacebookDailyPlanner({
             </div>
             <aside className="zf-plan-media">
               {(plan.imageUrls || []).length > 0 ? <div className="zf-plan-images">{plan.imageUrls.map((url, index) => <div key={`${url}-${index}`}><img src={url} alt={`${plan.slot}-р постын зураг ${index + 1}`} />{!locked && <button type="button" onClick={() => removeImage(plan, url)} title="Зураг хасах"><Trash2 size={13} /></button>}</div>)}</div> : <div className="zf-plan-image-empty"><ImagePlus size={24} /><span>Зураг сонгоогүй</span></div>}
-              {!locked && <div className="zf-plan-media-actions"><label className="z-btn z-btn-secondary"><Upload size={14} /> Зураг<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => { uploadImage(plan, event.target.files); event.target.value = ''; }} /></label><button className="z-btn z-btn-secondary" type="button" onClick={() => generateInfographic(plan)} disabled={Boolean(busy)}>{busy === `infographic-${plan._id}` ? <LoaderCircle className="animate-spin" size={14} /> : <Palette size={14} />} Инфографик</button></div>}
+              {!locked && <div className="zf-plan-media-actions"><label className="z-btn z-btn-secondary"><Upload size={14} /> Зураг<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => { uploadImage(plan, event.target.files); event.target.value = ''; }} /></label><button className="z-btn z-btn-secondary" type="button" onClick={() => generateInfographic(plan, plan.visualType === 'infographic' ? (Number(plan.visualVariant) + 1) : Number(plan.visualVariant))} disabled={Boolean(busy)} title="24 дизайны дараагийн хувилбар">{busy === `infographic-${plan._id}` ? <LoaderCircle className="animate-spin" size={14} /> : plan.visualType === 'infographic' ? <RefreshCw size={14} /> : <Palette size={14} />} {plan.visualType === 'infographic' ? `Шинэчлэх · ${(Number(plan.visualVariant) || 0) + 1}/${INFOGRAPHIC_VARIANT_COUNT}` : 'Инфографик'}</button></div>}
               <label className="zf-plan-time"><Clock3 size={15} /><span><b>Нийтлэх цаг</b><small>{dateKey} · Улаанбаатар</small></span><input type="time" value={plan.scheduledTime || ''} onChange={event => updateLocal(plan._id, 'scheduledTime', event.target.value)} disabled={locked} /></label>
               {plan.generationWarning && <small className="zf-plan-warning"><AlertCircle size={13} />{plan.generationWarning}</small>}
               {infographicMissing && <small className="zf-plan-warning"><AlertCircle size={13} />Батлахын өмнө инфографик зураг үүсгэнэ үү.</small>}

@@ -92,6 +92,7 @@ const FacebookPostPlanSchema = new mongoose.Schema({
   requirements: { type: String, default: '' },
   contentStyle: { type: String, default: 'professional' },
   visualType: { type: String, enum: ['photo', 'infographic'], default: 'photo' },
+  visualVariant: { type: Number, min: 0, max: 23, default: 0 },
   title: { type: String, default: '' },
   message: { type: String, default: '' },
   visualHeadline: { type: String, default: '' },
@@ -1256,36 +1257,30 @@ function dailyPlanSubjects(input, product) {
 }
 
 export function buildFallbackDailyPostDrafts(config, input = {}) {
-  const social = normalizeZentroSocial(config.social);
   const { index: productIndex, product } = dailyPlanProduct(config, input.productIndex);
   const subjects = dailyPlanSubjects(input, product);
-  const objective = cleanPlanValue(input.objective, 120) || 'Зээлийн бүтээгдэхүүнийг ойлгомжтой танилцуулах';
+  const objective = cleanPlanValue(input.objective, 120) || 'Санхүүгийн ойлголтыг энгийнээр тайлбарлах';
   const audience = cleanPlanValue(input.audience, 160) || 'Санхүүгийн шуурхай хэрэгцээтэй харилцагч';
   const requirements = cleanPlanValue(input.requirements, 700);
   const legal = config.siteContent?.footerLegal || 'Зээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна.';
-  const templates = social.postTemplates.length ? social.postTemplates : DEFAULT_POST_TEMPLATES;
-  const selectedTemplate = Math.min(Math.max(Number(input.templateIndex) || 0, 0), templates.length - 1);
-  const values = {
-    product: product.name || subjects[0],
-    description: product.description || config.heroText || '',
-    rate: product.rate || '',
-    term: product.term || '',
-    amount: product.amount || '',
-    phone: config.phone || '',
-    website: WEBSITE_URL,
-  };
+  const selectedTemplate = Math.max(Number(input.templateIndex) || 0, 0);
+  const productFacts = [
+    product.description,
+    product.rate ? `Нийтэд мэдээлсэн хүү: ${product.rate}` : '',
+    product.term ? `Хугацаа: ${product.term}` : '',
+    product.amount ? `Хэмжээ: ${product.amount}` : '',
+  ].filter(Boolean).join('\n');
   const angles = [
-    { subject: subjects[0], prefix: `${subjects[0]}\n\n${objective}.` },
-    { subject: subjects[1], prefix: `${subjects[1]}\n\n${audience}-д зориулсан товч мэдээлэл.` },
-    { subject: subjects[2], prefix: `${subjects[2]}-ийн талаар боломжоо өнөөдөр шалгаарай.` },
+    { subject: subjects[0], body: `${objective}.\n\n${productFacts}` },
+    { subject: subjects[1], body: `${audience}-д зориулсан санхүүгийн ойлголт.\n\n${productFacts}` },
+    { subject: subjects[2], body: `Шийдвэр гаргахаасаа өмнө нөхцөл, зардал, эргэн төлөлтийн чадвараа харьцуулж үзээрэй.\n\n${productFacts}` },
   ];
   const productImages = safeArray(product.images).filter(Boolean);
   const fallbackImage = productImages[0] || product.image || product.imageUrl || '';
   return angles.map((angle, slotIndex) => {
-    const templateIndex = (selectedTemplate + slotIndex) % templates.length;
-    const rendered = replaceTemplate(templates[templateIndex], values);
-    const requirementBlock = requirements && slotIndex === 1 ? `\n\nАнхаарах зүйл:\n${requirements}` : '';
-    const message = withRequiredDisclosure(`${angle.prefix}\n\n${rendered}${requirementBlock}`.trim(), legal);
+    const templateIndex = selectedTemplate + slotIndex;
+    const requirementBlock = requirements ? `\n\nАнхаарах зүйл:\n${requirements}` : '';
+    const message = withRequiredDisclosure(`${angle.subject}\n\n${angle.body}${requirementBlock}`.trim(), legal);
     const requestedVisual = String(input.visualType || 'mixed');
     const visualType = requestedVisual === 'infographic' || (requestedVisual === 'mixed' && slotIndex === 1)
       ? 'infographic'
@@ -1301,6 +1296,7 @@ export function buildFallbackDailyPostDrafts(config, input = {}) {
         : (product.description || objective),
       scheduledTime: DAILY_PLAN_TIMES[slotIndex],
       visualType,
+      visualVariant: slotIndex * 8,
       imageUrls: visualType === 'photo' && fallbackImage ? [fallbackImage] : [],
       productIndex,
       productName: product.name || '',
@@ -1321,6 +1317,11 @@ function parseGeneratedPlan(value) {
 async function generateDailyPostDrafts(openaiClient, config, input = {}) {
   const fallback = buildFallbackDailyPostDrafts(config, input);
   if (!openaiClient) {
+    if (input.requireAi) {
+      const error = new Error('AI контент үүсгэгчийн OPENAI_API_KEY тохиргоо серверт алга байна.');
+      error.statusCode = 503;
+      throw error;
+    }
     return { drafts: fallback, generatedBy: 'fallback', warning: 'AI тохиргоогүй тул сонгосон загварт суурилсан 3 хувилбар бэлтгэлээ.' };
   }
   const { index: productIndex, product } = dailyPlanProduct(config, input.productIndex);
@@ -1341,18 +1342,6 @@ async function generateDailyPostDrafts(openaiClient, config, input = {}) {
       term: product.term || '',
       amount: product.amount || '',
     },
-    selectedTemplate: replaceTemplate(
-      normalizeZentroSocial(config.social).postTemplates[Math.max(0, Number(input.templateIndex) || 0)] || '',
-      {
-        product: product.name || '',
-        description: product.description || '',
-        rate: product.rate || '',
-        term: product.term || '',
-        amount: product.amount || '',
-        phone: config.phone || '',
-        website: WEBSITE_URL,
-      }
-    ),
     phone: config.phone || '',
     website: WEBSITE_URL,
     disclosure: legal,
@@ -1365,9 +1354,11 @@ async function generateDailyPostDrafts(openaiClient, config, input = {}) {
         'Та Zentro Prime Capital-ийн Монгол хэл дээрх Facebook контент стратегич.',
         'subjects массивын 3 тусдаа сэдэвт тус бүр нэг постыг яг өгсөн дарааллаар бэлтгэ. Сэдвүүдийг хооронд нь нэгтгэж болохгүй.',
         'Өглөө, өдөр, оройн постууд давхардсан текстгүй байна. Бүх текст Монгол кириллээр байна.',
+        'Эдгээр нь зар сурталчилгаа биш, санхүүгийн танин мэдэхүйн контент байна. Зээл авахыг шахсан уриалга, хямдрал, шууд хүсэлт өгөх CTA бүү ашигла.',
+        'Пост бүр сонирхол татах эхлэл, 3-5 ойлгомжтой санаа, болгоомжлох зүйл, уншигчийг бодоход хүргэх зөөлөн төгсгөлтэй байна.',
         'Баталгаатай зээл, шууд олгоно, хүн бүрт олгоно гэх мэт нотлогдоогүй амлалт бүү өг.',
         'Хүү, хугацаа, хэмжээ зэрэг тоог зөвхөн өгсөн бүтээгдэхүүний мэдээллээс ашигла.',
-        'Пост бүр CTA, 2-4 hashtag болон өгсөн disclosure өгүүлбэртэй байна.',
+        'Пост бүр 2-4 hashtag болон өгсөн disclosure өгүүлбэртэй байна.',
         'visualHeadline нь зураг дээр шууд тавих 5-10 үгтэй, visualSubheadline нь богино байна.',
         'JSON schema-гаас өөр зүйл бүү буцаа.',
       ].join(' '),
@@ -1422,12 +1413,17 @@ async function generateDailyPostDrafts(openaiClient, config, input = {}) {
         visualSubheadline: cleanPlanValue(draft.visualSubheadline, 180) || fallback[index].visualSubheadline,
         scheduledTime: validPostTime(draft.suggestedTime, DAILY_PLAN_TIMES[index]),
         visualType,
+        visualVariant: index * 8,
         imageUrls: visualType === 'infographic' ? [] : fallback[index].imageUrls,
         productIndex,
       };
     });
     return { drafts, generatedBy: 'ai', warning: '' };
   } catch (error) {
+    if (input.requireAi) {
+      error.statusCode ||= 502;
+      throw error;
+    }
     return { drafts: fallback, generatedBy: 'fallback', warning: `AI генератор түр ажилласангүй: ${cleanMetaError(error)}` };
   }
 }
@@ -1858,6 +1854,10 @@ export function createZentroFacebookIntegration({
     }
   });
 
+  app.get('/api/zentro/admin/facebook/plans/capabilities', authenticateUser, requireAdmin, (req, res) => {
+    res.json({ aiReady: Boolean(openaiClient), mode: 'educational', infographicVariants: 24 });
+  });
+
   app.get('/api/zentro/admin/facebook/plans', authenticateUser, requireAdmin, async (req, res) => {
     try {
       const config = await currentConfig();
@@ -1877,7 +1877,7 @@ export function createZentroFacebookIntegration({
       const config = await currentConfig();
       const social = normalizeZentroSocial(config.social);
       const dateKey = validDateKey(req.body?.dateKey, zonedParts(new Date(), social.postTimezone).dateKey);
-      const topic = normalizePostTopic(req.body?.topic, social.postDefaultTopic);
+      const topic = 'general';
       const selectedProduct = dailyPlanProduct(config, req.body?.productIndex);
       const productIndex = selectedProduct.index;
       const requestedSubjects = Array.isArray(req.body?.subjects)
@@ -1902,6 +1902,7 @@ export function createZentroFacebookIntegration({
         visualType: ['photo', 'infographic', 'mixed'].includes(req.body?.visualType) ? req.body.visualType : 'mixed',
         productIndex,
         templateIndex: Number(req.body?.templateIndex) || 0,
+        requireAi: true,
       };
       const generated = await generateDailyPostDrafts(openaiClient, config, input);
       const fixedPlans = await FacebookPostPlan.find({
@@ -1927,6 +1928,7 @@ export function createZentroFacebookIntegration({
           requirements: input.requirements,
           contentStyle: input.contentStyle,
           visualType: draft.visualType,
+          visualVariant: Math.min(Math.max(Number(draft.visualVariant) || 0, 0), 23),
           title: draft.title,
           message: draft.message,
           visualHeadline: draft.visualHeadline,
@@ -1936,8 +1938,8 @@ export function createZentroFacebookIntegration({
           productName: product.name || draft.productName || '',
           templateIndex: draft.templateIndex,
           topic,
-          ctaType: normalizeFacebookPostCtaType(req.body?.ctaType, social.postCtaType),
-          listingActive: topic !== 'general' && req.body?.listingActive !== false,
+          ctaType: 'NONE',
+          listingActive: false,
           scheduledTime: validPostTime(draft.scheduledTime, DAILY_PLAN_TIMES[slot - 1]),
           generatedBy: generated.generatedBy,
           generationWarning: generated.warning,
@@ -1947,7 +1949,7 @@ export function createZentroFacebookIntegration({
       await createLog(req.user, 'zentro_facebook_plan_generated', `${dateKey}:${generated.generatedBy}:${created.length}`);
       res.status(201).json({ plans, generatedBy: generated.generatedBy, warning: generated.warning });
     } catch (error) {
-      res.status(500).json({ message: cleanMetaError(error) });
+      res.status(Number(error.statusCode) || 500).json({ message: cleanMetaError(error) });
     }
   });
 
@@ -1963,6 +1965,7 @@ export function createZentroFacebookIntegration({
       if ('imageUrls' in req.body) plan.imageUrls = safeArray(req.body.imageUrls).map(safeHttpsUrl).filter(Boolean).slice(0, 5);
       if ('scheduledTime' in req.body) plan.scheduledTime = validPostTime(req.body.scheduledTime, plan.scheduledTime || DAILY_PLAN_TIMES[plan.slot - 1]);
       if ('visualType' in req.body) plan.visualType = req.body.visualType === 'infographic' ? 'infographic' : 'photo';
+      if ('visualVariant' in req.body) plan.visualVariant = Math.min(Math.max(Number(req.body.visualVariant) || 0, 0), 23);
       if ('topic' in req.body) plan.topic = normalizePostTopic(req.body.topic, plan.topic);
       if ('ctaType' in req.body) plan.ctaType = normalizeFacebookPostCtaType(req.body.ctaType, plan.ctaType);
       if ('listingActive' in req.body) plan.listingActive = plan.topic !== 'general' && req.body.listingActive !== false;
