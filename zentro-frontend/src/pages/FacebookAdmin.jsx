@@ -125,7 +125,7 @@ export default function FacebookAdmin() {
   const [status, setStatus] = useState(null);
   const [messengerActivity, setMessengerActivity] = useState(null);
   const [activeListings, setActiveListings] = useState([]);
-  const [activeLoanOffers, setActiveLoanOffers] = useState([]);
+  const [listingDisplayCount, setListingDisplayCount] = useState(10);
   const [posts, setPosts] = useState([]);
   const [postInsights, setPostInsights] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -138,6 +138,13 @@ export default function FacebookAdmin() {
   const [manualProductIndex, setManualProductIndex] = useState(0);
   const [manualCtaType, setManualCtaType] = useState('MESSAGE_PAGE');
   const [listingActive, setListingActive] = useState(true);
+
+  const refreshActiveListings = () => getFacebookListings('all', 100, 0)
+    .then(listings => {
+      setActiveListings(listings);
+      setListingDisplayCount(10);
+    })
+    .catch(() => setActiveListings([]));
 
   const load = async () => {
     setLoading(true);
@@ -156,8 +163,7 @@ export default function FacebookAdmin() {
       setStatus(connection);
       setMessengerActivity(activity);
       setPosts(history);
-      getFacebookListings().then(setActiveListings).catch(() => setActiveListings([]));
-      getFacebookListings('loan').then(setActiveLoanOffers).catch(() => setActiveLoanOffers([]));
+      refreshActiveListings();
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Facebook тохиргоог уншиж чадсангүй.' });
     } finally {
@@ -250,8 +256,7 @@ export default function FacebookAdmin() {
         ctaType: manualCtaType,
       });
       setPosts(current => [post, ...current]);
-      getFacebookListings().then(setActiveListings).catch(() => {});
-      getFacebookListings('loan').then(setActiveLoanOffers).catch(() => {});
+      refreshActiveListings();
       setManualMessage('');
       setManualImageUrls([]);
       setManualImageInput('');
@@ -323,9 +328,8 @@ export default function FacebookAdmin() {
     try {
       const updated = await updateFacebookListing(post._id, post.listingActive === false);
       setPosts(current => current.map(item => item._id === updated._id ? updated : item));
-      getFacebookListings().then(setActiveListings).catch(() => {});
-      getFacebookListings('loan').then(setActiveLoanOffers).catch(() => {});
-      const itemLabel = updated.topic === 'loan' ? 'Зээлийн саналыг' : 'Зарыг';
+      refreshActiveListings();
+      const itemLabel = 'Зарыг';
       setNotice({ type: 'success', text: updated.listingActive ? `${itemLabel} Messenger-д идэвхжүүллээ.` : `${itemLabel} Messenger жагсаалтаас хаслаа.` });
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Зарын төлөв өөрчилж чадсангүй.' });
@@ -342,8 +346,7 @@ export default function FacebookAdmin() {
     try {
       const deleted = await deleteFacebookPost(post._id);
       setPosts(current => current.map(item => item._id === deleted._id ? deleted : item));
-      getFacebookListings().then(setActiveListings).catch(() => {});
-      getFacebookListings('loan').then(setActiveLoanOffers).catch(() => {});
+      refreshActiveListings();
       setNotice({ type: 'success', text: 'Facebook постыг устгалаа. Аудитын түүх хадгалагдсан.' });
     } catch (error) {
       setNotice({ type: 'error', text: error.response?.data?.message || 'Facebook постыг устгаж чадсангүй.' });
@@ -505,19 +508,14 @@ export default function FacebookAdmin() {
         <Toggle checked={social.requestIntakeEnabled} onChange={value => change('requestIntakeEnabled', value)} label="Messenger-ээр хүсэлт авах" detail="Хүсэлтийг Facebook эх сурвалжтайгаар CRM-д бүртгэнэ" />
         <div className="zf-chat-entry-preview">
           <span>Эхний сонголт</span>
-          <div><button type="button" tabIndex={-1}><CarFront size={15} /> Машины зарууд</button><button type="button" tabIndex={-1}><Landmark size={15} /> Идэвхтэй зээл</button><button type="button" tabIndex={-1}><MessageCircle size={15} /> Зээлийн талаар</button></div>
+          <div><button type="button" tabIndex={-1}><CarFront size={15} /> Идэвхтэй зар</button><button type="button" tabIndex={-1}><MessageCircle size={15} /> Зээлийн талаар</button></div>
         </div>
         <div className="zf-active-listings-summary">
-          <span>Messenger-д харагдах зар · {activeListings.length}</span>
+          <span>Messenger-д харагдах идэвхтэй зар · {activeListings.length}</span>
           {activeListings.length > 0
-            ? activeListings.slice(0, 4).map(listing => <div key={listing.id}>{listing.imageUrl ? <img src={listing.imageUrl} alt="" /> : <CarFront size={16} />}<b>{listing.title}</b>{listing.permalinkUrl && <a href={listing.permalinkUrl} target="_blank" rel="noreferrer" title="Facebook зар нээх"><ExternalLink size={13} /></a>}</div>)
-            : <small>Идэвхтэй автомашины зар олдсонгүй.</small>}
-        </div>
-        <div className="zf-active-listings-summary">
-          <span>Messenger-д харагдах зээл · {activeLoanOffers.length}</span>
-          {activeLoanOffers.length > 0
-            ? activeLoanOffers.slice(0, 4).map(offer => <div key={offer.id}>{offer.imageUrl ? <img src={offer.imageUrl} alt="" /> : <Landmark size={16} />}<b>{offer.title}</b>{offer.permalinkUrl && <a href={offer.permalinkUrl} target="_blank" rel="noreferrer" title="Facebook зээлийн пост нээх"><ExternalLink size={13} /></a>}</div>)
-            : <small>Идэвхтэй зээлийн санал олдсонгүй.</small>}
+            ? activeListings.slice(0, listingDisplayCount).map(listing => <div key={listing.id}>{listing.imageUrl ? <img src={listing.imageUrl} alt="" /> : listing.topic === 'loan' ? <Landmark size={16} /> : <CarFront size={16} />}<b>{listing.title}</b>{listing.permalinkUrl && <a href={listing.permalinkUrl} target="_blank" rel="noreferrer" title="Facebook зар нээх"><ExternalLink size={13} /></a>}</div>)
+            : <small>Идэвхтэй зар олдсонгүй.</small>}
+          {activeListings.length > listingDisplayCount && <button className="z-btn z-btn-secondary" type="button" onClick={() => setListingDisplayCount(current => current + 10)}><Plus size={14} /> Илүү их</button>}
         </div>
         <label className="z-label">Чат нээгдэхэд харагдах мэндчилгээ</label>
         <textarea className="z-input" rows={2} maxLength={160} value={social.profileGreeting || ''} onChange={event => change('profileGreeting', event.target.value)} />
@@ -555,9 +553,9 @@ export default function FacebookAdmin() {
         </div>
         <div className="zf-topic-hint">
           {manualTopic === 'car'
-            ? <><CarFront size={14} /><span><b>Автомашины зар</b> Зураг, мэдээлэлтэй бөгөөд “Идэвхтэй зар” асаалттай бол Messenger жагсаалтад орно.</span></>
+            ? <><CarFront size={14} /><span><b>Автомашины зар</b> Зураг, мэдээлэлтэй бөгөөд “Идэвхтэй зар” асаалттай бол Messenger-ийн нэгдсэн жагсаалтад огноогоор орно.</span></>
             : manualTopic === 'loan'
-              ? <><Landmark size={14} /><span><b>Зээлийн пост</b> “Идэвхтэй зээл” асаалттай бол Messenger-ийн зээлийн саналд орно.</span></>
+              ? <><Landmark size={14} /><span><b>Зээлийн пост</b> “Идэвхтэй зар” асаалттай бол Messenger-ийн нэгдсэн жагсаалтад огноогоор орно.</span></>
               : <><AlertCircle size={14} /><span><b>Ерөнхий пост</b> Messenger-ийн идэвхтэй жагсаалтад орохгүй.</span></>}
         </div>
 
@@ -599,7 +597,7 @@ export default function FacebookAdmin() {
           })}
         </div>
         <small className="zf-panel-note">{ORGANIC_CTA_HINT} Сонгосон холбоос постын текстэд ямар ч тохиолдолд орно. Page-ийн нүүрэнд байнгын товч нэмэх бол: Page → <code>Edit action button</code> → <code>Send Message</code>.</small>
-        {manualTopic !== 'general' && <Toggle checked={listingActive} onChange={setListingActive} label={manualTopic === 'loan' ? 'Идэвхтэй зээл' : 'Идэвхтэй зар'} detail={manualTopic === 'loan' ? 'Messenger чатны зээлийн саналд харуулна' : 'Messenger чатны автомашины жагсаалтад харуулна'} />}
+        {manualTopic !== 'general' && <Toggle checked={listingActive} onChange={setListingActive} label="Идэвхтэй зар" detail="Messenger-ийн нэгдсэн жагсаалтад хамгийн шинэ огноогоор эрэмбэлж харуулна" />}
         <button className="z-btn z-btn-primary zf-publish-now" type="button" onClick={publish} disabled={Boolean(busy) || !status?.connected}>{busy === 'publish' ? <LoaderCircle className="animate-spin" size={14} /> : <Send size={14} />} Одоо нийтлэх</button>
         </section>
 
@@ -639,7 +637,7 @@ export default function FacebookAdmin() {
                   <td><b>{post.productName || 'Facebook нийтлэл'}</b><span className="zf-history-copy">{post.message}</span></td>
                   <td>{ctaType === 'NONE' ? '-' : <><span className={`zf-cta-status ${post.ctaApplied ? 'active' : 'boost'}`} title={post.ctaError || ORGANIC_CTA_HINT}>{post.ctaApplied ? <Check size={12} /> : <Megaphone size={12} />}{post.ctaApplied ? facebookCtaLabel(ctaType) : 'Зар болгоход'}</span><small className="zf-cta-hint">{post.ctaApplied ? '' : `${facebookCtaLabel(ctaType)} товч зар дээр гарна`}</small></>}</td>
                   <td>{post.messengerLinked ? <span className="zf-chat-count"><MessageCircle size={13} />{post.chatStarts || 0}</span> : '-'}</td>
-                  <td>{post.topic !== 'general' && post.status === 'published' ? <button type="button" className={`zf-listing-toggle ${post.listingActive === false ? '' : 'active'}`} onClick={() => updateListing(post)} disabled={Boolean(busy)} title="Messenger жагсаалтын төлөв өөрчлөх">{busy === `listing-${post._id}` ? <LoaderCircle className="animate-spin" size={13} /> : post.listingActive === false ? <X size={13} /> : <Check size={13} />}{post.listingActive === false ? 'Нуусан' : post.topic === 'loan' ? 'Идэвхтэй зээл' : 'Идэвхтэй зар'}</button> : '-'}</td>
+                  <td>{post.topic !== 'general' && post.status === 'published' ? <button type="button" className={`zf-listing-toggle ${post.listingActive === false ? '' : 'active'}`} onClick={() => updateListing(post)} disabled={Boolean(busy)} title="Messenger жагсаалтын төлөв өөрчлөх">{busy === `listing-${post._id}` ? <LoaderCircle className="animate-spin" size={13} /> : post.listingActive === false ? <X size={13} /> : <Check size={13} />}{post.listingActive === false ? 'Нуусан' : 'Идэвхтэй зар'}</button> : '-'}</td>
                   <td><span className={`z-badge ${post.status === 'published' ? 'z-badge-green' : post.status === 'failed' ? 'z-badge-red' : post.status === 'deleted' ? 'z-badge-gray' : 'z-badge-yellow'}`}>{post.status === 'published' ? 'Нийтэлсэн' : post.status === 'failed' ? 'Алдаа' : post.status === 'deleted' ? 'Устгасан' : 'Нийтэлж байна'}</span>{post.status === 'deleted' && <small className="zf-deleted-at">{formatDate(post.deletedAt)}</small>}{post.error && <small className="zf-error-text">{post.error}</small>}</td>
                   <td><div className="zf-history-actions">{post.status === 'published' && <button className="stats" type="button" onClick={() => openPostInsights(post)} disabled={Boolean(busy)} title="Постын статистик">{busy === `insights-${post._id}` ? <LoaderCircle className="animate-spin" size={14} /> : <BarChart3 size={14} />}</button>}{post.permalinkUrl && post.status !== 'deleted' && <a href={post.permalinkUrl} target="_blank" rel="noreferrer" title="Пост нээх"><ExternalLink size={15} /></a>}{post.status !== 'deleted' && <button className="delete" type="button" onClick={() => removePost(post)} disabled={Boolean(busy)} title="Facebook пост устгах">{busy === `delete-${post._id}` ? <LoaderCircle className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>}</div></td>
                 </tr>;

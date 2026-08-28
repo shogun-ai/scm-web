@@ -439,7 +439,7 @@ textarea.z-input { border-radius: 14px; }
 .zf-faq button { color: #a02f26; }
 .zf-chat-entry-preview { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-left: 3px solid #b8e82f; background: #f5f7f1; }
 .zf-chat-entry-preview > span { color: #6f746b; font-size: 9px; font-weight: 850; text-transform: uppercase; }
-.zf-chat-entry-preview > div { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; }
+.zf-chat-entry-preview > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
 .zf-chat-entry-preview button { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #cfd2cb; border-radius: 5px; background: #fff; color: #21241f; font-size: 11px; font-weight: 800; pointer-events: none; }
 .zf-active-listings-summary { display: flex; flex-direction: column; gap: 6px; }
 .zf-active-listings-summary > span { color: #6f746b; font-size: 9px; font-weight: 850; text-transform: uppercase; }
@@ -448,6 +448,7 @@ textarea.z-input { border-radius: 14px; }
 .zf-active-listings-summary b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .zf-active-listings-summary a { color: #4e554b; }
 .zf-active-listings-summary small { color: #8a8f86; font-size: 10px; }
+.zf-active-listings-summary > .z-btn { align-self: flex-start; margin-top: 4px; }
 .zf-post-layout { display: flex; flex-direction: column; gap: 14px; }
 .zf-compose-workspace { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(300px,.65fr); gap: 14px; align-items: start; }
 .zf-compose-panel { min-width: 0; }

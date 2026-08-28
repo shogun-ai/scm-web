@@ -16,6 +16,7 @@ import {
   removeZentroWebsiteApplicationHandoff,
   resolveFacebookPostImages,
   selectMetaWebhookApp,
+  sortListingsNewestFirst,
   verifyZentroWebhookSignature,
 } from './zentroFacebook.js';
 
@@ -35,13 +36,13 @@ test('keeps selected media and strips CTA fields from organic Facebook posts', (
   assert.equal(normalizeFacebookPostCtaType('invalid', 'MESSAGE_PAGE'), 'MESSAGE_PAGE');
 });
 
-test('builds a Mongolian Messenger greeting with car, active loan, and loan choices', () => {
+test('builds a Mongolian Messenger greeting with unified listings and loan choices', () => {
   const profile = buildMessengerProfile({
     profileGreeting: 'Сайн байна уу, {{user_first_name}}!',
   });
   assert.equal(profile.greeting[0].text, 'Сайн байна уу, {{user_first_name}}!');
-  assert.deepEqual(profile.ice_breakers.map(item => item.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN_OFFERS', 'ZENTRO_LOAN']);
-  assert.deepEqual(profile.persistent_menu[0].call_to_actions.map(item => item.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN_OFFERS', 'ZENTRO_LOAN']);
+  assert.deepEqual(profile.ice_breakers.map(item => item.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN']);
+  assert.deepEqual(profile.persistent_menu[0].call_to_actions.map(item => item.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN']);
 });
 
 test('builds active listing cards with Page and in-chat actions', () => {
@@ -117,6 +118,15 @@ test('keeps only informative image-backed posts in Messenger listings', () => {
     message: 'Toyota Prius 30 зарагдсан',
     full_picture: 'https://example.com/prius.jpg',
   }), false);
+});
+
+test('sorts unified listings with the newest post first', () => {
+  const listings = sortListingsNewestFirst([
+    { id: 'old', createdAt: '2026-08-20T08:00:00.000Z' },
+    { id: 'new', createdAt: '2026-08-28T08:00:00.000Z' },
+    { id: 'middle', createdAt: '2026-08-24T08:00:00.000Z' },
+  ]);
+  assert.deepEqual(listings.map(item => item.id), ['new', 'middle', 'old']);
 });
 
 test('recognizes an already missing Meta post without hiding auth failures', () => {
@@ -229,7 +239,7 @@ test('builds a Messenger referral link without dropping the Page path', () => {
   assert.equal(link, 'https://m.me/JapanCarDealership?ref=zpc-post-loan-66abcdef1234567890abcdef');
 });
 
-test('starts Messenger with separate car, active loan, and loan choices', async () => {
+test('starts Messenger with unified active listings and loan choices', async () => {
   const senderId = 'facebook-user-entry';
   const { model: SessionModel, sessions } = createSessionModel();
   const sent = [];
@@ -248,10 +258,10 @@ test('starts Messenger with separate car, active loan, and loan choices', async 
   });
 
   assert.equal(sessions.get(senderId).state, 'idle');
-  assert.deepEqual(sent.at(-1).options.map(option => option.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN_OFFERS', 'ZENTRO_LOAN']);
+  assert.deepEqual(sent.at(-1).options.map(option => option.payload), ['ZENTRO_LISTINGS', 'ZENTRO_LOAN']);
 });
 
-test('shows active loan offers from the Messenger menu', async () => {
+test('keeps the legacy loan-offers action routed to unified active listings', async () => {
   const senderId = 'facebook-user-loan-offers';
   const { model: SessionModel, sessions } = createSessionModel();
   const sent = [];
@@ -264,14 +274,14 @@ test('shows active loan offers from the Messenger menu', async () => {
     ZentroLoanRequest: {},
     SessionModel,
     send: async (recipientId, message, options = []) => sent.push({ recipientId, message, options }),
-    fetchLoanOffers: async () => offers,
-    sendLoanOffers: async (recipientId, values) => carousels.push({ recipientId, values }),
+    fetchListings: async () => offers,
+    sendListings: async (recipientId, values) => carousels.push({ recipientId, values }),
   });
 
-  assert.equal(sessions.get(senderId).topic, 'loan');
+  assert.equal(sessions.get(senderId).topic, '');
   assert.equal(carousels.length, 1);
   assert.equal(carousels[0].values[0].id, '66abcdef1234567890abcdef');
-  assert.match(sent.at(-1).message, /Нөхцөл асуух/);
+  assert.deepEqual(sent.at(-1).options.map(option => option.payload), ['ZENTRO_LOAN', 'ZENTRO_HOME']);
 });
 
 test('shows active Page listings when a conversation starts', async () => {
@@ -292,7 +302,36 @@ test('shows active Page listings when a conversation starts', async () => {
 
   assert.equal(carousels.length, 1);
   assert.equal(carousels[0].values[0].id, 'page_42');
-  assert.match(sent.at(-1).message, /Энэ зарыг асуух/);
+  assert.deepEqual(sent.at(-1).options.map(option => option.payload), ['ZENTRO_LOAN', 'ZENTRO_HOME']);
+});
+
+test('paginates unified listings ten at a time with a more action', async () => {
+  const senderId = 'facebook-user-listing-pages';
+  const { model: SessionModel } = createSessionModel();
+  const sent = [];
+  const carousels = [];
+  const listings = Array.from({ length: 21 }, (_, index) => ({
+    id: `listing-${index + 1}`,
+    topic: index % 2 ? 'loan' : 'car',
+    title: `Listing ${index + 1}`,
+  }));
+  const process = event => processZentroMessengerEvent({
+    event,
+    config: { products: [], social: { autoReplyEnabled: true } },
+    ZentroLoanRequest: {},
+    SessionModel,
+    send: async (recipientId, message, options = []) => sent.push({ recipientId, message, options }),
+    fetchListings: async (limit, offset = 0) => listings.slice(offset, offset + limit),
+    sendListings: async (recipientId, values) => carousels.push({ recipientId, values }),
+  });
+
+  await process({ sender: { id: senderId }, postback: { payload: 'ZENTRO_LISTINGS' } });
+  assert.deepEqual(carousels[0].values.map(item => item.id), listings.slice(0, 10).map(item => item.id));
+  assert.equal(sent.at(-1).options[0].payload, 'ZENTRO_LISTINGS_MORE_10');
+
+  await process({ sender: { id: senderId }, postback: { mid: 'more-10', payload: 'ZENTRO_LISTINGS_MORE_10' } });
+  assert.deepEqual(carousels[1].values.map(item => item.id), listings.slice(10, 20).map(item => item.id));
+  assert.equal(sent.at(-1).options[0].payload, 'ZENTRO_LISTINGS_MORE_20');
 });
 
 test('hands a car inquiry to the Auto Market conversation', async () => {
