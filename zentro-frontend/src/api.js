@@ -128,6 +128,13 @@ export const getFacebookPostInsights = id => api.get(`/api/zentro/admin/facebook
 export const publishFacebookPost = (data = {}) => api.post('/api/zentro/admin/facebook/publish', data).then(r => r.data);
 export const updateFacebookListing = (id, listingActive) => api.patch(`/api/zentro/admin/facebook/posts/${id}/listing`, { listingActive }).then(r => r.data);
 export const deleteFacebookPost = id => api.delete(`/api/zentro/admin/facebook/posts/${id}`).then(r => r.data);
+export const getFacebookPostPlans = dateKey => api.get('/api/zentro/admin/facebook/plans', { params: { dateKey } }).then(r => r.data);
+export const generateFacebookPostPlans = data => api.post('/api/zentro/admin/facebook/plans/generate', data).then(r => r.data);
+export const updateFacebookPostPlan = (id, data) => api.patch(`/api/zentro/admin/facebook/plans/${id}`, data).then(r => r.data);
+export const approveFacebookPostPlan = (id, scheduledTime) => api.post(`/api/zentro/admin/facebook/plans/${id}/approve`, { scheduledTime }).then(r => r.data);
+export const unapproveFacebookPostPlan = id => api.post(`/api/zentro/admin/facebook/plans/${id}/unapprove`).then(r => r.data);
+export const publishFacebookPostPlan = id => api.post(`/api/zentro/admin/facebook/plans/${id}/publish`).then(r => r.data);
+export const deleteFacebookPostPlan = id => api.delete(`/api/zentro/admin/facebook/plans/${id}`).then(r => r.data);
 export const getUsers = () => api.get('/api/users').then(r => r.data);
 export const createUser = (data) => api.post('/api/users', data).then(r => r.data);
 export const updateUser = (id, data) => api.put(`/api/users/${id}`, data).then(r => r.data);

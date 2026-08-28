@@ -1329,6 +1329,7 @@ const zentroFacebook = createZentroFacebookIntegration({
     authenticateUser,
     requireAdmin,
     createLog,
+    openai,
 });
 
 const PERMISSION_RANK = { none: 0, view: 1, partial: 2, full: 3 };

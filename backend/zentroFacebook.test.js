@@ -3,11 +3,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildFacebookOrganicPostPayload,
+  buildFallbackDailyPostDrafts,
   buildMessengerListingElements,
   buildMessengerProfile,
   buildZentroMessengerLink,
   buildZentroPost,
   isMissingMetaPostError,
+  isFacebookPostPlanDue,
   isMessengerListingCandidate,
   normalizeFacebookPostCtaType,
   normalizeFacebookPostImages,
@@ -229,6 +231,40 @@ test('builds a daily post from live product values', () => {
   assert.match(result.message, /3%-аас/);
   assert.match(result.message, /zentrocapitalgroup\.com/);
   assert.equal(result.imageUrl, 'https://example.com/car.jpg');
+});
+
+test('builds three editable daily plan fallbacks with separate time slots', () => {
+  const drafts = buildFallbackDailyPostDrafts({
+    phone: '7599-1919',
+    products: [{
+      name: 'Машин барьцаалсан зээл',
+      description: 'Машинаа унаад явна.',
+      rate: '3%-аас',
+      term: '24 сар',
+      amount: '70% хүртэл',
+      images: ['https://example.com/car.jpg'],
+    }],
+    social: { postTemplates: ['{{product}} | {{description}} | {{phone}}'] },
+  }, {
+    subject: 'Өнөөдрийн зээлийн боломж',
+    audience: 'Автомашин эзэмшигчид',
+    requirements: 'Иргэний үнэмлэхтэй байх',
+    visualType: 'mixed',
+  });
+
+  assert.equal(drafts.length, 3);
+  assert.deepEqual(drafts.map(draft => draft.scheduledTime), ['09:30', '13:00', '17:30']);
+  assert.deepEqual(drafts.map(draft => draft.visualType), ['photo', 'infographic', 'photo']);
+  assert.equal(drafts[0].imageUrls[0], 'https://example.com/car.jpg');
+  assert.match(drafts[1].message, /Иргэний үнэмлэхтэй байх/);
+});
+
+test('publishes only approved plans whose local time has arrived', () => {
+  const local = { dateKey: '2026-08-28', minutes: 13 * 60 };
+  assert.equal(isFacebookPostPlanDue({ status: 'approved', dateKey: '2026-08-28', scheduledTime: '12:30' }, local), true);
+  assert.equal(isFacebookPostPlanDue({ status: 'approved', dateKey: '2026-08-28', scheduledTime: '13:30' }, local), false);
+  assert.equal(isFacebookPostPlanDue({ status: 'draft', dateKey: '2026-08-28', scheduledTime: '12:30' }, local), false);
+  assert.equal(isFacebookPostPlanDue({ status: 'approved', dateKey: '2026-08-27', scheduledTime: '17:30' }, local), true);
 });
 
 test('builds a Messenger referral link without dropping the Page path', () => {

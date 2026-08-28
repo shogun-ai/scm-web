@@ -77,10 +77,50 @@ const FacebookPostSchema = new mongoose.Schema({
   deletedAt: Date,
 }, { timestamps: true });
 
+const FacebookPostPlanSchema = new mongoose.Schema({
+  dateKey: { type: String, required: true, index: true },
+  slot: { type: Number, min: 1, max: 3, required: true },
+  status: {
+    type: String,
+    enum: ['draft', 'approved', 'publishing', 'published', 'failed', 'cancelled'],
+    default: 'draft',
+    index: true,
+  },
+  subject: { type: String, default: '' },
+  objective: { type: String, default: '' },
+  audience: { type: String, default: '' },
+  requirements: { type: String, default: '' },
+  contentStyle: { type: String, default: 'professional' },
+  visualType: { type: String, enum: ['photo', 'infographic'], default: 'photo' },
+  title: { type: String, default: '' },
+  message: { type: String, default: '' },
+  visualHeadline: { type: String, default: '' },
+  visualSubheadline: { type: String, default: '' },
+  imageUrls: { type: [String], default: [] },
+  productIndex: { type: Number, default: 0 },
+  productName: { type: String, default: '' },
+  templateIndex: { type: Number, default: 0 },
+  topic: { type: String, enum: ['car', 'loan', 'general'], default: 'loan' },
+  ctaType: { type: String, enum: ['NONE', 'MESSAGE_PAGE', 'APPLY_NOW'], default: 'MESSAGE_PAGE' },
+  listingActive: { type: Boolean, default: true },
+  scheduledTime: { type: String, default: '' },
+  generatedBy: { type: String, enum: ['ai', 'fallback', 'manual'], default: 'fallback' },
+  generationWarning: { type: String, default: '' },
+  approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  approvedAt: Date,
+  publishedPostId: { type: mongoose.Schema.Types.ObjectId, ref: 'ZentroFacebookPost' },
+  attempts: { type: Number, default: 0 },
+  error: { type: String, default: '' },
+}, { timestamps: true });
+
+FacebookPostPlanSchema.index({ dateKey: 1, slot: 1, createdAt: -1 });
+
 const MessengerSession = mongoose.models.ZentroMessengerSession
   || mongoose.model('ZentroMessengerSession', MessengerSessionSchema);
 const FacebookPost = mongoose.models.ZentroFacebookPost
   || mongoose.model('ZentroFacebookPost', FacebookPostSchema);
+const FacebookPostPlan = mongoose.models.ZentroFacebookPostPlan
+  || mongoose.model('ZentroFacebookPostPlan', FacebookPostPlanSchema);
 
 let activeListingsCache = {
   car: { expiresAt: 0, listings: [] },
@@ -1175,6 +1215,218 @@ export function buildZentroPost(config, date = new Date(), messageOverride = '',
   };
 }
 
+const DAILY_PLAN_TIMES = ['09:30', '13:00', '17:30'];
+
+function validDateKey(value, fallback = '') {
+  const dateKey = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? dateKey : fallback;
+}
+
+function validPostTime(value, fallback = '') {
+  const time = String(value || '').trim();
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : fallback;
+}
+
+function cleanPlanValue(value, maxLength = 500) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function withRequiredDisclosure(message, legal) {
+  const value = String(message || '').trim();
+  if (!value) return legal;
+  return value.toLowerCase().includes('эцсийн нөхцөл') ? value : `${value}\n\n${legal}`;
+}
+
+function dailyPlanProduct(config, productIndex) {
+  const products = safeArray(config.products);
+  const index = Math.min(Math.max(Number(productIndex) || 0, 0), Math.max(products.length - 1, 0));
+  return { index, product: products[index] || {} };
+}
+
+export function buildFallbackDailyPostDrafts(config, input = {}) {
+  const social = normalizeZentroSocial(config.social);
+  const { index: productIndex, product } = dailyPlanProduct(config, input.productIndex);
+  const subject = cleanPlanValue(input.subject, 180) || product.name || 'Шуурхай зээлийн шийдэл';
+  const objective = cleanPlanValue(input.objective, 120) || 'Зээлийн бүтээгдэхүүнийг ойлгомжтой танилцуулах';
+  const audience = cleanPlanValue(input.audience, 160) || 'Санхүүгийн шуурхай хэрэгцээтэй харилцагч';
+  const requirements = cleanPlanValue(input.requirements, 700);
+  const legal = config.siteContent?.footerLegal || 'Зээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна.';
+  const templates = social.postTemplates.length ? social.postTemplates : DEFAULT_POST_TEMPLATES;
+  const selectedTemplate = Math.min(Math.max(Number(input.templateIndex) || 0, 0), templates.length - 1);
+  const values = {
+    product: product.name || subject,
+    description: product.description || config.heroText || '',
+    rate: product.rate || '',
+    term: product.term || '',
+    amount: product.amount || '',
+    phone: config.phone || '',
+    website: WEBSITE_URL,
+  };
+  const angles = [
+    { title: subject, prefix: `${subject}\n\n${objective}.` },
+    { title: `${product.name || subject}: үндсэн мэдээлэл`, prefix: `${audience}-д зориулсан товч мэдээлэл.` },
+    { title: `${product.name || subject}: хүсэлт өгөх`, prefix: `${subject}-ийн боломжоо өнөөдөр шалгаарай.` },
+  ];
+  const productImages = safeArray(product.images).filter(Boolean);
+  const fallbackImage = productImages[0] || product.image || product.imageUrl || '';
+  return angles.map((angle, slotIndex) => {
+    const templateIndex = (selectedTemplate + slotIndex) % templates.length;
+    const rendered = replaceTemplate(templates[templateIndex], values);
+    const requirementBlock = requirements && slotIndex === 1 ? `\n\nАнхаарах зүйл:\n${requirements}` : '';
+    const message = withRequiredDisclosure(`${angle.prefix}\n\n${rendered}${requirementBlock}`.trim(), legal);
+    const requestedVisual = String(input.visualType || 'mixed');
+    const visualType = requestedVisual === 'infographic' || (requestedVisual === 'mixed' && slotIndex === 1)
+      ? 'infographic'
+      : 'photo';
+    return {
+      slot: slotIndex + 1,
+      title: angle.title,
+      message,
+      visualHeadline: angle.title,
+      visualSubheadline: slotIndex === 1
+        ? [product.rate, product.term, product.amount].filter(Boolean).join(' · ')
+        : (product.description || objective),
+      scheduledTime: DAILY_PLAN_TIMES[slotIndex],
+      visualType,
+      imageUrls: visualType === 'photo' && fallbackImage ? [fallbackImage] : [],
+      productIndex,
+      productName: product.name || '',
+      templateIndex,
+    };
+  });
+}
+
+function parseGeneratedPlan(value) {
+  try {
+    const normalized = String(value || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    return JSON.parse(normalized);
+  } catch {
+    return null;
+  }
+}
+
+async function generateDailyPostDrafts(openaiClient, config, input = {}) {
+  const fallback = buildFallbackDailyPostDrafts(config, input);
+  if (!openaiClient) {
+    return { drafts: fallback, generatedBy: 'fallback', warning: 'AI тохиргоогүй тул сонгосон загварт суурилсан 3 хувилбар бэлтгэлээ.' };
+  }
+  const { index: productIndex, product } = dailyPlanProduct(config, input.productIndex);
+  const legal = config.siteContent?.footerLegal || 'Зээлийн эцсийн нөхцөл үнэлгээ болон гэрээгээр баталгаажна.';
+  const context = {
+    brand: config.brandName || 'Zentro Prime Capital',
+    subject: cleanPlanValue(input.subject, 180),
+    objective: cleanPlanValue(input.objective, 160),
+    audience: cleanPlanValue(input.audience, 180),
+    requirements: cleanPlanValue(input.requirements, 1000),
+    contentStyle: cleanPlanValue(input.contentStyle, 80) || 'professional',
+    visualType: ['photo', 'infographic', 'mixed'].includes(input.visualType) ? input.visualType : 'mixed',
+    product: {
+      name: product.name || '',
+      description: product.description || '',
+      rate: product.rate || '',
+      term: product.term || '',
+      amount: product.amount || '',
+    },
+    selectedTemplate: replaceTemplate(
+      normalizeZentroSocial(config.social).postTemplates[Math.max(0, Number(input.templateIndex) || 0)] || '',
+      {
+        product: product.name || '',
+        description: product.description || '',
+        rate: product.rate || '',
+        term: product.term || '',
+        amount: product.amount || '',
+        phone: config.phone || '',
+        website: WEBSITE_URL,
+      }
+    ),
+    phone: config.phone || '',
+    website: WEBSITE_URL,
+    disclosure: legal,
+  };
+  try {
+    const response = await openaiClient.responses.create({
+      model: process.env.OPENAI_SOCIAL_MODEL || process.env.OPENAI_STATEMENT_MODEL || 'gpt-4.1-mini',
+      temperature: 0.65,
+      instructions: [
+        'Та Zentro Prime Capital-ийн Монгол хэл дээрх Facebook контент стратегич.',
+        'Өглөө, өдөр, оройн 3 өөр өнцөгтэй пост бэлтгэ. Бүх текст Монгол кириллээр байна.',
+        'Баталгаатай зээл, шууд олгоно, хүн бүрт олгоно гэх мэт нотлогдоогүй амлалт бүү өг.',
+        'Хүү, хугацаа, хэмжээ зэрэг тоог зөвхөн өгсөн бүтээгдэхүүний мэдээллээс ашигла.',
+        'Пост бүр CTA, 2-4 hashtag болон өгсөн disclosure өгүүлбэртэй байна.',
+        'visualHeadline нь зураг дээр шууд тавих 5-10 үгтэй, visualSubheadline нь богино байна.',
+        'JSON schema-гаас өөр зүйл бүү буцаа.',
+      ].join(' '),
+      input: [{ role: 'user', content: [{ type: 'input_text', text: JSON.stringify(context) }] }],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'zentro_daily_facebook_plan',
+          strict: true,
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['drafts'],
+            properties: {
+              drafts: {
+                type: 'array',
+                minItems: 3,
+                maxItems: 3,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['title', 'message', 'visualHeadline', 'visualSubheadline', 'suggestedTime', 'visualType'],
+                  properties: {
+                    title: { type: 'string' },
+                    message: { type: 'string' },
+                    visualHeadline: { type: 'string' },
+                    visualSubheadline: { type: 'string' },
+                    suggestedTime: { type: 'string' },
+                    visualType: { type: 'string', enum: ['photo', 'infographic'] },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const parsed = parseGeneratedPlan(response.output_text);
+    if (!Array.isArray(parsed?.drafts) || parsed.drafts.length !== 3) throw new Error('AI 3 пост буцаасангүй.');
+    const drafts = parsed.drafts.map((draft, index) => {
+      const visualType = context.visualType === 'photo'
+        ? 'photo'
+        : context.visualType === 'infographic'
+          ? 'infographic'
+          : draft.visualType === 'infographic' ? 'infographic' : 'photo';
+      return {
+        ...fallback[index],
+        title: cleanPlanValue(draft.title, 180) || fallback[index].title,
+        message: withRequiredDisclosure(String(draft.message || '').trim(), legal),
+        visualHeadline: cleanPlanValue(draft.visualHeadline, 100) || fallback[index].visualHeadline,
+        visualSubheadline: cleanPlanValue(draft.visualSubheadline, 180) || fallback[index].visualSubheadline,
+        scheduledTime: validPostTime(draft.suggestedTime, DAILY_PLAN_TIMES[index]),
+        visualType,
+        imageUrls: visualType === 'infographic' ? [] : fallback[index].imageUrls,
+        productIndex,
+      };
+    });
+    return { drafts, generatedBy: 'ai', warning: '' };
+  } catch (error) {
+    return { drafts: fallback, generatedBy: 'fallback', warning: `AI генератор түр ажилласангүй: ${cleanMetaError(error)}` };
+  }
+}
+
+export function isFacebookPostPlanDue(plan, local) {
+  if (plan?.status !== 'approved') return false;
+  const dateKey = validDateKey(plan.dateKey);
+  const scheduledTime = validPostTime(plan.scheduledTime);
+  if (!dateKey || !scheduledTime || !local?.dateKey) return false;
+  if (dateKey < local.dateKey) return true;
+  if (dateKey > local.dateKey) return false;
+  const [hour, minute] = scheduledTime.split(':').map(Number);
+  return hour * 60 + minute <= Number(local.minutes || 0);
+}
+
 async function resolvePermalink(postId) {
   if (!postId) return '';
   try {
@@ -1264,7 +1516,8 @@ async function publishPost(config, {
   const generated = buildZentroPost(config, new Date(), message, productIndex);
   const finalImages = resolveFacebookPostImages(imageUrls, imageUrl, generated.imageUrl);
   const finalImage = finalImages[0] || '';
-  const existing = scheduleKey ? await FacebookPost.findOne({ scheduleKey }).select('_id') : null;
+  const existing = scheduleKey ? await FacebookPost.findOne({ scheduleKey }) : null;
+  if (existing?.status === 'published') return existing;
   const recordId = existing?._id || new mongoose.Types.ObjectId();
   const referralCode = messengerLinked ? `zpc-post-${finalTopic}-${recordId}` : '';
   const messengerUrl = messengerLinked ? buildZentroMessengerLink(social, referralCode, pageId) : '';
@@ -1424,6 +1677,7 @@ export function createZentroFacebookIntegration({
   authenticateUser,
   requireAdmin,
   createLog,
+  openai: openaiClient = null,
 }) {
   let scheduler;
   let schedulerBusy = false;
@@ -1457,14 +1711,41 @@ export function createZentroFacebookIntegration({
       const env = facebookEnv();
       if (!env.pageId || !env.pageAccessToken) return;
       const local = zonedParts(new Date(), social.postTimezone);
-      const [hour, minute] = social.postTime.split(':').map(Number);
-      if (local.minutes < hour * 60 + minute) return;
-      const scheduleKey = `daily:${local.dateKey}`;
-      const existing = await FacebookPost.findOne({ scheduleKey });
-      if (['published', 'publishing', 'deleted'].includes(existing?.status) || Number(existing?.attempts || 0) >= 3) return;
-      await publishPost(config, { source: 'automatic', scheduleKey });
+      const candidates = await FacebookPostPlan.find({
+        status: 'approved',
+        dateKey: { $lte: local.dateKey },
+      }).sort({ dateKey: 1, scheduledTime: 1, slot: 1 }).limit(12).lean();
+      for (const candidate of candidates.filter(plan => isFacebookPostPlanDue(plan, local))) {
+        const plan = await FacebookPostPlan.findOneAndUpdate(
+          { _id: candidate._id, status: 'approved' },
+          { $set: { status: 'publishing', error: '' }, $inc: { attempts: 1 } },
+          { new: true }
+        );
+        if (!plan) continue;
+        try {
+          const post = await publishPost(config, {
+            source: 'automatic',
+            scheduleKey: `plan:${plan._id}`,
+            message: plan.message,
+            imageUrls: plan.imageUrls,
+            topic: plan.topic,
+            listingActive: plan.listingActive,
+            ctaType: plan.ctaType,
+            productIndex: plan.productIndex,
+          });
+          plan.status = 'published';
+          plan.publishedPostId = post._id;
+          plan.error = '';
+          await plan.save();
+        } catch (error) {
+          plan.status = 'failed';
+          plan.error = cleanMetaError(error);
+          await plan.save();
+          console.error('Zentro scheduled Facebook plan error:', plan.error);
+        }
+      }
     } catch (error) {
-      console.error('Zentro daily Facebook post error:', error.message);
+      console.error('Zentro Facebook planner error:', error.message);
     } finally {
       schedulerBusy = false;
     }
@@ -1558,6 +1839,209 @@ export function createZentroFacebookIntegration({
       res.json({ success: Boolean(result?.success ?? true), appWebhook: result?.appWebhook || null, status: await connectionStatus(webhookActivity) });
     } catch (error) {
       res.status(400).json({ message: cleanMetaError(error) });
+    }
+  });
+
+  app.get('/api/zentro/admin/facebook/plans', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+      const config = await currentConfig();
+      const social = normalizeZentroSocial(config.social);
+      const dateKey = validDateKey(req.query?.dateKey, zonedParts(new Date(), social.postTimezone).dateKey);
+      const plans = await FacebookPostPlan.find({ dateKey, status: { $ne: 'cancelled' } })
+        .sort({ slot: 1, createdAt: -1 })
+        .lean();
+      res.json(plans);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/zentro/admin/facebook/plans/generate', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+      const config = await currentConfig();
+      const social = normalizeZentroSocial(config.social);
+      const dateKey = validDateKey(req.body?.dateKey, zonedParts(new Date(), social.postTimezone).dateKey);
+      const topic = normalizePostTopic(req.body?.topic, social.postDefaultTopic);
+      const productIndex = dailyPlanProduct(config, req.body?.productIndex).index;
+      const input = {
+        dateKey,
+        subject: cleanPlanValue(req.body?.subject, 180),
+        objective: cleanPlanValue(req.body?.objective, 160),
+        audience: cleanPlanValue(req.body?.audience, 180),
+        requirements: cleanPlanValue(req.body?.requirements, 1000),
+        contentStyle: cleanPlanValue(req.body?.contentStyle, 80) || 'professional',
+        visualType: ['photo', 'infographic', 'mixed'].includes(req.body?.visualType) ? req.body.visualType : 'mixed',
+        productIndex,
+        templateIndex: Number(req.body?.templateIndex) || 0,
+      };
+      const generated = await generateDailyPostDrafts(openaiClient, config, input);
+      const fixedPlans = await FacebookPostPlan.find({
+        dateKey,
+        status: { $in: ['publishing', 'published'] },
+      }).sort({ slot: 1 }).lean();
+      const fixedSlots = new Set(fixedPlans.map(plan => Number(plan.slot)));
+      const availableSlots = [1, 2, 3].filter(slot => !fixedSlots.has(slot));
+      await FacebookPostPlan.updateMany(
+        { dateKey, status: { $in: ['draft', 'approved', 'failed'] } },
+        { $set: { status: 'cancelled' } }
+      );
+      const product = safeArray(config.products)[productIndex] || {};
+      const created = availableSlots.length ? await FacebookPostPlan.insertMany(availableSlots.map((slot, index) => {
+        const draft = generated.drafts[slot - 1] || generated.drafts[index] || generated.drafts[0];
+        return {
+          dateKey,
+          slot,
+          status: 'draft',
+          subject: input.subject,
+          objective: input.objective,
+          audience: input.audience,
+          requirements: input.requirements,
+          contentStyle: input.contentStyle,
+          visualType: draft.visualType,
+          title: draft.title,
+          message: draft.message,
+          visualHeadline: draft.visualHeadline,
+          visualSubheadline: draft.visualSubheadline,
+          imageUrls: safeArray(draft.imageUrls).map(safeHttpsUrl).filter(Boolean).slice(0, 5),
+          productIndex,
+          productName: product.name || draft.productName || '',
+          templateIndex: draft.templateIndex,
+          topic,
+          ctaType: normalizeFacebookPostCtaType(req.body?.ctaType, social.postCtaType),
+          listingActive: topic !== 'general' && req.body?.listingActive !== false,
+          scheduledTime: validPostTime(draft.scheduledTime, DAILY_PLAN_TIMES[slot - 1]),
+          generatedBy: generated.generatedBy,
+          generationWarning: generated.warning,
+        };
+      })) : [];
+      const plans = [...fixedPlans, ...created.map(plan => plan.toObject())].sort((a, b) => a.slot - b.slot);
+      await createLog(req.user, 'zentro_facebook_plan_generated', `${dateKey}:${generated.generatedBy}:${created.length}`);
+      res.status(201).json({ plans, generatedBy: generated.generatedBy, warning: generated.warning });
+    } catch (error) {
+      res.status(500).json({ message: cleanMetaError(error) });
+    }
+  });
+
+  app.patch('/api/zentro/admin/facebook/plans/:id', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+      const plan = await FacebookPostPlan.findById(req.params.id);
+      if (!plan || plan.status === 'cancelled') return res.status(404).json({ message: 'Төлөвлөсөн пост олдсонгүй.' });
+      if (['publishing', 'published'].includes(plan.status)) return res.status(409).json({ message: 'Нийтлэгдэж буй эсвэл нийтлэгдсэн постыг засах боломжгүй.' });
+      const editable = ['title', 'message', 'visualHeadline', 'visualSubheadline', 'subject', 'objective', 'audience', 'requirements', 'contentStyle'];
+      editable.forEach(key => {
+        if (key in req.body) plan[key] = String(req.body[key] || '').trim().slice(0, key === 'message' || key === 'requirements' ? 5000 : 500);
+      });
+      if ('imageUrls' in req.body) plan.imageUrls = safeArray(req.body.imageUrls).map(safeHttpsUrl).filter(Boolean).slice(0, 5);
+      if ('scheduledTime' in req.body) plan.scheduledTime = validPostTime(req.body.scheduledTime, plan.scheduledTime || DAILY_PLAN_TIMES[plan.slot - 1]);
+      if ('visualType' in req.body) plan.visualType = req.body.visualType === 'infographic' ? 'infographic' : 'photo';
+      if ('topic' in req.body) plan.topic = normalizePostTopic(req.body.topic, plan.topic);
+      if ('ctaType' in req.body) plan.ctaType = normalizeFacebookPostCtaType(req.body.ctaType, plan.ctaType);
+      if ('listingActive' in req.body) plan.listingActive = plan.topic !== 'general' && req.body.listingActive !== false;
+      if ('productIndex' in req.body) {
+        const config = await currentConfig();
+        const selected = dailyPlanProduct(config, req.body.productIndex);
+        plan.productIndex = selected.index;
+        plan.productName = selected.product.name || '';
+      }
+      if (plan.status === 'approved') {
+        plan.status = 'draft';
+        plan.approvedAt = null;
+        plan.approvedBy = null;
+      }
+      plan.error = '';
+      await plan.save();
+      await createLog(req.user, 'zentro_facebook_plan_updated', String(plan._id));
+      res.json(plan);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/zentro/admin/facebook/plans/:id/approve', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+      const plan = await FacebookPostPlan.findById(req.params.id);
+      if (!plan || plan.status === 'cancelled') return res.status(404).json({ message: 'Төлөвлөсөн пост олдсонгүй.' });
+      if (['publishing', 'published'].includes(plan.status)) return res.status(409).json({ message: 'Энэ пост аль хэдийн нийтлэгдэж байна.' });
+      if (!String(plan.message || '').trim()) return res.status(400).json({ message: 'Постын текст хоосон байна.' });
+      if (plan.visualType === 'infographic' && !safeArray(plan.imageUrls).length) {
+        return res.status(400).json({ message: 'Инфографик постоо батлахаас өмнө инфографик зураг үүсгэнэ үү.' });
+      }
+      plan.scheduledTime = validPostTime(req.body?.scheduledTime, plan.scheduledTime);
+      if (!plan.scheduledTime) return res.status(400).json({ message: 'Нийтлэх цаг сонгоно уу.' });
+      plan.status = 'approved';
+      plan.approvedBy = req.user?._id;
+      plan.approvedAt = new Date();
+      plan.error = '';
+      await plan.save();
+      await createLog(req.user, 'zentro_facebook_plan_approved', `${plan._id}:${plan.dateKey}T${plan.scheduledTime}`);
+      res.json(plan);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/zentro/admin/facebook/plans/:id/unapprove', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+      const plan = await FacebookPostPlan.findOneAndUpdate(
+        { _id: req.params.id, status: { $in: ['approved', 'failed'] } },
+        { $set: { status: 'draft', approvedAt: null, approvedBy: null, error: '' } },
+        { new: true }
+      );
+      if (!plan) return res.status(404).json({ message: 'Буцаах боломжтой төлөвлөсөн пост олдсонгүй.' });
+      await createLog(req.user, 'zentro_facebook_plan_unapproved', String(plan._id));
+      res.json(plan);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/zentro/admin/facebook/plans/:id/publish', authenticateUser, requireAdmin, async (req, res) => {
+    let plan;
+    try {
+      plan = await FacebookPostPlan.findOneAndUpdate(
+        { _id: req.params.id, status: { $in: ['draft', 'approved', 'failed'] } },
+        { $set: { status: 'publishing', error: '' }, $inc: { attempts: 1 } },
+        { new: true }
+      );
+      if (!plan) return res.status(404).json({ message: 'Нийтлэх боломжтой төлөвлөсөн пост олдсонгүй.' });
+      const config = await currentConfig();
+      const post = await publishPost(config, {
+        source: 'automatic',
+        scheduleKey: `plan:${plan._id}`,
+        message: plan.message,
+        imageUrls: plan.imageUrls,
+        topic: plan.topic,
+        listingActive: plan.listingActive,
+        ctaType: plan.ctaType,
+        productIndex: plan.productIndex,
+      });
+      plan.status = 'published';
+      plan.publishedPostId = post._id;
+      plan.error = '';
+      await plan.save();
+      await createLog(req.user, 'zentro_facebook_plan_published_now', String(plan._id));
+      res.json({ plan, post });
+    } catch (error) {
+      if (plan) {
+        plan.status = 'failed';
+        plan.error = cleanMetaError(error);
+        await plan.save().catch(() => {});
+      }
+      res.status(500).json({ message: cleanMetaError(error) });
+    }
+  });
+
+  app.delete('/api/zentro/admin/facebook/plans/:id', authenticateUser, requireAdmin, async (req, res) => {
+    try {
+      const plan = await FacebookPostPlan.findById(req.params.id);
+      if (!plan) return res.status(404).json({ message: 'Төлөвлөсөн пост олдсонгүй.' });
+      if (['publishing', 'published'].includes(plan.status)) return res.status(409).json({ message: 'Нийтлэгдэж буй эсвэл нийтлэгдсэн постыг цуцлах боломжгүй.' });
+      plan.status = 'cancelled';
+      await plan.save();
+      await createLog(req.user, 'zentro_facebook_plan_cancelled', String(plan._id));
+      res.json(plan);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
     }
   });
 
@@ -1723,7 +2207,7 @@ export function createZentroFacebookIntegration({
       ).then(result => {
         if (result.modifiedCount) clearActiveListingsCache();
       }).catch(error => console.error('Zentro active loan migration error:', error.message));
-      scheduler = cron.schedule('*/5 * * * *', () => void runSchedule());
+      scheduler = cron.schedule('* * * * *', () => void runSchedule());
       setTimeout(() => void runSchedule(), 15000);
     },
     stop() {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { createElement, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   BarChart3,
@@ -44,6 +44,7 @@ import {
   uploadAdminWebImages,
 } from '../api';
 import { DEFAULT_SOCIAL, normalizeSiteConfig } from '../siteDefaults';
+import FacebookDailyPlanner from './FacebookDailyPlanner';
 
 const VIEWS = [
   { id: 'connection', label: 'Холболт', icon: Link2 },
@@ -138,15 +139,16 @@ export default function FacebookAdmin() {
   const [manualProductIndex, setManualProductIndex] = useState(0);
   const [manualCtaType, setManualCtaType] = useState('MESSAGE_PAGE');
   const [listingActive, setListingActive] = useState(true);
+  const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
 
-  const refreshActiveListings = () => getFacebookListings('all', 100, 0)
+  const refreshActiveListings = useCallback(() => getFacebookListings('all', 100, 0)
     .then(listings => {
       setActiveListings(listings);
       setListingDisplayCount(10);
     })
-    .catch(() => setActiveListings([]));
+    .catch(() => setActiveListings([])), []);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const [rawConfig, connection, activity, history] = await Promise.all([
@@ -169,9 +171,9 @@ export default function FacebookAdmin() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [refreshActiveListings]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     if (!postInsights) return undefined;
@@ -278,9 +280,18 @@ export default function FacebookAdmin() {
     }
   };
 
-  const addTemplate = () => change('postTemplates', [...social.postTemplates, '']);
+  const addTemplate = () => {
+    const nextIndex = social.postTemplates.length;
+    change('postTemplates', [...social.postTemplates, 'Шинэ постын текстээ энд бичнэ үү.']);
+    setSelectedTemplateIndex(nextIndex);
+  };
   const updateTemplate = (index, value) => change('postTemplates', social.postTemplates.map((item, itemIndex) => itemIndex === index ? value : item));
-  const removeTemplate = index => change('postTemplates', social.postTemplates.filter((_, itemIndex) => itemIndex !== index));
+  const removeTemplate = index => {
+    if (social.postTemplates.length <= 1) return;
+    const templates = social.postTemplates.filter((_, itemIndex) => itemIndex !== index);
+    change('postTemplates', templates);
+    setSelectedTemplateIndex(current => Math.min(current > index ? current - 1 : current, templates.length - 1));
+  };
   const addFaq = () => change('faqItems', [...social.faqItems, { keywords: '', answer: '', enabled: true }]);
   const updateFaq = (index, key, value) => change('faqItems', social.faqItems.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item));
   const removeFaq = index => change('faqItems', social.faqItems.filter((_, itemIndex) => itemIndex !== index));
@@ -386,7 +397,7 @@ export default function FacebookAdmin() {
   const preview = useMemo(() => {
     if (!config) return '';
     const product = config.products?.[manualProductIndex] || config.products?.[0] || {};
-    const message = manualMessage || replaceTemplate(social.postTemplates?.[0] || '', {
+    const message = manualMessage || replaceTemplate(social.postTemplates?.[selectedTemplateIndex] || social.postTemplates?.[0] || '', {
       product: product.name,
       description: product.description,
       rate: product.rate,
@@ -405,7 +416,7 @@ export default function FacebookAdmin() {
     const separator = base.includes('?') ? '&' : '?';
     const label = manualTopic === 'car' ? 'Машины талаар Messenger-ээр асуух' : manualTopic === 'loan' ? 'Зээлийн хүсэлтээ Messenger-ээр өгөх' : 'Messenger-ээр холбогдох';
     return `${messengerMessage}\n\n${label}: ${base}${separator}ref=post-preview\nОнлайнаар хүсэлт өгөх: https://zentrocapitalgroup.com/?fb_post=post-id#apply`;
-  }, [config, manualCtaType, manualMessage, manualProductIndex, manualTopic, social.messengerUrl, social.postTemplates]);
+  }, [config, manualCtaType, manualMessage, manualProductIndex, manualTopic, selectedTemplateIndex, social.messengerUrl, social.postTemplates]);
 
   const selectedProduct = config?.products?.[manualProductIndex] || config?.products?.[0] || {};
   const selectedProductImages = [
@@ -416,6 +427,15 @@ export default function FacebookAdmin() {
   const previewImages = manualImageUrls.length
     ? manualImageUrls
     : (social.postUseProductImage && selectedProductImages[0] ? [selectedProductImages[0]] : []);
+  const selectedTemplatePreview = replaceTemplate(social.postTemplates?.[selectedTemplateIndex] || '', {
+    product: selectedProduct.name,
+    description: selectedProduct.description,
+    rate: selectedProduct.rate,
+    term: selectedProduct.term,
+    amount: selectedProduct.amount,
+    phone: config?.phone,
+    website: 'https://zentrocapitalgroup.com',
+  });
 
   const messengerReady = Boolean(status?.connected && status?.configured);
   const pixelReady = /^\d{5,30}$/.test(String(social.metaPixelId || '').trim());
@@ -444,7 +464,7 @@ export default function FacebookAdmin() {
 
     {notice && <Notice type={notice.type} url={notice.url}>{notice.text}</Notice>}
 
-    <nav className="zf-tabs">{VIEWS.map(({ id, label, icon: Icon }) => <button type="button" key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}><Icon size={16} />{label}</button>)}</nav>
+    <nav className="zf-tabs">{VIEWS.map(({ id, label, icon }) => <button type="button" key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{createElement(icon, { size: 16 })}{label}</button>)}</nav>
 
     {view === 'connection' && <div className="zf-grid connection">
       <section className="zf-panel">
@@ -610,17 +630,41 @@ export default function FacebookAdmin() {
         </aside>
       </div>
 
-      <section className="zf-panel zf-post-settings">
-        <div className="zf-panel-head"><div><span>Scheduler</span><h2>Өдөр тутмын нийтлэл</h2></div><CalendarClock size={20} /></div>
-        <div className="zf-schedule-options">
-          <Toggle checked={social.dailyPostEnabled} onChange={value => change('dailyPostEnabled', value)} label="Өдөр бүр автоматаар постлох" detail="Тухайн өдөр амжилттай нийтэлсэн бол давтан постлохгүй" />
-          <Toggle checked={social.postUseProductImage} onChange={value => change('postUseProductImage', value)} label="Бүтээгдэхүүний зураг ашиглах" detail="Веб админаас оруулсан эхний зургийг сонгоно" />
-          <label className="zf-schedule-cta"><span><b>Автомат постын товч</b><small>Өдөр тутмын пост бүрт ашиглана</small></span><select className="z-select" value={social.postCtaType || 'MESSAGE_PAGE'} onChange={event => change('postCtaType', event.target.value)}><option value="MESSAGE_PAGE">Send Message</option><option value="APPLY_NOW">Apply Now</option><option value="NONE">Товчгүй</option></select></label>
+      <section className="zf-template-studio">
+        <div className="zf-panel-head"><div><span>Content library</span><h2>Постын загвар сонгох</h2></div><CalendarClock size={20} /></div>
+        <div className="zf-automation-controls">
+          <Toggle checked={social.dailyPostEnabled} onChange={value => change('dailyPostEnabled', value)} label="Баталсан постыг автоматаар нийтлэх" detail="Пост бүрийн сонгосон цагийг Asia/Ulaanbaatar бүсээр шалгана" />
+          <Toggle checked={social.postUseProductImage} onChange={value => change('postUseProductImage', value)} label="Бүтээгдэхүүний зураг ашиглах" detail="Зурагт постод веб админы бүтээгдэхүүний зургийг санал болгоно" />
+          <label className="zf-schedule-cta"><span><b>Автомат постын үйлдэл</b><small>Төлөвлөсөн пост бүрийн үндсэн CTA</small></span><select className="z-select" value={social.postCtaType || 'MESSAGE_PAGE'} onChange={event => change('postCtaType', event.target.value)}><option value="MESSAGE_PAGE">Send Message</option><option value="APPLY_NOW">Apply Now</option><option value="NONE">Товчгүй</option></select></label>
         </div>
-        <div className="zf-time-grid"><label><span className="z-label">Постлох цаг</span><input className="z-input" type="time" value={social.postTime} onChange={event => change('postTime', event.target.value)} /></label><label><span className="z-label">Чатын чиглэл</span><select className="z-select" value={social.postDefaultTopic || 'loan'} onChange={event => change('postDefaultTopic', event.target.value)}><option value="loan">Зээлийн чат</option><option value="car">Машины чат</option><option value="general">Үндсэн чат</option></select></label><label><span className="z-label">Цагийн бүс</span><select className="z-select" value={social.postTimezone} onChange={event => change('postTimezone', event.target.value)}><option value="Asia/Ulaanbaatar">Asia/Ulaanbaatar</option></select></label></div>
-        <div className="zf-template-list">{social.postTemplates.map((template, index) => <div key={index}><span>Загвар {index + 1}</span><textarea className="z-input" rows={7} value={template} onChange={event => updateTemplate(index, event.target.value)} /><button type="button" title="Загвар устгах" onClick={() => removeTemplate(index)} disabled={social.postTemplates.length <= 1}><Trash2 size={14} /></button></div>)}</div>
-        <button className="z-btn z-btn-secondary" type="button" onClick={addTemplate} disabled={social.postTemplates.length >= 12}><Plus size={14} /> Загвар нэмэх</button>
+        <div className="zf-template-picker" role="tablist" aria-label="Facebook постын загвар">
+          {social.postTemplates.map((template, index) => <button type="button" role="tab" aria-selected={selectedTemplateIndex === index} className={selectedTemplateIndex === index ? 'active' : ''} onClick={() => setSelectedTemplateIndex(index)} key={index}><span>Загвар {index + 1}</span><p>{replaceTemplate(template, { product: selectedProduct.name, description: selectedProduct.description, rate: selectedProduct.rate, term: selectedProduct.term, amount: selectedProduct.amount, phone: config?.phone, website: 'zentrocapitalgroup.com' }).slice(0, 150)}</p>{selectedTemplateIndex === index && <Check size={14} />}</button>)}
+          <button className="add" type="button" onClick={addTemplate} disabled={social.postTemplates.length >= 12}><Plus size={16} /><span>Шинэ загвар</span></button>
+        </div>
+        <div className="zf-template-editor">
+          <div><label className="z-label">Сонгосон загварын текст</label><textarea className="z-input" rows={9} value={social.postTemplates[selectedTemplateIndex] || ''} onChange={event => updateTemplate(selectedTemplateIndex, event.target.value)} /></div>
+          <aside><span>Бодит утгатай харагдац</span><pre>{selectedTemplatePreview}</pre></aside>
+        </div>
+        <div className="zf-template-actions">
+          <button className="z-btn z-btn-primary" type="button" onClick={() => setManualMessage(selectedTemplatePreview)}><Send size={14} /> Гараар нийтлэх хэсэгт ашиглах</button>
+          <button className="z-btn z-btn-secondary" type="button" onClick={() => removeTemplate(selectedTemplateIndex)} disabled={social.postTemplates.length <= 1}><Trash2 size={14} /> Сонгосон загвар устгах</button>
+        </div>
       </section>
+
+      <FacebookDailyPlanner
+        config={config}
+        social={social}
+        selectedTemplateIndex={selectedTemplateIndex}
+        onSocialChange={nextSocial => {
+          setSocial(nextSocial);
+          setConfig(current => current ? { ...current, social: nextSocial } : current);
+        }}
+        onNotice={setNotice}
+        onPublished={post => {
+          if (post) setPosts(current => [post, ...current.filter(item => item._id !== post._id)]);
+          refreshActiveListings();
+        }}
+      />
 
       <section className="zf-history">
         <div className="zf-panel-head"><div><span>History</span><h2>Нийтлэлийн түүх</h2></div><Clock3 size={19} /></div>
