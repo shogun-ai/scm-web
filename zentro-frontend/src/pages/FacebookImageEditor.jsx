@@ -20,6 +20,7 @@ import {
   Plus,
   RefreshCw,
   Shapes,
+  SlidersHorizontal,
   Sparkles,
   Square,
   Star,
@@ -668,6 +669,7 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [mobileView, setMobileView] = useState('canvas');
   const dimensions = useMemo(() => format === 'portrait' ? { width: 1080, height: 1350 } : { width: 1080, height: 1080 }, [format]);
   const activeLayer = layers.find(layer => layer.id === selected) || layers[0];
 
@@ -879,15 +881,22 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
 
   return <div className="zf-design-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="zf-design-dialog" role="dialog" aria-modal="true" aria-label="Facebook зургийн дизайн editor">
-      <header><div><span>Visual editor</span><h2>Зар сурталчилгааны зураг</h2></div><button type="button" onClick={onClose} title="Хаах"><X size={18} /></button></header>
-      <div className="zf-design-workspace">
+      <header><div><span>Visual editor</span><h2>Зар сурталчилгааны зураг</h2></div><button type="button" onClick={onClose} title="Хаах" aria-label="Editor хаах"><X size={18} /></button></header>
+      <div className="zf-design-mobile-switch" role="tablist" aria-label="Editor-ийн харагдац">
+        <button type="button" role="tab" aria-selected={mobileView === 'canvas'} className={mobileView === 'canvas' ? 'active' : ''} onClick={() => setMobileView('canvas')}><ImageIcon size={15} /> Зураг</button>
+        <button type="button" role="tab" aria-selected={mobileView === 'controls'} className={mobileView === 'controls' ? 'active' : ''} onClick={() => setMobileView('controls')}><SlidersHorizontal size={15} /> Тохиргоо</button>
+      </div>
+      <div className={`zf-design-workspace is-${mobileView}`}>
         <div className="zf-design-stage">
           <div className="zf-design-stagebar"><div className="zf-design-segment"><button type="button" className={format === 'square' ? 'active' : ''} onClick={() => setFormat('square')}>1:1</button><button type="button" className={format === 'portrait' ? 'active' : ''} onClick={() => setFormat('portrait')}>4:5</button></div><span><LayoutGrid size={13} /> {layers.length} layer</span></div>
-          <canvas ref={canvasRef} style={{ aspectRatio: `${dimensions.width} / ${dimensions.height}` }} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} />
+          <div className="zf-design-canvas-viewport">
+            <canvas ref={canvasRef} style={{ aspectRatio: `${dimensions.width} / ${dimensions.height}` }} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} />
+          </div>
         </div>
 
         <aside className="zf-design-controls">
-          <div className="zf-design-variant"><span>Дизайны хувилбар</span><button type="button" onClick={() => applyVariant(variant + 1)}><RefreshCw size={14} /> {String(variant + 1).padStart(2, '0')}/{DESIGN_VARIANT_COUNT}</button></div>
+          <div className="zf-design-controls-top"><div className="zf-design-variant"><span>Дизайны хувилбар</span><button type="button" onClick={() => applyVariant(variant + 1)}><RefreshCw size={14} /> {String(variant + 1).padStart(2, '0')}/{DESIGN_VARIANT_COUNT}</button></div></div>
+          <div className="zf-design-controls-scroll">
 
           <section className="zf-design-add-panel">
             <span className="zf-design-section-title">Нэмэх</span>
@@ -960,9 +969,11 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
             <div className="zf-design-control-grid"><label><small>Эхлэх</small><input type="color" value={background.overlayColor} onChange={event => setBackground(current => ({ ...current, overlayColor: event.target.value }))} /></label>{background.overlayGradientEnabled && <label><small>Төгсөх</small><input type="color" value={background.overlayColor2} onChange={event => setBackground(current => ({ ...current, overlayColor2: event.target.value }))} /></label>}</div>
             {background.overlayGradientEnabled && <RangeControl label="Уусалтын өнцөг" value={background.overlayGradientAngle} min={0} max={360} onChange={value => setBackground(current => ({ ...current, overlayGradientAngle: value }))} suffix="°" />}
           </section>
-
-          {error && <small className="zf-design-error">{error}</small>}
-          <button className="z-btn z-btn-primary zf-design-export" type="button" onClick={exportDesign} disabled={busy || !backgroundImage}>{busy ? <LoaderCircle className="animate-spin" size={15} /> : <Download size={15} />} {busy ? 'Оруулж байна...' : 'PNG болгож постод ашиглах'}</button>
+          </div>
+          <footer className="zf-design-controls-footer">
+            {error && <small className="zf-design-error">{error}</small>}
+            <button className="z-btn z-btn-primary zf-design-export" type="button" onClick={exportDesign} disabled={busy || !backgroundImage}>{busy ? <LoaderCircle className="animate-spin" size={15} /> : <Download size={15} />} {busy ? 'Оруулж байна...' : 'PNG болгож постод ашиглах'}</button>
+          </footer>
         </aside>
       </div>
     </section>
