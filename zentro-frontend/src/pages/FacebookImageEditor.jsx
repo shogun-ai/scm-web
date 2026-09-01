@@ -19,6 +19,8 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  RotateCcw,
+  RotateCw,
   Shapes,
   SlidersHorizontal,
   Sparkles,
@@ -100,6 +102,66 @@ function clamp(value, min, max) {
   return Math.min(Math.max(Number(value) || 0, min), max);
 }
 
+function normalizeRotation(value) {
+  return ((Number(value) || 0) % 360 + 360) % 360;
+}
+
+function rotatePoint(point, center, degrees) {
+  const radians = (degrees * Math.PI) / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  return {
+    x: center.x + dx * cosine - dy * sine,
+    y: center.y + dx * sine + dy * cosine,
+  };
+}
+
+function rotateVector(vector, degrees) {
+  const radians = (degrees * Math.PI) / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  return {
+    x: vector.x * cosine - vector.y * sine,
+    y: vector.x * sine + vector.y * cosine,
+  };
+}
+
+function boxCenter(box) {
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+function pointInRotatedBox(point, box, padding = 0) {
+  const local = rotatePoint(point, boxCenter(box), -normalizeRotation(box.rotation));
+  return local.x >= box.x - padding
+    && local.x <= box.x + box.width + padding
+    && local.y >= box.y - padding
+    && local.y <= box.y + box.height + padding;
+}
+
+function selectionHandles(box) {
+  const center = boxCenter(box);
+  const rotation = normalizeRotation(box.rotation);
+  const frame = {
+    left: box.x - 8,
+    right: box.x + box.width + 8,
+    top: box.y - 8,
+    bottom: box.y + box.height + 8,
+  };
+  const transform = point => rotatePoint(point, center, rotation);
+  return {
+    center,
+    corners: [
+      { corner: 'nw', ...transform({ x: frame.left, y: frame.top }) },
+      { corner: 'ne', ...transform({ x: frame.right, y: frame.top }) },
+      { corner: 'sw', ...transform({ x: frame.left, y: frame.bottom }) },
+      { corner: 'se', ...transform({ x: frame.right, y: frame.bottom }) },
+    ],
+    rotate: transform({ x: center.x, y: frame.top - 48 }),
+  };
+}
+
 function splitLines(context, text, maxWidth) {
   const paragraphs = String(text || '').split('\n');
   const lines = [];
@@ -177,15 +239,20 @@ function drawCover(context, image, width, height, background) {
   context.drawImage(image, x, y, drawWidth, drawHeight);
 }
 
-function drawContained(context, image, x, y, width, height) {
+function containedBounds(image, x, y, width, height) {
   if (!image?.naturalWidth || !image?.naturalHeight) return { x, y, width, height };
   const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight);
   const drawWidth = image.naturalWidth * scale;
   const drawHeight = image.naturalHeight * scale;
   const drawX = x;
   const drawY = y + (height - drawHeight) / 2;
-  context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
   return { x: drawX, y: drawY, width: drawWidth, height: drawHeight };
+}
+
+function drawContained(context, image, x, y, width, height) {
+  const bounds = containedBounds(image, x, y, width, height);
+  if (image?.naturalWidth && image?.naturalHeight) context.drawImage(image, bounds.x, bounds.y, bounds.width, bounds.height);
+  return bounds;
 }
 
 function paintForBox(context, layer, x, y, width, height) {
@@ -225,29 +292,29 @@ function drawLayerBorder(context, layer, bounds, radius = 0) {
 function createInitialLayers({ headline, subtext, cta }) {
   return [
     {
-      id: 'logo', type: 'logo', name: 'Лого', visible: true, x: .07, y: .06, width: .28, height: .09,
+      id: 'logo', type: 'logo', name: 'Лого', visible: true, x: .07, y: .06, width: .28, height: .09, rotation: 0,
       color: '#ffffff', gradientColor: '#c8f43d', gradientEnabled: false, gradientAngle: 0,
       recolor: false, opacity: 1, borderEnabled: false, borderColor: '#ffffff', borderWidth: 2, borderStyle: 'solid',
     },
     {
-      id: 'accent', type: 'shape', shape: 'pill', name: 'Онцлох зураас', visible: true, x: .07, y: .19, width: .18, height: .012,
+      id: 'accent', type: 'shape', shape: 'pill', name: 'Онцлох зураас', visible: true, x: .07, y: .19, width: .18, height: .012, rotation: 0,
       color: '#c8f43d', gradientColor: '#76df3f', gradientEnabled: true, gradientAngle: 0,
       opacity: 1, borderEnabled: false, borderColor: '#ffffff', borderWidth: 2, borderStyle: 'solid', radius: 99,
     },
     {
-      id: 'headline', type: 'text', name: 'Үндсэн гарчиг', visible: true, x: .07, y: .25, width: .82,
+      id: 'headline', type: 'text', name: 'Үндсэн гарчиг', visible: true, x: .07, y: .25, width: .82, rotation: 0,
       size: 76, color: '#ffffff', gradientColor: '#c8f43d', gradientEnabled: false, gradientAngle: 0,
       text: headline || 'Машинаа унаад санхүүгийн боломжоо нэмэгдүүл', font: FONT_OPTIONS[0].value, weight: 900, align: 'left', lineHeight: 1.04,
       opacity: 1, borderEnabled: false, borderColor: '#101310', borderWidth: 2, borderStyle: 'solid',
     },
     {
-      id: 'subtext', type: 'text', name: 'Тайлбар', visible: true, x: .07, y: .56, width: .72,
+      id: 'subtext', type: 'text', name: 'Тайлбар', visible: true, x: .07, y: .56, width: .72, rotation: 0,
       size: 29, color: '#e5e8e1', gradientColor: '#c8f43d', gradientEnabled: false, gradientAngle: 0,
       text: subtext || 'Нөхцөлөө судалж, өөрт тохирох шийдлээ сонгоорой.', font: FONT_OPTIONS[0].value, weight: 650, align: 'left', lineHeight: 1.28,
       opacity: 1, borderEnabled: false, borderColor: '#101310', borderWidth: 2, borderStyle: 'solid',
     },
     {
-      id: 'cta', type: 'button', name: 'CTA товч', visible: true, x: .07, y: .77, width: .42, height: .072,
+      id: 'cta', type: 'button', name: 'CTA товч', visible: true, x: .07, y: .77, width: .42, height: .072, rotation: 0,
       size: 29, color: '#c8f43d', gradientColor: '#76df3f', gradientEnabled: true, gradientAngle: 0,
       textColor: '#101310', text: cta || 'Дэлгэрэнгүй мэдээлэл авах', font: FONT_OPTIONS[0].value, weight: 850, radius: 10,
       opacity: 1, borderEnabled: false, borderColor: '#ffffff', borderWidth: 2, borderStyle: 'solid',
@@ -257,7 +324,7 @@ function createInitialLayers({ headline, subtext, cta }) {
 
 function makeTextLayer(index = 1) {
   return {
-    id: nextLayerId('text'), type: 'text', name: `Нэмэлт текст ${index}`, visible: true, x: .52, y: .68, width: .40,
+    id: nextLayerId('text'), type: 'text', name: `Нэмэлт текст ${index}`, visible: true, x: .52, y: .68, width: .40, rotation: 0,
     size: 38, color: '#ffffff', gradientColor: '#c8f43d', gradientEnabled: false, gradientAngle: 0,
     text: 'Шинэ текст', font: FONT_OPTIONS[0].value, weight: 750, align: 'left', lineHeight: 1.16,
     opacity: 1, borderEnabled: false, borderColor: '#101310', borderWidth: 2, borderStyle: 'solid',
@@ -267,7 +334,7 @@ function makeTextLayer(index = 1) {
 function makeShapeLayer(shape) {
   return {
     id: nextLayerId(shape), type: 'shape', shape, name: SHAPE_LIBRARY.find(item => item.kind === shape)?.label || 'Дүрс', visible: true,
-    x: .76, y: .12, width: shape === 'pill' ? .18 : .14, height: shape === 'pill' ? .025 : .12,
+    x: .76, y: .12, width: shape === 'pill' ? .18 : .14, height: shape === 'pill' ? .025 : .12, rotation: 0,
     color: '#c8f43d', gradientColor: '#20d6a2', gradientEnabled: true, gradientAngle: 35, radius: shape === 'pill' ? 99 : 12,
     opacity: .92, borderEnabled: false, borderColor: '#ffffff', borderWidth: 3, borderStyle: 'solid',
   };
@@ -275,7 +342,7 @@ function makeShapeLayer(shape) {
 
 function makeLineLayer() {
   return {
-    id: nextLayerId('line'), type: 'line', name: 'Зураас', visible: true, x: .56, y: .42, width: .36, height: .02,
+    id: nextLayerId('line'), type: 'line', name: 'Зураас', visible: true, x: .56, y: .42, width: .36, height: .02, rotation: 0,
     color: '#c8f43d', gradientColor: '#20d6a2', gradientEnabled: true, gradientAngle: 0, strokeWidth: 8, lineStyle: 'solid',
     opacity: 1, borderEnabled: false, borderColor: '#ffffff', borderWidth: 3, borderStyle: 'solid',
   };
@@ -284,7 +351,7 @@ function makeLineLayer() {
 function makeIconLayer(icon) {
   return {
     id: nextLayerId(icon), type: 'icon', icon, name: ICON_LIBRARY.find(item => item.kind === icon)?.label || 'Icon', visible: true,
-    x: .82, y: .28, width: .08, height: .08,
+    x: .82, y: .28, width: .08, height: .08, rotation: 0,
     color: '#c8f43d', gradientColor: '#20d6a2', gradientEnabled: true, gradientAngle: 45, strokeWidth: 6,
     opacity: 1, borderEnabled: false, borderColor: '#ffffff', borderWidth: 2, borderStyle: 'solid',
   };
@@ -292,7 +359,7 @@ function makeIconLayer(icon) {
 
 function makeTableLayer(index = 1) {
   return {
-    id: nextLayerId('table'), type: 'table', name: `Хүснэгт ${index}`, visible: true, x: .08, y: .46, width: .84, height: .26,
+    id: nextLayerId('table'), type: 'table', name: `Хүснэгт ${index}`, visible: true, x: .08, y: .46, width: .84, height: .26, rotation: 0,
     rows: 3, columns: 2, rowHeight: 72, tableStyle: 'grid', radius: 9,
     text: 'Үзүүлэлт|Нөхцөл\nЗээлийн хэмжээ|Үнэлгээнээс хамаарна\nХугацаа|Гэрээгээр тохирно',
     font: FONT_OPTIONS[0].value, size: 25, weight: 700,
@@ -575,6 +642,41 @@ function drawLogoLayer(context, layer, logoImage, canvasWidth, canvasHeight) {
   return bounds;
 }
 
+function measureLayerBounds(context, layer, logoImage, canvasWidth, canvasHeight) {
+  const x = layer.x * canvasWidth;
+  const y = layer.y * canvasHeight;
+  const width = layer.width * canvasWidth;
+  if (layer.type === 'text') {
+    const lineHeight = layer.size * (Number(layer.lineHeight) || 1.15);
+    context.save();
+    context.font = `${layer.weight || 700} ${layer.size}px ${layer.font || FONT_OPTIONS[0].value}`;
+    const lines = splitLines(context, layer.text, width).slice(0, 12);
+    context.restore();
+    return { x, y, width, height: Math.max(lineHeight, lines.length * lineHeight) };
+  }
+  if (layer.type === 'button') {
+    return { x, y, width, height: Math.max(layer.height * canvasHeight, layer.size * 2.15) };
+  }
+  if (layer.type === 'shape') {
+    return { x, y, width, height: Math.max(8, layer.height * canvasHeight) };
+  }
+  if (layer.type === 'line') {
+    return { x, y, width, height: Math.max(12, layer.height * canvasHeight) };
+  }
+  if (layer.type === 'icon') {
+    const size = Math.max(40, width);
+    return { x, y, width: size, height: size };
+  }
+  if (layer.type === 'table') {
+    return { x, y, width, height: layer.rows * (Number(layer.rowHeight) || 70) };
+  }
+  if (layer.type === 'logo') {
+    const height = Math.max(48, layer.height * canvasHeight);
+    return logoImage ? containedBounds(logoImage, x, y, width, height) : { x, y, width, height };
+  }
+  return { x, y, width, height: Math.max(12, (layer.height || .08) * canvasHeight) };
+}
+
 function drawDesign({ canvas, backgroundImage, logoImage, layers, background, selected, showSelection }) {
   const context = canvas.getContext('2d');
   const { width, height } = canvas;
@@ -593,40 +695,78 @@ function drawDesign({ canvas, backgroundImage, logoImage, layers, background, se
 
   layers.forEach(layer => {
     if (!layer.visible) return;
+    const box = measureLayerBounds(context, layer, logoImage, width, height);
+    const center = boxCenter(box);
+    const rotation = normalizeRotation(layer.rotation);
     context.save();
     context.globalAlpha = clamp(layer.opacity ?? 1, 0.05, 1);
-    let box = null;
-    if (layer.type === 'logo') box = drawLogoLayer(context, layer, logoImage, width, height);
-    else if (layer.type === 'text') box = drawTextLayer(context, layer, width, height);
-    else if (layer.type === 'button') box = drawButtonLayer(context, layer, width, height);
-    else if (layer.type === 'shape') box = drawShapeLayer(context, layer, width, height);
-    else if (layer.type === 'line') box = drawLineLayer(context, layer, width, height);
-    else if (layer.type === 'icon') box = drawIconLayer(context, layer, width, height);
-    else if (layer.type === 'table') box = drawTableLayer(context, layer, width, height);
+    if (rotation) {
+      context.translate(center.x, center.y);
+      context.rotate((rotation * Math.PI) / 180);
+      context.translate(-center.x, -center.y);
+    }
+    if (layer.type === 'logo') drawLogoLayer(context, layer, logoImage, width, height);
+    else if (layer.type === 'text') drawTextLayer(context, layer, width, height);
+    else if (layer.type === 'button') drawButtonLayer(context, layer, width, height);
+    else if (layer.type === 'shape') drawShapeLayer(context, layer, width, height);
+    else if (layer.type === 'line') drawLineLayer(context, layer, width, height);
+    else if (layer.type === 'icon') drawIconLayer(context, layer, width, height);
+    else if (layer.type === 'table') drawTableLayer(context, layer, width, height);
     context.restore();
-    if (box) bounds[layer.id] = box;
+    bounds[layer.id] = { ...box, rotation };
   });
 
   if (showSelection && bounds[selected]) {
     const box = bounds[selected];
+    const center = boxCenter(box);
+    const handles = selectionHandles(box);
     context.save();
+    context.translate(center.x, center.y);
+    context.rotate((normalizeRotation(box.rotation) * Math.PI) / 180);
     context.strokeStyle = '#ffffff';
     context.lineWidth = Math.max(2, width / 360);
     context.setLineDash([12, 8]);
-    context.strokeRect(box.x - 8, box.y - 8, box.width + 16, box.height + 16);
+    context.strokeRect(-box.width / 2 - 8, -box.height / 2 - 8, box.width + 16, box.height + 16);
+    context.setLineDash([]);
+    context.beginPath();
+    context.moveTo(0, -box.height / 2 - 8);
+    context.lineTo(0, -box.height / 2 - 56);
+    context.stroke();
     context.fillStyle = '#c8f43d';
-    [[box.x - 8, box.y - 8], [box.x + box.width + 8, box.y - 8], [box.x - 8, box.y + box.height + 8], [box.x + box.width + 8, box.y + box.height + 8]].forEach(([dotX, dotY]) => {
+    [[-box.width / 2 - 8, -box.height / 2 - 8], [box.width / 2 + 8, -box.height / 2 - 8], [-box.width / 2 - 8, box.height / 2 + 8], [box.width / 2 + 8, box.height / 2 + 8]].forEach(([dotX, dotY]) => {
       context.beginPath();
       context.arc(dotX, dotY, 7, 0, Math.PI * 2);
       context.fill();
     });
+    context.beginPath();
+    context.arc(0, -box.height / 2 - 56, 11, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = '#111310';
+    context.beginPath();
+    context.arc(0, -box.height / 2 - 56, 4, 0, Math.PI * 2);
+    context.fill();
     context.restore();
+    bounds[selected] = { ...box, rotateHandle: handles.rotate };
   }
   return bounds;
 }
 
 function RangeControl({ label, value, min, max, step = 1, onChange, suffix = '' }) {
   return <label className="zf-design-range"><span className="z-label">{label} · {value}{suffix}</span><input type="range" min={min} max={max} step={step} value={value} onChange={event => onChange(Number(event.target.value))} /></label>;
+}
+
+function RotationControl({ value, onChange }) {
+  const rotation = normalizeRotation(value);
+  const setRotation = next => onChange(normalizeRotation(next));
+  return <section className="zf-rotation-control">
+    <div className="zf-rotation-heading"><span>Чиглэл · {Math.round(rotation)}°</span><div>
+      <button type="button" title="15° зүүн эргүүлэх" aria-label="15 градус зүүн эргүүлэх" onClick={() => setRotation(rotation - 15)}><RotateCcw size={14} /></button>
+      <input className="z-input" type="number" min="0" max="359" value={Math.round(rotation)} onChange={event => setRotation(event.target.value)} aria-label="Эргэлтийн өнцөг" />
+      <button type="button" title="15° баруун эргүүлэх" aria-label="15 градус баруун эргүүлэх" onClick={() => setRotation(rotation + 15)}><RotateCw size={14} /></button>
+    </div></div>
+    <input type="range" min="0" max="359" step="1" value={rotation} onChange={event => setRotation(event.target.value)} aria-label="Эргэлтийн өнцөг" />
+    <div className="zf-rotation-presets">{[0, 45, 90, 180, 270].map(angle => <button type="button" className={Math.round(rotation) === angle ? 'active' : ''} onClick={() => setRotation(angle)} key={angle}>{angle}°</button>)}</div>
+  </section>;
 }
 
 function GradientControl({ layer, onChange, label = 'Үндсэн өнгө' }) {
@@ -791,20 +931,23 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
     const point = canvasPoint(event);
     const selectedBox = boundsRef.current[selected];
     if (selectedBox) {
-      const handles = [
-        { corner: 'nw', x: selectedBox.x - 8, y: selectedBox.y - 8 },
-        { corner: 'ne', x: selectedBox.x + selectedBox.width + 8, y: selectedBox.y - 8 },
-        { corner: 'sw', x: selectedBox.x - 8, y: selectedBox.y + selectedBox.height + 8 },
-        { corner: 'se', x: selectedBox.x + selectedBox.width + 8, y: selectedBox.y + selectedBox.height + 8 },
-      ];
-      const handle = handles.find(item => Math.hypot(point.x - item.x, point.y - item.y) <= 24);
+      const handles = selectionHandles(selectedBox);
+      if (activeLayer && Math.hypot(point.x - handles.rotate.x, point.y - handles.rotate.y) <= 28) {
+        dragRef.current = { mode: 'rotate', id: selected, center: handles.center };
+        event.currentTarget.setPointerCapture(event.pointerId);
+        return;
+      }
+      const handle = handles.corners.find(item => Math.hypot(point.x - item.x, point.y - item.y) <= 24);
       if (handle && activeLayer) {
         dragRef.current = { mode: 'resize', id: selected, corner: handle.corner, box: { ...selectedBox }, layer: { ...activeLayer } };
         event.currentTarget.setPointerCapture(event.pointerId);
         return;
       }
     }
-    const hit = Object.entries(boundsRef.current).reverse().find(([, box]) => point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height);
+    const hit = Object.entries(boundsRef.current).reverse().find(([id, box]) => {
+      const layer = layers.find(item => item.id === id);
+      return pointInRotatedBox(point, box, layer?.type === 'line' ? 18 : 0);
+    });
     if (!hit) return;
     const [id, box] = hit;
     setSelected(id);
@@ -816,16 +959,41 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
     if (!dragRef.current) return;
     const point = canvasPoint(event);
     const { id } = dragRef.current;
+    if (dragRef.current.mode === 'rotate') {
+      const { center } = dragRef.current;
+      let rotation = normalizeRotation((Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI + 90);
+      const nearest = Math.round(rotation / 45) * 45;
+      const distance = Math.abs((((rotation - nearest) + 180) % 360) - 180);
+      if (event.shiftKey) rotation = Math.round(rotation / 15) * 15;
+      else if (distance <= 3) rotation = nearest;
+      rotation = normalizeRotation(Math.round(rotation));
+      setLayers(current => current.map(item => item.id === id ? { ...item, rotation } : item));
+      return;
+    }
     if (dragRef.current.mode === 'resize') {
       const { corner, box, layer } = dragRef.current;
-      const right = box.x + box.width;
-      const bottom = box.y + box.height;
-      const fromLeft = corner.endsWith('w');
-      const fromTop = corner.startsWith('n');
-      const nextX = fromLeft ? clamp(point.x, 0, right - 42) : box.x;
-      const nextY = fromTop ? clamp(point.y, 0, bottom - 28) : box.y;
-      const nextWidth = fromLeft ? right - nextX : clamp(point.x - box.x, 42, dimensions.width - box.x);
-      const nextHeight = fromTop ? bottom - nextY : clamp(point.y - box.y, 28, dimensions.height - box.y);
+      const rotation = normalizeRotation(box.rotation);
+      const center = boxCenter(box);
+      const signX = corner.endsWith('e') ? 1 : -1;
+      const signY = corner.startsWith('s') ? 1 : -1;
+      const frameWidth = box.width + 16;
+      const frameHeight = box.height + 16;
+      const fixedCorner = rotatePoint({
+        x: center.x - signX * frameWidth / 2,
+        y: center.y - signY * frameHeight / 2,
+      }, center, rotation);
+      const localDelta = rotateVector({ x: point.x - fixedCorner.x, y: point.y - fixedCorner.y }, -rotation);
+      const nextFrameWidth = clamp(signX * localDelta.x, 58, dimensions.width + 16);
+      const nextFrameHeight = clamp(signY * localDelta.y, 44, dimensions.height + 16);
+      const nextWidth = nextFrameWidth - 16;
+      const nextHeight = nextFrameHeight - 16;
+      const centerOffset = rotateVector({
+        x: signX * nextFrameWidth / 2,
+        y: signY * nextFrameHeight / 2,
+      }, rotation);
+      const nextCenter = { x: fixedCorner.x + centerOffset.x, y: fixedCorner.y + centerOffset.y };
+      const nextX = clamp(nextCenter.x - nextWidth / 2, 0, dimensions.width - nextWidth);
+      const nextY = clamp(nextCenter.y - nextHeight / 2, 0, dimensions.height - nextHeight);
       const widthRatio = nextWidth / Math.max(1, box.width);
       const heightRatio = nextHeight / Math.max(1, box.height);
       setLayers(current => current.map(item => {
@@ -838,7 +1006,7 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
         if (['logo', 'shape', 'button'].includes(item.type)) patch.height = clamp(nextHeight / dimensions.height, .01, .7);
         if (item.type === 'text') patch.size = clamp(Math.round(layer.size * Math.min(widthRatio, heightRatio)), 14, 140);
         if (item.type === 'icon') patch.width = clamp(Math.min(nextWidth, nextHeight) / dimensions.width, .04, .6);
-        if (item.type === 'table') patch.rowHeight = clamp(Math.round(layer.rowHeight * heightRatio), 40, 180);
+        if (item.type === 'table') patch.rowHeight = clamp(Math.round(layer.rowHeight * heightRatio), 20, 180);
         if (item.type === 'line') patch.strokeWidth = clamp(Math.round(layer.strokeWidth * Math.max(.5, heightRatio)), 2, 32);
         return { ...item, ...patch };
       }));
@@ -916,6 +1084,7 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
 
           {activeLayer && <section className="zf-active-layer">
             <div className="zf-design-visible"><span>{activeLayer.name}</span><div><button type="button" title="Доошлуулах" disabled={selectedIndex <= 0} onClick={() => moveLayer(-1)}><ArrowDown size={14} /></button><button type="button" title="Дээшлүүлэх" disabled={selectedIndex >= layers.length - 1} onClick={() => moveLayer(1)}><ArrowUp size={14} /></button><button type="button" onClick={() => updateLayer({ visible: !activeLayer.visible })}>{activeLayer.visible ? <Eye size={14} /> : <EyeOff size={14} />}{activeLayer.visible ? 'Харагдана' : 'Нуусан'}</button></div></div>
+            <RotationControl value={activeLayer.rotation || 0} onChange={rotation => updateLayer({ rotation })} />
 
             {activeLayer.type === 'logo' && <div className="zf-design-mode-row"><span>Логоны өнгө</span><div><button type="button" className={!activeLayer.recolor ? 'active' : ''} onClick={() => updateLayer({ recolor: false })}>Эх өнгө</button><button type="button" className={activeLayer.recolor ? 'active' : ''} onClick={() => updateLayer({ recolor: true })}>Өнгө солих</button></div></div>}
 
