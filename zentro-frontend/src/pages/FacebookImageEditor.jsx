@@ -17,6 +17,7 @@ import {
   MessageCircle,
   Minus,
   Phone,
+  Plus,
   RefreshCw,
   Shapes,
   Sparkles,
@@ -30,6 +31,8 @@ import {
 
 const DESIGN_VARIANT_COUNT = 24;
 const MAX_LAYERS = 40;
+const MAX_TABLE_ROWS = 30;
+const MAX_TABLE_COLUMNS = 12;
 
 const DESIGN_PALETTES = [
   { text: '#ffffff', muted: '#e5e8e1', accent: '#c8f43d', accent2: '#76df3f', buttonText: '#101310', overlay: '#101310', overlay2: '#24301d' },
@@ -480,8 +483,20 @@ function drawIconLayer(context, layer, canvasWidth, canvasHeight) {
 }
 
 function tableCells(layer) {
-  const rows = String(layer.text || '').split('\n').map(row => row.split('|').map(cell => cell.trim()));
+  const rows = String(layer.text || '').split('\n').map(row => row.split('|'));
   return Array.from({ length: layer.rows }, (_, rowIndex) => Array.from({ length: layer.columns }, (_, columnIndex) => rows[rowIndex]?.[columnIndex] || ''));
+}
+
+function serializeTableCells(cells) {
+  return cells.map(row => row.join('|')).join('\n');
+}
+
+function resizedTableCells(layer, nextRows, nextColumns) {
+  const current = tableCells(layer);
+  return Array.from({ length: nextRows }, (_, rowIndex) => Array.from(
+    { length: nextColumns },
+    (_, columnIndex) => current[rowIndex]?.[columnIndex] || '',
+  ));
 }
 
 function drawTableLayer(context, layer, canvasWidth, canvasHeight) {
@@ -689,6 +704,25 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
 
   const updateLayer = patch => setLayers(current => current.map(layer => layer.id === selected ? { ...layer, ...patch } : layer));
 
+  const resizeActiveTable = (requestedRows, requestedColumns) => {
+    if (activeLayer?.type !== 'table') return;
+    const rows = clamp(Math.round(requestedRows), 1, MAX_TABLE_ROWS);
+    const columns = clamp(Math.round(requestedColumns), 1, MAX_TABLE_COLUMNS);
+    const cells = resizedTableCells(activeLayer, rows, columns);
+    const availableHeight = dimensions.height * Math.max(.2, .95 - activeLayer.y);
+    const fittedRowHeight = rows > activeLayer.rows
+      ? Math.min(activeLayer.rowHeight, Math.max(20, Math.floor(availableHeight / rows)))
+      : activeLayer.rowHeight;
+    updateLayer({ rows, columns, rowHeight: fittedRowHeight, text: serializeTableCells(cells) });
+  };
+
+  const updateActiveTableCell = (rowIndex, columnIndex, value) => {
+    if (activeLayer?.type !== 'table') return;
+    const cells = tableCells(activeLayer);
+    cells[rowIndex][columnIndex] = value.replace(/[|\r\n]/g, ' ');
+    updateLayer({ text: serializeTableCells(cells) });
+  };
+
   const addLayer = layer => {
     if (layers.length >= MAX_LAYERS) {
       setError(`Нэг зурагт ${MAX_LAYERS} хүртэл layer ашиглана.`);
@@ -894,13 +928,16 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
             {activeLayer.type === 'icon' && <><label><span className="z-label">Icon</span><select className="z-select" value={activeLayer.icon} onChange={event => updateLayer({ icon: event.target.value, name: ICON_LIBRARY.find(item => item.kind === event.target.value)?.label || activeLayer.name })}>{ICON_LIBRARY.map(item => <option value={item.kind} key={item.kind}>{item.label}</option>)}</select></label><RangeControl label="Icon зураас" value={activeLayer.strokeWidth} min={2} max={18} onChange={value => updateLayer({ strokeWidth: value })} /></>}
 
             {activeLayer.type === 'table' && <>
-              <label><span className="z-label">Нүдний текст · мөр бүр шинэ мөр, багана | тэмдэг</span><textarea className="z-input" rows="5" value={activeLayer.text} onChange={event => updateLayer({ text: event.target.value })} /></label>
+              <div className="zf-table-dimensions">
+                <div><b>Мөр</b><button type="button" title="Сүүлийн мөр хасах" onClick={() => resizeActiveTable(activeLayer.rows - 1, activeLayer.columns)} disabled={activeLayer.rows <= 1}><Minus size={13} /></button><input className="z-input" type="number" min="1" max={MAX_TABLE_ROWS} value={activeLayer.rows} onChange={event => resizeActiveTable(event.target.value, activeLayer.columns)} /><button type="button" onClick={() => resizeActiveTable(activeLayer.rows + 1, activeLayer.columns)} disabled={activeLayer.rows >= MAX_TABLE_ROWS}><Plus size={13} /> Мөр нэмэх</button></div>
+                <div><b>Багана</b><button type="button" title="Сүүлийн багана хасах" onClick={() => resizeActiveTable(activeLayer.rows, activeLayer.columns - 1)} disabled={activeLayer.columns <= 1}><Minus size={13} /></button><input className="z-input" type="number" min="1" max={MAX_TABLE_COLUMNS} value={activeLayer.columns} onChange={event => resizeActiveTable(activeLayer.rows, event.target.value)} /><button type="button" onClick={() => resizeActiveTable(activeLayer.rows, activeLayer.columns + 1)} disabled={activeLayer.columns >= MAX_TABLE_COLUMNS}><Plus size={13} /> Багана нэмэх</button></div>
+              </div>
+              <div className="zf-table-cell-editor" style={{ '--zf-table-columns': activeLayer.columns }}>{tableCells(activeLayer).flatMap((row, rowIndex) => row.map((cell, columnIndex) => <input className="z-input" value={cell} onChange={event => updateActiveTableCell(rowIndex, columnIndex, event.target.value)} aria-label={`${rowIndex + 1}-р мөр ${columnIndex + 1}-р багана`} placeholder={`${rowIndex + 1}:${columnIndex + 1}`} key={`${rowIndex}-${columnIndex}`} />))}</div>
+              <details className="zf-table-raw"><summary>Текстээр бөөнөөр засах</summary><textarea className="z-input" rows="5" value={activeLayer.text} onChange={event => updateLayer({ text: event.target.value })} /></details>
               <div className="zf-design-control-grid"><label><span className="z-label">Загвар</span><select className="z-select" value={activeLayer.tableStyle} onChange={event => updateLayer({ tableStyle: event.target.value })}><option value="grid">Сонгодог хүснэгт</option><option value="striped">Үелсэн мөр</option><option value="minimal">Минимал зураас</option><option value="cards">Тусдаа нүд</option></select></label><label><span className="z-label">Фонт</span><select className="z-select" value={activeLayer.font} onChange={event => updateLayer({ font: event.target.value })}>{FONT_OPTIONS.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label></div>
               <div className="zf-design-control-grid"><label><span className="z-label">Толгойн өнгө</span><input type="color" value={activeLayer.headerColor} onChange={event => updateLayer({ headerColor: event.target.value })} /></label><label><span className="z-label">Текстийн өнгө</span><input type="color" value={activeLayer.textColor} onChange={event => updateLayer({ textColor: event.target.value, headerTextColor: event.target.value })} /></label></div>
-              <RangeControl label="Мөр" value={activeLayer.rows} min={2} max={8} onChange={value => updateLayer({ rows: value })} />
-              <RangeControl label="Багана" value={activeLayer.columns} min={2} max={5} onChange={value => updateLayer({ columns: value })} />
-              <RangeControl label="Мөрийн өндөр" value={activeLayer.rowHeight} min={48} max={140} onChange={value => updateLayer({ rowHeight: value })} />
-              <RangeControl label="Үсгийн хэмжээ" value={activeLayer.size} min={14} max={48} onChange={value => updateLayer({ size: value })} />
+              <RangeControl label="Мөрийн өндөр" value={activeLayer.rowHeight} min={20} max={140} onChange={value => updateLayer({ rowHeight: value })} />
+              <RangeControl label="Үсгийн хэмжээ" value={activeLayer.size} min={10} max={48} onChange={value => updateLayer({ size: value })} />
             </>}
 
             {activeLayer.type === 'button' && <><label><span className="z-label">Текстийн өнгө</span><input type="color" value={activeLayer.textColor} onChange={event => updateLayer({ textColor: event.target.value })} /></label><RangeControl label="Булан" value={activeLayer.radius} min={0} max={60} onChange={value => updateLayer({ radius: value })} /></>}
