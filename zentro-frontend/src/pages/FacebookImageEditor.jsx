@@ -36,6 +36,13 @@ const DESIGN_VARIANT_COUNT = 24;
 const MAX_LAYERS = 40;
 const MAX_TABLE_ROWS = 30;
 const MAX_TABLE_COLUMNS = 12;
+const REQUIRED_LAYER_META = [
+  { id: 'logo', label: 'Лого' },
+  { id: 'conditions', label: 'Нөхцөл' },
+  { id: 'requirements', label: 'Шаардлага' },
+  { id: 'address', label: 'Хаяг' },
+  { id: 'phone', label: 'Утас' },
+];
 
 const DESIGN_PALETTES = [
   { text: '#ffffff', muted: '#e5e8e1', accent: '#c8f43d', accent2: '#76df3f', buttonText: '#101310', overlay: '#101310', overlay2: '#24301d' },
@@ -45,12 +52,12 @@ const DESIGN_PALETTES = [
 ];
 
 const DESIGN_LAYOUTS = [
-  { logo: [.07, .06, .28], accent: [.07, .19, .18], headline: [.07, .25, .82, 76], subtext: [.07, .56, .72, 29], cta: [.07, .77, .42, 29] },
-  { logo: [.63, .06, .30], accent: [.63, .19, .18], headline: [.08, .28, .78, 72], subtext: [.08, .59, .76, 27], cta: [.56, .78, .37, 27] },
-  { logo: [.08, .07, .25], accent: [.08, .22, .12], headline: [.08, .30, .58, 68], subtext: [.08, .63, .55, 26], cta: [.08, .80, .36, 26] },
-  { logo: [.37, .06, .28], accent: [.42, .20, .16], headline: [.12, .28, .76, 70], subtext: [.17, .60, .66, 27], cta: [.31, .79, .38, 27] },
-  { logo: [.07, .06, .28], accent: [.07, .66, .18], headline: [.07, .47, .84, 66], subtext: [.07, .69, .75, 26], cta: [.61, .83, .32, 25] },
-  { logo: [.07, .08, .24], accent: [.72, .08, .19], headline: [.31, .18, .62, 64], subtext: [.31, .54, .61, 25], cta: [.31, .75, .40, 26] },
+  { logo: [.06, .045, .25], accent: [.06, .15, .16], headline: [.06, .19, .88, 60], subtext: [.06, .36, .86, 22], conditions: [.06, .49, .88, 50], requirements: [.06, .615, .88, 18], address: [.06, .81, .60, 18], phone: [.68, .81, .26, 20], cta: [.06, .89, .42, 24] },
+  { logo: [.69, .045, .25], accent: [.06, .15, .16], headline: [.06, .19, .88, 58], subtext: [.06, .36, .86, 22], conditions: [.06, .49, .88, 50], requirements: [.06, .615, .88, 18], address: [.06, .81, .60, 18], phone: [.68, .81, .26, 20], cta: [.54, .89, .40, 24] },
+  { logo: [.06, .045, .23], accent: [.06, .16, .12], headline: [.06, .20, .66, 56], subtext: [.06, .37, .66, 21], conditions: [.06, .49, .88, 50], requirements: [.06, .615, .88, 18], address: [.06, .81, .60, 18], phone: [.68, .81, .26, 20], cta: [.06, .89, .38, 23] },
+  { logo: [.37, .04, .26], accent: [.42, .15, .16], headline: [.10, .19, .80, 58], subtext: [.12, .36, .76, 21], conditions: [.06, .49, .88, 50], requirements: [.10, .615, .80, 18], address: [.10, .81, .56, 18], phone: [.68, .81, .22, 20], cta: [.31, .89, .38, 23] },
+  { logo: [.06, .045, .24], accent: [.55, .15, .18], headline: [.40, .19, .54, 54], subtext: [.40, .35, .54, 20], conditions: [.06, .49, .88, 50], requirements: [.06, .615, .88, 18], address: [.06, .81, .60, 18], phone: [.68, .81, .26, 20], cta: [.56, .89, .38, 23] },
+  { logo: [.06, .045, .23], accent: [.76, .15, .18], headline: [.28, .19, .66, 56], subtext: [.28, .36, .66, 21], conditions: [.06, .49, .88, 50], requirements: [.06, .615, .88, 18], address: [.06, .81, .60, 18], phone: [.68, .81, .26, 20], cta: [.28, .89, .40, 23] },
 ];
 
 const FONT_OPTIONS = [
@@ -100,6 +107,31 @@ function nextLayerId(prefix) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(Number(value) || 0, min), max);
+}
+
+function cleanSingleLine(value, fallback = '') {
+  return String(value || fallback).replace(/[|\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function normalizedRequirementItems(value) {
+  const source = Array.isArray(value) ? value : String(value || '').split(/\r?\n/);
+  const items = source
+    .map(item => String(item || '').replace(/^\s*[-•]\s*/, '').trim())
+    .filter(Boolean);
+  return items.length ? items : [
+    '18 нас хүрсэн Монгол Улсын иргэн байх',
+    'Шаардлагатай баримт бичгийг бүрдүүлэх',
+  ];
+}
+
+function requirementsLayerText(value) {
+  return ['ТАВИГДАХ ШААРДЛАГА', ...normalizedRequirementItems(value).map(item => `• ${item}`)].join('\n');
+}
+
+function requiredLayerReady(layer) {
+  if (!layer?.visible) return false;
+  if (['text', 'table', 'button'].includes(layer.type)) return Boolean(String(layer.text || '').trim());
+  return true;
 }
 
 function normalizeRotation(value) {
@@ -289,37 +321,89 @@ function drawLayerBorder(context, layer, bounds, radius = 0) {
   context.restore();
 }
 
-function createInitialLayers({ headline, subtext, cta }) {
+function createInitialLayers({ headline, subtext, cta, productName, conditions, requirements, address, phone }) {
+  const productLabel = cleanSingleLine(productName, 'Зээлийн бүтээгдэхүүн');
+  const rate = cleanSingleLine(conditions?.rate, 'Нөхцөлөөр');
+  const term = cleanSingleLine(conditions?.term, 'Гэрээгээр');
+  const amount = cleanSingleLine(conditions?.amount, 'Үнэлгээнээс хамаарна');
   return [
     {
-      id: 'logo', type: 'logo', name: 'Лого', visible: true, x: .07, y: .06, width: .28, height: .09, rotation: 0,
+      id: 'logo', requiredKey: 'logo', type: 'logo', name: 'Лого', visible: true, x: .06, y: .045, width: .25, height: .075, rotation: 0,
       color: '#ffffff', gradientColor: '#c8f43d', gradientEnabled: false, gradientAngle: 0,
       recolor: false, opacity: 1, borderEnabled: false, borderColor: '#ffffff', borderWidth: 2, borderStyle: 'solid',
     },
     {
-      id: 'accent', type: 'shape', shape: 'pill', name: 'Онцлох зураас', visible: true, x: .07, y: .19, width: .18, height: .012, rotation: 0,
+      id: 'accent', type: 'shape', shape: 'pill', name: 'Онцлох зураас', visible: true, x: .06, y: .15, width: .16, height: .012, rotation: 0,
       color: '#c8f43d', gradientColor: '#76df3f', gradientEnabled: true, gradientAngle: 0,
       opacity: 1, borderEnabled: false, borderColor: '#ffffff', borderWidth: 2, borderStyle: 'solid', radius: 99,
     },
     {
-      id: 'headline', type: 'text', name: 'Үндсэн гарчиг', visible: true, x: .07, y: .25, width: .82, rotation: 0,
-      size: 76, color: '#ffffff', gradientColor: '#c8f43d', gradientEnabled: false, gradientAngle: 0,
+      id: 'headline', type: 'text', name: 'Үндсэн гарчиг', visible: true, x: .06, y: .19, width: .88, rotation: 0,
+      size: 60, color: '#ffffff', gradientColor: '#c8f43d', gradientEnabled: false, gradientAngle: 0,
       text: headline || 'Машинаа унаад санхүүгийн боломжоо нэмэгдүүл', font: FONT_OPTIONS[0].value, weight: 900, align: 'left', lineHeight: 1.04,
       opacity: 1, borderEnabled: false, borderColor: '#101310', borderWidth: 2, borderStyle: 'solid',
     },
     {
-      id: 'subtext', type: 'text', name: 'Тайлбар', visible: true, x: .07, y: .56, width: .72, rotation: 0,
-      size: 29, color: '#e5e8e1', gradientColor: '#c8f43d', gradientEnabled: false, gradientAngle: 0,
+      id: 'subtext', type: 'text', name: 'Тайлбар', visible: true, x: .06, y: .36, width: .86, rotation: 0,
+      size: 22, color: '#e5e8e1', gradientColor: '#c8f43d', gradientEnabled: false, gradientAngle: 0,
       text: subtext || 'Нөхцөлөө судалж, өөрт тохирох шийдлээ сонгоорой.', font: FONT_OPTIONS[0].value, weight: 650, align: 'left', lineHeight: 1.28,
       opacity: 1, borderEnabled: false, borderColor: '#101310', borderWidth: 2, borderStyle: 'solid',
     },
     {
-      id: 'cta', type: 'button', name: 'CTA товч', visible: true, x: .07, y: .77, width: .42, height: .072, rotation: 0,
-      size: 29, color: '#c8f43d', gradientColor: '#76df3f', gradientEnabled: true, gradientAngle: 0,
+      id: 'conditions', requiredKey: 'conditions', type: 'table', name: `Нөхцөл · ${productLabel}`, visible: true, x: .06, y: .49, width: .88, height: .10, rotation: 0,
+      rows: 2, columns: 3, rowHeight: 50, tableStyle: 'cards', radius: 7,
+      text: `ХҮҮ|ХУГАЦАА|ЗЭЭЛИЙН ХЭМЖЭЭ\n${rate}|${term}|${amount}`,
+      font: FONT_OPTIONS[0].value, size: 18, weight: 750,
+      color: '#1f261d', gradientColor: '#35402e', gradientEnabled: true, gradientAngle: 90,
+      headerColor: '#c8f43d', textColor: '#ffffff', headerTextColor: '#101310',
+      opacity: .96, borderEnabled: false, borderColor: '#c7ccc3', borderWidth: 1, borderStyle: 'solid',
+    },
+    {
+      id: 'requirements', requiredKey: 'requirements', type: 'text', name: `Шаардлага · ${productLabel}`, visible: true, x: .06, y: .615, width: .88, rotation: 0,
+      size: 18, color: '#ffffff', gradientColor: '#c8f43d', gradientEnabled: false, gradientAngle: 0,
+      text: requirementsLayerText(requirements), font: FONT_OPTIONS[0].value, weight: 700, align: 'left', lineHeight: 1.25,
+      opacity: 1, borderEnabled: false, borderColor: '#101310', borderWidth: 2, borderStyle: 'solid',
+    },
+    {
+      id: 'address', requiredKey: 'address', type: 'text', name: 'Хаяг', visible: true, x: .06, y: .81, width: .60, rotation: 0,
+      size: 18, color: '#e5e8e1', gradientColor: '#c8f43d', gradientEnabled: false, gradientAngle: 0,
+      text: `ХАЯГ · ${cleanSingleLine(address, 'Улаанбаатар хот')}`, font: FONT_OPTIONS[0].value, weight: 700, align: 'left', lineHeight: 1.2,
+      opacity: 1, borderEnabled: false, borderColor: '#101310', borderWidth: 2, borderStyle: 'solid',
+    },
+    {
+      id: 'phone', requiredKey: 'phone', type: 'text', name: 'Утас', visible: true, x: .68, y: .81, width: .26, rotation: 0,
+      size: 20, color: '#c8f43d', gradientColor: '#76df3f', gradientEnabled: false, gradientAngle: 0,
+      text: `УТАС · ${cleanSingleLine(phone, '7599-1919')}`, font: FONT_OPTIONS[0].value, weight: 850, align: 'right', lineHeight: 1.2,
+      opacity: 1, borderEnabled: false, borderColor: '#101310', borderWidth: 2, borderStyle: 'solid',
+    },
+    {
+      id: 'cta', type: 'button', name: 'CTA товч', visible: true, x: .06, y: .89, width: .42, height: .06, rotation: 0,
+      size: 24, color: '#c8f43d', gradientColor: '#76df3f', gradientEnabled: true, gradientAngle: 0,
       textColor: '#101310', text: cta || 'Дэлгэрэнгүй мэдээлэл авах', font: FONT_OPTIONS[0].value, weight: 850, radius: 10,
       opacity: 1, borderEnabled: false, borderColor: '#ffffff', borderWidth: 2, borderStyle: 'solid',
     },
   ];
+}
+
+function applyDesignVariantToLayer(layer, value) {
+  const next = ((value % DESIGN_VARIANT_COUNT) + DESIGN_VARIANT_COUNT) % DESIGN_VARIANT_COUNT;
+  const layout = DESIGN_LAYOUTS[next % DESIGN_LAYOUTS.length];
+  const palette = DESIGN_PALETTES[Math.floor(next / DESIGN_LAYOUTS.length)];
+  const placement = layout[layer.id];
+  const sizing = placement?.[3]
+    ? layer.type === 'table' ? { rowHeight: placement[3] } : { size: placement[3] }
+    : {};
+  const base = placement ? { x: placement[0], y: placement[1], width: placement[2], ...sizing } : {};
+  if (layer.id === 'headline') return { ...layer, ...base, color: palette.text, gradientColor: palette.accent };
+  if (layer.id === 'subtext') return { ...layer, ...base, color: palette.muted, gradientColor: palette.accent };
+  if (layer.id === 'conditions') return { ...layer, ...base, color: palette.overlay2, gradientColor: palette.overlay, headerColor: palette.accent, textColor: palette.text, headerTextColor: palette.buttonText };
+  if (layer.id === 'requirements') return { ...layer, ...base, color: palette.text, gradientColor: palette.accent };
+  if (layer.id === 'address') return { ...layer, ...base, color: palette.muted, gradientColor: palette.accent };
+  if (layer.id === 'phone') return { ...layer, ...base, color: palette.accent, gradientColor: palette.accent2 };
+  if (layer.id === 'cta') return { ...layer, ...base, color: palette.accent, gradientColor: palette.accent2, textColor: palette.buttonText };
+  if (layer.id === 'accent') return { ...layer, ...base, color: palette.accent, gradientColor: palette.accent2 };
+  if (layer.id === 'logo') return { ...layer, ...base, color: palette.text, gradientColor: palette.accent };
+  return layer;
 }
 
 function makeTextLayer(index = 1) {
@@ -793,16 +877,26 @@ function BorderControl({ layer, onChange }) {
   </section>;
 }
 
-export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subtext, cta, onClose, onExport }) {
+export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subtext, cta, productName, conditions, requirements, address, phone, onClose, onExport }) {
   const canvasRef = useRef(null);
   const boundsRef = useRef({});
   const dragRef = useRef(null);
+  const initialLayers = useMemo(() => createInitialLayers({
+    headline,
+    subtext,
+    cta,
+    productName,
+    conditions: { rate: conditions?.rate, term: conditions?.term, amount: conditions?.amount },
+    requirements,
+    address,
+    phone,
+  }), [address, cta, conditions?.amount, conditions?.rate, conditions?.term, headline, phone, productName, requirements, subtext]);
   const [backgroundImage, setBackgroundImage] = useState(null);
   const [logoImage, setLogoImage] = useState(null);
   const [format, setFormat] = useState('square');
   const [selected, setSelected] = useState('headline');
   const [variant, setVariant] = useState(0);
-  const [layers, setLayers] = useState(() => createInitialLayers({ headline, subtext, cta }));
+  const [layers, setLayers] = useState(() => initialLayers);
   const [background, setBackground] = useState({
     zoom: 1, x: .5, y: .5, overlayOpacity: .4,
     overlayColor: '#101310', overlayColor2: '#24301d', overlayGradientEnabled: true, overlayGradientAngle: 90,
@@ -812,6 +906,11 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
   const [mobileView, setMobileView] = useState('canvas');
   const dimensions = useMemo(() => format === 'portrait' ? { width: 1080, height: 1350 } : { width: 1080, height: 1080 }, [format]);
   const activeLayer = layers.find(layer => layer.id === selected) || layers[0];
+  const requiredLayerStates = REQUIRED_LAYER_META.map(meta => {
+    const layer = layers.find(item => item.id === meta.id);
+    return { ...meta, layer, ready: requiredLayerReady(layer) };
+  });
+  const missingRequiredLayers = requiredLayerStates.filter(item => !item.ready);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -846,6 +945,21 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
 
   const updateLayer = patch => setLayers(current => current.map(layer => layer.id === selected ? { ...layer, ...patch } : layer));
 
+  const selectOrRestoreRequiredLayer = id => {
+    const existing = layers.find(layer => layer.id === id);
+    if (existing) {
+      if (!existing.visible) setLayers(current => current.map(layer => layer.id === id ? { ...layer, visible: true } : layer));
+      setSelected(id);
+      setError('');
+      return;
+    }
+    const blueprint = initialLayers.find(layer => layer.id === id);
+    if (!blueprint) return;
+    setLayers(current => [...current, applyDesignVariantToLayer({ ...blueprint }, variant)]);
+    setSelected(id);
+    setError('');
+  };
+
   const resizeActiveTable = (requestedRows, requestedColumns) => {
     if (activeLayer?.type !== 'table') return;
     const rows = clamp(Math.round(requestedRows), 1, MAX_TABLE_ROWS);
@@ -877,7 +991,9 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
 
   const duplicateLayer = () => {
     if (!activeLayer || layers.length >= MAX_LAYERS) return;
-    const clone = { ...activeLayer, id: nextLayerId(activeLayer.type), name: `${activeLayer.name} хуулбар`, x: clamp(activeLayer.x + .025, 0, .9), y: clamp(activeLayer.y + .025, 0, .9) };
+    const copyableLayer = { ...activeLayer };
+    delete copyableLayer.requiredKey;
+    const clone = { ...copyableLayer, id: nextLayerId(activeLayer.type), name: `${activeLayer.name} хуулбар`, x: clamp(activeLayer.x + .025, 0, .9), y: clamp(activeLayer.y + .025, 0, .9) };
     addLayer(clone);
   };
 
@@ -902,20 +1018,9 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
 
   const applyVariant = nextValue => {
     const next = ((nextValue % DESIGN_VARIANT_COUNT) + DESIGN_VARIANT_COUNT) % DESIGN_VARIANT_COUNT;
-    const layout = DESIGN_LAYOUTS[next % DESIGN_LAYOUTS.length];
     const palette = DESIGN_PALETTES[Math.floor(next / DESIGN_LAYOUTS.length)];
-    const layoutById = { logo: layout.logo, accent: layout.accent, headline: layout.headline, subtext: layout.subtext, cta: layout.cta };
     setVariant(next);
-    setLayers(current => current.map(layer => {
-      const placement = layoutById[layer.id];
-      const base = placement ? { x: placement[0], y: placement[1], width: placement[2], ...(placement[3] ? { size: placement[3] } : {}) } : {};
-      if (layer.id === 'headline') return { ...layer, ...base, color: palette.text, gradientColor: palette.accent };
-      if (layer.id === 'subtext') return { ...layer, ...base, color: palette.muted, gradientColor: palette.accent };
-      if (layer.id === 'cta') return { ...layer, ...base, color: palette.accent, gradientColor: palette.accent2, textColor: palette.buttonText };
-      if (layer.id === 'accent') return { ...layer, ...base, color: palette.accent, gradientColor: palette.accent2 };
-      if (layer.id === 'logo') return { ...layer, ...base, color: palette.text, gradientColor: palette.accent };
-      return layer;
-    }));
+    setLayers(current => current.map(layer => applyDesignVariantToLayer(layer, next)));
     setBackground(current => ({ ...current, overlayColor: palette.overlay, overlayColor2: palette.overlay2, overlayGradientEnabled: true, overlayOpacity: .42 }));
   };
 
@@ -1027,6 +1132,11 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
   };
 
   const exportDesign = async () => {
+    if (missingRequiredLayers.length) {
+      setError(`Заавал харагдах мэдээлэл дутуу байна: ${missingRequiredLayers.map(item => item.label).join(', ')}.`);
+      setMobileView('controls');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -1065,6 +1175,11 @@ export default function FacebookImageEditor({ imageUrl, logoUrl, headline, subte
         <aside className="zf-design-controls">
           <div className="zf-design-controls-top"><div className="zf-design-variant"><span>Дизайны хувилбар</span><button type="button" onClick={() => applyVariant(variant + 1)}><RefreshCw size={14} /> {String(variant + 1).padStart(2, '0')}/{DESIGN_VARIANT_COUNT}</button></div></div>
           <div className="zf-design-controls-scroll">
+
+          <section className="zf-required-panel">
+            <div className="zf-required-panel-head"><div><span className="zf-design-section-title">Заавал харагдах мэдээлэл</span><small>{productName || 'Зээлийн бүтээгдэхүүн'}</small></div><b>{requiredLayerStates.length - missingRequiredLayers.length}/{requiredLayerStates.length}</b></div>
+            <div className="zf-required-list">{requiredLayerStates.map(item => <button type="button" className={item.ready ? 'ready' : 'missing'} onClick={() => selectOrRestoreRequiredLayer(item.id)} title={item.ready ? `${item.label} layer сонгох` : `${item.label} layer сэргээх`} key={item.id}>{item.ready ? <Check size={13} /> : <Plus size={13} />}<span>{item.label}</span></button>)}</div>
+          </section>
 
           <section className="zf-design-add-panel">
             <span className="zf-design-section-title">Нэмэх</span>

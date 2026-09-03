@@ -720,6 +720,11 @@ export default function FacebookAdmin() {
       headline={manualMessage.trim().split('\n').find(Boolean) || selectedProduct.name || 'Zentro Prime Capital'}
       subtext={selectedProduct.description || config?.heroText || ''}
       cta={manualCtaType === 'APPLY_NOW' ? 'Зээлийн хүсэлт өгөх' : manualCtaType === 'MESSAGE_PAGE' ? 'Messenger-ээр мэдээлэл авах' : config?.phone || 'Дэлгэрэнгүй мэдээлэл'}
+      productName={selectedProduct.name || 'Зээлийн бүтээгдэхүүн'}
+      conditions={{ rate: selectedProduct.rate, term: selectedProduct.term, amount: selectedProduct.amount }}
+      requirements={selectedProduct.requirements}
+      address={config?.address}
+      phone={config?.phone}
       onClose={() => setImageEditorOpen(false)}
       onExport={saveImageDesign}
     />}

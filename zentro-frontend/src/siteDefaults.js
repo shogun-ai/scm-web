@@ -8,6 +8,7 @@ export const FALLBACK_PRODUCTS = [
     term: '1-24 сар',
     amount: 'Үнэлгээний 70% хүртэл',
     description: 'Автомашинаа барьцаалж, өдөр тутамдаа үргэлжлүүлэн унах боломжтой.',
+    requirements: '18 нас хүрсэн Монгол Улсын иргэн байх\nАвтомашин өөрийн нэр дээр бүртгэлтэй байх\nЧанаргүй зээлийн түүхгүй байх',
     image: '',
   },
   {
@@ -17,6 +18,7 @@ export const FALLBACK_PRODUCTS = [
     term: '1-12 сар',
     amount: 'Үнэлгээний 80% хүртэл',
     description: 'Орлого нотлохгүйгээр автомашинаа зориулалтын талбайд байршуулж шийдвэрлүүлнэ.',
+    requirements: '18 нас хүрсэн Монгол Улсын иргэн байх\nАвтомашины өмчлөх эрхийн баримттай байх\nШаардлагатай баримт бичгийг бүрдүүлэх',
     image: '',
   },
   {
@@ -26,6 +28,7 @@ export const FALLBACK_PRODUCTS = [
     term: '1-6 сар',
     amount: 'Үнэлгээнд суурилна',
     description: 'Алт, мөнгө болон үнэт эдлэлийн үнэлгээнд тулгуурласан шуурхай шийдэл.',
+    requirements: '18 нас хүрсэн Монгол Улсын иргэн байх\nҮнэт металл, эдлэлийг үнэлгээнд хамруулах\nШаардлагатай баримт бичгийг бүрдүүлэх',
     image: '',
   },
   {
@@ -35,6 +38,7 @@ export const FALLBACK_PRODUCTS = [
     term: '1-6 сар',
     amount: 'Боломжит лимитээр',
     description: 'Богино хугацааны санхүүгийн хэрэгцээнд зориулсан хялбар хүсэлт.',
+    requirements: '18 нас хүрсэн Монгол Улсын иргэн байх\nЗээлээ эргэн төлөх санхүүгийн чадамжтай байх\nЧанаргүй зээлийн түүхгүй байх',
     image: '',
   },
 ];
@@ -200,10 +204,14 @@ export function normalizeSiteConfig(raw = {}) {
     ? raw.products.map((product, index) => {
       const fallback = FALLBACK_PRODUCTS[index % FALLBACK_PRODUCTS.length];
       const images = normalizeImageGallery(product.images, product.image || product.imageUrl || fallback.image);
+      const requirements = Array.isArray(product.requirements)
+        ? product.requirements.map(item => String(item || '').trim()).filter(Boolean).join('\n')
+        : String(product.requirements || '').trim();
       return {
         ...fallback,
         ...product,
         flowTitle: product.flowTitle || fallback.flowTitle || product.name,
+        requirements: requirements || fallback.requirements,
         image: images[0],
         images,
         gallerySeconds: normalizeGallerySeconds(product.gallerySeconds, 4.3 + index * 0.4),
