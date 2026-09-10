@@ -34,6 +34,16 @@ const STATUS_META = {
   disbursed:       { label: 'Зээл олгосон',         color: 'bg-emerald-100 text-emerald-700'},
 };
 
+const NEXT_ACTIONS = {
+  pending: 'Хариуцагч томилох', created: 'Хариуцагч томилох', assigned: 'Баримт, дата бүрдүүлэх',
+  data_collection: 'Дутуу баримтыг бүрдүүлэх', assessment: 'Үнэлгээг хянах', studying: 'Судалгааг дуусгах',
+  committee: 'Хорооны шийдвэр гаргах', approved: 'Олголт бэлтгэх', resolved: 'Нөхцөлийг баталгаажуулах',
+  rejected: 'Кейс хаагдсан', disbursed: 'Олголт дууссан',
+};
+
+const getCaseReference = (loan = {}) => loan.applicationReference || (loan._id ? `SCM-${String(loan._id).slice(-6).toUpperCase()}` : '');
+const getNextAction = (status) => NEXT_ACTIONS[status] || 'Кейсийг хянах';
+
 const PRODUCTS = {
   biz_loan: 'Бизнесийн зээл', car_purchase_loan: 'Автомашин худалдан авах',
   car_coll_loan: 'Автомашин барьцаалсан', cons_loan: 'Хэрэглээний зээл',
@@ -334,6 +344,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                       <td className="p-3 text-slate-500 text-xs">{fmtDate(req.createdAt)}</td>
                       <td className="p-3 font-semibold text-[#003B5C]">
                         {borrowerName(req)}
+                        {getCaseReference(req) && <span className="mt-1 block font-mono text-[10px] font-semibold tracking-wide text-slate-400">{getCaseReference(req)}</span>}
                         {req.source === 'web' && !req.createdByStaff && (
                           <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">ВЭБ</span>
                         )}
@@ -344,7 +355,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                         </span>
                       </td>
                       <td className="p-3 text-right font-bold">{fmt(req.amount)}</td>
-                      <td className="p-3 text-center"><StatusBadge status={req.status} /></td>
+                      <td className="p-3 text-center"><StatusBadge status={req.status} /><span className="mt-1 block text-[10px] font-semibold text-slate-500">{getNextAction(req.status)}</span></td>
                       <td className="p-3" onClick={e => e.stopPropagation()}>
                         <select
                           value={req.assignee?.userId || ''}

@@ -192,14 +192,73 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+const ONBOARDING_PUBLIC_BODY_LIMIT = '64kb';
+const ONBOARDING_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const ONBOARDING_RATE_LIMIT_MAX = 20;
+const onboardingRateLimitBuckets = new Map();
 
-app.use(express.json({
+const isPublicOnboardingPost = (req) => (
+    req.method === 'POST' && String(req.path || '').replace(/\/+$/, '') === '/api/onboarding'
+);
+
+const getOnboardingRateLimitKey = (req) => (
+    cleanOnboardingString(req.headers['x-forwarded-for'], 160).split(',')[0]
+    || cleanOnboardingString(req.ip, 80)
+    || cleanOnboardingString(req.socket?.remoteAddress, 80)
+    || 'unknown'
+);
+
+const guardPublicOnboardingIntake = (req, res, next) => {
+    const now = Date.now();
+    const contentLength = Number(req.headers['content-length'] || 0);
+    if (contentLength > 64 * 1024) {
+        return res.status(413).json({ message: 'Payload too large' });
+    }
+
+    if (onboardingRateLimitBuckets.size > 5000) {
+        for (const [key, bucket] of onboardingRateLimitBuckets.entries()) {
+            if (!bucket || bucket.resetAt <= now) onboardingRateLimitBuckets.delete(key);
+        }
+    }
+
+    const key = getOnboardingRateLimitKey(req);
+    const current = onboardingRateLimitBuckets.get(key);
+    const bucket = !current || current.resetAt <= now
+        ? { count: 0, resetAt: now + ONBOARDING_RATE_LIMIT_WINDOW_MS }
+        : current;
+    bucket.count += 1;
+    onboardingRateLimitBuckets.set(key, bucket);
+
+    if (bucket.count > ONBOARDING_RATE_LIMIT_MAX) {
+        res.set('Retry-After', String(Math.ceil((bucket.resetAt - now) / 1000)));
+        return res.status(429).json({ message: 'Too many onboarding submissions. Please try again later.' });
+    }
+
+    return next();
+};
+
+const defaultJsonParser = express.json({
     limit: '50mb',
     verify: (req, res, buffer) => {
         if (req.originalUrl?.startsWith('/api/zentro/facebook/webhook')) req.rawBody = Buffer.from(buffer);
     },
-}));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+});
+const onboardingJsonParser = express.json({ limit: ONBOARDING_PUBLIC_BODY_LIMIT });
+app.use((req, res, next) => {
+    if (!isPublicOnboardingPost(req)) return defaultJsonParser(req, res, next);
+    return guardPublicOnboardingIntake(req, res, error => {
+        if (error) return next(error);
+        return onboardingJsonParser(req, res, next);
+    });
+});
+
+const defaultUrlencodedParser = express.urlencoded({ limit: '50mb', extended: true });
+const onboardingUrlencodedParser = express.urlencoded({ limit: ONBOARDING_PUBLIC_BODY_LIMIT, extended: true });
+app.use((req, res, next) => (
+    isPublicOnboardingPost(req)
+        ? onboardingUrlencodedParser(req, res, next)
+        : defaultUrlencodedParser(req, res, next)
+));
 
 // Cloudinary Ñ‚Ð¾Ñ…Ð¸Ñ€Ð³Ð¾Ð¾
 cloudinary.config({
@@ -297,6 +356,7 @@ const LoanRequestSchema = new mongoose.Schema({
     selectedProduct: String, amount: Number, term: Number, userType: String,
     lastname: String, firstname: String, regNo: String, phone: String, email: String,
     address: String, status: { type: String, default: 'pending' },
+    applicationReference: { type: String, index: true, sparse: true },
     // Байгууллага
     orgName: String, orgRegNo: String, legalForm: String, contactName: String, contactPosition: String, contactPhone: String, orgAddress: String,
     purpose: String, repaymentSource: String,
@@ -318,6 +378,310 @@ const LoanRequestSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 const LoanRequest = mongoose.models.LoanRequest || mongoose.model('LoanRequest', LoanRequestSchema);
+
+const ONBOARDING_CUSTOMER_TYPES = ['personal', 'business'];
+const ONBOARDING_STATUSES = ['pending', 'new', 'contacted', 'in_review', 'approved', 'rejected', 'converted', 'archived'];
+const ONBOARDING_PUBLIC_STATUSES = ['pending', 'new'];
+const ONBOARDING_UPDATE_ROLES = ['admin', 'loan_officer', 'director', 'finance_manager'];
+
+const CustomerOnboardingSchema = new mongoose.Schema({
+    requestId: { type: String, required: true, unique: true, index: true },
+    customerType: { type: String, required: true, enum: ONBOARDING_CUSTOMER_TYPES, index: true },
+    status: { type: String, enum: ONBOARDING_STATUSES, default: 'pending', index: true },
+    personal: {
+        firstName: String,
+        lastName: String,
+        registerNumber: String,
+        identityNumber: String,
+        birthDate: String,
+        gender: String,
+    },
+    business: {
+        name: String,
+        registrationNumber: String,
+        taxNumber: String,
+        legalForm: String,
+        industry: String,
+        contactPosition: String,
+    },
+    contact: {
+        name: String,
+        phone: String,
+        secondaryPhone: String,
+        email: String,
+        address: String,
+        preferredChannel: String,
+    },
+    preferences: {
+        product: String,
+        productInterests: { type: [String], default: [] },
+        serviceNeeds: String,
+        amount: Number,
+        termMonths: Number,
+        branch: String,
+        language: String,
+        notes: String,
+        channel: String,
+    },
+    consents: {
+        privacyPolicy: { type: Boolean, default: false },
+        terms: { type: Boolean, default: false },
+        marketing: { type: Boolean, default: false },
+        creditCheck: { type: Boolean, default: false },
+        dataProcessing: { type: Boolean, default: false },
+    },
+    metadata: {
+        source: String,
+        campaign: String,
+        referrer: String,
+        pagePath: String,
+        userAgent: String,
+        ip: String,
+        submittedAt: Date,
+        rawKeys: { type: [String], default: [] },
+    },
+    assignee: {
+        userId: String,
+        name: String,
+    },
+    contactNote: String,
+    reviewerNote: String,
+    tags: { type: [String], default: [] },
+}, { timestamps: true });
+const CustomerOnboarding = mongoose.models.CustomerOnboarding || mongoose.model('CustomerOnboarding', CustomerOnboardingSchema);
+
+const cleanOnboardingString = (value, maxLength = 500) => {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'object') return '';
+    return String(value).trim().replace(/\s+/g, ' ').slice(0, maxLength);
+};
+
+const normalizeOnboardingBool = (value) => {
+    const normalized = cleanOnboardingString(value, 20).toLowerCase();
+    return value === true || value === 1 || ['true', 'yes', '1', 'on'].includes(normalized);
+};
+
+const getOnboardingValue = (source, pathKey) => {
+    if (!source || !pathKey) return undefined;
+    return pathKey.split('.').reduce((current, key) => {
+        if (current === undefined || current === null) return undefined;
+        return current[key];
+    }, source);
+};
+
+const pickOnboardingString = (source, keys, maxLength = 500) => {
+    for (const key of keys) {
+        const value = cleanOnboardingString(getOnboardingValue(source, key), maxLength);
+        if (value) return value;
+    }
+    return '';
+};
+
+const normalizeOnboardingCustomerType = (value) => {
+    const normalized = cleanOnboardingString(value, 40).toLowerCase();
+    if (['personal', 'individual', 'person', 'citizen'].includes(normalized)) return 'personal';
+    if (['business', 'organization', 'company', 'corporate'].includes(normalized)) return 'business';
+    return '';
+};
+
+const normalizeOnboardingStatus = (value) => {
+    const normalized = cleanOnboardingString(value, 40).toLowerCase().replace(/[\s-]+/g, '_');
+    return ONBOARDING_STATUSES.includes(normalized) ? normalized : '';
+};
+
+const normalizeOnboardingNumber = (value) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    const numeric = Number(String(value).replace(/,/g, ''));
+    return Number.isFinite(numeric) ? numeric : undefined;
+};
+
+const normalizeOnboardingTags = (value) => {
+    const rawTags = Array.isArray(value) ? value : cleanOnboardingString(value, 1000).split(',');
+    return [...new Set(rawTags
+        .map(tag => cleanOnboardingString(tag, 40))
+        .filter(Boolean))]
+        .slice(0, 20);
+};
+
+const normalizeOnboardingList = (value, maxItems = 20, maxLength = 160) => {
+    if (value === undefined || value === null) return [];
+    const rawItems = Array.isArray(value) ? value : cleanOnboardingString(value, 2000).split(',');
+    return [...new Set(rawItems
+        .map(item => {
+            if (item && typeof item === 'object') {
+                return cleanOnboardingString(item.label || item.name || item.title || item.value || item.key, maxLength);
+            }
+            return cleanOnboardingString(item, maxLength);
+        })
+        .filter(Boolean))]
+        .slice(0, maxItems);
+};
+
+const generateOnboardingRequestId = () => (
+    `ONB-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+);
+
+const buildCustomerOnboardingPayload = (body = {}, req) => {
+    const errors = [];
+    const customerType = normalizeOnboardingCustomerType(body.customerType || body.type || body.userType);
+    const requestedStatus = cleanOnboardingString(body.status, 40);
+    const status = requestedStatus ? normalizeOnboardingStatus(requestedStatus) : 'pending';
+
+    if (!customerType) errors.push('customerType must be personal or business');
+    if (requestedStatus && !status) errors.push(`status must be one of: ${ONBOARDING_STATUSES.join(', ')}`);
+    if (status && !ONBOARDING_PUBLIC_STATUSES.includes(status)) errors.push(`status must be one of: ${ONBOARDING_PUBLIC_STATUSES.join(', ')} for public onboarding submissions`);
+
+    const personal = {
+        firstName: pickOnboardingString(body, ['personal.firstName', 'firstName', 'firstname', 'name'], 120),
+        lastName: pickOnboardingString(body, ['personal.lastName', 'lastName', 'lastname'], 120),
+        registerNumber: pickOnboardingString(body, ['personal.registerNumber', 'personal.regNo', 'regNo', 'registerNumber'], 80),
+        identityNumber: pickOnboardingString(body, ['personal.identityNumber', 'identityNumber'], 80),
+        birthDate: pickOnboardingString(body, ['personal.birthDate', 'birthDate'], 40),
+        gender: pickOnboardingString(body, ['personal.gender', 'gender'], 40),
+    };
+    const business = {
+        name: pickOnboardingString(body, ['business.name', 'orgName', 'companyName', 'organizationName'], 200),
+        registrationNumber: pickOnboardingString(body, ['business.registrationNumber', 'business.regNo', 'orgRegNo', 'registrationNumber'], 80),
+        taxNumber: pickOnboardingString(body, ['business.taxNumber', 'taxNumber'], 80),
+        legalForm: pickOnboardingString(body, ['business.legalForm', 'legalForm'], 120),
+        industry: pickOnboardingString(body, ['business.industry', 'industry'], 160),
+        contactPosition: pickOnboardingString(body, ['business.contactPosition', 'contactPosition', 'contactPersonTitle'], 160),
+    };
+    const contact = {
+        name: pickOnboardingString(body, ['contact.name', 'contactName', 'fullName', 'name'], 160),
+        phone: pickOnboardingString(body, ['contact.phone', 'phone', 'contactPhone'], 80),
+        secondaryPhone: pickOnboardingString(body, ['contact.secondaryPhone', 'secondaryPhone'], 80),
+        email: pickOnboardingString(body, ['contact.email', 'email'], 160).toLowerCase(),
+        address: pickOnboardingString(body, ['contact.address', 'address', 'orgAddress'], 500),
+        preferredChannel: pickOnboardingString(body, ['contact.preferredChannel', 'preferredChannel'], 80),
+    };
+
+    if (!contact.name && customerType === 'personal') {
+        contact.name = [personal.lastName, personal.firstName].filter(Boolean).join(' ');
+    }
+    if (!contact.name && customerType === 'business') {
+        contact.name = pickOnboardingString(body, ['business.contactName', 'contactName'], 160);
+    }
+
+    if (customerType === 'personal' && !personal.firstName && !contact.name) {
+        errors.push('personal.firstName or contact.name is required');
+    }
+    if (customerType === 'business' && !business.name) {
+        errors.push('business.name is required');
+    }
+    if (customerType === 'business' && !business.registrationNumber) {
+        errors.push('business.registrationNumber is required');
+    }
+    if (!contact.phone && !contact.email) {
+        errors.push('contact.phone or contact.email is required');
+    }
+    if (contact.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) {
+        errors.push('contact.email must be valid');
+    }
+
+    const productInterests = normalizeOnboardingList(
+        getOnboardingValue(body, 'preferences.productInterests')
+            ?? body.productInterests
+            ?? body.interests
+            ?? body.selectedProducts
+            ?? body.products
+    );
+    const product = pickOnboardingString(body, ['preferences.product', 'selectedProduct', 'product'], 160)
+        || productInterests.join(', ');
+    const consents = {
+        privacyPolicy: normalizeOnboardingBool(getOnboardingValue(body, 'consents.privacyPolicy') ?? body.privacyPolicyConsent ?? body.privacyAccepted),
+        terms: normalizeOnboardingBool(getOnboardingValue(body, 'consents.terms') ?? body.termsConsent ?? body.termsAccepted),
+        marketing: normalizeOnboardingBool(getOnboardingValue(body, 'consents.marketing') ?? body.marketingConsent ?? body.marketingAccepted),
+        creditCheck: normalizeOnboardingBool(getOnboardingValue(body, 'consents.creditCheck') ?? body.creditCheckConsent),
+        dataProcessing: normalizeOnboardingBool(getOnboardingValue(body, 'consents.dataProcessing') ?? body.dataProcessingConsent ?? body.privacyAccepted),
+    };
+
+    if (!consents.privacyPolicy && !consents.dataProcessing) {
+        errors.push('privacy consent is required');
+    }
+
+    return {
+        errors,
+        payload: {
+            requestId: generateOnboardingRequestId(),
+            customerType,
+            status,
+            personal,
+            business,
+            contact,
+            preferences: {
+                product,
+                productInterests,
+                serviceNeeds: pickOnboardingString(body, ['preferences.serviceNeeds', 'serviceNeeds', 'need', 'purpose'], 2000),
+                amount: normalizeOnboardingNumber(getOnboardingValue(body, 'preferences.amount') ?? body.amount),
+                termMonths: normalizeOnboardingNumber(getOnboardingValue(body, 'preferences.termMonths') ?? body.termMonths ?? body.term),
+                branch: pickOnboardingString(body, ['preferences.branch', 'branch', 'branchPreference'], 160),
+                language: pickOnboardingString(body, ['preferences.language', 'language'], 60),
+                notes: pickOnboardingString(body, ['preferences.notes', 'notes', 'message'], 2000),
+                channel: pickOnboardingString(body, ['preferences.channel', 'channel'], 120),
+            },
+            consents,
+            metadata: {
+                source: pickOnboardingString(body, ['metadata.source', 'source'], 120) || 'web',
+                campaign: pickOnboardingString(body, ['metadata.campaign', 'campaign'], 160),
+                referrer: pickOnboardingString(body, ['metadata.referrer', 'referrer'], 500) || cleanOnboardingString(req.get('referer'), 500),
+                pagePath: pickOnboardingString(body, ['metadata.pagePath', 'pagePath'], 500),
+                userAgent: cleanOnboardingString(req.get('user-agent'), 500),
+                ip: cleanOnboardingString(req.ip || req.headers['x-forwarded-for'], 120),
+                submittedAt: new Date(),
+                rawKeys: Object.keys(body || {}).slice(0, 80),
+            },
+        },
+    };
+};
+
+const buildOnboardingUpdateData = (body = {}) => {
+    const update = {};
+    const errors = [];
+
+    if (Object.prototype.hasOwnProperty.call(body, 'status')) {
+        const status = normalizeOnboardingStatus(body.status);
+        if (!status) errors.push(`status must be one of: ${ONBOARDING_STATUSES.join(', ')}`);
+        else update.status = status;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'assignee')) {
+        if (body.assignee && typeof body.assignee === 'object') {
+            update.assignee = {
+                userId: cleanOnboardingString(body.assignee.userId, 80),
+                name: cleanOnboardingString(body.assignee.name, 160),
+            };
+        } else {
+            update.assignee = { userId: '', name: cleanOnboardingString(body.assignee, 160) };
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'contactNote')) {
+        update.contactNote = cleanOnboardingString(body.contactNote, 2000);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'reviewerNote')) {
+        update.reviewerNote = cleanOnboardingString(body.reviewerNote, 2000);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'tags')) {
+        update.tags = normalizeOnboardingTags(body.tags);
+    }
+
+    if (!Object.keys(update).length && !errors.length) {
+        errors.push('No supported fields to update');
+    }
+
+    return { update, errors };
+};
+
+const describeOnboardingUpdate = (before = {}, after = {}, update = {}) => {
+    const parts = [];
+    if (Object.prototype.hasOwnProperty.call(update, 'status')) parts.push(`status: ${before.status || '-'} -> ${after.status || '-'}`);
+    if (Object.prototype.hasOwnProperty.call(update, 'assignee')) parts.push(`assignee: ${before.assignee?.name || '-'} -> ${after.assignee?.name || '-'}`);
+    if (Object.prototype.hasOwnProperty.call(update, 'contactNote')) parts.push('contact note updated');
+    if (Object.prototype.hasOwnProperty.call(update, 'reviewerNote')) parts.push('reviewer note updated');
+    if (Object.prototype.hasOwnProperty.call(update, 'tags')) parts.push(`tags: ${(after.tags || []).length}`);
+    return parts.join('; ') || `fields: ${Object.keys(update).join(', ')}`;
+};
 
 const LoanResearchSchema = new mongoose.Schema({
     borrower: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -2960,9 +3324,10 @@ app.post('/api/loans', (req, res) => {
                 applicationData,
                 aiLoanOfficer: buildAiLoanOfficerStatus('pending', 'Шинэ хүсэлт үүссэн тул AI дүгнэлт дараалалд орлоо.'),
             });
+            newLoan.applicationReference = `SCM-${new Date().getFullYear()}-${newLoan._id.toString().slice(-6).toUpperCase()}`;
             await newLoan.save();
             runPostSubmissionAutomationInBackground(newLoan._id);
-            res.status(201).json({ message: 'Success' });
+            res.status(201).json({ message: 'Success', applicationReference: newLoan.applicationReference });
         } catch (e) {
             console.error('Loan submit error:', e.message);
             res.status(500).json({ message: 'Error' });
@@ -3111,6 +3476,112 @@ app.post('/api/loans/staff', authenticateUser, async (req, res) => {
         await createLog(req.user, 'loan_created_by_staff', `${loan.lastname || loan.orgName} - ${loan.amount}`);
         res.status(201).json(loanWithComplianceReview || loanWithAiReview || loan);
     } catch (e) { res.status(500).json({ message: 'Error' }); }
+});
+
+app.post('/api/onboarding', async (req, res) => {
+    try {
+        const { payload, errors } = buildCustomerOnboardingPayload(req.body || {}, req);
+        if (errors.length) return res.status(400).json({ message: 'Validation failed', errors });
+
+        const onboarding = await new CustomerOnboarding(payload).save();
+        await createLog(
+            { name: 'Public Website', role: 'public' },
+            'customer_onboarding_created',
+            `Onboarding request ${onboarding.requestId} created (${onboarding.customerType})`
+        );
+
+        res.status(201).json({
+            message: 'Success',
+            requestId: onboarding.requestId,
+        });
+    } catch (e) {
+        console.error('Customer onboarding create error:', e.message);
+        res.status(500).json({ message: 'Error' });
+    }
+});
+
+app.get('/api/onboarding', authenticateUser, async (req, res) => {
+    try {
+        const roleKeys = getUserRoleKeys(req.user);
+        const canRead = roleKeys.some(role => ONBOARDING_UPDATE_ROLES.includes(role));
+        if (!canRead) return res.status(403).json({ message: 'Forbidden' });
+
+        const query = {};
+        if (req.query.status) {
+            const status = normalizeOnboardingStatus(req.query.status);
+            if (!status) return res.status(400).json({ message: `status must be one of: ${ONBOARDING_STATUSES.join(', ')}` });
+            query.status = status;
+        }
+        if (req.query.customerType) {
+            const customerType = normalizeOnboardingCustomerType(req.query.customerType);
+            if (!customerType) return res.status(400).json({ message: 'customerType must be personal or business' });
+            query.customerType = customerType;
+        }
+
+        const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
+        const onboardingRequests = await CustomerOnboarding.find(query)
+            .select('requestId customerType status contact.name contact.phone contact.email contact.preferredChannel business.name preferences.product preferences.productInterests preferences.serviceNeeds preferences.branch metadata.source assignee tags createdAt updatedAt')
+            .sort({ createdAt: -1 })
+            .limit(limit)
+            .lean();
+        res.json(onboardingRequests);
+    } catch (e) {
+        console.error('Customer onboarding list error:', e.message);
+        res.status(500).json({ message: 'Error' });
+    }
+});
+
+app.get('/api/onboarding/:id', authenticateUser, async (req, res) => {
+    try {
+        const roleKeys = getUserRoleKeys(req.user);
+        const canRead = roleKeys.some(role => ONBOARDING_UPDATE_ROLES.includes(role));
+        if (!canRead) return res.status(403).json({ message: 'Forbidden' });
+
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ message: 'Invalid onboarding request id' });
+        }
+
+        const onboarding = await CustomerOnboarding.findById(req.params.id);
+        if (!onboarding) return res.status(404).json({ message: 'Onboarding request not found' });
+        res.json(onboarding);
+    } catch (e) {
+        console.error('Customer onboarding detail error:', e.message);
+        res.status(500).json({ message: 'Error' });
+    }
+});
+
+app.put('/api/onboarding/:id', authenticateUser, async (req, res) => {
+    try {
+        const roleKeys = getUserRoleKeys(req.user);
+        const canUpdate = roleKeys.some(role => ONBOARDING_UPDATE_ROLES.includes(role));
+        if (!canUpdate) return res.status(403).json({ message: 'Forbidden' });
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ message: 'Invalid onboarding request id' });
+        }
+
+        const existing = await CustomerOnboarding.findById(req.params.id).lean();
+        if (!existing) return res.status(404).json({ message: 'Onboarding request not found' });
+
+        const { update, errors } = buildOnboardingUpdateData(req.body || {});
+        if (errors.length) return res.status(400).json({ message: 'Validation failed', errors });
+
+        const updated = await CustomerOnboarding.findByIdAndUpdate(
+            req.params.id,
+            { $set: update },
+            { new: true, runValidators: true }
+        );
+
+        await createLog(
+            req.user,
+            'customer_onboarding_updated',
+            `Onboarding request ${updated.requestId} - ${describeOnboardingUpdate(existing, updated, update)}`
+        );
+
+        res.json(updated);
+    } catch (e) {
+        console.error('Customer onboarding update error:', e.message);
+        res.status(500).json({ message: 'Error' });
+    }
 });
 
 app.post('/api/loans/intake-automation/backfill', authenticateUser, async (req, res) => {
@@ -4327,6 +4798,165 @@ const analyzeStatementsWithAI = async ({ files = [], fileUrls = [], borrower }) 
 
     return analysisResult;
 };
+
+const STATEMENT_INDUSTRIES = [
+    ['A', 'Хөдөө аж ахуй, ойн аж ахуй, загас барилт'], ['B', 'Уул уурхай, олборлолт'],
+    ['C', 'Боловсруулах үйлдвэрлэл'], ['D', 'Цахилгаан, хий, уур, агааржуулалт'],
+    ['E', 'Ус хангамж, хог хаягдал, дахин боловсруулах үйл ажиллагаа'], ['F', 'Барилга'],
+    ['G', 'Бөөний болон жижиглэн худалдаа; тээврийн хэрэгсэл засвар'], ['H', 'Тээвэр ба агуулахын үйл ажиллагаа'],
+    ['I', 'Зочид буудал, байр, хоол үйлчилгээ'], ['J', 'Мэдээлэл, холбоо'],
+    ['K', 'Санхүүгийн болон даатгалын үйл ажиллагаа'], ['L', 'Үл хөдлөх хөрөнгийн үйл ажиллагаа'],
+    ['M', 'Мэргэжлийн, шинжлэх ухаан, техникийн үйл ажиллагаа'], ['N', 'Удирдлагын болон дэмжлэг үзүүлэх үйл ажиллагаа'],
+    ['O', 'Төрийн удирдлага, батлан хамгаалах, албан журмын нийгмийн хамгаалал'], ['P', 'Боловсрол'],
+    ['Q', 'Хүний эрүүл мэнд, нийгмийн халамжийн үйл ажиллагаа'], ['R', 'Урлаг, үзвэр, тоглоом наадам'],
+    ['S', 'Үйлчилгээний бусад үйл ажиллагаа'], ['T', 'Өрхийн ажил олгогчийн үйл ажиллагаа'], ['U', 'Олон улсын байгууллага, суурин төлөөлөгчийн үйл ажиллагаа'],
+].map(([code, name]) => ({ code, name, source: 'ҮСХ ЭЗБТҮА (ISIC-4)' }));
+
+const DEFAULT_STATEMENT_RULES = [
+    { keyword: 'цалин', direction: 'income', category: 'Хөдөлмөрийн орлого', incomeType: 'salary', expenseGroup: '', eligiblePercent: 100 },
+    { keyword: 'salary', direction: 'income', category: 'Хөдөлмөрийн орлого', incomeType: 'salary', expenseGroup: '', eligiblePercent: 100 },
+    { keyword: 'түрээс', direction: 'income', category: 'Идэвхгүй орлого', incomeType: 'passive', expenseGroup: '', eligiblePercent: 100 },
+    { keyword: 'зээл', direction: 'expense', category: 'Өрийн үүрэг', incomeType: '', expenseGroup: 'A', eligiblePercent: 0 },
+    { keyword: 'loan', direction: 'expense', category: 'Өрийн үүрэг', incomeType: '', expenseGroup: 'A', eligiblePercent: 0 },
+    { keyword: 'лизинг', direction: 'expense', category: 'Өрийн үүрэг', incomeType: '', expenseGroup: 'A', eligiblePercent: 0 },
+    { keyword: 'ипотек', direction: 'expense', category: 'Өрийн үүрэг', incomeType: '', expenseGroup: 'A', eligiblePercent: 0 },
+    { keyword: 'түрээс', direction: 'expense', category: 'Тогтмол зардал', incomeType: '', expenseGroup: 'B', eligiblePercent: 0 },
+    { keyword: 'цахилгаан', direction: 'expense', category: 'Тогтмол зардал', incomeType: '', expenseGroup: 'B', eligiblePercent: 0 },
+    { keyword: 'интернет', direction: 'expense', category: 'Тогтмол зардал', incomeType: '', expenseGroup: 'B', eligiblePercent: 0 },
+    { keyword: 'шатахуун', direction: 'expense', category: 'Зайлшгүй зардал', incomeType: '', expenseGroup: 'C', eligiblePercent: 0 },
+    { keyword: 'хүнс', direction: 'expense', category: 'Зайлшгүй зардал', incomeType: '', expenseGroup: 'C', eligiblePercent: 0 },
+    { keyword: 'ресторан', direction: 'expense', category: 'Сонгон зардал', incomeType: '', expenseGroup: 'D', eligiblePercent: 0 },
+    { keyword: 'казино', direction: 'expense', category: 'Сэжигтэй: мөрийтэй тоглоом', incomeType: '', expenseGroup: 'D', eligiblePercent: 0 },
+    { keyword: 'atm', direction: 'expense', category: 'Дансны шилжүүлэг, бэлэн мөнгө', incomeType: '', expenseGroup: 'F', eligiblePercent: 0 },
+];
+
+const StatementRuleSchema = new mongoose.Schema({
+    keyword: { type: String, required: true, trim: true, maxlength: 120 },
+    direction: { type: String, enum: ['income', 'expense', 'any'], default: 'any' },
+    category: { type: String, required: true, maxlength: 120 },
+    incomeType: { type: String, maxlength: 40, default: '' },
+    expenseGroup: { type: String, maxlength: 2, default: '' },
+    eligiblePercent: { type: Number, min: 0, max: 100, default: 0 },
+    isActive: { type: Boolean, default: true },
+    createdBy: String,
+}, { timestamps: true });
+const StatementRule = mongoose.models.StatementRule || mongoose.model('StatementRule', StatementRuleSchema);
+
+const StatementReviewSchema = new mongoose.Schema({
+    subject: { entityType: { type: String, enum: ['individual', 'organization'], default: 'individual' }, accountHolderName: String, industryCode: String, industryName: String },
+    sourceFiles: [{ name: String, bankName: String }],
+    analysis: { type: mongoose.Schema.Types.Mixed, required: true },
+    review: { dtiLimit: { type: Number, min: 0, max: 100, default: 55 }, incomeWeights: { type: mongoose.Schema.Types.Mixed, default: {} }, overrides: { type: [mongoose.Schema.Types.Mixed], default: [] }, result: { type: mongoose.Schema.Types.Mixed, default: {} } },
+    status: { type: String, enum: ['draft', 'reviewed', 'converted'], default: 'draft', index: true },
+    convertedOnboardingId: String,
+    auditLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    createdBy: String,
+    updatedBy: String,
+}, { timestamps: true });
+const StatementReview = mongoose.models.StatementReview || mongoose.model('StatementReview', StatementReviewSchema);
+
+const statementNumber = (value) => Number(String(value ?? '').replace(/[^0-9.-]/g, '')) || 0;
+const statementKey = (transaction, index) => `${transaction.date || ''}|${transaction.direction || ''}|${statementNumber(transaction.amount)}|${String(transaction.description || '').slice(0, 80)}|${index}`;
+const defaultIncomeWeights = { salary: 100, passive: 100, contract: 70, cash_sale: 50, other: 10 };
+
+const calculateStatementReview = (analysis = {}, rules = [], review = {}) => {
+    const weights = { ...defaultIncomeWeights, ...(review.incomeWeights || {}) };
+    const overrides = new Map((review.overrides || []).map(item => [item.transactionKey, item]));
+    const transactions = (analysis.transactions || []).map((item, index) => {
+        const transactionKey = statementKey(item, index);
+        const text = String(item.description || '').toLowerCase();
+        const rule = rules.find(candidate => candidate.isActive !== false && (candidate.direction === 'any' || candidate.direction === item.direction) && text.includes(String(candidate.keyword || '').toLowerCase()));
+        const override = overrides.get(transactionKey);
+        const incomeType = override?.incomeType || rule?.incomeType || (item.direction === 'income' ? 'other' : '');
+        const category = override?.category || rule?.category || item.category || 'Ангилагдаагүй';
+        const expenseGroup = override?.expenseGroup || rule?.expenseGroup || '';
+        return { ...item, transactionKey, category, incomeType, expenseGroup, ruleMatched: Boolean(rule), manuallyReviewed: Boolean(override), eligiblePercent: item.direction === 'income' ? Number(override?.eligiblePercent ?? rule?.eligiblePercent ?? weights[incomeType] ?? weights.other) : 0 };
+    });
+    const months = Math.max(1, Number(analysis.frontSheet?.coveredMonths || analysis.monthlySummary?.length || 1));
+    const incomeTransactions = transactions.filter(item => item.direction === 'income');
+    const expenseTransactions = transactions.filter(item => item.direction === 'expense');
+    const eligibleIncome = incomeTransactions.reduce((sum, item) => sum + statementNumber(item.amount) * (item.eligiblePercent / 100), 0);
+    const debtPayments = expenseTransactions.filter(item => item.expenseGroup === 'A').reduce((sum, item) => sum + statementNumber(item.amount), 0);
+    const unclassified = transactions.filter(item => !item.ruleMatched && !item.manuallyReviewed);
+    const cashWithdrawals = expenseTransactions.filter(item => /atm|бэлэн/.test(String(item.description || '').toLowerCase())).reduce((sum, item) => sum + statementNumber(item.amount), 0);
+    const monthlyEligibleIncome = eligibleIncome / months;
+    const monthlyDebt = debtPayments / months;
+    const dti = monthlyEligibleIncome ? (monthlyDebt / monthlyEligibleIncome) * 100 : 0;
+    const dtiLimit = Number(review.dtiLimit || 55);
+    const industryText = String(review.industryName || '').toLowerCase();
+    const industrySignals = incomeTransactions.filter(item => industryText && String(item.description || '').toLowerCase().split(/\s+/).some(word => word.length > 3 && industryText.includes(word))).length;
+    const suspicious = [
+        ...(cashWithdrawals > (analysis.frontSheet?.totalExpense || 0) * 0.35 ? ['Бэлэн мөнгөний зарлагын эзлэх хувь өндөр байна.'] : []),
+        ...transactions.filter(item => /казино|bet|бооцоо|gambl/.test(String(item.description || '').toLowerCase())).map(item => `Сэжигтэй гүйлгээ: ${item.description}`),
+    ];
+    return { transactions, summary: { months, eligibleIncome, monthlyEligibleIncome, monthlyDebt, dti, dtiLimit, withinDtiLimit: monthlyEligibleIncome > 0 && dti <= dtiLimit, unclassifiedCount: unclassified.length, cashWithdrawalRatio: expenseTransactions.length ? cashWithdrawals / Math.max(1, statementNumber(analysis.frontSheet?.totalExpense)) * 100 : 0, industryMatch: industryText ? { status: industrySignals ? 'matched' : 'review', matchedTransactions: industrySignals } : { status: 'not_selected', matchedTransactions: 0 }, suspicious } };
+};
+
+app.get('/api/statement-workbench/bootstrap', authenticateUser, async (req, res) => {
+    const [rules, dtiSettings] = await Promise.all([
+        StatementRule.find({ isActive: true }).sort({ createdAt: -1 }).lean(),
+        SiteConfig.find({ key: { $in: ['dti_individual', 'dti_org'] } }).lean(),
+    ]);
+    const dtiByKey = Object.fromEntries(dtiSettings.map((item) => [item.key, Number(item.value)]));
+    res.json({ industries: STATEMENT_INDUSTRIES, rules: rules.length ? rules : DEFAULT_STATEMENT_RULES, incomeWeights: defaultIncomeWeights, dtiDefaults: { individual: dtiByKey.dti_individual || 55, organization: dtiByKey.dti_org || 20 } });
+});
+
+app.post('/api/statement-workbench/rules', authenticateUser, requireAdmin, async (req, res) => {
+    const { keyword, direction = 'any', category, incomeType = '', expenseGroup = '', eligiblePercent = 0 } = req.body || {};
+    if (!String(keyword || '').trim() || !String(category || '').trim()) return res.status(400).json({ message: 'Keyword and category are required' });
+    const rule = await StatementRule.create({ keyword, direction, category, incomeType, expenseGroup, eligiblePercent: Number(eligiblePercent) || 0, createdBy: String(req.user?._id || '') });
+    res.status(201).json(rule);
+});
+
+app.patch('/api/statement-workbench/rules/:id', authenticateUser, requireAdmin, async (req, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Invalid rule id' });
+    const allowed = ['keyword', 'direction', 'category', 'incomeType', 'expenseGroup', 'eligiblePercent', 'isActive'];
+    const update = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => allowed.includes(key)));
+    const rule = await StatementRule.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true });
+    if (!rule) return res.status(404).json({ message: 'Rule not found' });
+    res.json(rule);
+});
+
+app.get('/api/statement-workbench/reviews', authenticateUser, async (req, res) => {
+    const reviews = await StatementReview.find().select('subject status review.result.summary sourceFiles createdAt updatedAt createdBy').sort({ updatedAt: -1 }).limit(100).lean();
+    res.json(reviews);
+});
+
+app.post('/api/statement-workbench/reviews', authenticateUser, async (req, res) => {
+    const { subject = {}, sourceFiles = [], analysis = {}, review = {} } = req.body || {};
+    if (!analysis || !Array.isArray(analysis.transactions)) return res.status(400).json({ message: 'Гүйлгээний шинжилгээ шаардлагатай.' });
+    const rules = await StatementRule.find({ isActive: true }).lean();
+    const result = calculateStatementReview(analysis, rules.length ? rules : DEFAULT_STATEMENT_RULES, { ...review, industryName: subject.industryName });
+    const item = await StatementReview.create({ subject, sourceFiles: (sourceFiles || []).slice(0, 10), analysis, review: { ...review, result }, createdBy: String(req.user?._id || ''), updatedBy: String(req.user?._id || ''), auditLog: [{ at: new Date(), actorId: String(req.user?._id || ''), action: 'created', summary: 'Statement review created' }] });
+    res.status(201).json(item);
+});
+
+app.patch('/api/statement-workbench/reviews/:id', authenticateUser, async (req, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Invalid review id' });
+    const item = await StatementReview.findById(req.params.id);
+    if (!item) return res.status(404).json({ message: 'Review not found' });
+    const subject = { ...item.subject.toObject(), ...(req.body?.subject || {}) };
+    const review = { ...item.review.toObject(), ...(req.body?.review || {}) };
+    const rules = await StatementRule.find({ isActive: true }).lean();
+    item.subject = subject;
+    item.review = { ...review, result: calculateStatementReview(item.analysis, rules.length ? rules : DEFAULT_STATEMENT_RULES, { ...review, industryName: subject.industryName }) };
+    item.status = req.body?.status === 'reviewed' ? 'reviewed' : item.status;
+    item.updatedBy = String(req.user?._id || '');
+    item.auditLog.push({ at: new Date(), actorId: item.updatedBy, action: 'review_updated', summary: 'Rules, DTI, category, or industry updated' });
+    await item.save();
+    res.json(item);
+});
+
+app.post('/api/statement-workbench/reviews/:id/convert-customer', authenticateUser, async (req, res) => {
+    const item = await StatementReview.findById(req.params.id);
+    if (!item) return res.status(404).json({ message: 'Review not found' });
+    if (item.convertedOnboardingId) return res.json({ onboardingId: item.convertedOnboardingId, alreadyConverted: true });
+    const isBusiness = item.subject.entityType === 'organization';
+    const name = item.subject.accountHolderName || item.analysis?.frontSheet?.customerName || '';
+    const onboarding = await CustomerOnboarding.create({ requestId: `STMT-${Date.now().toString(36).toUpperCase()}`, customerType: isBusiness ? 'business' : 'personal', status: 'in_review', personal: { firstName: isBusiness ? '' : name }, business: { name: isBusiness ? name : '', industry: item.subject.industryName || '' }, contact: { name }, preferences: { product: 'Дансны хуулгын шинжилгээнээс үүссэн', serviceNeeds: `Review ${item._id}`, channel: 'statement-workbench' }, consents: { dataProcessing: true }, metadata: { source: 'statement-workbench', submittedAt: new Date() } });
+    item.status = 'converted'; item.convertedOnboardingId = String(onboarding._id); item.auditLog.push({ at: new Date(), actorId: String(req.user?._id || ''), action: 'converted_customer', summary: `Onboarding ${onboarding.requestId} created` }); await item.save();
+    res.json({ onboardingId: onboarding._id, requestId: onboarding.requestId });
+});
 
 app.get('/api/loan-research', authenticateUser, async (req, res) => {
     try {

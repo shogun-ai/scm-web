@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { API, authHeaders } from '../api';
 import LoanOrigination from '../LoanOrigination';
+import LoanResearch from '../LoanResearch';
 import {
   BarChart3,
   CreditCard,
+  FileText,
   Languages,
   LayoutGrid,
   LogOut,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Sun,
 } from 'lucide-react';
 
@@ -16,6 +20,7 @@ const UI_TEXT = {
   mn: {
     appName: 'Зээлийн систем',
     loanRequests: 'Зээлийн хүсэлтүүд',
+    documentAnalysis: 'Баримт AI уншилт',
     exposureMonitor: 'Эрсдэлийн хяналт',
     dashboard: 'Хянах самбар',
     logout: 'Гарах',
@@ -27,6 +32,7 @@ const UI_TEXT = {
   en: {
     appName: 'Loan system',
     loanRequests: 'Loan requests',
+    documentAnalysis: 'Document AI reader',
     exposureMonitor: 'Exposure monitor',
     dashboard: 'Dashboard',
     logout: 'Logout',
@@ -39,8 +45,9 @@ const UI_TEXT = {
 
 export default function Dashboard({ token, user, onLogout }) {
   const [language, setLanguage] = useState(() => localStorage.getItem('loan_language') || 'mn');
-  const [theme, setTheme] = useState(() => localStorage.getItem('loan_theme') || 'dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem('loan_theme_v2') || 'light');
   const [navigationView, setNavigationView] = useState('requests');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [requests, setRequests] = useState([]);
   const [usersList, setUsersList] = useState([]);
   const [permissionMap, setPermissionMap] = useState({});
@@ -51,6 +58,7 @@ export default function Dashboard({ token, user, onLogout }) {
 
   const sidebarItems = [
     { key: 'requests', label: text.loanRequests, icon: CreditCard },
+    { key: 'documentAnalysis', label: text.documentAnalysis, icon: FileText },
     { key: 'exposure', label: text.exposureMonitor, icon: BarChart3 },
   ];
 
@@ -112,15 +120,15 @@ export default function Dashboard({ token, user, onLogout }) {
   }, [language]);
 
   useEffect(() => {
-    localStorage.setItem('loan_theme', theme);
+    localStorage.setItem('loan_theme_v2', theme);
   }, [theme]);
 
   return (
-    <div className={`loan-shell min-h-screen ${isDark ? 'loan-dark' : 'loan-light'}`}>
+    <div className={`loan-shell min-h-screen ${isDark ? 'loan-dark' : 'loan-light'} ${sidebarOpen ? '' : 'loan-sidebar-collapsed'}`}>
       <aside className="loan-sidebar">
         <div className="loan-brand">
-          <img src="/logo.png" alt="SCM Logo" className="h-8 w-8 object-contain" />
-          <div>
+          <div className="loan-brand-mark"><img src="/logo.png" alt="SCM Logo" className="h-8 w-8 object-contain" /></div>
+          <div className="loan-brand-copy">
             <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">loan.scm.mn</p>
             <p className="text-sm font-black text-slate-100">{text.appName}</p>
           </div>
@@ -135,8 +143,13 @@ export default function Dashboard({ token, user, onLogout }) {
               <button
                 key={item.key}
                 type="button"
-                onClick={() => setNavigationView(item.key)}
+                onClick={() => {
+                  setNavigationView(item.key);
+                  if (window.innerWidth < 900) setSidebarOpen(false);
+                }}
                 className={`loan-sidebar-item ${active ? 'is-active' : ''}`}
+                title={item.label}
+                aria-current={active ? 'page' : undefined}
               >
                 <Icon size={17} />
                 <span>{item.label}</span>
@@ -144,18 +157,29 @@ export default function Dashboard({ token, user, onLogout }) {
             );
           })}
         </nav>
+        <div className="loan-sidebar-footer">
+          <div className="loan-user-avatar">{(user?.name || user?.email || 'S').slice(0, 1).toUpperCase()}</div>
+          <div className="loan-user-summary"><p>{user?.name || user?.email || 'SCM user'}</p><span>{user?.role || 'User'}</span></div>
+        </div>
       </aside>
 
       <div className="loan-main">
         <header className="loan-topbar">
           <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setSidebarOpen(open => !open)} className="loan-icon-control" title={sidebarOpen ? 'Цэс хураах' : 'Цэс нээх'}>
+              {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+            </button>
             <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5">
               <LayoutGrid size={17} />
             </div>
             <div>
               <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{text.appName}</p>
               <p className="text-sm font-black text-slate-100">
-                {navigationView === 'exposure' ? text.exposureMonitor : text.loanRequests}
+                {navigationView === 'exposure'
+                  ? text.exposureMonitor
+                  : navigationView === 'documentAnalysis'
+                    ? text.documentAnalysis
+                    : text.loanRequests}
               </p>
             </div>
           </div>
@@ -166,9 +190,9 @@ export default function Dashboard({ token, user, onLogout }) {
               onClick={() => setTheme(isDark ? 'light' : 'dark')}
               className="loan-top-control"
               title={text.theme}
+              aria-label={text.theme}
             >
               {isDark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-              {isDark ? text.dark : text.light}
             </button>
 
             <div className="loan-lang-control">
@@ -186,17 +210,17 @@ export default function Dashboard({ token, user, onLogout }) {
               ))}
             </div>
 
-            <span className="hidden text-sm font-bold text-slate-300 md:inline">{user?.name}</span>
-            <span className="rounded-full bg-yellow-400 px-2.5 py-1 text-xs font-black text-slate-950">{user?.role}</span>
-            <button onClick={onLogout} className="loan-logout">
-              <LogOut className="w-4 h-4" /> {text.logout}
+            <span className="hidden text-sm font-bold text-slate-300 xl:inline">{user?.name}</span>
+            <span className="hidden rounded-full bg-yellow-400 px-2.5 py-1 text-xs font-black text-slate-950 lg:inline">{user?.role}</span>
+            <button onClick={onLogout} className="loan-logout" title={text.logout} aria-label={text.logout}>
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </header>
 
         <main className="flex-1 p-4 lg:p-5">
           <div className="mx-auto w-full max-w-[1440px]">
-            {(requestsError || requestsLoading) && (
+            {navigationView !== 'documentAnalysis' && (requestsError || requestsLoading) && (
               <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-bold ${
                 requestsError ? 'border-red-200 bg-red-50 text-red-700' : 'border-blue-200 bg-blue-50 text-blue-700'
               }`}>
@@ -211,19 +235,23 @@ export default function Dashboard({ token, user, onLogout }) {
                 </button>
               </div>
             )}
-            <LoanOrigination
-              apiUrl={API}
-              user={user}
-              requests={requests}
-              onRequestsChange={loadRequests}
-              usersList={usersList}
-              permissionMap={permissionMap}
-              language={language}
-              theme={theme}
-              navigationView={navigationView}
-              onNavigationViewChange={setNavigationView}
-              showApplicationSwitch={false}
-            />
+            {navigationView === 'documentAnalysis' ? (
+              <LoanResearch apiUrl={API} documentOnly />
+            ) : (
+              <LoanOrigination
+                apiUrl={API}
+                user={user}
+                requests={requests}
+                onRequestsChange={loadRequests}
+                usersList={usersList}
+                permissionMap={permissionMap}
+                language={language}
+                theme={theme}
+                navigationView={navigationView}
+                onNavigationViewChange={setNavigationView}
+                showApplicationSwitch={false}
+              />
+            )}
           </div>
         </main>
       </div>

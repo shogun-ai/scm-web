@@ -43,6 +43,7 @@ const PUBLIC_ORG_FIELDS = ORG_FIELDS.filter(f => f.key !== 'orgAddress');
 const LoanRequest = ({ onBack, initialProduct }) => {
   const [step, setStep] = useState(1);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [applicationReference, setApplicationReference] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const inputRefs = useRef({});
@@ -279,7 +280,8 @@ const LoanRequest = ({ onBack, initialProduct }) => {
       fd.append('orgOwnerJSON',    JSON.stringify(orgOwner));
       // files
       Object.entries(files).forEach(([name, list]) => list.forEach(f => fd.append(name, f)));
-      await axios.post(`${API}/api/loans`, fd);
+      const response = await axios.post(`${API}/api/loans`, fd);
+      setApplicationReference(response.data?.applicationReference || '');
       setShowSuccess(true);
     } catch (err) {
       alert('Алдаа гарлаа: ' + (err.response?.data?.message || 'Сервертэй холбогдож чадсангүй'));
@@ -912,12 +914,18 @@ const LoanRequest = ({ onBack, initialProduct }) => {
       {showSuccess && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSuccess(false)}/>
-          <div className="bg-white rounded-3xl p-8 md:p-12 max-w-md w-full relative z-10 shadow-2xl text-center">
+          <div className="bg-white rounded-2xl p-8 md:p-10 max-w-md w-full relative z-10 shadow-2xl text-center">
             <button onClick={() => setShowSuccess(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-2"><X size={24}/></button>
             <div className="w-20 h-20 bg-green-100 text-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle size={40} strokeWidth={2.5}/></div>
-            <h3 className="font-bold text-2xl text-[#003B5C] mb-3">Хүсэлт амжилттай!</h3>
-            <p className="text-slate-500 mb-8 text-sm leading-relaxed">Таны зээлийн хүсэлт бүртгэгдлээ.<br/>Манай зээлийн ажилтан <span className="font-bold text-[#003B5C]">24 цагийн дотор</span> тантай холбогдох болно.</p>
-            <button onClick={() => { setShowSuccess(false); onBack(); }} className="w-full py-4 bg-[#003B5C] text-white rounded-xl font-bold hover:bg-[#002a42] transition">Ойлголоо</button>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#00A651] mb-2">Хүсэлт хүлээн авлаа</p>
+            <h3 className="font-bold text-2xl text-[#003B5C] mb-3">Таны кейс бүртгэгдлээ</h3>
+            {applicationReference && <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Кейсийн дугаар</p><p className="mt-1 font-mono text-base font-bold text-[#003B5C]">{applicationReference}</p></div>}
+            <div className="mb-7 space-y-3 text-left text-sm text-slate-600">
+              <div className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#003B5C] text-xs font-bold text-white">1</span><span>Зээлийн ажилтан таны мэдээллийг хянаж эхэлнэ.</span></div>
+              <div className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-[#003B5C]">2</span><span>Шаардлагатай тохиолдолд нэмэлт баримтын талаар тантай холбогдоно.</span></div>
+              <div className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-[#003B5C]">3</span><span>Кейсийн дугаараа хадгалаарай. Холбогдохдоо энэ дугаарыг ашиглана.</span></div>
+            </div>
+            <button onClick={() => { setShowSuccess(false); onBack(); }} className="w-full py-3.5 bg-[#003B5C] text-white rounded-xl font-bold hover:bg-[#002a42] transition">Нүүр хуудас руу буцах</button>
           </div>
         </div>
       )}

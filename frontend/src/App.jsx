@@ -4,7 +4,7 @@ import {
   Users, TrendingUp, ShieldCheck, PieChart, Briefcase, CreditCard, 
   Building2, Car, Smartphone, Handshake, Home, LineChart, 
   FileText, Scale, MapPin, Phone, Mail, ChevronLeft, Quote, Network,
-  ArrowRight, ChevronDown
+  ArrowRight, ChevronDown, Menu, X
 } from 'lucide-react';
 
 // ======================================================================
@@ -38,6 +38,7 @@ import LoanRequest from './components/LoanRequest';
 import Login from './components/Login';
 import AdminPanel from './components/AdminPanel';
 import TrustRequest from './components/TrustRequest';
+import CustomerOnboarding from './components/CustomerOnboarding';
 import ChatBot from './components/ChatBot'; // ✅ Чатбот нэмэгдсэн
 
 // ======================================================================
@@ -69,9 +70,10 @@ const FINANCIAL_DATE = "2026 оны 3 сарын 31-ний байдлаар";
 const hasBrokenEncoding = (value = '') => /[ÐÑÒÓ]|â|�/.test(String(value));
 
 const normalizeFinancialStats = (stats = []) => {
+  const safeStats = Array.isArray(stats) ? stats : [];
   const byOrder = new Map();
 
-  stats.forEach((stat) => {
+  safeStats.forEach((stat) => {
     const orderKey = Number.isFinite(Number(stat.order)) ? Number(stat.order) : `id-${stat._id}`;
     const normalized = { val: stat.value, label: stat.label, order: stat.order, _id: stat._id };
     const existing = byOrder.get(orderKey);
@@ -409,7 +411,8 @@ const ScrollDownArrow = ({ targetId, color = "text-white/70" }) => {
 };
 
 const PromotionSlider = ({ promotions, fallbackBg, homeSlide, intervalSeconds = 15, onOpen, onProducts }) => {
-    const slides = [homeSlide, ...promotions];
+    const safePromotions = Array.isArray(promotions) ? promotions : [];
+    const slides = [homeSlide, ...safePromotions];
     const [active, setActive] = useState(0);
     const current = slides[active] || slides[0];
 
@@ -433,28 +436,45 @@ const PromotionSlider = ({ promotions, fallbackBg, homeSlide, intervalSeconds = 
                     />
                 ))}
             </div>
-            <div className={`absolute inset-0 transition-colors duration-700 ${current?.kind === 'home' ? 'sc-overlay-80 mix-blend-multiply' : 'sc-overlay-70'}`}></div>
+            <div className={`absolute inset-0 transition-colors duration-700 ${current?.kind === 'home' ? 'sc-hero-vignette' : 'sc-overlay-70'}`}></div>
             {current?.kind === 'home' ? (
-                <div className="relative z-10 h-full flex items-center justify-center text-center px-4">
-                    <div className="max-w-5xl space-y-8 text-white animate-fade-in-up px-4 flex flex-col items-center">
+                <div className="relative z-10 h-full flex items-center justify-center text-center px-4 pt-20 pb-24">
+                    <div className="max-w-5xl space-y-7 text-white animate-fade-in-up px-4 flex flex-col items-center">
                         <img
                             src={current.logo}
                             alt="Solongo Capital Logo"
-                            className={current.logoClassName}
+                            className={`${current.logoClassName} drop-shadow-[0_18px_45px_rgba(0,0,0,0.45)]`}
                         />
-                        <h1 className="font-display font-bold text-4xl md:text-5xl lg:text-7xl leading-[1.1] tracking-tight">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-white/85 backdrop-blur-md">
+                            <span className="h-1.5 w-1.5 rounded-full bg-[#00A651] shadow-[0_0_18px_rgba(0,166,81,0.9)]"></span>
+                            Solongo Capital
+                        </div>
+                        <h1 className="font-display font-extrabold text-4xl md:text-5xl lg:text-7xl leading-[1.05] tracking-normal drop-shadow-2xl">
                             {current.line1} <br/>
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00A651] to-emerald-400">{current.highlight}</span> {current.line2}
                         </h1>
-                        <p className="font-sans font-normal text-base md:text-lg lg:text-xl text-blue-100 max-w-2xl mx-auto leading-relaxed opacity-90">
+                        <p className="font-sans font-normal text-base md:text-lg lg:text-xl text-blue-50 max-w-2xl mx-auto leading-relaxed opacity-95">
                             {current.description}
                         </p>
-                        <div className="pt-8">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl pt-1">
+                            {['Хурдан шийдэл', 'Ил тод нөхцөл', 'Найдвартай түнш'].map((label) => (
+                                <div key={label} className="sc-glass-panel rounded-lg px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-white/85">
+                                    {label}
+                                </div>
+                            ))}
+                        </div>
+                        <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
                             <button
                                 onClick={onProducts}
-                                className="px-10 py-4 bg-transparent border border-white/40 text-white font-sans font-semibold rounded-full transition-all duration-300 hover:bg-white/10 hover:border-white uppercase tracking-widest text-xs"
+                                className="sc-primary-button inline-flex min-h-12 items-center justify-center rounded-full px-9 py-4 font-sans text-xs font-extrabold uppercase tracking-widest transition-all duration-300"
                             >
                                 {current.button}
+                            </button>
+                            <button
+                                onClick={() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })}
+                                className="sc-secondary-button inline-flex min-h-12 items-center justify-center rounded-full px-9 py-4 font-sans text-xs font-bold uppercase tracking-widest text-white transition-all duration-300"
+                            >
+                                Холбоо барих
                             </button>
                         </div>
                     </div>
@@ -468,7 +488,7 @@ const PromotionSlider = ({ promotions, fallbackBg, homeSlide, intervalSeconds = 
                             <p className="font-sans text-lg md:text-2xl text-white/85 leading-relaxed max-w-2xl mb-10 font-light">{current.excerpt}</p>
                             <button
                                 onClick={() => onOpen(current)}
-                                className="inline-flex items-center gap-3 px-7 py-3.5 bg-[#D4AF37] text-[#003B5C] rounded-full font-display font-bold uppercase tracking-wider text-xs hover:bg-white transition shadow-xl"
+                                className="sc-primary-button inline-flex items-center gap-3 rounded-full px-7 py-3.5 font-display text-xs font-bold uppercase tracking-wider transition shadow-xl"
                             >
                                 {current.ctaLabel || 'Дэлгэрэнгүй'} <ArrowRight size={16}/>
                             </button>
@@ -478,7 +498,7 @@ const PromotionSlider = ({ promotions, fallbackBg, homeSlide, intervalSeconds = 
             )}
             {slides.length > 1 && (
                 <div className="absolute left-4 right-4 md:left-auto md:right-10 bottom-24 z-20 flex items-center justify-between md:justify-end gap-4">
-                    <button onClick={() => go(-1)} className="w-11 h-11 rounded-full border border-white/30 bg-black/20 text-white grid place-items-center hover:bg-white hover:text-[#003B5C] transition"><ChevronLeft size={20}/></button>
+                    <button onClick={() => go(-1)} className="grid h-11 w-11 place-items-center rounded-full border border-white/25 bg-white/10 text-white backdrop-blur-md transition hover:bg-white hover:text-[#003B5C]" aria-label="Previous slide"><ChevronLeft size={20}/></button>
                     <div className="flex gap-2">
                         {slides.map((slide, idx) => (
                             <button
@@ -489,7 +509,7 @@ const PromotionSlider = ({ promotions, fallbackBg, homeSlide, intervalSeconds = 
                             />
                         ))}
                     </div>
-                    <button onClick={() => go(1)} className="w-11 h-11 rounded-full border border-white/30 bg-black/20 text-white grid place-items-center hover:bg-white hover:text-[#003B5C] transition"><ArrowRight size={20}/></button>
+                    <button onClick={() => go(1)} className="grid h-11 w-11 place-items-center rounded-full border border-white/25 bg-white/10 text-white backdrop-blur-md transition hover:bg-white hover:text-[#003B5C]" aria-label="Next slide"><ArrowRight size={20}/></button>
                 </div>
             )}
         </div>
@@ -871,7 +891,7 @@ const FinancialReportsPage = ({ onBack }) => {
     useEffect(() => {
         window.scrollTo(0, 0);
         fetch(`${API_URL}/api/policies?category=report&displayOnWeb=true`)
-            .then(r => r.json()).then(d => setFiles(d)).catch(() => {}).finally(() => setLoading(false));
+            .then(r => r.json()).then(d => setFiles(Array.isArray(d) ? d : [])).catch(() => {}).finally(() => setLoading(false));
     }, []);
 
     const getFileUrl = (f) => f.fileUrl || `${API_URL}/policies/${f.fileName}`;
@@ -923,7 +943,7 @@ const PoliciesPage = ({ onBack }) => {
     useEffect(() => {
         window.scrollTo(0, 0);
         fetch(`${API_URL}/api/policies?category=policy&displayOnWeb=true`)
-            .then(r => r.json()).then(d => setFiles(d)).catch(() => {}).finally(() => setLoading(false));
+            .then(r => r.json()).then(d => setFiles(Array.isArray(d) ? d : [])).catch(() => {}).finally(() => setLoading(false));
     }, []);
 
     const getFileUrl = (f) => f.fileUrl || `${API_URL}/policies/${f.fileName}`;
@@ -1005,7 +1025,8 @@ function App() {
     home: '/', financials: '/financials', policies: '/policies',
     blog_list: '/blog', login: '/login', loan_request: '/loan-request',
     calculator: '/calculator', trust_calculator: '/trust-calculator',
-    trust_request: '/trust-request', admin: '/admin', shogun_studio: '/shogun-studio',
+    trust_request: '/trust-request', onboarding: '/onboarding',
+    admin: '/admin', shogun_studio: '/shogun-studio',
   };
 
   const getPath = (view, item) => {
@@ -1064,6 +1085,7 @@ function App() {
       id: 'products',
       submenu: products.map(prod => ({ name: prod.title, type: 'product', data: prod }))
     },
+    { name: 'Харилцагч болох', id: 'onboarding', type: 'view', view: 'onboarding' },
     { name: 'Блог', id: 'blog' },
     { name: 'Холбоо барих', id: 'contact' },
   ], [products]);
@@ -1081,6 +1103,7 @@ function App() {
       .catch(() => {});
     fetch(`${API_URL}/api/products/content`).then(r => r.json())
       .then(dbProds => {
+        if (!Array.isArray(dbProds)) return;
         const existingKeys = Object.values(PRODUCT_KEY_MAP);
         const mapped = productsData.map(p => {
           const key = PRODUCT_KEY_MAP[p.id];
@@ -1118,7 +1141,7 @@ function App() {
           }));
         setProducts([...mapped, ...newProds]);
       }).catch(() => {});
-    fetch(`${API_URL}/api/promotions`).then(r => r.json()).then(d => setPromotions(d || [])).catch(() => {});
+    fetch(`${API_URL}/api/promotions`).then(r => r.json()).then(d => setPromotions(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
 
   const navigateTo = (view, item = null, govItem = null) => {
@@ -1267,11 +1290,31 @@ function App() {
     };
   };
 
+  const handleMenuItemClick = (item) => {
+    if (item.type === 'view') {
+      navigateTo(item.view);
+      return;
+    }
+    if (!item.submenu) scrollToSection(item.id);
+  };
+
+  const textOrFallback = (value, fallback) => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    return text && !hasBrokenEncoding(text) ? value : fallback;
+  };
+
+  const heroText = {
+    line1: textOrFallback(cfg.hero_line1, 'Бизнесийн'),
+    highlight: textOrFallback(cfg.hero_highlight, 'Өсөлтийг'),
+    line2: textOrFallback(cfg.hero_line2, 'Дэмжинэ'),
+    description: textOrFallback(cfg.hero_description, 'Бид танд зах зээлийн хамгийн уян хатан нөхцөлийг санал болгож, таны санхүүгийн найдвартай түнш байх болно.'),
+    button: textOrFallback(cfg.hero_button, 'Бүтээгдэхүүн үзэх'),
+  };
+
   return (
     <div className={`font-sans antialiased selection:bg-[#00A651] selection:text-white${isLight ? ' sc-light' : ''}`}
       style={themeStyle}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap');
         .sc-overlay-60 { background-color: rgba(${overlayRgb}, ${(0.60 * oMul).toFixed(2)}) !important; }
         .sc-overlay-70 { background-color: rgba(${overlayRgb}, ${(0.70 * oMul).toFixed(2)}) !important; }
         .sc-overlay-80 { background-color: rgba(${overlayRgb}, ${(0.80 * oMul).toFixed(2)}) !important; }
@@ -1301,23 +1344,23 @@ function App() {
         <>
             <BackButton onClick={() => navigateTo('home')} currentView={currentView} />
            
-            <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${currentView === 'shogun_studio' ? 'hidden' : ''} ${scrolled || currentView !== 'home' ? 'bg-[#003B5C]/95 backdrop-blur-md shadow-xl py-3 border-b border-white/10' : 'bg-transparent py-4 md:py-6'}`}>
+            <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${currentView === 'shogun_studio' ? 'hidden' : ''} ${scrolled || currentView !== 'home' ? 'bg-[#062842]/88 backdrop-blur-xl sc-nav-shell py-2.5 border-b border-white/10' : 'bg-transparent py-4 md:py-6'}`}>
               <div className="max-w-7xl mx-auto px-4 md:px-6 flex justify-between items-center">
                 
                 <div className="cursor-pointer z-50 transition-transform hover:scale-105 duration-300" onClick={() => navigateTo('home')}>
                     <img 
                       src={(scrolled || currentView !== 'home') ? logoColored : logoWhite} 
                       alt="Solongo Capital" 
-                      className="h-10 md:h-14 lg:h-20 object-contain"
+                      className={`${scrolled || currentView !== 'home' ? 'h-10 md:h-12 lg:h-14' : 'h-11 md:h-14 lg:h-20'} object-contain transition-all duration-300`}
                     /> 
                 </div>
 
-                <div className="hidden md:flex items-center space-x-8">
+                <div className="hidden md:flex items-center gap-7">
                   {menuItems.map((item) => (
                     <div key={item.id} className="relative group h-full flex items-center">
-                      <button 
-                        onClick={() => item.submenu ? null : scrollToSection(item.id)} 
-                        className={`flex items-center gap-1 text-xs font-sans font-semibold uppercase tracking-[0.15em] hover:text-[#D4AF37] transition-colors duration-300 py-4 ${scrolled || currentView !== 'home' ? 'text-gray-200' : 'text-white'}`}
+                      <button
+                        onClick={() => handleMenuItemClick(item)}
+                        className={`flex items-center gap-1 rounded-full px-1 py-4 text-xs font-sans font-bold uppercase tracking-[0.14em] hover:text-[#D4AF37] transition-colors duration-300 ${scrolled || currentView !== 'home' ? 'text-gray-100' : 'text-white'}`}
                       >
                         {item.name}
                         {item.submenu && <ChevronDown size={12} className="group-hover:rotate-180 transition-transform duration-300 text-[#D4AF37]/70"/>}
@@ -1325,7 +1368,7 @@ function App() {
 
                       {item.submenu && (
                         <div className="absolute top-full left-1/2 -translate-x-1/2 pt-6 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-500 transform group-hover:translate-y-0 translate-y-4 w-72 perspective-1000">
-                          <div className="bg-black/60 backdrop-blur-3xl border border-[#D4AF37]/20 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col p-1.5 ring-1 ring-white/5">
+                          <div className="bg-[#051a2a]/88 backdrop-blur-3xl border border-[#D4AF37]/20 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col p-1.5 ring-1 ring-white/5">
                             <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-black/60 border-t border-l border-[#D4AF37]/20 rotate-45"></div>
                             {item.submenu.map((subItem, idx) => (
                               <button
@@ -1351,22 +1394,28 @@ function App() {
 
                   <button 
                       onClick={() => navigateTo('login')}
-                      className={`px-7 py-2.5 rounded-full font-sans font-semibold text-xs uppercase tracking-widest transition-all duration-300 border ${scrolled || currentView !== 'home' ? 'border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-white' : 'border-white text-white hover:bg-[#D4AF37] hover:border-[#D4AF37] hover:text-white'} ml-6`}
+                      className={`rounded-full px-6 py-2.5 font-sans text-xs font-extrabold uppercase tracking-widest transition-all duration-300 border ${scrolled || currentView !== 'home' ? 'border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#062842]' : 'border-white/70 text-white hover:bg-[#D4AF37] hover:border-[#D4AF37] hover:text-[#062842]'} ml-3`}
                   >
                       Нэвтрэх
                   </button>
                 </div>
 
-                <button className="md:hidden text-2xl z-50 text-white" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>☰</button>
+                <button
+                  className="z-50 grid h-11 w-11 place-items-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur-md transition hover:bg-white/15 md:hidden"
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+                >
+                  {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+                </button>
               </div>
               
               {mobileMenuOpen && (
-                <div className="absolute top-0 left-0 w-full h-screen bg-[#003B5C]/97 backdrop-blur-xl flex flex-col items-center justify-center space-y-8 z-40">
+                <div className="absolute top-0 left-0 w-full h-screen bg-[#041621]/96 backdrop-blur-2xl flex flex-col items-center justify-center space-y-7 z-40 px-6">
                     {menuItems.map((item) => (
-                      <button key={item.id} onClick={() => scrollToSection(item.id)} className="text-xl text-white font-display font-bold uppercase tracking-widest">{item.name}</button>
+                      <button key={item.id} onClick={() => item.type === 'view' ? navigateTo(item.view) : scrollToSection(item.id)} className="w-full max-w-sm rounded-lg border border-white/10 bg-white/[0.04] px-5 py-4 text-center text-lg text-white font-display font-bold uppercase tracking-widest transition hover:border-[#D4AF37]/50 hover:bg-white/10">{item.name}</button>
                     ))}
-                    <button onClick={() => {navigateTo('login'); setMobileMenuOpen(false)}} className="text-xl text-[#D4AF37] font-display font-bold uppercase mt-4 tracking-widest">Нэвтрэх</button>
-                    <button onClick={() => setMobileMenuOpen(false)} className="text-sm text-white/50 font-display font-bold uppercase mt-10">Хаах</button>
+                    <button onClick={() => {navigateTo('login'); setMobileMenuOpen(false)}} className="sc-primary-button mt-2 w-full max-w-sm rounded-full px-6 py-4 text-sm font-display font-extrabold uppercase tracking-widest transition">Нэвтрэх</button>
+                    <button onClick={() => setMobileMenuOpen(false)} className="text-sm text-white/55 font-display font-bold uppercase mt-4 tracking-widest">Хаах</button>
                 </div>
               )}
             </nav>
@@ -1387,6 +1436,8 @@ function App() {
                 <GovernanceDetail item={selectedGovernance} onBack={() => navigateTo('home')} />
             ) : currentView === 'promotion_detail' && selectedItem ? (
                 <PromotionDetail promotion={selectedItem} onBack={() => navigateTo('home')} />
+            ) : currentView === 'onboarding' ? (
+                <CustomerOnboarding onBack={() => navigateTo('home')} />
             ) : currentView === 'login' ? (
                 <Login 
                     onBack={() => navigateTo('home')} 
@@ -1406,7 +1457,7 @@ function App() {
                 <ShogunStudio onBack={() => navigateTo('home')} />
             ) : (
                   <>
-                    <section id="home" className="relative h-screen text-left">
+                    <section id="home" className="relative h-screen text-left sc-section-band">
                       <PromotionSlider
                         promotions={promotions}
                         fallbackBg={BACKGROUNDS.hero}
@@ -1418,11 +1469,11 @@ function App() {
                           backgroundImageUrl: BACKGROUNDS.hero,
                           logo: IS_VERTICAL_HERO_LOGO ? (USE_GOLD_LOGO ? logoGoldVertical : logoWhiteVertical) : logoWhite,
                           logoClassName: `${IS_VERTICAL_HERO_LOGO ? 'h-32 md:h-40 lg:h-52' : 'h-24 md:h-32'} object-contain mb-4 opacity-90`,
-                          line1: cfg.hero_line1 || 'Ð‘Ð¸Ð·Ð½ÐµÑÐ¸Ð¹Ð½',
-                          highlight: cfg.hero_highlight || 'Ó¨ÑÓ©Ð»Ñ‚Ð¸Ð¹Ð³',
-                          line2: cfg.hero_line2 || 'Ð”ÑÐ¼Ð¶Ð¸Ð½Ñ',
-                          description: cfg.hero_description || 'Ð‘Ð¸Ð´ Ñ‚Ð°Ð½Ð´ Ð·Ð°Ñ… Ð·ÑÑÐ»Ð¸Ð¹Ð½ Ñ…Ð°Ð¼Ð³Ð¸Ð¹Ð½ ÑƒÑÐ½ Ñ…Ð°Ñ‚Ð°Ð½ Ð½Ó©Ñ…Ñ†Ó©Ð»Ð¸Ð¹Ð³ ÑÐ°Ð½Ð°Ð» Ð±Ð¾Ð»Ð³Ð¾Ð¶, Ñ‚Ð°Ð½Ñ‹ ÑÐ°Ð½Ñ…Ò¯Ò¯Ð³Ð¸Ð¹Ð½ Ð½Ð°Ð¹Ð´Ð²Ð°Ñ€Ñ‚Ð°Ð¹ Ñ‚Ò¯Ð½Ñˆ Ð±Ð°Ð¹Ñ… Ð±Ð¾Ð»Ð½Ð¾.',
-                          button: cfg.hero_button || 'Ð‘Ò¯Ñ‚ÑÑÐ³Ð´ÑÑ…Ò¯Ò¯Ð½ Ò¯Ð·ÑÑ…'
+                          line1: heroText.line1,
+                          highlight: heroText.highlight,
+                          line2: heroText.line2,
+                          description: heroText.description,
+                          button: heroText.button
                         }}
                       />
                       <img
@@ -1442,18 +1493,18 @@ function App() {
                           className={`${IS_VERTICAL_HERO_LOGO ? 'h-32 md:h-40 lg:h-52' : 'h-24 md:h-32'} object-contain mb-4 opacity-90`} 
                         />
                         <h1 className="font-display font-bold text-4xl md:text-5xl lg:text-7xl leading-[1.1] tracking-tight">
-                            {cfg.hero_line1 || 'Бизнесийн'} <br/>
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00A651] to-emerald-400">{cfg.hero_highlight || 'Өсөлтийг'}</span> {cfg.hero_line2 || 'Дэмжинэ'}
+                            {heroText.line1} <br/>
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00A651] to-emerald-400">{heroText.highlight}</span> {heroText.line2}
                         </h1>
                         <p className="font-sans font-normal text-base md:text-lg lg:text-xl text-blue-100 max-w-2xl mx-auto leading-relaxed opacity-90">
-                            {cfg.hero_description || 'Бид танд зах зээлийн хамгийн уян хатан нөхцөлийг санал болгож, таны санхүүгийн найдвартай түнш байх болно.'}
+                            {heroText.description}
                         </p>
                         <div className="pt-8">
                             <button
                               onClick={() => scrollToSection('products')}
                               className="px-10 py-4 bg-transparent border border-white/40 text-white font-sans font-semibold rounded-full transition-all duration-300 hover:bg-white/10 hover:border-white uppercase tracking-widest text-xs"
                             >
-                              {cfg.hero_button || 'Бүтээгдэхүүн үзэх'}
+                              {heroText.button}
                             </button>
                         </div>
                       </div>
@@ -1461,25 +1512,26 @@ function App() {
                     </section>
 
                     <div id="about-intro" className="relative">
-                      <section className="min-h-screen relative flex items-center justify-center text-center px-6" style={getSectionBackgroundStyle('about', BACKGROUNDS.about)}>
-                        <div className="absolute inset-0 sc-overlay-60"></div>
-                        <div className="relative z-10 max-w-4xl space-y-12 animate-fade-in-up">
+                      <section className="min-h-screen relative flex items-center justify-center text-center px-6 py-24 sc-section-band" style={getSectionBackgroundStyle('about', BACKGROUNDS.about)}>
+                        <div className="absolute inset-0 sc-overlay-70"></div>
+                        <div className="relative z-10 max-w-5xl space-y-12 animate-fade-in-up">
                             <div className="space-y-6">
-                                <h2 className="font-display font-bold text-4xl md:text-6xl text-white leading-tight">{cfg.about_title || 'Бид хэн бэ?'}</h2>
+                                <span className="sc-kicker block">Solongo Capital</span>
+                                <h2 className="font-display font-extrabold text-4xl md:text-6xl text-white leading-tight drop-shadow-xl">{cfg.about_title || 'Бид хэн бэ?'}</h2>
                                 <p className="font-sans text-xl md:text-2xl text-white/90 leading-relaxed font-light">
                                     <span className="text-[#D4AF37] font-bold">Солонго Капитал ББСБ ХХК</span> {cfg.about_intro || 'нь харилцагч төвтэй үйлчилгээг эрхэмлэн, санхүүгийн салбарт шинэ жишиг тогтоохоор зорин ажиллаж байна.'}
                                 </p>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-8 border-t border-white/20">
-                                <div className="p-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-2">
+                                <div className="sc-glass-panel rounded-lg p-6">
                                     <h4 className="font-display font-bold text-2xl text-[#D4AF37] mb-3">{cfg.about_mission_title || 'Эрхэм зорилго'}</h4>
                                     <p className="font-sans text-white/80 leading-relaxed">{cfg.about_mission_text || 'Харилцагчдын санхүүгийн хэрэгцээг шуурхай, уян хатан шийдлээр хангах.'}</p>
                                 </div>
-                                <div className="p-6 border-t md:border-t-0 md:border-l border-white/20">
+                                <div className="sc-glass-panel rounded-lg p-6">
                                     <h4 className="font-display font-bold text-2xl text-[#D4AF37] mb-3">{cfg.about_vision_title || 'Алсын хараа'}</h4>
                                     <p className="font-sans text-white/80 leading-relaxed">{cfg.about_vision_text || 'Итгэлд суурилсан, дижитал, хэрэглэгч төвтэй байгууллага болох.'}</p>
                                 </div>
-                                <div className="p-6 border-t md:border-t-0 md:border-l border-white/20">
+                                <div className="sc-glass-panel rounded-lg p-6">
                                     <h4 className="font-display font-bold text-2xl text-[#D4AF37] mb-3">{cfg.about_values_title || 'Үнэ цэнэ'}</h4>
                                     <p className="font-sans text-white/80 leading-relaxed">{cfg.about_values_text || 'Шударга ёс, Ил тод байдал, Хамтын ажиллагаа, Инноваци.'}</p>
                                 </div>
@@ -1488,27 +1540,27 @@ function App() {
                         <ScrollDownArrow targetId="financials" color="text-white/50" />
                       </section>
 
-                      <section id="financials" className="py-24 relative min-h-[90vh] flex items-center" style={getSectionBackgroundStyle('financials', BACKGROUNDS.financials)}>
+                      <section id="financials" className="py-24 relative min-h-[90vh] flex items-center sc-section-band" style={getSectionBackgroundStyle('financials', BACKGROUNDS.financials)}>
                         <div className="absolute inset-0 sc-overlay-80"></div>
                         <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
                             <div className="text-center mb-16">
-                                <span className="text-[#00A651] font-sans font-semibold uppercase tracking-widest text-xs mb-2 block">{cfg.financial_section_label || 'Бидний амжилт'}</span>
-                                <h2 className="font-display font-bold text-3xl md:text-5xl text-white">{cfg.financial_section_title || 'Санхүүгийн үзүүлэлтүүд'}</h2>
+                                <span className="sc-kicker mb-3 block">{cfg.financial_section_label || 'Бидний амжилт'}</span>
+                                <h2 className="font-display font-extrabold text-3xl md:text-5xl text-white">{cfg.financial_section_title || 'Санхүүгийн үзүүлэлтүүд'}</h2>
                                 <p className="text-[#C0C0C0] text-lg md:text-xl max-w-4xl mx-auto mt-6 font-light leading-relaxed">
                                     {cfg.financial_section_desc || 'Бид богино хугацааны өндөр ашигт бус, урт хугацаанд тогтвортой, хүртээмжтэй санхүүгийн экосистемийг бүтээхийг зорьдог.'}
                                 </p>
                                 <p className="text-blue-200/60 font-sans text-sm mt-4">{cfg.financial_date || FINANCIAL_DATE}</p>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-8 md:gap-12 text-center">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 text-center">
                                 {financialStats.map((stat, i) => (
-                                <div key={i} className="px-2 md:px-4 py-6 border border-white/10 rounded-2xl hover:bg-white/5 transition duration-300">
+                                <div key={i} className="sc-glass-panel sc-card-lift rounded-lg px-3 md:px-5 py-6 transition duration-300">
                                     <div className="text-2xl md:text-5xl font-display font-bold text-[#D4AF37] mb-2 tabular-nums tracking-tight">{stat.val}</div>
                                     <div className="text-[10px] md:text-xs font-display font-medium tracking-widest uppercase text-white/80">{stat.label}</div>
                                 </div>
                                 ))}
                             </div>
                             <div className="text-center mt-16">
-                                <button onClick={() => navigateTo('financials')} className="text-white font-display font-bold uppercase tracking-wider text-small hover:text-[#00A651] transition border-b border-white/30 pb-1 hover:border-[#00A651]">
+                                <button onClick={() => navigateTo('financials')} className="sc-secondary-button rounded-full px-7 py-3 text-white font-display font-bold uppercase tracking-wider text-xs transition">
                                     Санхүүгийн тайлан дэлгэрэнгүй →
                                 </button>
                             </div>
@@ -1516,11 +1568,12 @@ function App() {
                         <ScrollDownArrow targetId="governance" />
                       </section>
 
-                      <section id="governance" className="py-24 relative min-h-[90vh] flex flex-col justify-center" style={getSectionBackgroundStyle('governance', BACKGROUNDS.governance)}>
+                      <section id="governance" className="py-24 relative min-h-[90vh] flex flex-col justify-center sc-section-band" style={getSectionBackgroundStyle('governance', BACKGROUNDS.governance)}>
                         <div className="absolute inset-0 sc-overlay-85"></div>
                         <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
                             <div className="text-center mb-16">
-                              <h2 className="font-display font-bold text-3xl md:text-5xl text-white">Компанийн засаглал</h2>
+                              <span className="sc-kicker mb-3 block">Ил тод байдал</span>
+                              <h2 className="font-display font-extrabold text-3xl md:text-5xl text-white">Компанийн засаглал</h2>
                               <p className="text-white/60 max-w-2xl mx-auto mt-4 font-sans text-sm">Бид ил тод, нээлттэй байдал болон бизнесийн ёс зүйг дээдэлнэ.</p>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -1530,7 +1583,7 @@ function App() {
                                       <div 
                                           key={idx} 
                                           onClick={() => handleGovernanceClick(item)} 
-                                          className="group cursor-pointer flex flex-col items-center text-center p-6 hover:bg-white/8 border border-transparent hover:border-white/10 rounded-2xl transition-all duration-300"
+                                          className="sc-glass-panel sc-card-lift group cursor-pointer flex flex-col items-center text-center rounded-lg p-7 transition-all duration-300"
                                       >
                                       <div className="mb-6 text-[#D4AF37] transition-transform duration-300 group-hover:scale-110">
                                           <Icon size={48} strokeWidth={1} />
@@ -1547,28 +1600,28 @@ function App() {
                       </section>
                     </div>
 
-                    <section id="products" className="py-24 relative min-h-screen flex items-center" style={getSectionBackgroundStyle('products', BACKGROUNDS.products)}>
+                    <section id="products" className="py-24 relative min-h-screen flex items-center sc-section-band" style={getSectionBackgroundStyle('products', BACKGROUNDS.products)}>
                       <div className="absolute inset-0 sc-overlay-90"></div>
                       <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
                           <div className="text-center mb-16 max-w-3xl mx-auto">
-                            <span className="text-[#00A651] font-sans font-semibold uppercase tracking-widest text-xs mb-4 block">Бидний шийдэл</span>
-                            <h2 className="font-display font-bold text-3xl md:text-5xl text-white leading-tight">Бүтээгдэхүүн үйлчилгээ</h2>
+                            <span className="sc-kicker mb-4 block">Бидний шийдэл</span>
+                            <h2 className="font-display font-extrabold text-3xl md:text-5xl text-white leading-tight">Бүтээгдэхүүн үйлчилгээ</h2>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                             {products.map((item) => {
                               const Icon = item.icon;
                               return (
                                   <div
                                     key={item.id}
-                                    className="group flex flex-col items-start h-full p-6 border border-white/10 hover:border-[#D4AF37]/40 hover:bg-white/5 rounded-2xl transition-all duration-300"
+                                    className="sc-glass-panel sc-card-lift group flex h-full flex-col items-start rounded-lg p-6 transition-all duration-300"
                                   >
-                                    <div className="mb-6 p-4 bg-white/10 rounded-2xl shadow-sm group-hover:bg-[#D4AF37] transition-colors duration-300 w-fit text-white group-hover:text-white">
+                                    <div className="mb-6 w-fit rounded-lg bg-white/10 p-4 text-white shadow-sm transition-colors duration-300 group-hover:bg-[#D4AF37] group-hover:text-[#062842]">
                                         <Icon size={32} />
                                     </div>
-                                    <h3 className="font-display font-semibold text-h3 text-white mb-3">{item.title}</h3>
+                                    <h3 className="font-display text-xl font-bold text-white mb-3">{item.title}</h3>
                                     <p className="font-sans text-body text-gray-400 mb-6 leading-relaxed flex-grow group-hover:text-gray-300 transition">{item.shortDesc}</p>
-                                    <button onClick={() => navigateTo('product_detail', item)} className="text-[#D4AF37] font-display font-bold uppercase text-xs tracking-wider group-hover:underline cursor-pointer flex items-center gap-2 mt-auto">
-                                    Дэлгэрэнгүй <span>→</span>
+                                    <button onClick={() => navigateTo('product_detail', item)} className="mt-auto flex cursor-pointer items-center gap-2 rounded-full border border-[#D4AF37]/35 px-4 py-2 text-xs font-display font-bold uppercase tracking-wider text-[#D4AF37] transition group-hover:bg-[#D4AF37] group-hover:text-[#062842]">
+                                    Дэлгэрэнгүй <ArrowRight size={14} />
                                     </button>
                                   </div>
                               )
@@ -1580,15 +1633,15 @@ function App() {
                    </section> {/* Бүтээгдэхүүн дууссан хаалт */}
 
                     {/* ✅ БЛОГ СЕКЦИЙГ ЭНД НЭМЖ БАЙРЛУУЛ (ЯГ CONTACT-ИЙН ДЭЭР) */}
-                    <section id="blog" className="py-24 relative min-h-[90vh] flex items-center" style={getSectionBackgroundStyle('blog', BACKGROUNDS.blog)}>
+                    <section id="blog" className="py-24 relative min-h-[90vh] flex items-center sc-section-band" style={getSectionBackgroundStyle('blog', BACKGROUNDS.blog)}>
                         <div className="absolute inset-0 sc-overlay-90"></div>
                         <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
                             <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
                                 <div className="text-center md:text-left">
-                                    <span className="text-[#00A651] font-sans font-semibold uppercase tracking-widest text-xs mb-2 block">Мэдээ мэдээлэл</span>
-                                    <h2 className="font-display font-bold text-3xl md:text-5xl text-white">Блог & Мэдээ</h2>
+                                    <span className="sc-kicker mb-2 block">Мэдээ мэдээлэл</span>
+                                    <h2 className="font-display font-extrabold text-3xl md:text-5xl text-white">Блог & Мэдээ</h2>
                                 </div>
-                                <button onClick={() => navigateTo('blog_list')} className="px-8 py-3 border border-white/30 text-white rounded-full font-bold text-xs uppercase hover:bg-[#D4AF37] hover:text-black transition-all">Бүх мэдээг харах</button>
+                                <button onClick={() => navigateTo('blog_list')} className="sc-secondary-button rounded-full px-8 py-3 text-white font-bold text-xs uppercase transition-all">Бүх мэдээг харах</button>
                             </div>
                             <BlogList limit={4} />
                         </div>
@@ -1596,31 +1649,31 @@ function App() {
                     </section>
 
                     {/* ✅ КОНТАКТ СЕКЦИЙГ ЗӨВХӨН НЭГ УДАА НЭЭХ */}
-                    <section id="contact" className="relative min-h-screen flex items-center text-white" style={getSectionBackgroundStyle('contact', BACKGROUNDS.contact, { fixed: false })}>
+                    <section id="contact" className="relative min-h-screen flex items-center text-white sc-section-band" style={getSectionBackgroundStyle('contact', BACKGROUNDS.contact, { fixed: false })}>
                       <div className="absolute inset-0 sc-overlay-92"></div>
                       <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-6 w-full grid grid-cols-1 lg:grid-cols-2 gap-16 items-center py-24">
-                          <div>
+                          <div className="sc-glass-panel rounded-lg p-6 md:p-9">
                             <img src={logoMetal} alt="Solongo Capital Metal" className="h-16 mb-10 object-contain brightness-0 invert opacity-80" />
-                            <span className="text-[#00A651] font-sans font-semibold uppercase tracking-widest text-xs mb-2 block">Бидэнтэй нэгдээрэй</span>
-                            <h2 className="font-display font-bold text-3xl md:text-5xl mb-12">Холбоо барих</h2>
+                            <span className="sc-kicker mb-2 block">Бидэнтэй нэгдээрэй</span>
+                            <h2 className="font-display font-extrabold text-3xl md:text-5xl mb-10">Холбоо барих</h2>
                             <div className="space-y-8">
                                 <a href="https://goo.gl/maps/YOUR_LINK" target="_blank" rel="noopener noreferrer" className="flex items-start gap-6 group hover:opacity-80 transition cursor-pointer">
-                                  <span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651] group-hover:bg-[#00A651] group-hover:text-white transition"><MapPin size={20} /></span>
+                                  <span className="w-12 h-12 shrink-0 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651] group-hover:bg-[#00A651] group-hover:text-white transition"><MapPin size={20} /></span>
                                   <div>
                                       <p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">Хаяг</p>
                                       <p className="font-display font-semibold text-lg leading-snug">{cfg.contact_address || 'Улаанбаатар хот, Хан-Уул дүүрэг, 20 хороо, Чингисийн өргөн чөлөө, Мишээл оффис төв, М3 цамхаг 12 давхар, 1207 тоот'}</p>
                                   </div>
                                 </a>
-                                <div className="flex items-start gap-6 group"><span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651]"><Phone size={20} /></span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">Утас</p><p className="font-display font-semibold text-xl tabular-nums">{cfg.contact_phone || '7599 1919, 7599 9191'}</p></div></div>
-                                <div className="flex items-start gap-6 group"><span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651]"><Mail size={20} /></span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">И-мэйл</p><p className="font-display font-semibold text-xl">{cfg.contact_email || 'info@scm.mn'}</p></div></div>
+                                <div className="flex items-start gap-6 group"><span className="w-12 h-12 shrink-0 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651]"><Phone size={20} /></span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">Утас</p><p className="font-display font-semibold text-xl tabular-nums">{cfg.contact_phone || '7599 1919, 7599 9191'}</p></div></div>
+                                <div className="flex items-start gap-6 group"><span className="w-12 h-12 shrink-0 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651]"><Mail size={20} /></span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">И-мэйл</p><p className="font-display font-semibold text-xl break-words">{cfg.contact_email || 'info@scm.mn'}</p></div></div>
                             </div>
                           </div>
                           
                           <div className="p-0 lg:p-8 flex items-center justify-center">
                             {cfg.contact_image ? (
-                              <img src={cfg.contact_image} alt="Холбоо барих" className="w-full max-h-96 object-cover rounded-2xl shadow-2xl" />
+                              <img src={cfg.contact_image} alt="Холбоо барих" className="w-full max-h-96 object-cover rounded-lg shadow-2xl" />
                             ) : (
-                              <div className="w-full max-h-96 h-64 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center text-white/30 text-sm">
+                              <div className="sc-glass-panel w-full max-h-96 h-64 rounded-lg flex items-center justify-center text-white/45 text-sm">
                                 Зураг оруулаагүй байна
                               </div>
                             )}

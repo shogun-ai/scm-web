@@ -34,6 +34,23 @@ const STATUS_META = {
   disbursed:       { label: 'Зээл олгосон',         color: 'bg-emerald-100 text-emerald-700'},
 };
 
+const NEXT_ACTIONS = {
+  pending: { mn: 'Хариуцагч томилох', en: 'Assign an owner' },
+  created: { mn: 'Хариуцагч томилох', en: 'Assign an owner' },
+  assigned: { mn: 'Баримт, дата бүрдүүлэх', en: 'Collect documents and data' },
+  data_collection: { mn: 'Дутуу баримтыг бүрдүүлэх', en: 'Complete missing documents' },
+  assessment: { mn: 'Үнэлгээг хянах', en: 'Review assessment' },
+  studying: { mn: 'Судалгааг дуусгах', en: 'Complete research' },
+  committee: { mn: 'Хорооны шийдвэр гаргах', en: 'Record committee decision' },
+  approved: { mn: 'Олголт бэлтгэх', en: 'Prepare disbursement' },
+  resolved: { mn: 'Нөхцөлийг баталгаажуулах', en: 'Confirm conditions' },
+  rejected: { mn: 'Кейс хаагдсан', en: 'Case closed' },
+  disbursed: { mn: 'Олголт дууссан', en: 'Disbursement complete' },
+};
+
+const getCaseReference = (loan = {}) => loan.applicationReference || (loan._id ? `SCM-${String(loan._id).slice(-6).toUpperCase()}` : '');
+const getNextAction = (status, language = 'mn') => NEXT_ACTIONS[status]?.[language] || (language === 'en' ? 'Review case' : 'Кейсийг хянах');
+
 const PERMISSION_RANK = { none: 0, view: 1, partial: 2, full: 3 };
 const COMMITTEE_PERMISSION_DEFAULTS = {
   'Зөвшөөрөх': { admin: 'full', director: 'full', loan_officer: 'none', finance_manager: 'none' },
@@ -1021,6 +1038,7 @@ const LoanOrigination = ({
                       <td className="p-3 text-slate-600 text-xs font-semibold">{fmtDate(req.createdAt)}</td>
                       <td className="p-3 font-black text-[#003B5C]">
                         {borrowerName(req)}
+                        {getCaseReference(req) && <span className="mt-1 block font-mono text-[10px] font-semibold tracking-wide text-slate-400">{getCaseReference(req)}</span>}
                         {req.source === 'web' && !req.createdByStaff && (
                           <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">{text.web}</span>
                         )}
@@ -1031,7 +1049,10 @@ const LoanOrigination = ({
                         </span>
                       </td>
                       <td className="p-3 text-right font-black text-slate-800">{fmt(req.amount)}</td>
-                      <td className="p-3 text-center"><StatusBadge status={req.status} /></td>
+                      <td className="p-3 text-center">
+                        <StatusBadge status={req.status} />
+                        <span className="mt-1 block text-[10px] font-semibold text-slate-500">{getNextAction(req.status, language)}</span>
+                      </td>
                       <td className="p-3" onClick={e => e.stopPropagation()}>
                         <select
                           value={req.assignee?.userId || ''}

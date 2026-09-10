@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
+import StatementWorkbench from '@shared/StatementWorkbench';
 import {
   AlertCircle,
   BadgeCheck,
@@ -1111,7 +1112,7 @@ const FilePreviewModal = ({ preview, onClose }) => {
   );
 };
 
-const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStudyRequest, embeddedMode = false, onGoToDataCollection }) => {
+const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStudyRequest, embeddedMode = false, onGoToDataCollection, documentOnly = false }) => {
   const [form, setForm] = useState(initialForm);
   const [bankStatements, setBankStatements] = useState([]);
   const [socialInsurance, setSocialInsurance] = useState(null);
@@ -1148,9 +1149,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   // Нийгмийн даатгалын лавлагаа
   const [siAnalysis, setSiAnalysis] = useState(null);
   // View mode: 'list' = show request list, 'detail' = show tab layout
-  const [viewMode, setViewMode] = useState('list');
+  const [viewMode, setViewMode] = useState(documentOnly ? 'detail' : 'list');
   // Active tab in detail view
-  const [researchTab, setResearchTab] = useState('profile');
+  const [researchTab, setResearchTab] = useState(documentOnly ? 'income' : 'profile');
   // RAG: Ижил төстэй өмнөх зээлүүд
   const [similarLoans, setSimilarLoans] = useState([]);
   const [similarSource, setSimilarSource] = useState('');
@@ -1418,8 +1419,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   };
 
   useEffect(() => {
-    fetchResearches();
-  }, []);
+    if (!documentOnly) fetchResearches();
+  }, [documentOnly]);
 
   // Sync form fields from saved research when user selects one from the list
   useEffect(() => {
@@ -2636,6 +2637,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     { key: 'collateral', label: 'Барьцааны мэдээлэл', icon: Home },
     { key: 'summary', label: 'Дүгнэлт', icon: Calculator },
   ];
+  const visibleResearchTabs = documentOnly
+    ? [...RESEARCH_TABS.filter(({ key }) => key === 'income' || key === 'loan_history'), { key: 'statement_workbench', label: 'Дансны хуулгын review', icon: FileText }]
+    : RESEARCH_TABS;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -2650,7 +2654,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       )}
       <FilePreviewModal preview={filePreview} onClose={closeFilePreview} />
       {/* ===== LIST VIEW ===== */}
-      {viewMode === 'list' && (
+      {!documentOnly && viewMode === 'list' && (
         <div className="space-y-6">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#00A651]">Дотоод судалгаа</p>
@@ -2736,8 +2740,14 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       {/* ===== DETAIL VIEW ===== */}
       {viewMode === 'detail' && (
         <div className="space-y-4">
+          {documentOnly && (
+            <div className="bg-white border rounded-2xl p-5 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#00A651]">Баримтын AI уншилт</p>
+              <h2 className="mt-1 text-2xl font-bold text-[#003B5C]">Дансны хуулга ба ЗМС лавлагаа</h2>
+            </div>
+          )}
           {/* Detail header */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white border rounded-2xl p-4 shadow-sm">
+          {!documentOnly && <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white border rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setViewMode('list')}
@@ -2763,11 +2773,11 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                 <Printer size={16} /> Хэвлэх
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* Tab bar */}
           <div className="flex gap-1 overflow-x-auto bg-white border rounded-2xl p-1.5 shadow-sm">
-            {RESEARCH_TABS.map(({ key, label, icon: Icon }) => (
+            {visibleResearchTabs.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
                 onClick={() => setResearchTab(key)}
@@ -3944,6 +3954,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
 
 
           {/* ===== TAB: income ===== */}
+          {researchTab === 'statement_workbench' && <StatementWorkbench apiUrl={apiUrl} />}
+
           {researchTab === 'income' && (
             <div className="space-y-6">
 
@@ -3957,7 +3969,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                       <p className="text-xs text-slate-500 mt-0.5">Дансны хуулга болон нийгмийн даатгалын мэдээлэл оруулна уу</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className={`grid grid-cols-1 gap-4 ${documentOnly ? '[&>div:nth-child(2)]:hidden' : 'md:grid-cols-2'}`}>
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1.5">Банкны хуулга (PDF)</label>
                       <label className="flex items-center gap-2 cursor-pointer border-2 border-dashed border-slate-300 rounded-xl p-4 hover:border-[#003B5C] hover:bg-blue-50 transition-colors">
@@ -4001,9 +4013,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                   </div>
                   <div className="flex gap-3 flex-wrap">
                     {bankStatements.length > 0 && (
-                      <button type="button" onClick={analyzeBankStatements} disabled={statementLoading}
+                      <button type="button" onClick={analyzeBankStatements} disabled={analyzingStatement}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#003B5C] text-white text-sm font-semibold hover:bg-[#005082] disabled:opacity-50 transition-colors">
-                        {statementLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+                        {analyzingStatement ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
                         Хуулга уншуулах
                       </button>
                     )}

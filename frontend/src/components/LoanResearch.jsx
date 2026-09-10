@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
+import StatementWorkbench from '@shared/StatementWorkbench';
 import {
   AlertCircle,
   BadgeCheck,
@@ -895,7 +896,16 @@ const Field = ({ label, children }) => (
   </label>
 );
 
-const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStudyRequest, embeddedMode = false, onGoToDataCollection }) => {
+const authHeaders = () => {
+  try {
+    const session = JSON.parse(localStorage.getItem('scm_auth') || '{}');
+    return session.token ? { Authorization: `Bearer ${session.token}` } : {};
+  } catch {
+    return {};
+  }
+};
+
+const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStudyRequest, embeddedMode = false, onGoToDataCollection, documentOnly = false }) => {
   const [form, setForm] = useState(initialForm);
   const [bankStatements, setBankStatements] = useState([]);
   const [socialInsurance, setSocialInsurance] = useState(null);
@@ -929,9 +939,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   // Нийгмийн даатгалын лавлагаа
   const [siAnalysis, setSiAnalysis] = useState(null);
   // View mode: 'list' = show request list, 'detail' = show tab layout
-  const [viewMode, setViewMode] = useState('list');
+  const [viewMode, setViewMode] = useState(documentOnly ? 'detail' : 'list');
   // Active tab in detail view
-  const [researchTab, setResearchTab] = useState('profile');
+  const [researchTab, setResearchTab] = useState(documentOnly ? 'income' : 'profile');
   // RAG: Ижил төстэй өмнөх зээлүүд
   const [similarLoans, setSimilarLoans] = useState([]);
   const [similarSource, setSimilarSource] = useState('');
@@ -1090,7 +1100,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       if (fileUrls.length) payload.append('fileUrls', JSON.stringify(fileUrls));
 
       const res = await axios.post(`${apiUrl}/api/loan-research/analyze-credit-reference`, payload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': 'multipart/form-data', ...authHeaders() },
       });
       const analysis = res.data;
       setCreditRefAnalysis(analysis);
@@ -1142,8 +1152,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   };
 
   useEffect(() => {
-    fetchResearches();
-  }, []);
+    if (!documentOnly) fetchResearches();
+  }, [documentOnly]);
 
   // Sync form fields from saved research when user selects one from the list
   useEffect(() => {
@@ -1281,6 +1291,40 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     event.target.value = '';
   };
 
+  const handleSIUpload = (event) => {
+    const file = event.target.files?.[0] || null;
+    setSelectedId(null);
+    setSocialInsurance(file);
+    event.target.value = '';
+  };
+
+  const analyzeSI = async () => {
+    if (!socialInsurance) {
+      showToast('Эхлээд НД лавлагааны файл сонгоно уу.', 'error');
+      return;
+    }
+
+    const payload = new FormData();
+    payload.append('bankStatements', socialInsurance);
+    setLoading(true);
+    try {
+      const res = await axios.post(`${apiUrl}/api/loans/analyze-social-insurance`, payload, {
+        headers: { 'Content-Type': 'multipart/form-data', ...authHeaders() },
+      });
+      setSiAnalysis(res.data);
+      setForm((prev) => ({
+        ...prev,
+        averageMonthlyIncome: res.data?.averageSalary ? String(Math.round(res.data.averageSalary)) : prev.averageMonthlyIncome,
+        incomeSource: res.data?.employers?.[0]?.name || prev.incomeSource,
+      }));
+      showToast('НД лавлагаа уншигдлаа.');
+    } catch (error) {
+      showToast(error.response?.data?.message || 'НД лавлагаа унших үед алдаа гарлаа.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const removeBankStatement = (index) => {
     setSelectedId(null);
     const file = bankStatements[index];
@@ -1312,7 +1356,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     setStatementError('');
     try {
       const res = await axios.post(`${apiUrl}/api/loan-research/analyze-statement`, payload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': 'multipart/form-data', ...authHeaders() },
       });
       const analysis = res.data;
       setStatementAnalysis(analysis);
@@ -1369,7 +1413,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     setStatementError('');
     try {
       const res = await axios.post(`${apiUrl}/api/loan-research/analyze-statement`, payload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': 'multipart/form-data', ...authHeaders() },
       });
       const analysis = res.data;
       const nextItems = [
@@ -2036,6 +2080,9 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     { key: 'collateral', label: 'Барьцааны мэдээлэл', icon: Home },
     { key: 'summary', label: 'Дүгнэлт', icon: Calculator },
   ];
+  const visibleResearchTabs = documentOnly
+    ? [...RESEARCH_TABS.filter(({ key }) => key === 'income' || key === 'loan_history'), { key: 'statement_workbench', label: 'Дансны хуулгын review', icon: FileText }]
+    : RESEARCH_TABS;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -2049,7 +2096,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
         </div>
       )}
       {/* ===== LIST VIEW ===== */}
-      {viewMode === 'list' && (
+      {!documentOnly && viewMode === 'list' && (
         <div className="space-y-6">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#00A651]">Дотоод судалгаа</p>
@@ -2135,8 +2182,14 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       {/* ===== DETAIL VIEW ===== */}
       {viewMode === 'detail' && (
         <div className="space-y-4">
+          {documentOnly && (
+            <div className="bg-white border rounded-2xl p-5 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#00A651]">Баримтын AI уншилт</p>
+              <h2 className="mt-1 text-2xl font-bold text-[#003B5C]">Дансны хуулга ба ЗМС лавлагаа</h2>
+            </div>
+          )}
           {/* Detail header */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white border rounded-2xl p-4 shadow-sm">
+          {!documentOnly && <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white border rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setViewMode('list')}
@@ -2162,11 +2215,11 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                 <Printer size={16} /> Хэвлэх
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* Tab bar */}
           <div className="flex gap-1 overflow-x-auto bg-white border rounded-2xl p-1.5 shadow-sm">
-            {RESEARCH_TABS.map(({ key, label, icon: Icon }) => (
+            {visibleResearchTabs.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
                 onClick={() => setResearchTab(key)}
@@ -3188,6 +3241,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
 
 
           {/* ===== TAB: income ===== */}
+          {researchTab === 'statement_workbench' && <StatementWorkbench apiUrl={apiUrl} />}
+
           {researchTab === 'income' && (
             <div className="space-y-6">
 
@@ -3201,7 +3256,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                       <p className="text-xs text-slate-500 mt-0.5">Дансны хуулга болон нийгмийн даатгалын мэдээлэл оруулна уу</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className={`grid grid-cols-1 gap-4 ${documentOnly ? '[&>div:nth-child(2)]:hidden' : 'md:grid-cols-2'}`}>
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1.5">Банкны хуулга (PDF)</label>
                       <label className="flex items-center gap-2 cursor-pointer border-2 border-dashed border-slate-300 rounded-xl p-4 hover:border-[#003B5C] hover:bg-blue-50 transition-colors">
@@ -3227,23 +3282,23 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                         <span className="text-sm text-slate-500">Файл сонгох...</span>
                         <input type="file" accept=".pdf,image/*" onChange={handleSIUpload} className="hidden" />
                       </label>
-                      {siFile && (
+                      {socialInsurance && (
                         <div className="mt-2 flex items-center gap-2 text-xs text-slate-600 bg-slate-50 rounded-lg px-2 py-1">
                           <FileText size={12} className="text-green-500" />
-                          <span className="truncate">{siFile.name}</span>
+                          <span className="truncate">{socialInsurance.name}</span>
                         </div>
                       )}
                     </div>
                   </div>
                   <div className="flex gap-3 flex-wrap">
                     {bankStatements.length > 0 && (
-                      <button type="button" onClick={analyzeBankStatements} disabled={statementLoading}
+                      <button type="button" onClick={analyzeBankStatements} disabled={analyzingStatement}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#003B5C] text-white text-sm font-semibold hover:bg-[#005082] disabled:opacity-50 transition-colors">
-                        {statementLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+                        {analyzingStatement ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
                         Хуулга уншуулах
                       </button>
                     )}
-                    {siFile && (
+                    {socialInsurance && (
                       <button type="button" onClick={analyzeSI} disabled={loading}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors">
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}

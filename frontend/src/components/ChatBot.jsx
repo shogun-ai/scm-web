@@ -39,6 +39,22 @@ const createSessionId = () => (
     : `scm_${Date.now()}_${Math.random().toString(16).slice(2)}`
 );
 
+const readStoredSessionId = () => {
+  try {
+    return localStorage.getItem('scm_chat_session');
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredSessionId = (sid) => {
+  try {
+    localStorage.setItem('scm_chat_session', sid);
+  } catch {
+    // Some browsers block storage; keep the in-memory session instead.
+  }
+};
+
 const isLocal = window.location.hostname === 'localhost';
 const API_BASE_URL = isLocal ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com';
 const WEB_BASE_URL = isLocal ? 'http://localhost:5173' : 'https://www.scm.mn';
@@ -84,11 +100,11 @@ const ChatBot = () => {
   const messagesEndRef = useRef(null);
 
   const ensureSessionId = (forceNew = false) => {
-    let sid = forceNew ? null : localStorage.getItem('scm_chat_session');
+    let sid = forceNew ? null : sessionIdRef.current || readStoredSessionId();
 
     if (!sid) {
       sid = createSessionId();
-      localStorage.setItem('scm_chat_session', sid);
+      writeStoredSessionId(sid);
     }
 
     sessionIdRef.current = sid;

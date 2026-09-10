@@ -39,12 +39,12 @@ export default function Login({ onLogin }) {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-4 py-8 bg-cover bg-center relative overflow-hidden"
-      style={{ backgroundImage: "linear-gradient(135deg, rgba(0,35,55,0.76), rgba(0,59,92,0.58)), url('/bg.jpg')" }}
+      className="loan-login-page"
+      style={{ backgroundImage: "url('/bg.jpg')" }}
     >
-      <div className="absolute inset-0 bg-slate-950/20" />
+      <div className="absolute inset-0 bg-[#032533]/70" />
       <div className="relative z-10 w-full max-w-[420px]">
-        <div className="px-8 py-9">
+        <div className="loan-login-card">
           <div className="mb-8 text-center">
             <img src="/logo.png" alt="SCM" className="h-30 mx-auto mb-5 object-contain" />
             <h1 className="text-3xl font-bold text-white mb-2">Нэвтрэх</h1>

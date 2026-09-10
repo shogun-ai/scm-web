@@ -7,8 +7,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Montserrat', 'sans-serif'],
-        display: ['Montserrat', 'sans-serif'],
+        sans: ['Montserrat', 'Arial', 'Helvetica', 'sans-serif'],
+        display: ['Montserrat', 'Arial', 'Helvetica', 'sans-serif'],
       },
       colors: {
         primary: "#00A651",

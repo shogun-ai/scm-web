@@ -15,7 +15,7 @@ const BlogList = ({ onBack, limit }) => {
                 
                 const finalUrl = limit ? `${baseUrl}?limit=${limit}` : baseUrl;
                 const response = await axios.get(finalUrl);
-                setBlogs(response.data); 
+                setBlogs(Array.isArray(response.data) ? response.data : []);
             } catch (err) {
                 console.error("Алдаа:", err);
             } finally {

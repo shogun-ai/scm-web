@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import {
   LayoutDashboard, FileText, Settings, LogOut, Eye, CheckCircle, XCircle, User, Calendar, Printer, Archive, Lock, Shield, Users, Activity, Trash2, UserPlus, Handshake, PhoneCall, Save, QrCode, Pencil, Plus, X, Globe, Percent, Package, UserCheck, ClipboardList, MessageCircle
@@ -59,10 +59,174 @@ const withDefaultChatbotCards = (cards = []) => {
   return [...savedCards, ...DEFAULT_CHATBOT_CARDS.filter(card => !savedIds.has(card.id))];
 };
 
+const extractArrayPayload = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return null;
+
+  const possibleKeys = ['data', 'items', 'submissions', 'onboarding', 'results'];
+  const listKey = possibleKeys.find(key => Array.isArray(payload[key]));
+  if (listKey) return payload[listKey];
+  return payload.data && typeof payload.data === 'object' ? extractArrayPayload(payload.data) : null;
+};
+
+const extractObjectPayload = (payload) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const possibleKeys = ['data', 'item', 'submission', 'onboarding', 'result'];
+  const objectKey = possibleKeys.find(key => payload[key] && typeof payload[key] === 'object' && !Array.isArray(payload[key]));
+  return objectKey ? payload[objectKey] : payload;
+};
+
+const getOnboardingId = (item = {}) => item._id || item.id || item.onboardingId;
+
+const getOnboardingDateValue = (item = {}) => (
+  item.createdAt || item.submittedAt || item.date || item.updatedAt || ''
+);
+
+const getOnboardingDisplayName = (item = {}) => {
+  const personName = item.contact?.name
+    || item.customerName
+    || item.fullName
+    || item.name
+    || [item.personal?.lastName, item.personal?.firstName].filter(Boolean).join(' ')
+    || [item.lastname, item.firstname].filter(Boolean).join(' ');
+  const companyName = item.business?.name
+    || item.companyName
+    || item.company
+    || item.orgName
+    || item.businessName
+    || item.organizationName;
+
+  if (personName && companyName && personName !== companyName) return `${personName} / ${companyName}`;
+  return personName || companyName || '-';
+};
+
+const getOnboardingCompanyName = (item = {}) => (
+  item.business?.name || item.companyName || item.company || item.orgName || item.businessName || item.organizationName || '-'
+);
+
+const getOnboardingCustomerTypeLabel = (value) => ({
+  personal: 'Иргэн',
+  individual: 'Иргэн',
+  person: 'Иргэн',
+  citizen: 'Иргэн',
+  organization: 'Байгууллага',
+  company: 'Байгууллага',
+  business: 'Байгууллага',
+  corporate: 'Байгууллага',
+}[value] || value || '-');
+
+const getOnboardingCustomerType = (item = {}) => (
+  item.customerType || item.type || item.entityType || item.clientType || item.customer?.type || ''
+);
+
+const formatOnboardingInterests = (value) => {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',').map(item => item.trim())
+      : value && typeof value === 'object'
+        ? Object.values(value)
+        : [];
+
+  const labels = rawValues
+    .flat()
+    .filter(Boolean)
+    .map(item => {
+      if (typeof item === 'object') return item.label || item.name || item.title || item.productKey || item.key || '';
+      return PRODUCT_NAMES[item] || item;
+    })
+    .filter(Boolean);
+
+  return labels.length ? labels.join(', ') : '-';
+};
+
+const getOnboardingProductInterests = (item = {}) => (
+  item.preferences?.productInterests
+  || item.productInterests
+  || item.interests
+  || item.products
+  || item.selectedProducts
+  || item.productInterest
+  || item.preferences?.product
+  || item.selectedProduct
+);
+
+const getOnboardingStatusLabel = (status) => ({
+  pending: 'Шинэ',
+  new: 'Шинэ',
+  contacted: 'Холбогдсон',
+  in_review: 'Судалж байна',
+  reviewing: 'Судалж байна',
+  studying: 'Судалж байна',
+  approved: 'Баталгаажсан',
+  converted: 'Харилцагч болсон',
+  archived: 'Архивласан',
+  resolved: 'Шийдвэрлэсэн',
+  completed: 'Шийдвэрлэсэн',
+  rejected: 'Татгалзсан',
+}[status] || status || 'Шинэ');
+
+const getOnboardingStatusClass = (status) => ({
+  pending: 'bg-orange-100 text-orange-700',
+  new: 'bg-orange-100 text-orange-700',
+  contacted: 'bg-blue-100 text-blue-700',
+  in_review: 'bg-indigo-100 text-indigo-700',
+  reviewing: 'bg-indigo-100 text-indigo-700',
+  studying: 'bg-indigo-100 text-indigo-700',
+  approved: 'bg-emerald-100 text-emerald-700',
+  converted: 'bg-green-100 text-green-700',
+  archived: 'bg-slate-100 text-slate-600',
+  resolved: 'bg-green-100 text-green-700',
+  completed: 'bg-green-100 text-green-700',
+  rejected: 'bg-red-100 text-red-700',
+}[status] || 'bg-gray-100 text-gray-600');
+
+const getOnboardingAssigneeName = (item = {}) => (
+  item.assignee?.name || item.assigneeName || item.reviewerName || item.ownerName || '-'
+);
+
+const normalizeOnboardingSubmissions = (items = []) => [...items]
+  .filter(Boolean)
+  .sort((a, b) => {
+    const aDate = new Date(getOnboardingDateValue(a)).getTime() || 0;
+    const bDate = new Date(getOnboardingDateValue(b)).getTime() || 0;
+    return bDate - aDate;
+  });
+
+const buildOnboardingDraft = (submission = {}) => ({
+  status: submission.status || 'pending',
+  assigneeUserId: submission.assignee?.userId || submission.assigneeId || '',
+  assigneeName: submission.assignee?.name || submission.assigneeName || '',
+  contactNote: submission.contactNote || '',
+  reviewerNote: submission.reviewerNote || '',
+  tags: Array.isArray(submission.tags) ? submission.tags.join(', ') : submission.tags || '',
+});
+
+const ONBOARDING_STATUS_OPTIONS = [
+  { value: 'pending', label: 'Шинэ' },
+  { value: 'contacted', label: 'Холбогдсон' },
+  { value: 'in_review', label: 'Судалж байна' },
+  { value: 'approved', label: 'Баталгаажсан' },
+  { value: 'rejected', label: 'Татгалзсан' },
+  { value: 'converted', label: 'Харилцагч болсон' },
+  { value: 'archived', label: 'Архивласан' },
+];
+
+const ONBOARDING_ACCESS_ROLES = ['admin', 'director', 'loan_officer', 'finance_manager'];
+
+const getAdminRoleKeys = (adminUser = {}) => [
+  ...new Set([adminUser.role, ...(Array.isArray(adminUser.roles) ? adminUser.roles : [])].filter(Boolean)),
+];
+
 const AdminPanel = ({ user, token, onLogout }) => {
   const [activeTab, setActiveTab] = useState('los');
   const [requests, setRequests] = useState([]); 
   const [trusts, setTrusts] = useState([]); 
+  const [onboardingSubmissions, setOnboardingSubmissions] = useState([]);
+  const [onboardingError, setOnboardingError] = useState('');
+  const [selectedOnboarding, setSelectedOnboarding] = useState(null);
+  const [onboardingDraft, setOnboardingDraft] = useState(null);
+  const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [researchSeed, setResearchSeed] = useState(null);
   const [selectedTrust, setSelectedTrust] = useState(null); 
@@ -136,6 +300,36 @@ const AdminPanel = ({ user, token, onLogout }) => {
 
   // API URL
   const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com');
+  const canAccessOnboarding = getAdminRoleKeys(user).some(role => ONBOARDING_ACCESS_ROLES.includes(role));
+
+  const fetchOnboardingSubmissions = useCallback(async () => {
+    if (!canAccessOnboarding) {
+      setOnboardingSubmissions([]);
+      setOnboardingError('');
+      return [];
+    }
+
+    try {
+      const onboardingRes = await axios.get(`${API_URL}/api/onboarding`);
+      const rawItems = extractArrayPayload(onboardingRes.data);
+
+      if (!rawItems) {
+        setOnboardingSubmissions([]);
+        setOnboardingError('Харилцагч бүртгэлийн API жагсаалт биш хариу буцаалаа.');
+        return [];
+      }
+
+      const normalizedItems = normalizeOnboardingSubmissions(rawItems);
+      setOnboardingSubmissions(normalizedItems);
+      setOnboardingError('');
+      return normalizedItems;
+    } catch (error) {
+      if (error?.response?.status === 401) throw error;
+      setOnboardingSubmissions([]);
+      setOnboardingError(error.response?.data?.message || 'Харилцагч бүртгэлийн мэдээлэл татахад алдаа гарлаа.');
+      return [];
+    }
+  }, [API_URL, canAccessOnboarding]);
 
   const refreshLogs = async () => {
     if (user?.role !== 'admin') return;
@@ -174,6 +368,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
         setTrusts(trustRes.data || []);
         setStats(normalizeFinancialStats(statsRes.data || []));
         setPolicies(policyRes.data || []);
+        await fetchOnboardingSubmissions();
 
         // Хариуцагч хуваарилах жагсаалт — бүх ажилтанд хэрэгтэй
         const usersListRes = await axios.get(`${API_URL}/api/users/list`).catch(() => ({ data: [] }));
@@ -199,7 +394,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
     };
 
     fetchData();
-  }, [activeTab, user, API_URL]);
+  }, [activeTab, user, API_URL, fetchOnboardingSubmissions, onLogout]);
 
   // --- 🔑 PASSWORD CHANGE ---
   const [pwMsg, setPwMsg] = useState({ text: '', ok: false });
@@ -375,6 +570,91 @@ const AdminPanel = ({ user, token, onLogout }) => {
   const formatCurrency = (val) => new Intl.NumberFormat('mn-MN', { style: 'currency', currency: 'MNT' }).format(val);
   const formatDate = (dateString) => { const date = new Date(dateString); return date.toLocaleDateString('mn-MN') + ' ' + date.toLocaleTimeString('mn-MN'); };
   const handlePrint = () => { window.print(); };
+
+  const formatSafeDate = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleDateString('mn-MN') + ' ' + date.toLocaleTimeString('mn-MN');
+  };
+
+  const openOnboardingDetail = async (submission) => {
+    setSelectedOnboarding(submission);
+    setOnboardingDraft(buildOnboardingDraft(submission));
+
+    const onboardingId = getOnboardingId(submission);
+    if (!onboardingId) return;
+
+    try {
+      const res = await axios.get(`${API_URL}/api/onboarding/${onboardingId}`);
+      const detail = extractObjectPayload(res.data);
+      if (detail && getOnboardingId(detail)) {
+        setSelectedOnboarding(detail);
+        setOnboardingDraft(buildOnboardingDraft(detail));
+      }
+    } catch (error) {
+      if (error?.response?.status === 401) {
+        onLogout();
+        return;
+      }
+      setOnboardingError(error.response?.data?.message || 'Харилцагч бүртгэлийн дэлгэрэнгүй мэдээлэл татахад алдаа гарлаа.');
+    }
+  };
+
+  const closeOnboardingDetail = () => {
+    setSelectedOnboarding(null);
+    setOnboardingDraft(null);
+  };
+
+  const updateOnboardingDraft = (key, value) => {
+    setOnboardingDraft(prev => ({ ...(prev || {}), [key]: value }));
+  };
+
+  const saveOnboardingSubmission = async () => {
+    const onboardingId = getOnboardingId(selectedOnboarding);
+    if (!onboardingId || !onboardingDraft) {
+      alert('Харилцагч бүртгэлийн ID олдсонгүй.');
+      return;
+    }
+
+    const selectableUsers = Array.isArray(usersList) ? usersList : [];
+    const selectedAssignee = selectableUsers.find(item => item._id === onboardingDraft.assigneeUserId || item.id === onboardingDraft.assigneeUserId);
+    const assigneeName = selectedAssignee?.name || onboardingDraft.assigneeName || '';
+    const payload = {
+      status: onboardingDraft.status || 'pending',
+      assignee: onboardingDraft.assigneeUserId || assigneeName
+        ? {
+          userId: onboardingDraft.assigneeUserId || selectedAssignee?._id || '',
+          name: assigneeName,
+        }
+        : null,
+      contactNote: onboardingDraft.contactNote || '',
+      reviewerNote: onboardingDraft.reviewerNote || '',
+      tags: String(onboardingDraft.tags || '')
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(Boolean),
+    };
+
+    setOnboardingSaving(true);
+    try {
+      const res = await axios.put(`${API_URL}/api/onboarding/${onboardingId}`, payload);
+      const responseSubmission = extractObjectPayload(res.data);
+      const updatedSubmission = responseSubmission && getOnboardingId(responseSubmission)
+        ? responseSubmission
+        : { ...selectedOnboarding, ...payload };
+
+      setOnboardingSubmissions(prev => normalizeOnboardingSubmissions(
+        prev.map(item => getOnboardingId(item) === onboardingId ? updatedSubmission : item)
+      ));
+      closeOnboardingDetail();
+    } catch (error) {
+      alert(error.response?.data?.message || 'Харилцагч бүртгэл хадгалахад алдаа гарлаа.');
+    } finally {
+      setOnboardingSaving(false);
+    }
+  };
+
   const openLoanResearch = async (request) => {
     let nextRequest = request;
     if (request?._id && request.status !== 'studying' && request.status !== 'resolved' && request.status !== 'rejected') {
@@ -758,6 +1038,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
         <nav className="flex-1 py-6 px-3 space-y-1 text-sm">
           <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'dashboard' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><LayoutDashboard size={18} /> Хянах самбар</button>
           <button onClick={() => setActiveTab('los')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'los' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><ClipboardList size={18} /> Зээлийн үйл явц</button>
+          <button onClick={() => setActiveTab('documentAnalysis')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'documentAnalysis' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><FileText size={18} /> Баримт AI уншилт</button>
+          {canAccessOnboarding && (
+            <button onClick={() => setActiveTab('onboarding')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'onboarding' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><UserCheck size={18} /> Харилцагч бүртгэл</button>
+          )}
           <button onClick={() => setActiveTab('trusts')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'trusts' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Handshake size={18} /> Итгэлцэл</button>
           {user?.role === 'admin' && (<>
             <button onClick={() => setActiveTab('finance')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'finance' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Activity size={18} /> Файл засах</button>
@@ -783,15 +1067,20 @@ const AdminPanel = ({ user, token, onLogout }) => {
           />
         )}
 
+        {activeTab === 'documentAnalysis' && (
+          <LoanResearch apiUrl={API_URL} documentOnly />
+        )}
+
         {activeTab === 'dashboard' && (
           <div className="space-y-6 animate-fade-in">
             <h2 className="text-2xl font-bold text-[#003B5C]">Хянах самбар</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               {[
                 { label: 'Нийт зээлийн хүсэлт', value: requests.length, color: 'bg-blue-50 text-blue-700' },
                 { label: 'Хүлээгдэж буй', value: requests.filter(r => r.status !== 'resolved').length, color: 'bg-orange-50 text-orange-700' },
                 { label: 'Шийдвэрлэсэн', value: requests.filter(r => r.status === 'resolved').length, color: 'bg-green-50 text-green-700' },
                 { label: 'Итгэлцлийн хүсэлт', value: trusts.length, color: 'bg-purple-50 text-purple-700' },
+                ...(canAccessOnboarding ? [{ label: 'Харилцагч бүртгэл', value: onboardingSubmissions.length, color: 'bg-cyan-50 text-cyan-700' }] : []),
               ].map((s, i) => (
                 <div key={i} className={`p-6 rounded-2xl border ${s.color}`}>
                   <p className="text-xs font-bold uppercase opacity-60 mb-2">{s.label}</p>
@@ -810,6 +1099,98 @@ const AdminPanel = ({ user, token, onLogout }) => {
                   </div>
                 ))}
                 {requests.length === 0 && <p className="text-gray-400 text-sm">Хүсэлт байхгүй байна.</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'onboarding' && canAccessOnboarding && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-[#00A651]">CRM</p>
+                <h2 className="text-2xl font-bold text-[#003B5C]">Харилцагч бүртгэл</h2>
+              </div>
+              <button
+                onClick={() => fetchOnboardingSubmissions()}
+                className="inline-flex items-center gap-2 bg-white border text-[#003B5C] px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-50"
+              >
+                <Activity size={16} /> Шинэчлэх
+              </button>
+            </div>
+
+            {onboardingError && (
+              <div className="bg-red-50 border border-red-100 text-red-700 rounded-2xl px-5 py-4 text-sm font-semibold">
+                {onboardingError}
+              </div>
+            )}
+
+            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1180px] text-left">
+                  <thead className="bg-slate-50 border-b text-xs font-bold text-gray-500 uppercase">
+                    <tr>
+                      <th className="p-4">Огноо</th>
+                      <th className="p-4">Нэр / компани</th>
+                      <th className="p-4">Төрөл</th>
+                      <th className="p-4">Утас / и-мэйл</th>
+                      <th className="p-4">Сонирхсон бүтээгдэхүүн</th>
+                      <th className="p-4">Төлөв</th>
+                      <th className="p-4">Хариуцагч</th>
+                      <th className="p-4">Үйлдэл</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y text-sm">
+                    {onboardingSubmissions.map((submission, idx) => {
+                      const onboardingId = getOnboardingId(submission) || `onboarding-${idx}`;
+                      const phone = submission.contact?.phone || submission.phone || submission.mobile || submission.customer?.phone;
+                      const email = submission.contact?.email || submission.email || submission.customer?.email;
+                      const contactText = [phone, email].filter(Boolean).join(' / ') || '-';
+                      const customerType = getOnboardingCustomerType(submission);
+
+                      return (
+                        <tr key={onboardingId} className="hover:bg-slate-50">
+                          <td className="p-4 whitespace-nowrap text-gray-500">{formatSafeDate(getOnboardingDateValue(submission))}</td>
+                          <td className="p-4">
+                            <p className="font-bold text-[#003B5C]">{getOnboardingDisplayName(submission)}</p>
+                            {getOnboardingCompanyName(submission) !== '-' && (
+                              <p className="text-xs text-gray-400 mt-0.5">{getOnboardingCompanyName(submission)}</p>
+                            )}
+                          </td>
+                          <td className="p-4 whitespace-nowrap">{getOnboardingCustomerTypeLabel(customerType)}</td>
+                          <td className="p-4 max-w-[220px]">
+                            <span className="block truncate">{contactText}</span>
+                          </td>
+                          <td className="p-4 max-w-xs">
+                            <span className="block truncate">{formatOnboardingInterests(getOnboardingProductInterests(submission))}</span>
+                          </td>
+                          <td className="p-4 whitespace-nowrap">
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${getOnboardingStatusClass(submission.status)}`}>
+                              {getOnboardingStatusLabel(submission.status)}
+                            </span>
+                          </td>
+                          <td className="p-4 whitespace-nowrap">{getOnboardingAssigneeName(submission)}</td>
+                          <td className="p-4">
+                            <button
+                              onClick={() => openOnboardingDetail(submission)}
+                              className="p-2 text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100"
+                              aria-label="Харилцагч бүртгэл харах"
+                            >
+                              <Eye size={18}/>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {onboardingSubmissions.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-gray-400">
+                          {loading ? 'Ачааллаж байна...' : 'Харилцагчийн бүртгэл байхгүй байна.'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -2617,6 +2998,180 @@ const AdminPanel = ({ user, token, onLogout }) => {
           </div>
         )}
       </main>
+
+      {/* --- ONBOARDING MODAL --- */}
+      {selectedOnboarding && onboardingDraft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-5xl max-h-[94vh] overflow-y-auto relative animate-scale-up border border-white/20 p-10">
+            <button onClick={closeOnboardingDetail} className="absolute top-6 right-6 text-gray-400 hover:text-red-500 transition">
+              <XCircle size={32}/>
+            </button>
+
+            <div className="space-y-8">
+              <div className="flex items-start gap-6 border-b border-gray-100 pb-8 pr-12">
+                <div className="w-20 h-20 bg-[#003B5C]/5 rounded-[28px] flex items-center justify-center border border-[#003B5C]/10">
+                  <UserCheck size={36} className="text-[#003B5C]"/>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#00A651]">Харилцагч бүртгэл</p>
+                  <h2 className="text-3xl font-black text-[#003B5C] mt-1">{getOnboardingDisplayName(selectedOnboarding)}</h2>
+                  <p className="text-gray-400 mt-2 font-bold flex items-center gap-2">
+                    <Calendar size={16}/> {formatSafeDate(getOnboardingDateValue(selectedOnboarding))}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                  <p className="text-[10px] font-black text-gray-400 mb-2 uppercase">Төрөл</p>
+                  <p className="font-black text-[#003B5C]">{getOnboardingCustomerTypeLabel(getOnboardingCustomerType(selectedOnboarding))}</p>
+                </div>
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                  <p className="text-[10px] font-black text-gray-400 mb-2 uppercase">Төлөв</p>
+                  <span className={`px-2 py-1 rounded text-xs font-bold ${getOnboardingStatusClass(onboardingDraft.status)}`}>
+                    {getOnboardingStatusLabel(onboardingDraft.status)}
+                  </span>
+                </div>
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                  <p className="text-[10px] font-black text-gray-400 mb-2 uppercase">Хариуцагч</p>
+                  <p className="font-black text-[#003B5C]">{onboardingDraft.assigneeName || '-'}</p>
+                </div>
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                  <p className="text-[10px] font-black text-gray-400 mb-2 uppercase">ID</p>
+                  <p className="font-black text-[#003B5C]">{String(getOnboardingId(selectedOnboarding) || '-').slice(-8)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-sm">
+                <section className="bg-slate-50/70 rounded-2xl border border-slate-100 p-6 space-y-3">
+                  <h3 className="font-bold text-gray-400 uppercase text-xs border-l-4 border-[#D4AF37] pl-4 tracking-widest">Харилцагч</h3>
+                  <p>Нэр: <b>{selectedOnboarding.contact?.name || selectedOnboarding.customerName || selectedOnboarding.fullName || selectedOnboarding.name || [selectedOnboarding.personal?.lastName, selectedOnboarding.personal?.firstName].filter(Boolean).join(' ') || [selectedOnboarding.lastname, selectedOnboarding.firstname].filter(Boolean).join(' ') || '-'}</b></p>
+                  <p>Компани: <b>{getOnboardingCompanyName(selectedOnboarding)}</b></p>
+                  <p>Регистр: <b>{selectedOnboarding.personal?.registerNumber || selectedOnboarding.business?.registrationNumber || selectedOnboarding.regNo || selectedOnboarding.orgRegNo || selectedOnboarding.registrationNo || '-'}</b></p>
+                  <p>Утас: <b className="text-green-600">{selectedOnboarding.contact?.phone || selectedOnboarding.phone || selectedOnboarding.mobile || selectedOnboarding.customer?.phone || '-'}</b></p>
+                  <p>И-мэйл: <b>{selectedOnboarding.contact?.email || selectedOnboarding.email || selectedOnboarding.customer?.email || '-'}</b></p>
+                </section>
+
+                <section className="bg-slate-50/70 rounded-2xl border border-slate-100 p-6 space-y-3">
+                  <h3 className="font-bold text-gray-400 uppercase text-xs border-l-4 border-green-500 pl-4 tracking-widest">Сонирхол</h3>
+                  <p>Бүтээгдэхүүн: <b>{formatOnboardingInterests(getOnboardingProductInterests(selectedOnboarding))}</b></p>
+                  <p>Эх сурвалж: <b>{selectedOnboarding.metadata?.source || selectedOnboarding.source || selectedOnboarding.channel || '-'}</b></p>
+                  <p>Холбогдох хэлбэр: <b>{selectedOnboarding.contact?.preferredChannel || selectedOnboarding.preferredContact || selectedOnboarding.contactPreference || '-'}</b></p>
+                  <p className="leading-6">Хэрэгцээ: <b>{selectedOnboarding.preferences?.serviceNeeds || selectedOnboarding.serviceNeeds || '-'}</b></p>
+                  <p className="leading-6">Тайлбар: <b>{selectedOnboarding.preferences?.notes || selectedOnboarding.message || selectedOnboarding.note || selectedOnboarding.description || '-'}</b></p>
+                </section>
+              </div>
+
+              <section className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5">
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className="font-black text-[#003B5C]">Дотоод ажилбар</h3>
+                  <span className="text-xs font-bold text-slate-400">PUT /api/onboarding/{getOnboardingId(selectedOnboarding) || ':id'}</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Төлөв</label>
+                    <select
+                      value={onboardingDraft.status}
+                      onChange={e => updateOnboardingDraft('status', e.target.value)}
+                      className="w-full p-3 border rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C]"
+                    >
+                      {onboardingDraft.status && !ONBOARDING_STATUS_OPTIONS.some(option => option.value === onboardingDraft.status) && (
+                        <option value={onboardingDraft.status}>{getOnboardingStatusLabel(onboardingDraft.status)}</option>
+                      )}
+                      {ONBOARDING_STATUS_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Хариуцагч</label>
+                    <select
+                      value={onboardingDraft.assigneeUserId || ''}
+                      onChange={e => {
+                        const userId = e.target.value;
+                        const selectableUsers = Array.isArray(usersList) ? usersList : [];
+                        const selectedUser = selectableUsers.find(item => item._id === userId || item.id === userId);
+                        setOnboardingDraft(prev => ({
+                          ...(prev || {}),
+                          assigneeUserId: userId,
+                          assigneeName: selectedUser?.name || '',
+                        }));
+                      }}
+                      className="w-full p-3 border rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C]"
+                    >
+                      <option value="">Сонгох</option>
+                      {(Array.isArray(usersList) ? usersList : []).map(item => (
+                        <option key={item._id || item.id || item.email} value={item._id || item.id || ''}>{item.name || item.email}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Хариуцагч нэр</label>
+                    <input
+                      value={onboardingDraft.assigneeName || ''}
+                      onChange={e => updateOnboardingDraft('assigneeName', e.target.value)}
+                      placeholder="Нэр гараар оруулах"
+                      className="w-full p-3 border rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Холбогдсон тэмдэглэл</label>
+                    <textarea
+                      rows={4}
+                      value={onboardingDraft.contactNote || ''}
+                      onChange={e => updateOnboardingDraft('contactNote', e.target.value)}
+                      className="w-full p-3 border rounded-xl text-sm bg-slate-50 resize-none focus:outline-none focus:border-[#003B5C]"
+                      placeholder="Харилцагчтай холбогдсон тэмдэглэл..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Хянагчийн тэмдэглэл</label>
+                    <textarea
+                      rows={4}
+                      value={onboardingDraft.reviewerNote || ''}
+                      onChange={e => updateOnboardingDraft('reviewerNote', e.target.value)}
+                      className="w-full p-3 border rounded-xl text-sm bg-slate-50 resize-none focus:outline-none focus:border-[#003B5C]"
+                      placeholder="Дотоод хяналтын тэмдэглэл..."
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Таг</label>
+                  <input
+                    value={onboardingDraft.tags || ''}
+                    onChange={e => updateOnboardingDraft('tags', e.target.value)}
+                    placeholder="vip, business, follow-up"
+                    className="w-full p-3 border rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C]"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    onClick={closeOnboardingDetail}
+                    className="px-6 py-3 rounded-xl border font-bold text-sm text-slate-600 hover:bg-slate-50"
+                  >
+                    Болих
+                  </button>
+                  <button
+                    onClick={saveOnboardingSubmission}
+                    disabled={onboardingSaving}
+                    className="inline-flex items-center gap-2 bg-[#003B5C] text-white px-8 py-3 rounded-xl font-bold text-sm hover:bg-[#002a42] disabled:opacity-50"
+                  >
+                    <Save size={16}/> {onboardingSaving ? 'Хадгалж байна...' : 'Хадгалах'}
+                  </button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- MODALS (SELECTED REQUEST БҮРЭН ӨГӨГДӨЛ) --- */}
       {selectedRequest && (
