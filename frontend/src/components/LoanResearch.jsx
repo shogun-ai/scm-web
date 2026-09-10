@@ -941,7 +941,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   // View mode: 'list' = show request list, 'detail' = show tab layout
   const [viewMode, setViewMode] = useState(documentOnly ? 'detail' : 'list');
   // Active tab in detail view
-  const [researchTab, setResearchTab] = useState(documentOnly ? 'income' : 'profile');
+  const [researchTab, setResearchTab] = useState(documentOnly ? 'statement_workbench' : 'profile');
   // RAG: Ижил төстэй өмнөх зээлүүд
   const [similarLoans, setSimilarLoans] = useState([]);
   const [similarSource, setSimilarSource] = useState('');
@@ -2081,7 +2081,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     { key: 'summary', label: 'Дүгнэлт', icon: Calculator },
   ];
   const visibleResearchTabs = documentOnly
-    ? [...RESEARCH_TABS.filter(({ key }) => key === 'income' || key === 'loan_history'), { key: 'statement_workbench', label: 'Дансны хуулгын review', icon: FileText }]
+    ? [{ key: 'statement_workbench', label: 'Дансны хуулгын review', icon: FileText }, ...RESEARCH_TABS.filter(({ key }) => key === 'loan_history')]
     : RESEARCH_TABS;
 
   return (
@@ -3241,7 +3241,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
 
 
           {/* ===== TAB: income ===== */}
-          {researchTab === 'statement_workbench' && <StatementWorkbench apiUrl={apiUrl} />}
+          {documentOnly && <div className={researchTab === 'statement_workbench' ? '' : 'hidden'}><StatementWorkbench apiUrl={apiUrl} /></div>}
 
           {researchTab === 'income' && (
             <div className="space-y-6">
