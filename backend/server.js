@@ -4843,8 +4843,9 @@ const StatementRuleSchema = new mongoose.Schema({
 const StatementRule = mongoose.models.StatementRule || mongoose.model('StatementRule', StatementRuleSchema);
 
 const StatementReviewSchema = new mongoose.Schema({
+    reference: { type: String, index: true },
     subject: { entityType: { type: String, enum: ['individual', 'organization'], default: 'individual' }, accountHolderName: String, industryCode: String, industryName: String },
-    sourceFiles: [{ name: String, bankName: String }],
+    sourceFiles: [{ name: String, size: Number, bankName: String, accountNumber: String, periodStart: String, periodEnd: String }],
     analysis: { type: mongoose.Schema.Types.Mixed, required: true },
     review: { dtiLimit: { type: Number, min: 0, max: 100, default: 55 }, incomeWeights: { type: mongoose.Schema.Types.Mixed, default: {} }, overrides: { type: [mongoose.Schema.Types.Mixed], default: [] }, result: { type: mongoose.Schema.Types.Mixed, default: {} } },
     status: { type: String, enum: ['draft', 'reviewed', 'converted'], default: 'draft', index: true },
@@ -4858,6 +4859,7 @@ const StatementReview = mongoose.models.StatementReview || mongoose.model('State
 const statementNumber = (value) => Number(String(value ?? '').replace(/[^0-9.-]/g, '')) || 0;
 const statementKey = (transaction, index) => `${transaction.date || ''}|${transaction.direction || ''}|${statementNumber(transaction.amount)}|${String(transaction.description || '').slice(0, 80)}|${index}`;
 const defaultIncomeWeights = { salary: 100, passive: 100, contract: 70, cash_sale: 50, other: 10 };
+const canAccessStatementReview = (user, item) => user?.role === 'admin' || user?.roles?.includes('admin') || String(item.createdBy || '') === String(user?._id || '');
 
 const calculateStatementReview = (analysis = {}, rules = [], review = {}) => {
     const weights = { ...defaultIncomeWeights, ...(review.incomeWeights || {}) };
@@ -4918,8 +4920,17 @@ app.patch('/api/statement-workbench/rules/:id', authenticateUser, requireAdmin, 
 });
 
 app.get('/api/statement-workbench/reviews', authenticateUser, async (req, res) => {
-    const reviews = await StatementReview.find().select('subject status review.result.summary sourceFiles createdAt updatedAt createdBy').sort({ updatedAt: -1 }).limit(100).lean();
+    const isAdmin = req.user?.role === 'admin' || req.user?.roles?.includes('admin');
+    const query = isAdmin ? {} : { createdBy: String(req.user?._id || '') };
+    const reviews = await StatementReview.find(query).select('reference subject status review.result.summary sourceFiles createdAt updatedAt createdBy convertedOnboardingId').sort({ updatedAt: -1 }).limit(100).lean();
     res.json(reviews);
+});
+
+app.get('/api/statement-workbench/reviews/:id', authenticateUser, async (req, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Invalid review id' });
+    const item = await StatementReview.findById(req.params.id).lean();
+    if (!item || !canAccessStatementReview(req.user, item)) return res.status(404).json({ message: 'Review not found' });
+    res.json(item);
 });
 
 app.post('/api/statement-workbench/reviews', authenticateUser, async (req, res) => {
@@ -4927,14 +4938,14 @@ app.post('/api/statement-workbench/reviews', authenticateUser, async (req, res) 
     if (!analysis || !Array.isArray(analysis.transactions)) return res.status(400).json({ message: 'Гүйлгээний шинжилгээ шаардлагатай.' });
     const rules = await StatementRule.find({ isActive: true }).lean();
     const result = calculateStatementReview(analysis, rules.length ? rules : DEFAULT_STATEMENT_RULES, { ...review, industryName: subject.industryName });
-    const item = await StatementReview.create({ subject, sourceFiles: (sourceFiles || []).slice(0, 10), analysis, review: { ...review, result }, createdBy: String(req.user?._id || ''), updatedBy: String(req.user?._id || ''), auditLog: [{ at: new Date(), actorId: String(req.user?._id || ''), action: 'created', summary: 'Statement review created' }] });
+    const item = await StatementReview.create({ reference: `STMT-${Date.now().toString(36).toUpperCase()}`, subject, sourceFiles: (sourceFiles || []).slice(0, 10), analysis, review: { ...review, result }, createdBy: String(req.user?._id || ''), updatedBy: String(req.user?._id || ''), auditLog: [{ at: new Date(), actorId: String(req.user?._id || ''), action: 'created', summary: 'Statement review created' }] });
     res.status(201).json(item);
 });
 
 app.patch('/api/statement-workbench/reviews/:id', authenticateUser, async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Invalid review id' });
     const item = await StatementReview.findById(req.params.id);
-    if (!item) return res.status(404).json({ message: 'Review not found' });
+    if (!item || !canAccessStatementReview(req.user, item)) return res.status(404).json({ message: 'Review not found' });
     const subject = { ...item.subject.toObject(), ...(req.body?.subject || {}) };
     const review = { ...item.review.toObject(), ...(req.body?.review || {}) };
     const rules = await StatementRule.find({ isActive: true }).lean();
@@ -4949,7 +4960,7 @@ app.patch('/api/statement-workbench/reviews/:id', authenticateUser, async (req, 
 
 app.post('/api/statement-workbench/reviews/:id/convert-customer', authenticateUser, async (req, res) => {
     const item = await StatementReview.findById(req.params.id);
-    if (!item) return res.status(404).json({ message: 'Review not found' });
+    if (!item || !canAccessStatementReview(req.user, item)) return res.status(404).json({ message: 'Review not found' });
     if (item.convertedOnboardingId) return res.json({ onboardingId: item.convertedOnboardingId, alreadyConverted: true });
     const isBusiness = item.subject.entityType === 'organization';
     const name = item.subject.accountHolderName || item.analysis?.frontSheet?.customerName || '';
