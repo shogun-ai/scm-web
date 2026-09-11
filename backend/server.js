@@ -4847,6 +4847,7 @@ const StatementReviewSchema = new mongoose.Schema({
     subject: { entityType: { type: String, enum: ['individual', 'organization'], default: 'individual' }, accountHolderName: String, industryCode: String, industryName: String },
     sourceFiles: [{ name: String, size: Number, bankName: String, accountNumber: String, periodStart: String, periodEnd: String }],
     analysis: { type: mongoose.Schema.Types.Mixed, required: true },
+    creditReference: { type: mongoose.Schema.Types.Mixed, default: null },
     review: { dtiLimit: { type: Number, min: 0, max: 100, default: 55 }, incomeWeights: { type: mongoose.Schema.Types.Mixed, default: {} }, overrides: { type: [mongoose.Schema.Types.Mixed], default: [] }, result: { type: mongoose.Schema.Types.Mixed, default: {} } },
     status: { type: String, enum: ['draft', 'reviewed', 'converted'], default: 'draft', index: true },
     convertedOnboardingId: String,
@@ -4934,11 +4935,11 @@ app.get('/api/statement-workbench/reviews/:id', authenticateUser, async (req, re
 });
 
 app.post('/api/statement-workbench/reviews', authenticateUser, async (req, res) => {
-    const { subject = {}, sourceFiles = [], analysis = {}, review = {} } = req.body || {};
+    const { subject = {}, sourceFiles = [], analysis = {}, creditReference = null, review = {} } = req.body || {};
     if (!analysis || !Array.isArray(analysis.transactions)) return res.status(400).json({ message: 'Гүйлгээний шинжилгээ шаардлагатай.' });
     const rules = await StatementRule.find({ isActive: true }).lean();
     const result = calculateStatementReview(analysis, rules.length ? rules : DEFAULT_STATEMENT_RULES, { ...review, industryName: subject.industryName });
-    const item = await StatementReview.create({ reference: `STMT-${Date.now().toString(36).toUpperCase()}`, subject, sourceFiles: (sourceFiles || []).slice(0, 10), analysis, review: { ...review, result }, createdBy: String(req.user?._id || ''), updatedBy: String(req.user?._id || ''), auditLog: [{ at: new Date(), actorId: String(req.user?._id || ''), action: 'created', summary: 'Statement review created' }] });
+    const item = await StatementReview.create({ reference: `STMT-${Date.now().toString(36).toUpperCase()}`, subject, sourceFiles: (sourceFiles || []).slice(0, 10), analysis, creditReference, review: { ...review, result }, createdBy: String(req.user?._id || ''), updatedBy: String(req.user?._id || ''), auditLog: [{ at: new Date(), actorId: String(req.user?._id || ''), action: 'created', summary: 'Statement review created' }] });
     res.status(201).json(item);
 });
 
@@ -4950,6 +4951,7 @@ app.patch('/api/statement-workbench/reviews/:id', authenticateUser, async (req, 
     const review = { ...item.review.toObject(), ...(req.body?.review || {}) };
     const rules = await StatementRule.find({ isActive: true }).lean();
     item.subject = subject;
+    if (req.body?.creditReference !== undefined) item.creditReference = req.body.creditReference;
     item.review = { ...review, result: calculateStatementReview(item.analysis, rules.length ? rules : DEFAULT_STATEMENT_RULES, { ...review, industryName: subject.industryName }) };
     item.status = req.body?.status === 'reviewed' ? 'reviewed' : item.status;
     item.updatedBy = String(req.user?._id || '');
