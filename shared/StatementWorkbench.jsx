@@ -27,3 +27,10 @@ export default function StatementWorkbench({ apiUrl }) {
 }
 function Upload({label,files,setFiles,accept}) { return <label className="rounded-lg border border-dashed border-slate-300 p-4 text-sm font-semibold text-slate-700"><span className="flex items-center gap-2"><FilePlus2 size={16}/>{label}</span><input className="mt-2 block w-full text-xs" type="file" multiple accept={accept} onChange={e=>setFiles(Array.from(e.target.files||[]))}/><small className="mt-2 block text-slate-500">{files.length ? files.map(f=>f.name).join(', ') : 'Файл сонгоогүй'}</small></label>; }
 function Metric({label,value}) { return <div className="rounded border border-blue-100 bg-white p-3"><small>{label}</small><b className="mt-1 block">{value} MNT</b></div>; }
+
+export function StatementHistory({ apiUrl }) {
+  const [items, setItems] = useState([]); const [message, setMessage] = useState('');
+  const load = async () => { try { const r = await fetch(`${apiUrl}/api/statement-workbench/reviews`, { headers: token() }); const data = await r.json(); if (!r.ok) throw new Error(data.message || 'Алдаа гарлаа.'); setItems(data); } catch (e) { setMessage(e.message); } };
+  useEffect(() => { load(); }, [apiUrl]);
+  return <section className="rounded-lg border border-slate-200 bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="font-bold text-slate-900">Өмнөх шинжилгээнүүд</h2><p className="text-sm text-slate-500">Хадгалсан данс, ЗМС-ийн кейсүүд.</p></div><button type="button" onClick={load} title="Шинэчлэх"><RefreshCw size={16}/></button></div>{message && <p className="mt-3 text-sm text-rose-700">{message}</p>}<div className="mt-4 grid gap-2 md:grid-cols-2">{items.map((item) => <article key={item._id} className="rounded-lg border border-slate-200 p-4"><b>{item.reference || 'Кейс'}</b><p className="mt-1 text-sm">{item.subject?.accountHolderName || '-'}</p><p className="text-xs text-slate-500">{item.sourceFiles?.[0]?.accountNumber || '-'} · {new Date(item.updatedAt).toLocaleDateString('mn-MN')}</p></article>)}{!items.length && <p className="text-sm text-slate-500">Хадгалсан кейс алга.</p>}</div></section>;
+}

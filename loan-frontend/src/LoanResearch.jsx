@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import StatementWorkbench from '@shared/StatementWorkbench';
+import StatementWorkbench, { StatementHistory } from '@shared/StatementWorkbench';
 import {
   AlertCircle,
   BadgeCheck,
@@ -11,6 +11,7 @@ import {
   ChevronUp,
   Eye,
   FileText,
+  History,
   Home,
   Loader2,
   Plus,
@@ -2638,7 +2639,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
     { key: 'summary', label: 'Дүгнэлт', icon: Calculator },
   ];
   const visibleResearchTabs = documentOnly
-    ? [{ key: 'statement_workbench', label: 'Дансны хуулгын review', icon: FileText }, ...RESEARCH_TABS.filter(({ key }) => key === 'loan_history')]
+    ? [{ key: 'statement_workbench', label: 'Дансны судалгаа', icon: FileText }, { key: 'statement_history', label: 'Өмнөх түүх', icon: History }]
     : RESEARCH_TABS;
 
   return (
@@ -3955,6 +3956,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
 
           {/* ===== TAB: income ===== */}
           {documentOnly && <div className={researchTab === 'statement_workbench' ? '' : 'hidden'}><StatementWorkbench apiUrl={apiUrl} /></div>}
+          {documentOnly && researchTab === 'statement_history' && <StatementHistory apiUrl={apiUrl} />}
 
           {researchTab === 'income' && (
             <div className="space-y-6">
