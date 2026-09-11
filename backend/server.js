@@ -31,6 +31,7 @@ import ZentroPayment from './models/ZentroPayment.js';
 import ZentroTransaction from './models/ZentroTransaction.js';
 import ZentroImportBatch from './models/ZentroImportBatch.js';
 import { createZentroFacebookIntegration } from './zentroFacebook.js';
+import { classifyTransaction as classifyStatementTransaction, DEFAULT_INCOME_WEIGHTS } from '../shared/statementWorkbenchUtils.js';
 
 const ZentroCodeRuleSchema = new mongoose.Schema({
   keyword: { type: String, required: true, unique: true },
@@ -4829,6 +4830,7 @@ const DEFAULT_STATEMENT_RULES = [
     { keyword: 'казино', direction: 'expense', category: 'Сэжигтэй: мөрийтэй тоглоом', incomeType: '', expenseGroup: 'D', eligiblePercent: 0 },
     { keyword: 'atm', direction: 'expense', category: 'Дансны шилжүүлэг, бэлэн мөнгө', incomeType: '', expenseGroup: 'F', eligiblePercent: 0 },
 ];
+const effectiveStatementRules = (customRules = []) => [...customRules, ...DEFAULT_STATEMENT_RULES];
 
 const StatementRuleSchema = new mongoose.Schema({
     keyword: { type: String, required: true, trim: true, maxlength: 120 },
@@ -4858,33 +4860,39 @@ const StatementReviewSchema = new mongoose.Schema({
 const StatementReview = mongoose.models.StatementReview || mongoose.model('StatementReview', StatementReviewSchema);
 
 const statementNumber = (value) => Number(String(value ?? '').replace(/[^0-9.-]/g, '')) || 0;
-const statementKey = (transaction, index) => `${transaction.date || ''}|${transaction.direction || ''}|${statementNumber(transaction.amount)}|${String(transaction.description || '').slice(0, 80)}|${index}`;
-const defaultIncomeWeights = { salary: 100, passive: 100, contract: 70, cash_sale: 50, other: 10 };
+const statementKey = (transaction, index) => `${transaction.date || ''}|${transaction.direction || ''}|${statementNumber(transaction.amount)}|${String(transaction.description || '').trim().slice(0, 80)}|${index}`;
+const defaultIncomeWeights = DEFAULT_INCOME_WEIGHTS;
 const canAccessStatementReview = (user, item) => user?.role === 'admin' || user?.roles?.includes('admin') || String(item.createdBy || '') === String(user?._id || '');
 
-const calculateStatementReview = (analysis = {}, rules = [], review = {}) => {
+const calculateStatementReview = (analysis = {}, rules = [], review = {}, creditReference = null) => {
     const weights = { ...defaultIncomeWeights, ...(review.incomeWeights || {}) };
     const overrides = new Map((review.overrides || []).map(item => [item.transactionKey, item]));
     const transactions = (analysis.transactions || []).map((item, index) => {
         const transactionKey = statementKey(item, index);
-        const text = String(item.description || '').toLowerCase();
-        const rule = rules.find(candidate => candidate.isActive !== false && (candidate.direction === 'any' || candidate.direction === item.direction) && text.includes(String(candidate.keyword || '').toLowerCase()));
-        const override = overrides.get(transactionKey);
-        const incomeType = override?.incomeType || rule?.incomeType || (item.direction === 'income' ? 'other' : '');
-        const category = override?.category || rule?.category || item.category || 'Ангилагдаагүй';
-        const expenseGroup = override?.expenseGroup || rule?.expenseGroup || '';
-        return { ...item, transactionKey, category, incomeType, expenseGroup, ruleMatched: Boolean(rule), manuallyReviewed: Boolean(override), eligiblePercent: item.direction === 'income' ? Number(override?.eligiblePercent ?? rule?.eligiblePercent ?? weights[incomeType] ?? weights.other) : 0 };
+        const classified = classifyStatementTransaction({ ...item, transactionIndex: index }, index, {
+            rules,
+            incomeWeights: weights,
+            overrides: { [transactionKey]: overrides.get(transactionKey) || {} },
+        });
+        return { ...classified, transactionKey };
     });
     const months = Math.max(1, Number(analysis.frontSheet?.coveredMonths || analysis.monthlySummary?.length || 1));
     const incomeTransactions = transactions.filter(item => item.direction === 'income');
     const expenseTransactions = transactions.filter(item => item.direction === 'expense');
     const eligibleIncome = incomeTransactions.reduce((sum, item) => sum + statementNumber(item.amount) * (item.eligiblePercent / 100), 0);
-    const debtPayments = expenseTransactions.filter(item => item.expenseGroup === 'A').reduce((sum, item) => sum + statementNumber(item.amount), 0);
-    const unclassified = transactions.filter(item => !item.ruleMatched && !item.manuallyReviewed);
+    const bankDebtPayments = expenseTransactions.filter(item => item.expenseGroup === 'A').reduce((sum, item) => sum + statementNumber(item.amount), 0);
+    const unclassified = transactions.filter(item => item.confidence === 'review' || item.expenseGroup === 'U');
     const cashWithdrawals = expenseTransactions.filter(item => /atm|бэлэн/.test(String(item.description || '').toLowerCase())).reduce((sum, item) => sum + statementNumber(item.amount), 0);
     const monthlyEligibleIncome = eligibleIncome / months;
-    const monthlyDebt = debtPayments / months;
-    const dti = monthlyEligibleIncome ? (monthlyDebt / monthlyEligibleIncome) * 100 : 0;
+    const bankMonthlyDebt = bankDebtPayments / months;
+    const bureauMonthlyDebt = Number(creditReference?.summary?.estimatedMonthlyPayment || 0);
+    const monthlyDebt = Math.max(bankMonthlyDebt, bureauMonthlyDebt);
+    const currencies = [...new Set([
+        ...(analysis.accounts || []).map(item => String(item?.currency || '').trim().toUpperCase()),
+        String(analysis.frontSheet?.currency || '').trim().toUpperCase(),
+    ].filter(item => item && item !== 'UNKNOWN' && item !== 'MIXED'))];
+    const mixedCurrency = currencies.length > 1 || String(analysis.frontSheet?.currency || '').toUpperCase() === 'MIXED';
+    const dti = !mixedCurrency && monthlyEligibleIncome ? (monthlyDebt / monthlyEligibleIncome) * 100 : null;
     const dtiLimit = Number(review.dtiLimit || 55);
     const industryText = String(review.industryName || '').toLowerCase();
     const industrySignals = incomeTransactions.filter(item => industryText && String(item.description || '').toLowerCase().split(/\s+/).some(word => word.length > 3 && industryText.includes(word))).length;
@@ -4892,7 +4900,7 @@ const calculateStatementReview = (analysis = {}, rules = [], review = {}) => {
         ...(cashWithdrawals > (analysis.frontSheet?.totalExpense || 0) * 0.35 ? ['Бэлэн мөнгөний зарлагын эзлэх хувь өндөр байна.'] : []),
         ...transactions.filter(item => /казино|bet|бооцоо|gambl/.test(String(item.description || '').toLowerCase())).map(item => `Сэжигтэй гүйлгээ: ${item.description}`),
     ];
-    return { transactions, summary: { months, eligibleIncome, monthlyEligibleIncome, monthlyDebt, dti, dtiLimit, withinDtiLimit: monthlyEligibleIncome > 0 && dti <= dtiLimit, unclassifiedCount: unclassified.length, cashWithdrawalRatio: expenseTransactions.length ? cashWithdrawals / Math.max(1, statementNumber(analysis.frontSheet?.totalExpense)) * 100 : 0, industryMatch: industryText ? { status: industrySignals ? 'matched' : 'review', matchedTransactions: industrySignals } : { status: 'not_selected', matchedTransactions: 0 }, suspicious } };
+    return { transactions, summary: { months, currencies, mixedCurrency, eligibleIncome, monthlyEligibleIncome, bankMonthlyDebt, bureauMonthlyDebt, monthlyDebt, dti, dtiLimit, withinDtiLimit: !mixedCurrency && monthlyEligibleIncome > 0 && dti !== null && dti <= dtiLimit, unclassifiedCount: unclassified.length, cashWithdrawalRatio: expenseTransactions.length ? cashWithdrawals / Math.max(1, statementNumber(analysis.frontSheet?.totalExpense)) * 100 : 0, industryMatch: industryText ? { status: industrySignals ? 'matched' : 'review', matchedTransactions: industrySignals } : { status: 'not_selected', matchedTransactions: 0 }, suspicious } };
 };
 
 app.get('/api/statement-workbench/bootstrap', authenticateUser, async (req, res) => {
@@ -4901,7 +4909,7 @@ app.get('/api/statement-workbench/bootstrap', authenticateUser, async (req, res)
         SiteConfig.find({ key: { $in: ['dti_individual', 'dti_org'] } }).lean(),
     ]);
     const dtiByKey = Object.fromEntries(dtiSettings.map((item) => [item.key, Number(item.value)]));
-    res.json({ industries: STATEMENT_INDUSTRIES, rules: rules.length ? rules : DEFAULT_STATEMENT_RULES, incomeWeights: defaultIncomeWeights, dtiDefaults: { individual: dtiByKey.dti_individual || 55, organization: dtiByKey.dti_org || 20 } });
+    res.json({ industries: STATEMENT_INDUSTRIES, rules: effectiveStatementRules(rules), incomeWeights: defaultIncomeWeights, dtiDefaults: { individual: dtiByKey.dti_individual || 55, organization: dtiByKey.dti_org || 20 } });
 });
 
 app.post('/api/statement-workbench/rules', authenticateUser, requireAdmin, async (req, res) => {
@@ -4938,7 +4946,7 @@ app.post('/api/statement-workbench/reviews', authenticateUser, async (req, res) 
     const { subject = {}, sourceFiles = [], analysis = {}, creditReference = null, review = {} } = req.body || {};
     if (!analysis || !Array.isArray(analysis.transactions)) return res.status(400).json({ message: 'Гүйлгээний шинжилгээ шаардлагатай.' });
     const rules = await StatementRule.find({ isActive: true }).lean();
-    const result = calculateStatementReview(analysis, rules.length ? rules : DEFAULT_STATEMENT_RULES, { ...review, industryName: subject.industryName });
+    const result = calculateStatementReview(analysis, effectiveStatementRules(rules), { ...review, industryName: subject.industryName }, creditReference);
     const item = await StatementReview.create({ reference: `STMT-${Date.now().toString(36).toUpperCase()}`, subject, sourceFiles: (sourceFiles || []).slice(0, 10), analysis, creditReference, review: { ...review, result }, createdBy: String(req.user?._id || ''), updatedBy: String(req.user?._id || ''), auditLog: [{ at: new Date(), actorId: String(req.user?._id || ''), action: 'created', summary: 'Statement review created' }] });
     res.status(201).json(item);
 });
@@ -4949,13 +4957,20 @@ app.patch('/api/statement-workbench/reviews/:id', authenticateUser, async (req, 
     if (!item || !canAccessStatementReview(req.user, item)) return res.status(404).json({ message: 'Review not found' });
     const subject = { ...item.subject.toObject(), ...(req.body?.subject || {}) };
     const review = { ...item.review.toObject(), ...(req.body?.review || {}) };
+    const nextAnalysis = req.body?.analysis === undefined ? item.analysis : req.body.analysis;
+    const nextSourceFiles = req.body?.sourceFiles === undefined ? item.sourceFiles : req.body.sourceFiles;
+    const creditReference = req.body?.creditReference === undefined ? item.creditReference : req.body.creditReference;
+    if (!nextAnalysis || !Array.isArray(nextAnalysis.transactions)) return res.status(400).json({ message: 'Гүйлгээний шинжилгээ шаардлагатай.' });
+    if (!Array.isArray(nextSourceFiles)) return res.status(400).json({ message: 'Эх сурвалжийн файлын жагсаалт буруу байна.' });
     const rules = await StatementRule.find({ isActive: true }).lean();
     item.subject = subject;
-    if (req.body?.creditReference !== undefined) item.creditReference = req.body.creditReference;
-    item.review = { ...review, result: calculateStatementReview(item.analysis, rules.length ? rules : DEFAULT_STATEMENT_RULES, { ...review, industryName: subject.industryName }) };
+    item.analysis = nextAnalysis;
+    item.sourceFiles = nextSourceFiles.slice(0, 10);
+    item.creditReference = creditReference;
+    item.review = { ...review, result: calculateStatementReview(nextAnalysis, effectiveStatementRules(rules), { ...review, industryName: subject.industryName }, creditReference) };
     item.status = req.body?.status === 'reviewed' ? 'reviewed' : item.status;
     item.updatedBy = String(req.user?._id || '');
-    item.auditLog.push({ at: new Date(), actorId: item.updatedBy, action: 'review_updated', summary: 'Rules, DTI, category, or industry updated' });
+    item.auditLog.push({ at: new Date(), actorId: item.updatedBy, action: req.body?.analysis === undefined ? 'review_updated' : 'analysis_refreshed', summary: req.body?.analysis === undefined ? 'Rules, DTI, category, or industry updated' : `Analysis refreshed with ${item.sourceFiles.length} source file(s)` });
     await item.save();
     res.json(item);
 });

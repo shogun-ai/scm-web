@@ -943,6 +943,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
   const [viewMode, setViewMode] = useState(documentOnly ? 'detail' : 'list');
   // Active tab in detail view
   const [researchTab, setResearchTab] = useState(documentOnly ? 'statement_workbench' : 'profile');
+  const [statementCaseId, setStatementCaseId] = useState(null);
   // RAG: Ижил төстэй өмнөх зээлүүд
   const [similarLoans, setSimilarLoans] = useState([]);
   const [similarSource, setSimilarSource] = useState('');
@@ -3242,8 +3243,8 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
 
 
           {/* ===== TAB: income ===== */}
-          {documentOnly && <div className={researchTab === 'statement_workbench' ? '' : 'hidden'}><StatementWorkbench apiUrl={apiUrl} /></div>}
-          {documentOnly && researchTab === 'statement_history' && <StatementHistory apiUrl={apiUrl} />}
+          {documentOnly && <div className={researchTab === 'statement_workbench' ? '' : 'hidden'}><StatementWorkbench apiUrl={apiUrl} caseId={statementCaseId} onCaseLoaded={() => setStatementCaseId(null)} /></div>}
+          {documentOnly && researchTab === 'statement_history' && <StatementHistory apiUrl={apiUrl} onOpenCase={(id) => { setStatementCaseId(id); setResearchTab('statement_workbench'); }} />}
 
           {researchTab === 'income' && (
             <div className="space-y-6">
