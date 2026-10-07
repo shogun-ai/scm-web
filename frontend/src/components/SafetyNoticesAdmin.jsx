@@ -95,7 +95,7 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
           <h3 className="flex items-center gap-2 text-xl font-bold text-[#003B5C]"><ShieldCheck size={23} /> Сэрэмжлүүлэг</h3>
           <p className="mt-2 text-sm text-slate-500">Нийтэлсэн зөвлөмжүүд нүүрний слайдерын сэрэмжлүүлгийн хуудсанд харагдана. Эхний зөвлөмж том гарчигтай байна.</p>
         </div>
-        <button type="button" onClick={reload} disabled={saving || loading} className="rounded-lg border px-3 py-2 text-sm text-slate-700 disabled:opacity-50">Дахин ачаалах</button>
+        <button type="button" onClick={reload} disabled={saving || loading} className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 disabled:opacity-50">Дахин ачаалах</button>
       </div>
       {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
       {success && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{success}</p>}
@@ -119,10 +119,10 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
               <span className="block text-sm font-semibold">Холбоотой зураг (сонголт)</span>
               <div className="flex flex-wrap items-center gap-3">
                 {draft.imageUrl && <img src={draft.imageUrl} alt="" className="h-20 w-20 rounded-xl border object-cover" />}
-                <button type="button" disabled={uploadingImage} onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-normal disabled:opacity-50">
+                <button type="button" disabled={uploadingImage} onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm font-normal text-slate-700 disabled:opacity-50">
                   <ImagePlus size={16} /> {uploadingImage ? 'Оруулж байна…' : draft.imageUrl ? 'Зураг солих' : 'Зураг нэмэх'}
                 </button>
-                {draft.imageUrl && <button type="button" onClick={() => setDraft({ ...draft, imageUrl: '' })} className="flex items-center gap-1 rounded-lg border border-red-100 px-3 py-2 text-sm font-normal text-red-600"><X size={14} /> Хасах</button>}
+                {draft.imageUrl && <button type="button" onClick={() => setDraft({ ...draft, imageUrl: '' })} className="flex items-center gap-1 rounded-lg border border-red-100 bg-white px-3 py-2 text-sm font-normal text-red-600"><X size={14} /> Хасах</button>}
               </div>
               <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageChange} />
               <p className="text-xs font-normal text-slate-400">Энэ зураг сэрэмжлүүлгийн текстийн хажууд/ард харагдана.</p>
@@ -133,7 +133,7 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
             </div>
             <div className="flex gap-3">
               <button type="submit" className="rounded-xl bg-[#003B5C] px-5 py-2.5 font-bold text-white">{saving ? 'Хадгалж байна…' : 'Хадгалах'}</button>
-              <button type="button" onClick={() => { setDraft(null); setError(''); }} className="rounded-xl border px-5 py-2.5">Болих</button>
+              <button type="button" onClick={() => { setDraft(null); setError(''); }} className="rounded-xl border bg-white px-5 py-2.5 text-slate-700">Болих</button>
             </div>
           </fieldset>
         </form>}
@@ -152,9 +152,9 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
               </div>
             </div>
             <div className="mt-4 flex flex-wrap gap-3">
-              <button type="button" disabled={saving || !!draft} onClick={() => { setDraft({ ...notice }); setSuccess(''); setError(''); }} className="flex items-center gap-1 rounded-lg border px-3 py-2 text-sm text-slate-700 disabled:opacity-50"><Pencil size={14} /> Засах</button>
-              <button type="button" disabled={saving || !!draft} onClick={() => persist(data.notices.map(item => item.id === notice.id ? { ...item, isPublished: !item.isPublished } : item), notice.isPublished ? 'Сэрэмжлүүлгийг нуусан.' : 'Сэрэмжлүүлэг нийтлэгдлээ.')} className="rounded-lg border px-3 py-2 text-sm text-slate-700 disabled:opacity-50">{notice.isPublished ? 'Нуух' : 'Нийтлэх'}</button>
-              <button type="button" disabled={saving || !!draft} aria-label={`${notice.title} — устгах`} onClick={() => { if (window.confirm(`«${notice.title}» сэрэмжлүүлгийг устгах уу?`)) persist(data.notices.filter(item => item.id !== notice.id), 'Сэрэмжлүүлэг устгагдлаа.'); }} className="flex items-center gap-1 rounded-lg border border-red-100 px-3 py-2 text-sm text-red-600 disabled:opacity-50"><Trash2 size={14} /> Устгах</button>
+              <button type="button" disabled={saving || !!draft} onClick={() => { setDraft({ ...notice }); setSuccess(''); setError(''); }} className="flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 disabled:opacity-50"><Pencil size={14} /> Засах</button>
+              <button type="button" disabled={saving || !!draft} onClick={() => persist(data.notices.map(item => item.id === notice.id ? { ...item, isPublished: !item.isPublished } : item), notice.isPublished ? 'Сэрэмжлүүлгийг нуусан.' : 'Сэрэмжлүүлэг нийтлэгдлээ.')} className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 disabled:opacity-50">{notice.isPublished ? 'Нуух' : 'Нийтлэх'}</button>
+              <button type="button" disabled={saving || !!draft} aria-label={`${notice.title} — устгах`} onClick={() => { if (window.confirm(`«${notice.title}» сэрэмжлүүлгийг устгах уу?`)) persist(data.notices.filter(item => item.id !== notice.id), 'Сэрэмжлүүлэг устгагдлаа.'); }} className="flex items-center gap-1 rounded-lg border border-red-100 bg-white px-3 py-2 text-sm text-red-600 disabled:opacity-50"><Trash2 size={14} /> Устгах</button>
             </div>
           </article>)}
         </div>

@@ -1036,7 +1036,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex font-sans [color-scheme:light]">
+    <div className="min-h-screen bg-slate-100 flex font-sans [color-scheme:light] [forced-color-adjust:none]">
       <style>{` @media print { @page { margin: 1cm; size: auto; } body * { visibility: hidden; } #printable-content, #printable-content * { visibility: visible; } #printable-content { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; background: white; } .no-print { display: none !important; } } `}</style>
 
       {/* SIDEBAR */}
