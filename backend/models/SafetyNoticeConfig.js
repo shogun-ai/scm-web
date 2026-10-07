@@ -6,6 +6,7 @@ const noticeSchema = new mongoose.Schema({
     body: { type: String, required: true, maxlength: 2000 },
     isPublished: { type: Boolean, required: true },
     order: { type: Number, required: true, min: 0, max: 1000000, validate: Number.isSafeInteger },
+    imageUrl: { type: String, default: '', maxlength: 500, match: /^$|^https:\/\/\S+$/ },
 }, { _id: false, strict: 'throw' });
 
 const safetyNoticeConfigSchema = new mongoose.Schema({

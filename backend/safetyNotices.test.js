@@ -15,9 +15,11 @@ test('complete initial guidance fits admin validation and includes emergency and
 
 test('validates plain text, trims content, and accepts deleting every notice', () => {
     assert.deepEqual(validateSafetyNoticeUpdate({ notices: [], revision: 7 }), { notices: [], revision: 7 });
-    const result = validateSafetyNoticeUpdate(input({ notices: [notice({ title: ' Гарчиг ', body: ' Тайлбар\nхоёр ' })] }));
+    const result = validateSafetyNoticeUpdate(input({ notices: [notice({ title: ' Гарчиг ', body: ' Тайлбар\nхоёр ', imageUrl: 'https://res.cloudinary.com/demo/image/upload/v1/notice.png' })] }));
     assert.equal(result.notices[0].title, 'Гарчиг');
     assert.equal(result.notices[0].body, 'Тайлбар\nхоёр');
+    assert.equal(result.notices[0].imageUrl, 'https://res.cloudinary.com/demo/image/upload/v1/notice.png');
+    assert.equal(validateSafetyNoticeUpdate(input({ notices: [notice({ imageUrl: '' })] })).notices[0].imageUrl, '');
 });
 
 test('rejects malformed payloads, duplicate ids, unsafe keys, and unbounded fields', () => {
@@ -26,7 +28,9 @@ test('rejects malformed payloads, duplicate ids, unsafe keys, and unbounded fiel
         input({ notices: [notice(), notice()] }), input({ notices: Array.from({ length: 31 }, (_, i) => notice({ id: `n-${i}` })) }),
         ...[{ id: '' }, { id: 'bad.id' }, { id: { $ne: null } }, { title: '' }, { title: ' ' }, { title: 'a'.repeat(121) },
             { body: 'a'.repeat(2001) }, { body: [] }, { isPublished: 'false' }, { order: 0.5 }, { order: -1 },
-            { order: 1000001 }, { unexpected: true }].map(change => input({ notices: [notice(change)] }))];
+            { order: 1000001 }, { unexpected: true }, { imageUrl: 'http://insecure.example.com/x.png' },
+            { imageUrl: 'javascript:alert(1)' }, { imageUrl: 'data:image/png;base64,AA==' }, { imageUrl: `https://a.com/${'a'.repeat(500)}` },
+            { imageUrl: 123 }, { imageUrl: null }].map(change => input({ notices: [notice(change)] }))];
     for (const payload of cases) assert.throws(() => validateSafetyNoticeUpdate(payload), error => error.status === 400);
 });
 

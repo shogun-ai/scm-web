@@ -1572,7 +1572,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
 
               {/* CMS CONTENT PANEL */}
               <div className="flex-1 pl-6 min-w-0">
-                {cmsSubTab === 'safety' && <SafetyNoticesAdmin token={token} />}
+                {cmsSubTab === 'safety' && <SafetyNoticesAdmin token={token} uploadImage={uploadImage} />}
 
                 {/* 1. НҮҮР ХУУДАС — all page sections */}
                 {cmsSubTab === 'hero' && (

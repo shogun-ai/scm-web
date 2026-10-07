@@ -32,4 +32,4 @@ export const DEFAULT_SAFETY_NOTICES = Object.freeze([
     id: 'official-channels', title: 'Солонго Капитал ББСБ-ийн албан ёсны сувгууд', order: 7,
     body: 'Вэб:\nhttps://www.scm.mn\n\nИ-мэйл:\ninfo@scm.mn\n\nУтас:\n75991919\n75999191\n\n“Мэдээллээ зөвхөн Солонго Капитал ББСБ-ийн албан ёсны сувгаар нягтална уу.”',
   },
-].map(notice => Object.freeze({ ...notice, isPublished: true })));
+].map(notice => Object.freeze({ ...notice, isPublished: true, imageUrl: '' })));

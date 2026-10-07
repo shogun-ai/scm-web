@@ -13,6 +13,12 @@ export default function SafetyNotices({ notices = [] }) {
   return (
     <div className="relative h-full overflow-y-auto overscroll-contain bg-[#061f32] text-white" tabIndex={0} aria-label="Сэрэмжлүүлэг, зөвлөмж">
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 min-h-full bg-[#061f32]" />
+      {featured.imageUrl && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 min-h-full opacity-[0.16]">
+          <img src={featured.imageUrl} alt="" className="h-full w-full object-cover" />
+        </div>
+      )}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 min-h-full" style={{ background: 'linear-gradient(100deg, #061f32 38%, rgba(6,31,50,.55) 72%, rgba(6,31,50,.85))' }} />
       <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(ellipse at 82% 30%, rgba(212,175,55,.15), transparent 50%), radial-gradient(ellipse at 5% 100%, rgba(0,166,81,.10), transparent 50%)' }} />
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[0.04]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.7) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.7) 1px, transparent 1px)', backgroundSize: '72px 72px', maskImage: 'linear-gradient(to right, transparent, black)' }} />
       <div className="relative mx-auto flex min-h-full max-w-[1440px] items-center px-14 pb-24 pt-28 md:px-20 lg:px-24">
@@ -34,13 +40,20 @@ export default function SafetyNotices({ notices = [] }) {
             </div>
           </div>
           <div className="min-w-0">
-            <div aria-hidden="true" className="relative mx-auto mb-7 hidden h-36 w-36 items-center justify-center lg:flex">
-              <div className="absolute inset-0 rounded-full border border-[#d4af37]/10" />
-              <div className="absolute inset-3 rounded-full border border-[#d4af37]/20" />
-              <div className="absolute inset-6 rounded-full bg-[#d4af37]/5 shadow-[0_0_65px_rgba(212,175,55,0.10)]" />
-              <ShieldCheck className="relative text-[#e8c966]" size={60} strokeWidth={1} />
-              <span className="absolute right-4 top-5 h-1.5 w-1.5 rounded-full bg-[#e8c966]" />
-            </div>
+            {featured.imageUrl ? (
+              <div className="relative mx-auto mb-7 hidden h-56 w-56 lg:block">
+                <div className="absolute -inset-2 rounded-[2rem] bg-gradient-to-br from-[#d4af37]/40 via-transparent to-transparent blur-xl" />
+                <img src={featured.imageUrl} alt="" className="relative h-full w-full rounded-[1.75rem] border border-[#d4af37]/40 object-cover shadow-[0_25px_60px_rgba(0,0,0,0.45)]" />
+              </div>
+            ) : (
+              <div aria-hidden="true" className="relative mx-auto mb-7 hidden h-36 w-36 items-center justify-center lg:flex">
+                <div className="absolute inset-0 rounded-full border border-[#d4af37]/10" />
+                <div className="absolute inset-3 rounded-full border border-[#d4af37]/20" />
+                <div className="absolute inset-6 rounded-full bg-[#d4af37]/5 shadow-[0_0_65px_rgba(212,175,55,0.10)]" />
+                <ShieldCheck className="relative text-[#e8c966]" size={60} strokeWidth={1} />
+                <span className="absolute right-4 top-5 h-1.5 w-1.5 rounded-full bg-[#e8c966]" />
+              </div>
+            )}
             <div className="divide-y divide-white/10 border-y border-white/10">
               {remaining.slice(0, 2).map((notice, index) => {
                 const Icon = icons[index % icons.length];
@@ -48,7 +61,11 @@ export default function SafetyNotices({ notices = [] }) {
                 return (
                   <article key={notice.id} className="py-6 md:py-7">
                     <div className="mb-3 flex items-start gap-3">
-                      <Icon className="mt-0.5 shrink-0 text-[#e8c966]" size={20} strokeWidth={1.5} aria-hidden="true" />
+                      {notice.imageUrl ? (
+                        <img src={notice.imageUrl} alt="" className="mt-0.5 h-9 w-9 shrink-0 rounded-lg border border-[#d4af37]/30 object-cover" />
+                      ) : (
+                        <Icon className="mt-0.5 shrink-0 text-[#e8c966]" size={20} strokeWidth={1.5} aria-hidden="true" />
+                      )}
                       <h3 className="min-w-0 break-words text-base font-semibold leading-snug text-white md:text-lg">{notice.title}</h3>
                     </div>
                     <p className="break-words text-sm leading-7 text-[#b7c9d4] md:pl-8">{summary.length > 170 ? `${summary.slice(0, 170)}…` : summary}</p>

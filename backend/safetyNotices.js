@@ -18,14 +18,18 @@ export function validateSafetyNoticeUpdate(input) {
         || !Array.isArray(input.notices) || input.notices.length > SAFETY_NOTICE_LIMIT) invalid();
     const ids = new Set();
     const notices = input.notices.map(notice => {
-        if (!hasExactKeys(notice, ['id', 'title', 'body', 'isPublished', 'order'])
+        if (!hasExactKeys(notice, ['id', 'title', 'body', 'isPublished', 'order', 'imageUrl'])
             || typeof notice.id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(notice.id)
             || ids.has(notice.id) || typeof notice.title !== 'string' || typeof notice.body !== 'string'
             || !notice.title.trim() || !notice.body.trim() || notice.title.length > 120 || notice.body.length > 2000
             || typeof notice.isPublished !== 'boolean' || !Number.isSafeInteger(notice.order)
-            || notice.order < 0 || notice.order > 1000000) invalid();
+            || notice.order < 0 || notice.order > 1000000 || typeof notice.imageUrl !== 'string'
+            || notice.imageUrl.length > 500 || !/^$|^https:\/\/\S+$/.test(notice.imageUrl)) invalid();
         ids.add(notice.id);
-        return { id: notice.id, title: notice.title.trim(), body: notice.body.trim(), isPublished: notice.isPublished, order: notice.order };
+        return {
+            id: notice.id, title: notice.title.trim(), body: notice.body.trim(), isPublished: notice.isPublished,
+            order: notice.order, imageUrl: notice.imageUrl,
+        };
     });
     return { notices, revision: input.revision };
 }
@@ -34,7 +38,7 @@ export function safetyNoticeResponse(document, publicOnly = false) {
     const source = document ? document.notices : DEFAULT_SAFETY_NOTICES;
     const notices = source.slice(0, SAFETY_NOTICE_LIMIT)
         .filter(notice => !publicOnly || notice.isPublished === true)
-        .map(({ id, title, body, isPublished, order }) => ({ id, title, body, isPublished, order }))
+        .map(({ id, title, body, isPublished, order, imageUrl }) => ({ id, title, body, isPublished, order, imageUrl }))
         .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
     return publicOnly ? { notices } : { notices, revision: document ? document.revision : 0 };
 }

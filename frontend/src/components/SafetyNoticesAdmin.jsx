@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, ShieldCheck } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Plus, Pencil, Trash2, ShieldCheck, ImagePlus, X } from 'lucide-react';
 import { requestSafetyNotices } from '../safetyNoticesApi';
 
-export default function SafetyNoticesAdmin({ token }) {
+export default function SafetyNoticesAdmin({ token, uploadImage }) {
   const [data, setData] = useState(null);
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -61,6 +63,21 @@ export default function SafetyNoticesAdmin({ token }) {
     persist(exists ? data.notices.map(item => item.id === notice.id ? notice : item) : [...data.notices, notice], 'Сэрэмжлүүлэг хадгалагдлаа.');
   };
 
+  const handleImageChange = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !draft) return;
+    setError(''); setUploadingImage(true);
+    try {
+      const url = await uploadImage(file);
+      setDraft(current => current ? { ...current, imageUrl: url } : current);
+    } catch {
+      setError('Зураг оруулахад алдаа гарлаа. Дахин оролдоно уу.');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -75,7 +92,7 @@ export default function SafetyNoticesAdmin({ token }) {
       {loading ? <p role="status">Мэдээлэл ачаалж байна…</p> : data && <>
         <button type="button" disabled={saving || !!draft || data.notices.length >= 30} onClick={() => {
           setSuccess(''); setError('');
-          setDraft({ id: crypto.randomUUID(), title: '', body: '', isPublished: true, order: Math.min(1000000, Math.max(0, ...data.notices.map(item => item.order)) + 1) });
+          setDraft({ id: crypto.randomUUID(), title: '', body: '', isPublished: true, imageUrl: '', order: Math.min(1000000, Math.max(0, ...data.notices.map(item => item.order)) + 1) });
         }} className="flex items-center gap-2 rounded-xl bg-[#003B5C] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><Plus size={17} /> Сэрэмжлүүлэг нэмэх</button>
         {data.notices.length >= 30 && <p className="text-sm text-slate-500">Хамгийн ихдээ 30 сэрэмжлүүлэг хадгална.</p>}
         {draft && <form onSubmit={saveDraft} className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm">
@@ -88,6 +105,18 @@ export default function SafetyNoticesAdmin({ token }) {
               <textarea required maxLength={2000} rows={6} value={draft.body} onChange={event => setDraft({ ...draft, body: event.target.value })} className="mt-2 w-full rounded-xl border p-3 font-normal" />
               <span className="text-xs font-normal text-slate-400">{draft.body.length}/2000 тэмдэгт</span>
             </label>
+            <div className="space-y-2">
+              <span className="block text-sm font-semibold">Холбоотой зураг (сонголт)</span>
+              <div className="flex flex-wrap items-center gap-3">
+                {draft.imageUrl && <img src={draft.imageUrl} alt="" className="h-20 w-20 rounded-xl border object-cover" />}
+                <button type="button" disabled={uploadingImage} onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-normal disabled:opacity-50">
+                  <ImagePlus size={16} /> {uploadingImage ? 'Оруулж байна…' : draft.imageUrl ? 'Зураг солих' : 'Зураг нэмэх'}
+                </button>
+                {draft.imageUrl && <button type="button" onClick={() => setDraft({ ...draft, imageUrl: '' })} className="flex items-center gap-1 rounded-lg border border-red-100 px-3 py-2 text-sm font-normal text-red-600"><X size={14} /> Хасах</button>}
+              </div>
+              <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageChange} />
+              <p className="text-xs font-normal text-slate-400">Энэ зураг сэрэмжлүүлгийн текстийн хажууд/ард харагдана.</p>
+            </div>
             <div className="flex flex-wrap items-center gap-6">
               <label className="text-sm font-semibold">Дараалал <input type="number" required min={0} max={1000000} step={1} value={draft.order} onChange={event => setDraft({ ...draft, order: event.target.value })} className="ml-2 w-24 rounded-lg border p-2 font-normal" /></label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.isPublished} onChange={event => setDraft({ ...draft, isPublished: event.target.checked })} /> Нүүр хуудсанд нийтлэх</label>
@@ -105,8 +134,13 @@ export default function SafetyNoticesAdmin({ token }) {
               <span className={`rounded-full px-2 py-1 ${notice.isPublished ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>{notice.isPublished ? 'Нийтэлсэн' : 'Нуусан'}</span>
               <span className="text-slate-400">Дараалал: {notice.order}</span>
             </div>
-            <h4 className="break-words font-bold text-[#003B5C]">{notice.title}</h4>
-            <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600">{notice.body}</p>
+            <div className="flex gap-4">
+              {notice.imageUrl && <img src={notice.imageUrl} alt="" className="h-16 w-16 shrink-0 rounded-lg border object-cover" />}
+              <div className="min-w-0">
+                <h4 className="break-words font-bold text-[#003B5C]">{notice.title}</h4>
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600">{notice.body}</p>
+              </div>
+            </div>
             <div className="mt-4 flex flex-wrap gap-3">
               <button type="button" disabled={saving || !!draft} onClick={() => { setDraft({ ...notice }); setSuccess(''); setError(''); }} className="flex items-center gap-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-50"><Pencil size={14} /> Засах</button>
               <button type="button" disabled={saving || !!draft} onClick={() => persist(data.notices.map(item => item.id === notice.id ? { ...item, isPublished: !item.isPublished } : item), notice.isPublished ? 'Сэрэмжлүүлгийг нуусан.' : 'Сэрэмжлүүлэг нийтлэгдлээ.')} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">{notice.isPublished ? 'Нуух' : 'Нийтлэх'}</button>
