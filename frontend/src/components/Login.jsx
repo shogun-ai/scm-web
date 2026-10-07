@@ -53,7 +53,7 @@ const Login = ({ onLogin, onBack }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4 [color-scheme:light]">
       <div className="bg-white rounded-3xl shadow-2xl p-8 md:p-12 w-full max-w-md animate-fade-in relative">
         <button onClick={onBack} className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 text-sm font-bold uppercase tracking-wider">Буцах</button>
         

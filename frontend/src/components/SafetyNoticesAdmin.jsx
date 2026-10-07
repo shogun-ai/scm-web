@@ -12,6 +12,16 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
   const [success, setSuccess] = useState('');
   const [attempt, setAttempt] = useState(0);
   const fileInputRef = useRef(null);
+  const formRef = useRef(null);
+  const wasEditingRef = useRef(false);
+
+  useEffect(() => {
+    const isEditing = !!draft;
+    if (isEditing && !wasEditingRef.current) {
+      formRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
+    }
+    wasEditingRef.current = isEditing;
+  }, [draft]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -85,7 +95,7 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
           <h3 className="flex items-center gap-2 text-xl font-bold text-[#003B5C]"><ShieldCheck size={23} /> Сэрэмжлүүлэг</h3>
           <p className="mt-2 text-sm text-slate-500">Нийтэлсэн зөвлөмжүүд нүүрний слайдерын сэрэмжлүүлгийн хуудсанд харагдана. Эхний зөвлөмж том гарчигтай байна.</p>
         </div>
-        <button type="button" onClick={reload} disabled={saving || loading} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">Дахин ачаалах</button>
+        <button type="button" onClick={reload} disabled={saving || loading} className="rounded-lg border px-3 py-2 text-sm text-slate-700 disabled:opacity-50">Дахин ачаалах</button>
       </div>
       {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
       {success && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{success}</p>}
@@ -95,7 +105,7 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
           setDraft({ id: crypto.randomUUID(), title: '', body: '', isPublished: true, imageUrl: '', order: Math.min(1000000, Math.max(0, ...data.notices.map(item => item.order)) + 1) });
         }} className="flex items-center gap-2 rounded-xl bg-[#003B5C] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><Plus size={17} /> Сэрэмжлүүлэг нэмэх</button>
         {data.notices.length >= 30 && <p className="text-sm text-slate-500">Хамгийн ихдээ 30 сэрэмжлүүлэг хадгална.</p>}
-        {draft && <form onSubmit={saveDraft} className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm">
+        {draft && <form ref={formRef} onSubmit={saveDraft} className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm scroll-mt-6">
           <fieldset disabled={saving} className="space-y-4">
             <legend className="mb-3 font-bold text-[#003B5C]">{data.notices.some(item => item.id === draft.id) ? 'Сэрэмжлүүлэг засах' : 'Шинэ сэрэмжлүүлэг'}</legend>
             <label className="block text-sm font-semibold">Гарчиг
@@ -142,8 +152,8 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
               </div>
             </div>
             <div className="mt-4 flex flex-wrap gap-3">
-              <button type="button" disabled={saving || !!draft} onClick={() => { setDraft({ ...notice }); setSuccess(''); setError(''); }} className="flex items-center gap-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-50"><Pencil size={14} /> Засах</button>
-              <button type="button" disabled={saving || !!draft} onClick={() => persist(data.notices.map(item => item.id === notice.id ? { ...item, isPublished: !item.isPublished } : item), notice.isPublished ? 'Сэрэмжлүүлгийг нуусан.' : 'Сэрэмжлүүлэг нийтлэгдлээ.')} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">{notice.isPublished ? 'Нуух' : 'Нийтлэх'}</button>
+              <button type="button" disabled={saving || !!draft} onClick={() => { setDraft({ ...notice }); setSuccess(''); setError(''); }} className="flex items-center gap-1 rounded-lg border px-3 py-2 text-sm text-slate-700 disabled:opacity-50"><Pencil size={14} /> Засах</button>
+              <button type="button" disabled={saving || !!draft} onClick={() => persist(data.notices.map(item => item.id === notice.id ? { ...item, isPublished: !item.isPublished } : item), notice.isPublished ? 'Сэрэмжлүүлгийг нуусан.' : 'Сэрэмжлүүлэг нийтлэгдлээ.')} className="rounded-lg border px-3 py-2 text-sm text-slate-700 disabled:opacity-50">{notice.isPublished ? 'Нуух' : 'Нийтлэх'}</button>
               <button type="button" disabled={saving || !!draft} aria-label={`${notice.title} — устгах`} onClick={() => { if (window.confirm(`«${notice.title}» сэрэмжлүүлгийг устгах уу?`)) persist(data.notices.filter(item => item.id !== notice.id), 'Сэрэмжлүүлэг устгагдлаа.'); }} className="flex items-center gap-1 rounded-lg border border-red-100 px-3 py-2 text-sm text-red-600 disabled:opacity-50"><Trash2 size={14} /> Устгах</button>
             </div>
           </article>)}

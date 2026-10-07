@@ -20,7 +20,7 @@ export function SafetyPreview({ admin }) {
       <a className="underline" href="/safety-preview.html?view=admin">Админ удирдлага</a>
       <span className="text-white/50">Өөрчлөлт зөвхөн энэ браузерт хадгалагдана.</span>
     </nav>
-    {admin ? <div className="min-h-screen space-y-8 bg-slate-50 p-6 text-slate-800">
+    {admin ? <div className="min-h-screen space-y-8 bg-slate-50 p-6 text-slate-800 [color-scheme:light]">
       <div className="max-w-4xl space-y-3">
         <HeroSliderSettings value={interval} onChange={value => { setInterval(value); setSaved(false); }} />
         <button type="button" disabled={!isValidHeroSliderInterval(interval)} className="rounded-xl bg-[#003B5C] px-5 py-3 text-sm font-bold text-white disabled:opacity-50" onClick={() => { localStorage.setItem('scm-slider-preview-interval', String(interval)); setSaved(true); }}>Хугацааг хадгалах</button>
