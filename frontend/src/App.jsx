@@ -37,6 +37,7 @@ import TrustCalculator from './components/TrustCalculator';
 import LoanRequest from './components/LoanRequest';
 import Login from './components/Login';
 import AdminPanel from './components/AdminPanel';
+import PromotionSlider from './components/PromotionSlider';
 import TrustRequest from './components/TrustRequest';
 import CustomerOnboarding from './components/CustomerOnboarding';
 import ChatBot from './components/ChatBot'; // ✅ Чатбот нэмэгдсэн
@@ -410,111 +411,6 @@ const ScrollDownArrow = ({ targetId, color = "text-white/70" }) => {
     );
 };
 
-const PromotionSlider = ({ promotions, fallbackBg, homeSlide, intervalSeconds = 15, onOpen, onProducts }) => {
-    const safePromotions = Array.isArray(promotions) ? promotions : [];
-    const slides = [homeSlide, ...safePromotions];
-    const [active, setActive] = useState(0);
-    const current = slides[active] || slides[0];
-
-    useEffect(() => {
-        if (slides.length <= 1) return undefined;
-        const intervalMs = Math.max(Number(intervalSeconds) || 15, 3) * 1000;
-        const timer = window.setInterval(() => setActive(prev => (prev + 1) % slides.length), intervalMs);
-        return () => window.clearInterval(timer);
-    }, [slides.length, intervalSeconds]);
-
-    const go = (direction) => setActive(prev => (prev + direction + slides.length) % slides.length);
-
-    return (
-        <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute inset-0 flex transition-transform duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform" style={{ transform: `translateX(-${active * 100}%)` }}>
-                {slides.map((slide, idx) => (
-                    <div
-                        key={slide._id || slide.slug || slide.kind || idx}
-                        className="min-w-full h-full bg-cover bg-center"
-                        style={{ backgroundImage: `url(${slide.backgroundImageUrl || fallbackBg})` }}
-                    />
-                ))}
-            </div>
-            <div className={`absolute inset-0 transition-colors duration-700 ${current?.kind === 'home' ? 'sc-hero-vignette' : 'sc-overlay-70'}`}></div>
-            {current?.kind === 'home' ? (
-                <div className="relative z-10 h-full flex items-center justify-center text-center px-4 pt-20 pb-24">
-                    <div className="max-w-5xl space-y-7 text-white animate-fade-in-up px-4 flex flex-col items-center">
-                        <img
-                            src={current.logo}
-                            alt="Solongo Capital Logo"
-                            className={`${current.logoClassName} drop-shadow-[0_18px_45px_rgba(0,0,0,0.45)]`}
-                        />
-                        <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-white/85 backdrop-blur-md">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#00A651] shadow-[0_0_18px_rgba(0,166,81,0.9)]"></span>
-                            Solongo Capital
-                        </div>
-                        <h1 className="font-display font-extrabold text-4xl md:text-5xl lg:text-7xl leading-[1.05] tracking-normal drop-shadow-2xl">
-                            {current.line1} <br/>
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00A651] to-emerald-400">{current.highlight}</span> {current.line2}
-                        </h1>
-                        <p className="font-sans font-normal text-base md:text-lg lg:text-xl text-blue-50 max-w-2xl mx-auto leading-relaxed opacity-95">
-                            {current.description}
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl pt-1">
-                            {['Хурдан шийдэл', 'Ил тод нөхцөл', 'Найдвартай түнш'].map((label) => (
-                                <div key={label} className="sc-glass-panel rounded-lg px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-white/85">
-                                    {label}
-                                </div>
-                            ))}
-                        </div>
-                        <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
-                            <button
-                                onClick={onProducts}
-                                className="sc-primary-button inline-flex min-h-12 items-center justify-center rounded-full px-9 py-4 font-sans text-xs font-extrabold uppercase tracking-widest transition-all duration-300"
-                            >
-                                {current.button}
-                            </button>
-                            <button
-                                onClick={() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })}
-                                className="sc-secondary-button inline-flex min-h-12 items-center justify-center rounded-full px-9 py-4 font-sans text-xs font-bold uppercase tracking-widest text-white transition-all duration-300"
-                            >
-                                Холбоо барих
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            ) : (
-                <div className="relative z-10 h-full flex items-center">
-                    <div className="max-w-7xl mx-auto px-4 md:px-6 w-full pt-20 pb-24">
-                        <div className="max-w-3xl text-white animate-fade-in-up">
-                            <span className="text-[#D4AF37] font-sans font-bold uppercase tracking-[0.25em] text-xs mb-5 block">{current.subtitle || 'Шинэ мэдээ'}</span>
-                            <h1 className="font-display font-bold text-4xl md:text-7xl leading-tight mb-6 drop-shadow-xl">{current.title}</h1>
-                            <p className="font-sans text-lg md:text-2xl text-white/85 leading-relaxed max-w-2xl mb-10 font-light">{current.excerpt}</p>
-                            <button
-                                onClick={() => onOpen(current)}
-                                className="sc-primary-button inline-flex items-center gap-3 rounded-full px-7 py-3.5 font-display text-xs font-bold uppercase tracking-wider transition shadow-xl"
-                            >
-                                {current.ctaLabel || 'Дэлгэрэнгүй'} <ArrowRight size={16}/>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            {slides.length > 1 && (
-                <div className="absolute left-4 right-4 md:left-auto md:right-10 bottom-24 z-20 flex items-center justify-between md:justify-end gap-4">
-                    <button onClick={() => go(-1)} className="grid h-11 w-11 place-items-center rounded-full border border-white/25 bg-white/10 text-white backdrop-blur-md transition hover:bg-white hover:text-[#003B5C]" aria-label="Previous slide"><ChevronLeft size={20}/></button>
-                    <div className="flex gap-2">
-                        {slides.map((slide, idx) => (
-                            <button
-                                key={slide._id || slide.slug || slide.kind || idx}
-                                onClick={() => setActive(idx)}
-                                className={`h-2 rounded-full transition-all ${idx === active ? 'w-8 bg-[#D4AF37]' : 'w-2 bg-white/45 hover:bg-white'}`}
-                                aria-label={`Slide ${idx + 1}`}
-                            />
-                        ))}
-                    </div>
-                    <button onClick={() => go(1)} className="grid h-11 w-11 place-items-center rounded-full border border-white/25 bg-white/10 text-white backdrop-blur-md transition hover:bg-white hover:text-[#003B5C]" aria-label="Next slide"><ArrowRight size={20}/></button>
-                </div>
-            )}
-        </div>
-    );
-};
 // ======================================================================
 // 10. КОМПОНЕНТУУД (UI)
 // ======================================================================
@@ -1461,7 +1357,7 @@ function App() {
                       <PromotionSlider
                         promotions={promotions}
                         fallbackBg={BACKGROUNDS.hero}
-                        intervalSeconds={cfg.hero_slider_interval || 15}
+                        intervalSeconds={cfg.hero_slider_interval ?? 15}
                         onOpen={(item) => navigateTo('promotion_detail', item)}
                         onProducts={() => scrollToSection('products')}
                         homeSlide={{

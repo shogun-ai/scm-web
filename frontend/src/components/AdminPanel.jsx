@@ -7,6 +7,9 @@ import logoColored from '../assets/logo-colored.png';
 import LoanResearch from './LoanResearch';
 import LoanOrigination from './LoanOrigination';
 import PermissionMatrix from './PermissionMatrix';
+import SafetyNoticesAdmin from './SafetyNoticesAdmin';
+import HeroSliderSettings from './HeroSliderSettings';
+import { isValidHeroSliderInterval, normalizeHeroSliderInterval } from '../../../shared/heroSliderConfig.js';
 
 const hasBrokenEncoding = (value = '') => /[ÐÑÒÓ]|â|�/.test(String(value));
 
@@ -775,6 +778,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
   };
 
   const saveBulkConfig = async (group) => {
+    if (group === 'hero' && configEdits.hero_slider_interval !== undefined && !isValidHeroSliderInterval(configEdits.hero_slider_interval)) {
+      alert('Слайдын хугацааг 3–120 секундийн бүхэл тоогоор оруулна уу, эсвэл автомат солилтыг унтраана уу.');
+      return;
+    }
     setCmsSaving(true);
     try {
       const groupKeys = Object.keys(siteConfig[group] || {});
@@ -784,7 +791,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
         updates['contact_image'] = configEdits['contact_image'];
       }
       if (group === 'hero' && configEdits['hero_slider_interval'] !== undefined) {
-        updates['hero_slider_interval'] = Number(configEdits['hero_slider_interval']);
+        updates['hero_slider_interval'] = configEdits['hero_slider_interval'];
       }
       await axios.post(`${API_URL}/api/config/bulk`, updates);
       alert('Амжилттай хадгалагдлаа!');
@@ -1541,6 +1548,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                 {[
                   { id: 'theme', label: '🎨 Загвар & Өнгө' },
                   { id: 'hero', label: '🏠 Нүүр хуудас' },
+                  { id: 'safety', label: '🛡 Сэрэмжлүүлэг' },
                   { id: 'about', label: '🏢 Бид хэн бэ?' },
                   { id: 'financials', label: '📊 Санхүү' },
                   { id: 'products', label: '📦 Бүтээгдэхүүн' },
@@ -1564,6 +1572,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
 
               {/* CMS CONTENT PANEL */}
               <div className="flex-1 pl-6 min-w-0">
+                {cmsSubTab === 'safety' && <SafetyNoticesAdmin token={token} />}
 
                 {/* 1. НҮҮР ХУУДАС — all page sections */}
                 {cmsSubTab === 'hero' && (
@@ -1574,20 +1583,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
                           {group==='hero'?'🏠 Hero хэсэг':group==='about'?'🏢 Бид хэн бэ':group==='financials'?'📊 Санхүүгийн үзүүлэлт':'📞 Холбоо барих'}
                         </h4>
                         {group === 'hero' && (
-                          <div className="space-y-2 rounded-xl border bg-slate-50 p-4">
-                            <label className="text-xs font-bold text-gray-400 uppercase">Slider солигдох хугацаа</label>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                              {[3, 15, 30, 60].map(sec => (
-                                <button
-                                  key={sec}
-                                  onClick={() => setConfigEdits(p => ({ ...p, hero_slider_interval: sec }))}
-                                  className={`px-4 py-2 rounded-lg border text-sm font-bold transition ${Number(configEdits.hero_slider_interval ?? siteConfig.hero?.hero_slider_interval?.value ?? 15) === sec ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-gray-600 hover:border-[#003B5C]'}`}
-                                >
-                                  {sec} сек
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                          <HeroSliderSettings
+                            value={configEdits.hero_slider_interval ?? normalizeHeroSliderInterval(siteConfig.hero?.hero_slider_interval?.value)}
+                            onChange={value => setConfigEdits(previous => ({ ...previous, hero_slider_interval: value }))}
+                          />
                         )}
                         {Object.entries(siteConfig[group] || {}).filter(([key]) => key !== 'contact_image' && key !== 'hero_slider_interval').map(([key, obj]) => (
                           <div key={key} className="space-y-1">

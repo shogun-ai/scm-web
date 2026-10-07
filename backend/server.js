@@ -18,6 +18,9 @@ import * as cheerio from 'cheerio';
 import Stat from './models/Stat.js';
 import Policy from './models/Policy.js';
 import SiteConfig from './models/SiteConfig.js';
+import SafetyNoticeConfig from './models/SafetyNoticeConfig.js';
+import { isValidHeroSliderInterval } from '../shared/heroSliderConfig.js';
+import { createSafetyNoticeGuard, isSafetyNoticeRequest, readSafetyNotices, saveSafetyNotices, SafetyNoticeError } from './safetyNotices.js';
 import ProductContent from './models/ProductContent.js';
 import TeamMember from './models/TeamMember.js';
 import FormConfig from './models/FormConfig.js';
@@ -245,7 +248,25 @@ const defaultJsonParser = express.json({
     },
 });
 const onboardingJsonParser = express.json({ limit: ONBOARDING_PUBLIC_BODY_LIMIT });
+const safetyNoticeJsonParser = express.json({ limit: '384kb' });
+// Proxy trust is not configured: peers may represent many visitors, so use a generous aggregate bound.
+const guardPublicSafetyNotices = createSafetyNoticeGuard({ max: 6000 });
+const guardAdminSafetyNotices = createSafetyNoticeGuard({ max: 120, keyFn: req => String(req.user._id) });
 app.use((req, res, next) => {
+    if (isSafetyNoticeRequest(req)) {
+        const parseSafetyNoticeRequest = () => {
+            if (req.method === 'PUT' && !req.is('application/json')) {
+                return res.status(415).json({ message: 'JSON мэдээлэл илгээнэ үү.' });
+            }
+            return safetyNoticeJsonParser(req, res, error => {
+                if (error) return res.status(error.type === 'entity.too.large' ? 413 : 400).json({ message: 'Хүсэлтийн хэмжээ эсвэл JSON бүтэц буруу байна.' });
+                return next();
+            });
+        };
+        return /^\/api\/safety-notices\/?$/i.test(req.path)
+            ? guardPublicSafetyNotices(req, res, parseSafetyNoticeRequest)
+            : parseSafetyNoticeRequest();
+    }
     if (!isPublicOnboardingPost(req)) return defaultJsonParser(req, res, next);
     return guardPublicOnboardingIntake(req, res, error => {
         if (error) return next(error);
@@ -256,7 +277,7 @@ app.use((req, res, next) => {
 const defaultUrlencodedParser = express.urlencoded({ limit: '50mb', extended: true });
 const onboardingUrlencodedParser = express.urlencoded({ limit: ONBOARDING_PUBLIC_BODY_LIMIT, extended: true });
 app.use((req, res, next) => (
-    isPublicOnboardingPost(req)
+    isSafetyNoticeRequest(req) ? next() : isPublicOnboardingPost(req)
         ? onboardingUrlencodedParser(req, res, next)
         : defaultUrlencodedParser(req, res, next)
 ));
@@ -1686,6 +1707,34 @@ const requireAdmin = (req, res, next) => {
     }
     next();
 };
+
+app.get('/api/safety-notices', async (_req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await readSafetyNotices(SafetyNoticeConfig, true));
+    } catch {
+        res.status(503).json({ message: 'Сэрэмжлүүлгийг ачаалж чадсангүй. Дахин оролдоно уу.' });
+    }
+});
+
+app.get('/api/admin/safety-notices', authenticateUser, requireAdmin, guardAdminSafetyNotices, async (_req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await readSafetyNotices(SafetyNoticeConfig));
+    } catch {
+        res.status(503).json({ message: 'Сэрэмжлүүлгийг ачаалж чадсангүй. Дахин оролдоно уу.' });
+    }
+});
+
+app.put('/api/admin/safety-notices', authenticateUser, requireAdmin, guardAdminSafetyNotices, async (req, res) => {
+    try {
+        res.json(await saveSafetyNotices(SafetyNoticeConfig, req.body));
+    } catch (error) {
+        res.status(error instanceof SafetyNoticeError ? error.status : 503).json({
+            message: error instanceof SafetyNoticeError ? error.message : 'Сэрэмжлүүлгийг хадгалж чадсангүй. Дахин оролдоно уу.',
+        });
+    }
+});
 
 const zentroFacebook = createZentroFacebookIntegration({
     app,
@@ -6974,6 +7023,9 @@ app.get('/api/config/flat', async (req, res) => {
 
 app.put('/api/config/:key', authenticateUser, requireAdmin, async (req, res) => {
     try {
+        if (req.params.key === 'hero_slider_interval' && !isValidHeroSliderInterval(req.body?.value)) {
+            return res.status(400).json({ message: 'Слайдын хугацаа 0 (унтраах), эсвэл 3–120 секундийн бүхэл тоо байна.' });
+        }
         await SiteConfig.findOneAndUpdate(
             { key: req.params.key },
             { value: req.body.value, updatedAt: new Date() }
@@ -6983,6 +7035,7 @@ app.put('/api/config/:key', authenticateUser, requireAdmin, async (req, res) => 
 });
 
 const KEY_GROUP_MAP = {
+    hero_slider_interval: 'hero',
     theme_mode: 'theme', theme_type: 'theme', theme_color: 'theme', theme_image: 'theme',
     theme_image_home: 'theme', theme_image_about: 'theme', theme_image_financials: 'theme',
     theme_image_governance: 'theme', theme_image_products: 'theme', theme_image_blog: 'theme',
@@ -7004,6 +7057,9 @@ const KEY_GROUP_MAP = {
 app.post('/api/config/bulk', authenticateUser, requireAdmin, async (req, res) => {
     try {
         const updates = req.body;
+        if (updates && Object.hasOwn(updates, 'hero_slider_interval') && !isValidHeroSliderInterval(updates.hero_slider_interval)) {
+            return res.status(400).json({ message: 'Слайдын хугацаа 0 (унтраах), эсвэл 3–120 секундийн бүхэл тоо байна.' });
+        }
         await Promise.all(Object.entries(updates).map(([key, value]) => {
             const group = KEY_GROUP_MAP[key];
             const update = { value, updatedAt: new Date() };
