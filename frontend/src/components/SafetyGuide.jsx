@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X, ShieldCheck, Phone } from 'lucide-react';
 
 function TextLine({ text }) {
@@ -20,6 +21,16 @@ function NoticeBody({ body }) {
 }
 
 export default function SafetyGuide({ notices, dialogRef }) {
+  // Closing (via the button or Escape) restores focus to the trigger button, which still
+  // sits inside the carousel's focus-tracked region and would otherwise pause it forever.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return undefined;
+    const handleClose = () => { document.activeElement?.blur(); };
+    dialog.addEventListener('close', handleClose);
+    return () => dialog.removeEventListener('close', handleClose);
+  }, [dialogRef]);
+
   return <dialog ref={dialogRef} aria-labelledby="safety-guide-title" className="fixed inset-0 m-0 h-[100dvh] max-h-none w-screen max-w-none overflow-y-auto bg-[#061f32] p-0 text-white backdrop:bg-black/80">
     <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-white/10 bg-[#061f32]/95 px-5 py-4 backdrop-blur-lg md:px-10">
       <div className="flex items-center gap-3"><ShieldCheck className="shrink-0 text-[#e8c966]" size={22} /><h2 id="safety-guide-title" className="text-sm font-bold md:text-lg">Сэрэмжлүүлэг, аюулгүй байдлын зөвлөмж</h2></div>
