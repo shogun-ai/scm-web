@@ -13,7 +13,6 @@ import {
 import logoWhite from './assets/logo-white.png';
 import logoWhiteVertical from './assets/logo-white-vertical.png';
 import logoGoldVertical from './assets/logo-gold-vertical.png'; 
-import logoColored from './assets/logo-colored.png';
 import logoBlack from './assets/logo-black.png';
 import logoMetal from './assets/logo-metal.png';
 
@@ -1245,7 +1244,7 @@ function App() {
                 
                 <div className="cursor-pointer z-50 transition-transform hover:scale-105 duration-300" onClick={() => navigateTo('home')}>
                     <img 
-                      src={(scrolled || currentView !== 'home') ? logoColored : logoWhite} 
+                      src={logoWhite}
                       alt="Solongo Capital" 
                       className={`${scrolled || currentView !== 'home' ? 'h-10 md:h-12 lg:h-14' : 'h-11 md:h-14 lg:h-20'} object-contain transition-all duration-300`}
                     /> 
