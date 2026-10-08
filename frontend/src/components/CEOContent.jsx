@@ -39,7 +39,7 @@ const CEOContent = () => {
             <div className="relative w-72 h-96 md:w-80 md:h-[450px] overflow-hidden rounded-2xl shadow-2xl border border-white/10">
               <img
                 src={cfg.ceo_image}
-                alt="CEO"
+                alt={cfg.ceo_name ? `${cfg.ceo_name} — ${cfg.ceo_title || 'CEO'}` : 'CEO'}
                 className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
                 onError={(e) => { e.target.onerror = null; e.target.src = 'https://images.unsplash.com/photo-1560250097-0b93528c311a?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80'; }}
               />
@@ -64,7 +64,7 @@ const CEOContent = () => {
                 <p className="text-[#D4AF37] text-xs uppercase tracking-widest font-bold mt-1">{cfg.ceo_title}</p>
               </div>
               <div className="opacity-90 mix-blend-screen pt-2">
-                <img src={cfg.ceo_signature || '/signature.png'} alt="Гарын үсэг"
+                <img src={cfg.ceo_signature || '/signature.png'} alt="Гарын үсэг" loading="lazy"
                   className="h-20 md:h-45 w-auto object-contain brightness-0 invert filter contrast-150 drop-shadow-sm" />
               </div>
             </div>

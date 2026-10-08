@@ -42,7 +42,7 @@ export default function SafetyGuide({ notices, dialogRef }) {
         <div className="flex flex-col gap-1">{notices.map((notice, index) => <button key={notice.id} type="button" onClick={() => dialogRef.current?.querySelector(`[data-notice-index="${index}"]`)?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' })} className="flex gap-3 rounded-lg px-2 py-3 text-left text-sm leading-6 text-[#b7c9d4] hover:bg-white/5 hover:text-white"><span className="text-[#d4af37]">{String(index + 1).padStart(2, '0')}</span><span>{notice.title}</span></button>)}</div>
       </nav>
       <div className="min-w-0 space-y-12">{notices.map((notice, index) => <section key={notice.id} data-notice-index={index} className={`scroll-mt-28 ${notice.id === 'emergency' ? 'rounded-2xl border border-[#d4af37]/50 bg-[#d4af37]/10 p-6 md:p-8' : 'border-b border-white/10 pb-10'}`}>
-        {notice.imageUrl && <img src={notice.imageUrl} alt="" className="mb-6 h-40 w-full rounded-xl border border-[#d4af37]/30 object-cover md:h-52" />}
+        {notice.imageUrl && <img src={notice.imageUrl} alt={notice.title} loading="lazy" className="mb-6 h-40 w-full rounded-xl border border-[#d4af37]/30 object-cover md:h-52" />}
         <h3 className="mb-6 break-words text-xl font-bold leading-snug text-white md:text-2xl">{notice.title}</h3>
         <NoticeBody body={notice.body} />
       </section>)}</div>

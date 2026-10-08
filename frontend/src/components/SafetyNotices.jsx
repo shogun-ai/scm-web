@@ -43,7 +43,7 @@ export default function SafetyNotices({ notices = [] }) {
             {featured.imageUrl ? (
               <div className="relative mx-auto mb-7 hidden h-56 w-56 lg:block">
                 <div className="absolute -inset-2 rounded-[2rem] bg-gradient-to-br from-[#d4af37]/40 via-transparent to-transparent blur-xl" />
-                <img src={featured.imageUrl} alt="" className="relative h-full w-full rounded-[1.75rem] border border-[#d4af37]/40 object-cover shadow-[0_25px_60px_rgba(0,0,0,0.45)]" />
+                <img src={featured.imageUrl} alt={featured.title} loading="lazy" className="relative h-full w-full rounded-[1.75rem] border border-[#d4af37]/40 object-cover shadow-[0_25px_60px_rgba(0,0,0,0.45)]" />
               </div>
             ) : (
               <div aria-hidden="true" className="relative mx-auto mb-7 hidden h-36 w-36 items-center justify-center lg:flex">
@@ -62,7 +62,7 @@ export default function SafetyNotices({ notices = [] }) {
                   <article key={notice.id} className="py-6 md:py-7">
                     <div className="mb-3 flex items-start gap-3">
                       {notice.imageUrl ? (
-                        <img src={notice.imageUrl} alt="" className="mt-0.5 h-9 w-9 shrink-0 rounded-lg border border-[#d4af37]/30 object-cover" />
+                        <img src={notice.imageUrl} alt={notice.title} loading="lazy" className="mt-0.5 h-9 w-9 shrink-0 rounded-lg border border-[#d4af37]/30 object-cover" />
                       ) : (
                         <Icon className="mt-0.5 shrink-0 text-[#e8c966]" size={20} strokeWidth={1.5} aria-hidden="true" />
                       )}

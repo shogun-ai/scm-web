@@ -191,7 +191,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
       {/* Header */}
       <div className="flex items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#00A651]">Зээлийн үйл явц</p>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#007A3D]">Зээлийн үйл явц</p>
           <h2 className="text-2xl font-bold text-[#003B5C]">Loan Origination System</h2>
         </div>
         {selectedLoan && (
@@ -220,7 +220,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                   isActive
                     ? 'border-[#003B5C] text-[#003B5C] bg-blue-50'
                     : isDone
-                      ? 'border-[#00A651] text-[#00A651] bg-green-50'
+                      ? 'border-[#00A651] text-[#007A3D] bg-green-50'
                       : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
                 }`}
               >
@@ -406,7 +406,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>
-                <p className="text-xs font-bold text-[#00A651] uppercase tracking-widest">Аппликэйшн</p>
+                <p className="text-xs font-bold text-[#007A3D] uppercase tracking-widest">Аппликэйшн</p>
                 <h3 className="text-lg font-black text-[#003B5C]">{borrowerName(viewLoan)}</h3>
               </div>
               <button onClick={() => setViewLoan(null)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
@@ -769,7 +769,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
     <!-- HEADER -->
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #003B5C">
       <div>
-        <div style="font-size:9px;font-weight:800;color:#00A651;text-transform:uppercase;letter-spacing:.15em;margin-bottom:2px">Solongo Capital</div>
+        <div style="font-size:9px;font-weight:800;color:#007A3D;text-transform:uppercase;letter-spacing:.15em;margin-bottom:2px">Solongo Capital</div>
         <div style="font-size:20px;font-weight:900;color:#003B5C;line-height:1.1">Зээлийн хорооны дүгнэлт</div>
         <div style="font-size:11px;color:#64748b;margin-top:4px">Огноо: ${today}</div>
       </div>

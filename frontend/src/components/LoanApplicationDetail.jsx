@@ -2037,7 +2037,7 @@ const LoanApplicationDetail = ({ loan, apiUrl, onSave, onSaved, createMode = fal
         {onGoToResearch && !createMode && loan?._id && (
           <button
             onClick={() => onGoToResearch(loan)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-[#00A651] text-[#00A651] bg-white hover:bg-green-50 transition-all">
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-[#00A651] text-[#007A3D] bg-white hover:bg-green-50 transition-all">
             <TrendingUp size={13} /> Зээлийн судалгаа
           </button>
         )}

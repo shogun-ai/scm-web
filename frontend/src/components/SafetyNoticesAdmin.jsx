@@ -118,7 +118,7 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
             <div className="space-y-2">
               <span className="block text-sm font-semibold">Холбоотой зураг (сонголт)</span>
               <div className="flex flex-wrap items-center gap-3">
-                {draft.imageUrl && <img src={draft.imageUrl} alt="" className="h-20 w-20 rounded-xl border object-cover" />}
+                {draft.imageUrl && <img src={draft.imageUrl} alt={draft.title || 'Зураг preview'} className="h-20 w-20 rounded-xl border object-cover" />}
                 <button type="button" disabled={uploadingImage} onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm font-normal text-slate-700 disabled:opacity-50">
                   <ImagePlus size={16} /> {uploadingImage ? 'Оруулж байна…' : draft.imageUrl ? 'Зураг солих' : 'Зураг нэмэх'}
                 </button>
@@ -145,7 +145,7 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
               <span className="text-slate-400">Дараалал: {notice.order}</span>
             </div>
             <div className="flex gap-4">
-              {notice.imageUrl && <img src={notice.imageUrl} alt="" className="h-16 w-16 shrink-0 rounded-lg border object-cover" />}
+              {notice.imageUrl && <img src={notice.imageUrl} alt={notice.title} className="h-16 w-16 shrink-0 rounded-lg border object-cover" />}
               <div className="min-w-0">
                 <h4 className="break-words font-bold text-[#003B5C]">{notice.title}</h4>
                 <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600">{notice.body}</p>

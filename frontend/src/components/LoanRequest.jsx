@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import axios from 'axios';
 import imageCompression from 'browser-image-compression';
 import {
@@ -19,6 +19,8 @@ import {
 
 const PRODUCT_ID_MAP = { 1: 'biz_loan', 2: 'car_purchase_loan', 3: 'cons_loan', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' };
 const CHATBOT_PRODUCT_MAP = { car_loan: 'car_purchase_loan' };
+const STORAGE_KEY = 'scm_loan_request_draft';
+const SENSITIVE_FIELDS = ['register_number', 'income', 'account_number', 'salary', 'regNo', 'monthlyIncome'];
 
 const STEPS = [
   { n: 1, label: 'Бүтээгдэхүүн' },
@@ -46,8 +48,11 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   const [applicationReference, setApplicationReference] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [autoSaved, setAutoSaved] = useState(false);
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
   const inputRefs = useRef({});
   const activeFieldRef = useRef(null);
+  const firstErrorRef = useRef(null);
 
   // Org sub-person toggles
   const [showCeo,   setShowCeo]   = useState(false);
@@ -99,6 +104,16 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     files: {},
   });
 
+  // P4.2 — Escape товчоор success modal хаах
+  useEffect(() => {
+    if (!showSuccess) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setShowSuccess(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showSuccess]);
+
   // ─── Initialise product from props ───────────────────────────────────────
   useEffect(() => {
     const queryProduct = new URLSearchParams(window.location.search).get('product');
@@ -117,6 +132,40 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     if (p === 'car_purchase_loan' || p === 'car_coll_loan')
       setFormData(prev => ({ ...prev, collateralType: 'vehicle' }));
   }, [formData.selectedProduct]);
+
+  // P7.1 — Draft ачаалах (эхний render)
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // files нь File объект тул localStorage-т хадгалахгүй — үлдсэн state-г ачаална
+        const { files: _f, ...rest } = parsed;
+        if (rest.selectedProduct || rest.firstName || rest.orgName) {
+          setFormData(prev => ({ ...prev, ...rest }));
+          setShowDraftBanner(true);
+        }
+      } catch {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    }
+  }, []);
+
+  // P7.1 — Auto-save: formData өөрчлөгдөх бүрт хадгална (files болон мэдрэмтгий талбаруудыг хасна)
+  useEffect(() => {
+    const { files: _f, ...saveable } = formData;
+    const hasContent = saveable.selectedProduct || saveable.firstName || saveable.orgName ||
+      saveable.lastName || saveable.amount || saveable.purpose;
+    if (hasContent) {
+      const safeDraft = Object.fromEntries(
+        Object.entries(saveable).filter(([key]) => !SENSITIVE_FIELDS.includes(key))
+      );
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(safeDraft));
+      setAutoSaved(true);
+      const t = setTimeout(() => setAutoSaved(false), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [formData]);
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
   const set = (field, value) => setFormData(p => ({ ...p, [field]: value }));
@@ -155,23 +204,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   };
 
   // ─── File processing ──────────────────────────────────────────────────────
-  const [fileProcessing, setFileProcessing] = useState(false);
-  const processFiles = useCallback(async (files, fieldName) => {
-    setFileProcessing(true);
-    const opts = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
-    const out = [];
-    for (const f of files) {
-      if (f.type === 'application/pdf') { if (f.size < 10 * 1024 * 1024) out.push(f); }
-      else if (f.type.startsWith('image/')) {
-        try { const c = await imageCompression(f, opts); out.push(new File([c], f.name, { type: f.type })); }
-        catch { out.push(f); }
-      } else { out.push(f); }
-    }
-    setFileProcessing(false);
-    if (out.length) setFormData(p => ({ ...p, files: { ...p.files, [fieldName]: [...(p.files[fieldName] || []), ...out] } }));
-  }, []);
 
-  const handleFileDrop = (e, name) => { e.preventDefault(); processFiles(Array.from(e.dataTransfer.files || []), name); };
   const removeFiles = name => setFormData(p => ({ ...p, files: { ...p.files, [name]: [] } }));
   const addCollateralItem = () => setFormData(p => ({
     ...p,
@@ -185,27 +218,6 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     ...p,
     collaterals: (p.collaterals || []).map((item, i) => i === idx ? { ...item, ...patch } : item),
   }));
-  const processCollateralFiles = async (idx, fieldName, files) => {
-    setFileProcessing(true);
-    const opts = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
-    const out = [];
-    for (const f of files) {
-      if (f.type === 'application/pdf') { if (f.size < 10 * 1024 * 1024) out.push(f); }
-      else if (f.type.startsWith('image/')) {
-        try { const c = await imageCompression(f, opts); out.push(new File([c], f.name, { type: f.type })); }
-        catch { out.push(f); }
-      } else { out.push(f); }
-    }
-    setFileProcessing(false);
-    if (!out.length) return;
-    setFormData(p => ({
-      ...p,
-      files: { ...p.files, [`collateral_${idx}_${fieldName}`]: [...(p.files[`collateral_${idx}_${fieldName}`] || []), ...out] },
-      collaterals: (p.collaterals || []).map((item, i) => i === idx
-        ? { ...item, files: { ...(item.files || {}), [fieldName]: [...(item.files?.[fieldName] || []), ...out] } }
-        : item),
-    }));
-  };
   const removeCollateralFiles = (idx, fieldName) => setFormData(p => ({
     ...p,
     files: { ...p.files, [`collateral_${idx}_${fieldName}`]: [] },
@@ -214,10 +226,25 @@ const LoanRequest = ({ onBack, initialProduct }) => {
       : item),
   }));
 
-  const onIdFiles = files => processFiles(files, 'file_id');
-  const onOrgFiles = files => processFiles(files, 'file_org_cert');
-  const onPropertyFiles = files => processFiles(files, 'file_prop_cert');
-  const onVehicleFiles = files => processFiles(files, 'file_car_cert');
+  // UploadZone-с аль хэдийн compress хийсэн файлыг collateral array-д нэмнэ
+  const attachCollateralFiles = (idx, fieldName, processedFiles) => {
+    if (!processedFiles.length) return;
+    setFormData(p => ({
+      ...p,
+      files: { ...p.files, [`collateral_${idx}_${fieldName}`]: [...(p.files[`collateral_${idx}_${fieldName}`] || []), ...processedFiles] },
+      collaterals: (p.collaterals || []).map((item, i) => i === idx
+        ? { ...item, files: { ...(item.files || {}), [fieldName]: [...(item.files?.[fieldName] || []), ...processedFiles] } }
+        : item),
+    }));
+  };
+
+  // UploadZone-с аль хэдийн compress хийсэн файлыг шууд хавсаргах
+  const attachFiles = (fieldName, processedFiles) => {
+    if (!processedFiles.length) return;
+    setFormData(p => ({ ...p, files: { ...p.files, [fieldName]: [...(p.files[fieldName] || []), ...processedFiles] } }));
+  };
+  const onIdFiles = files => attachFiles('file_id', files);
+  const onOrgFiles = files => attachFiles('file_org_cert', files);
 
   // ─── Validation ──────────────────────────────────────────────────────────
   const validate = () => {
@@ -249,7 +276,22 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     return true;
   };
 
-  const nextStep = () => { if (validate()) { setStep(p => p + 1); window.scrollTo(0, 0); } };
+  const scrollToFirstError = () => {
+    if (firstErrorRef.current) {
+      firstErrorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      firstErrorRef.current.focus({ preventScroll: true });
+    }
+  };
+
+  const nextStep = () => {
+    if (validate()) {
+      setStep(p => p + 1);
+      window.scrollTo(0, 0);
+    } else {
+      // Алдааны дараа DOM шинэчлэгдсэний дараа scroll хийнэ
+      setTimeout(scrollToFirstError, 50);
+    }
+  };
   const prevStep = () => { setStep(p => p - 1); setErrors({}); window.scrollTo(0, 0); };
 
   const calcMonthly = () => {
@@ -281,6 +323,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
       // files
       Object.entries(files).forEach(([name, list]) => list.forEach(f => fd.append(name, f)));
       const response = await axios.post(`${API}/api/loans`, fd);
+      localStorage.removeItem(STORAGE_KEY);
       setApplicationReference(response.data?.applicationReference || '');
       setShowSuccess(true);
     } catch (err) {
@@ -294,12 +337,38 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   const inp = (err) => `w-full p-3 bg-white border rounded-xl font-semibold text-[#003B5C] text-sm placeholder:text-slate-300 focus:outline-none focus:border-[#003B5C] focus:ring-4 focus:ring-[#003B5C]/10 transition ${err ? 'border-red-400 bg-red-50' : 'border-slate-200'}`;
   const lbl = 'text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 block';
 
-  const Err = ({ msg }) => msg ? <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={11}/>{msg}</p> : null;
+  const Err = ({ msg, errRef }) => msg ? <p ref={errRef} role="alert" aria-live="polite" className="text-xs text-red-500 mt-1 flex items-center gap-1" tabIndex={-1}><AlertCircle size={11}/>{msg}</p> : null;
+
+  // ── onBlur validation helper ──────────────────────────────────────────────
+  const validateField = (key, value) => {
+    const v = value !== undefined ? value : formData[key];
+    let msg = null;
+    if (key === 'lastName'  && !v) msg = 'Овог оруулна уу';
+    if (key === 'firstName' && !v) msg = 'Нэр оруулна уу';
+    if (key === 'regNo'     && (!v || String(v).length < 10)) msg = 'Регистр дутуу';
+    if (key === 'phone'     && (!v || String(v).length < 8))  msg = 'Утас дутуу';
+    if (key === 'email'     && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) msg = 'И-мэйл буруу';
+    if (key === 'orgName'   && !v) msg = 'Байгууллагын нэр';
+    if (key === 'orgRegNo'  && (!v || String(v).length < 7)) msg = 'Регистр 7 орон';
+    if (key === 'contactName'  && !v) msg = 'Холбоо барих нэр';
+    if (key === 'contactPhone' && !v) msg = 'Утас';
+    if (key === 'amount'  && !v) msg = 'Дүн оруулна уу';
+    if (key === 'term'    && !v) msg = 'Хугацаа оруулна уу';
+    if (key === 'term'    && v && parseInt(v) > 120) msg = 'Хугацаа 120 сараас хэтрэхгүй';
+    if (key === 'purpose' && !v) msg = 'Зориулалт бичнэ үү';
+    setErrors(p => ({ ...p, [key]: msg || undefined }));
+  };
+
+  const handleBlur = (e) => {
+    const { name, value } = e.target;
+    validateField(name, value);
+  };
 
   // ── Schema field renderer for formData-level fields ───────────────────────
   const renderFormField = (f) => {
     const v = formData[f.key];
     const colCls = `space-y-1${f.col === 2 ? ' col-span-2' : ''}`;
+    const isFirstErr = errors[f.key] && Object.keys(errors).find(k => errors[k]) === f.key;
     if (f.type === 'choice') return (
       <div key={f.key} className={colCls}>
         <span className={lbl}>{f.label}</span>
@@ -316,11 +385,11 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     if (f.type === 'select') return (
       <label key={f.key} className={colCls}>
         <span className={lbl}>{f.label}{f.required ? ' *' : ''}</span>
-        <select name={f.key} value={v || ''} onChange={handleChange} className={`${inp(errors[f.key])} bg-white`} {...focusProps(f.key)}>
+        <select name={f.key} value={v || ''} onChange={handleChange} onBlur={handleBlur} className={`${inp(errors[f.key])} bg-white`} {...focusProps(f.key)}>
           <option value="">— сонгох —</option>
           {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
         </select>
-        <Err msg={errors[f.key]}/>
+        <Err msg={errors[f.key]} errRef={isFirstErr ? firstErrorRef : undefined}/>
       </label>
     );
     return (
@@ -331,9 +400,10 @@ const LoanRequest = ({ onBack, initialProduct }) => {
           className={`${inp(errors[f.key])}${f.upper ? ' uppercase' : ''}`}
           inputMode={f.type === 'number' ? 'numeric' : undefined}
           onChange={handleChange}
+          onBlur={handleBlur}
           {...focusProps(f.key)}
         />
-        <Err msg={errors[f.key]}/>
+        <Err msg={errors[f.key]} errRef={isFirstErr ? firstErrorRef : undefined}/>
       </label>
     );
   };
@@ -359,46 +429,135 @@ const LoanRequest = ({ onBack, initialProduct }) => {
     );
   };
 
-  // File upload zone
-  const UploadZone = ({ name, label: zoneLbl, accept = '.pdf,.jpg,.jpeg,.png', onFiles, note }) => {
+  // File upload zone — P7.3: drag-and-drop, compression info, processing spinner
+  const UploadZone = ({ name, label: zoneLbl, accept = '.pdf,.jpg,.jpeg,.png', onFiles, onRemove, note }) => {
     const ref = useRef(null);
+    const [dragOver, setDragOver] = useState(false);
+    const [processing, setProcessing] = useState(false);
+    const [compressionInfo, setCompressionInfo] = useState({}); // { filename: { orig, compressed } }
+    const [previewUrls, setPreviewUrls] = useState([]); // object URLs хадгалах
     const files = formData.files[name] || [];
+
+    // Файл жагсаалт өөрчлөгдөх бүрт preview URL-уудыг шинэчлэх, хуучныг revoke хийх
+    useEffect(() => {
+      const urls = files
+        .filter(f => f?.type?.startsWith('image/'))
+        .map(f => ({ file: f, url: URL.createObjectURL(f) }));
+      setPreviewUrls(urls);
+      return () => {
+        urls.forEach(({ url }) => URL.revokeObjectURL(url));
+      };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [formData.files[name]]);
+
     const openFile = (file) => {
       const url = URL.createObjectURL(file);
       window.open(url, '_blank', 'noopener,noreferrer');
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     };
+
+    const handleFiles = async (rawFiles) => {
+      setProcessing(true);
+      const opts = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
+      const out = [];
+      const newInfo = {};
+      for (const f of rawFiles) {
+        if (f.type === 'application/pdf') {
+          if (f.size < 10 * 1024 * 1024) out.push(f);
+        } else if (f.type.startsWith('image/')) {
+          try {
+            const origMB = f.size / (1024 * 1024);
+            const c = await imageCompression(f, opts);
+            const compMB = c.size / (1024 * 1024);
+            out.push(new File([c], f.name, { type: f.type }));
+            if (origMB > 0.1) {
+              newInfo[f.name] = { orig: origMB, compressed: compMB };
+            }
+          } catch {
+            out.push(f);
+          }
+        } else {
+          out.push(f);
+        }
+      }
+      setCompressionInfo(prev => ({ ...prev, ...newInfo }));
+      setProcessing(false);
+      if (out.length) {
+        if (onFiles) {
+          // Collateral мэтийн тусгай callback (processCollateralFiles дуудна)
+          onFiles(out);
+        } else {
+          setFormData(p => ({ ...p, files: { ...p.files, [name]: [...(p.files[name] || []), ...out] } }));
+        }
+      }
+    };
+
     return (
-      <div className={`relative rounded-2xl border transition-all ${errors[name] ? 'border-red-300 bg-red-50' : files.length ? 'border-[#00A651]/40 bg-green-50/40' : 'border-slate-200 bg-white hover:border-[#D4AF37] hover:bg-slate-50'}`}
-        onDragOver={e => e.preventDefault()} onDrop={e => handleFileDrop(e, name)}>
+      <div
+        className={`relative rounded-2xl border-2 transition-all ${
+          dragOver
+            ? 'border-[#D4AF37] bg-[#D4AF37]/5'
+            : errors[name]
+            ? 'border-red-300 bg-red-50'
+            : files.length
+            ? 'border-[#00A651]/40 bg-green-50/40'
+            : 'border-dashed border-slate-200 bg-white hover:border-[#D4AF37] hover:bg-slate-50'
+        }`}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(Array.from(e.dataTransfer.files || [])); }}
+      >
         <input ref={ref} type="file" accept={accept} multiple className="hidden"
-          onChange={e => { const f = Array.from(e.target.files || []); if (f.length) onFiles ? onFiles(f) : processFiles(f, name); }} />
-        <div className="flex items-center gap-3 p-4 cursor-pointer" onClick={() => ref.current.click()}>
-          <div className={`w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center transition ${files.length ? 'bg-[#00A651] text-white' : 'bg-slate-50 text-[#003B5C] border border-slate-200'}`}>
-            {files.length ? <CheckCircle size={18} /> : <UploadCloud size={18} />}
+          onChange={e => { const f = Array.from(e.target.files || []); if (f.length) handleFiles(f); }} />
+        <div className="flex items-center gap-3 p-4 cursor-pointer" onClick={() => !processing && ref.current.click()}>
+          <div className={`w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center transition ${processing ? 'bg-amber-50 text-amber-500 border border-amber-200' : files.length ? 'bg-[#00A651] text-white' : 'bg-slate-50 text-[#003B5C] border border-slate-200'}`}>
+            {processing ? <Loader2 size={18} className="animate-spin"/> : files.length ? <CheckCircle size={18} /> : <UploadCloud size={18} />}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-black text-[#003B5C] truncate">{zoneLbl}</p>
-            {files.length > 0 ? <p className="text-xs text-[#00A651] font-semibold mt-0.5">{files.length} файл хавсаргасан</p>
-              : <p className="text-xs text-slate-400 mt-0.5">{note || 'Товших эсвэл чирж оруулна уу'}</p>}
+            {processing
+              ? <p className="text-xs text-amber-600 font-semibold mt-0.5">Файл боловсруулж байна...</p>
+              : files.length > 0
+              ? <p className="text-xs text-[#007A3D] font-semibold mt-0.5">{files.length} файл хавсаргасан</p>
+              : <p className="text-xs text-slate-400 mt-0.5">{note || 'Чирж оруулах эсвэл товших'}</p>
+            }
           </div>
-          {files.length > 0 && <button type="button" onClick={e => { e.stopPropagation(); removeFiles(name); }} className="text-slate-400 hover:text-red-500 p-1"><X size={14}/></button>}
+          {!processing && files.length > 0 && (
+            <button type="button" onClick={e => { e.stopPropagation(); if (onRemove) onRemove(); else removeFiles(name); setCompressionInfo({}); }} className="text-slate-400 hover:text-red-500 p-1"><X size={14}/></button>
+          )}
         </div>
-        {files.length > 0 && (
+        {dragOver && (
+          <p className="text-center text-xs font-bold text-[#D4AF37] pb-3">Файлыг энд тавина уу</p>
+        )}
+        {files.length > 0 && !processing && (
           <div className="px-4 pb-3 grid gap-2">
-            {files.map((f, i) => f.type?.startsWith('image/') ? (
-              <div key={i} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
-                <img src={URL.createObjectURL(f)} alt="" className="h-10 w-10 object-cover rounded-lg border border-gray-200" />
-                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-600">{f.name}</span>
-                <button type="button" onClick={() => openFile(f)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-[#003B5C] hover:bg-blue-50"><Eye size={12}/> Харах</button>
-              </div>
-            ) : (
-              <div key={i} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
-                <div className="h-10 w-10 bg-slate-100 rounded-lg border border-gray-200 flex items-center justify-center text-[#003B5C]"><FileText size={16}/></div>
-                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-600">{f.name}</span>
-                <button type="button" onClick={() => openFile(f)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-[#003B5C] hover:bg-blue-50"><Eye size={12}/> Харах</button>
-              </div>
-            ))}
+            {files.map((f, i) => {
+              const info = compressionInfo[f.name];
+              const previewEntry = previewUrls.find(p => p.file === f);
+              return f.type?.startsWith('image/') ? (
+                <div key={i} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                  <img src={previewEntry?.url || ''} alt={f.name} className="h-10 w-10 object-cover rounded-lg border border-gray-200" />
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-semibold text-slate-600">{f.name}</span>
+                    {info && (
+                      <span className="text-[10px] text-white/40 text-slate-400">
+                        {info.orig.toFixed(1)} MB → {info.compressed.toFixed(1)} MB ({Math.round((1 - info.compressed / info.orig) * 100)}% хэмнэлт)
+                      </span>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => openFile(f)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-[#003B5C] hover:bg-blue-50"><Eye size={12}/> Харах</button>
+                </div>
+              ) : (
+                <div key={i} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                  <div className="h-10 w-10 bg-slate-100 rounded-lg border border-gray-200 flex items-center justify-center text-[#003B5C]"><FileText size={16}/></div>
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-semibold text-slate-600">{f.name}</span>
+                    <span className="text-[10px] text-slate-400">{(f.size / (1024 * 1024)).toFixed(2)} MB</span>
+                  </div>
+                  <button type="button" onClick={() => openFile(f)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-[#003B5C] hover:bg-blue-50"><Eye size={12}/> Харах</button>
+                </div>
+              );
+            })}
           </div>
         )}
         {errors[name] && <p className="px-4 pb-3 text-xs text-red-500 font-bold flex items-center gap-1"><AlertCircle size={11}/>{errors[name]}</p>}
@@ -408,20 +567,31 @@ const LoanRequest = ({ onBack, initialProduct }) => {
 
   // Step progress
   const renderStepBar = () => (
-    <div className="flex items-center gap-0 mb-8 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-      {STEPS.map((s, i) => (
-        <React.Fragment key={s.n}>
-          <div className="flex flex-col items-center gap-1 flex-shrink-0">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all
-              ${step > s.n ? 'bg-[#00A651] text-white' : step === s.n ? 'bg-[#003B5C] text-white ring-4 ring-[#003B5C]/20' : 'bg-slate-200 text-slate-400'}`}>
-              {step > s.n ? <CheckCircle size={14}/> : s.n}
+    <nav aria-label="Маягтын явц">
+      <div
+        role="progressbar"
+        aria-valuenow={step}
+        aria-valuemin={1}
+        aria-valuemax={STEPS.length}
+        aria-label={`Алхам ${step}/${STEPS.length}`}
+        className="flex items-center gap-0 mb-8 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+      >
+        {STEPS.map((s, i) => (
+          <React.Fragment key={s.n}>
+            <div className="flex flex-col items-center gap-1 flex-shrink-0">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                ${step > s.n ? 'bg-[#00A651] text-white' : step === s.n ? 'bg-[#003B5C] text-white ring-4 ring-[#003B5C]/20' : 'bg-slate-200 text-slate-400'}`}
+                aria-current={step === s.n ? 'step' : undefined}
+              >
+                {step > s.n ? <CheckCircle size={14}/> : s.n}
+              </div>
+              <span className={`text-[9px] font-black uppercase tracking-wide whitespace-nowrap hidden md:block ${step === s.n ? 'text-[#003B5C]' : 'text-slate-500'}`}>{s.label}</span>
             </div>
-            <span className={`text-[9px] font-black uppercase tracking-wide whitespace-nowrap hidden md:block ${step === s.n ? 'text-[#003B5C]' : 'text-slate-500'}`}>{s.label}</span>
-          </div>
-          {i < STEPS.length - 1 && <div className={`flex-1 h-0.5 mx-2 min-w-[12px] transition-all ${step > s.n ? 'bg-[#00A651]' : 'bg-slate-300'}`}/>}
-        </React.Fragment>
-      ))}
-    </div>
+            {i < STEPS.length - 1 && <div className={`flex-1 h-0.5 mx-2 min-w-[12px] transition-all ${step > s.n ? 'bg-[#00A651]' : 'bg-slate-300'}`}/>}
+          </React.Fragment>
+        ))}
+      </div>
+    </nav>
   );
 
   const isCarLoan = formData.selectedProduct === 'car_purchase_loan' || formData.selectedProduct === 'car_coll_loan';
@@ -516,7 +686,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
 
       {/* Contact person — schema-driven */}
       <div className="border-t border-gray-100 pt-4">
-        <p className="text-xs font-bold text-[#00A651] uppercase mb-3 flex items-center gap-2"><Briefcase size={13}/> Холбоо барих ажилтан</p>
+        <p className="text-xs font-bold text-[#007A3D] uppercase mb-3 flex items-center gap-2"><Briefcase size={13}/> Холбоо барих ажилтан</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {CONTACT_PERSON_FIELDS.map(renderFormField)}
         </div>
@@ -577,13 +747,13 @@ const LoanRequest = ({ onBack, initialProduct }) => {
       <div className="grid grid-cols-2 gap-4">
         <label className="space-y-1">
           <span className={lbl}>Зээлийн дүн (₮) *</span>
-          <input type="text" name="amount" value={formData.amount} onChange={handleChange} placeholder="20,000,000" className={inp(errors.amount)} {...focusProps('amount')} />
-          <Err msg={errors.amount}/>
+          <input type="text" name="amount" value={formData.amount} onChange={handleChange} onBlur={handleBlur} placeholder="20,000,000" className={inp(errors.amount)} {...focusProps('amount')} />
+          <Err msg={errors.amount} errRef={errors.amount && !errors.term && !errors.purpose ? firstErrorRef : undefined}/>
         </label>
         <label className="space-y-1">
           <span className={lbl}>Хугацаа (сар) *</span>
-          <input name="term" type="text" value={formData.term} onChange={handleChange} placeholder="36" className={inp(errors.term)} {...focusProps('term')} />
-          <Err msg={errors.term}/>
+          <input name="term" type="text" value={formData.term} onChange={handleChange} onBlur={handleBlur} placeholder="36" className={inp(errors.term)} {...focusProps('term')} />
+          <Err msg={errors.term} errRef={!errors.amount && errors.term && !errors.purpose ? firstErrorRef : undefined}/>
         </label>
         <label className="space-y-1">
           <span className={lbl}>Зээлээ төлж эхлэх хугацаа</span>
@@ -598,15 +768,15 @@ const LoanRequest = ({ onBack, initialProduct }) => {
             <p className="text-xs font-bold text-slate-500 uppercase">Жишиг сарын төлбөр</p>
             <p className="text-[10px] text-slate-400">2.5% сарын хүү үндэслэсэн</p>
           </div>
-          <p className="text-2xl font-bold text-[#00A651]">{calcMonthly()} <span className="text-sm">₮</span></p>
+          <p className="text-2xl font-bold text-[#007A3D]">{calcMonthly()} <span className="text-sm">₮</span></p>
         </div>
       )}
 
       <label className="space-y-1 block">
         <span className={lbl}>Зориулалт *</span>
-        <textarea name="purpose" rows="2" value={formData.purpose} onChange={handleChange}
+        <textarea name="purpose" rows="2" value={formData.purpose} onChange={handleChange} onBlur={handleBlur}
           placeholder="Жишээ: Ажлын машин авах, эргэлтийн хөрөнгө нэмэх..." className={`${inp(errors.purpose)} resize-none`} {...focusProps('purpose')} />
-        <Err msg={errors.purpose}/>
+        <Err msg={errors.purpose} errRef={!errors.amount && !errors.term && errors.purpose ? firstErrorRef : undefined}/>
       </label>
 
       <label className="space-y-1 block">
@@ -633,7 +803,8 @@ const LoanRequest = ({ onBack, initialProduct }) => {
               name={`collateral_${idx}_${name}`}
               label={label}
               note={note}
-              onFiles={(files) => processCollateralFiles(idx, name, files)}
+              onFiles={(processedFiles) => attachCollateralFiles(idx, name, processedFiles)}
+              onRemove={() => removeCollateralFiles(idx, name)}
             />
           );
           return (
@@ -794,7 +965,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
   const renderStep8 = () => (
     <div className="space-y-4 animate-fade-in">
       <div className="text-center mb-4">
-        <div className="w-14 h-14 bg-[#00A651]/10 text-[#00A651] rounded-full flex items-center justify-center mx-auto mb-2"><Send size={28}/></div>
+        <div className="w-14 h-14 bg-[#00A651]/10 text-[#007A3D] rounded-full flex items-center justify-center mx-auto mb-2"><Send size={28}/></div>
         <h3 className="text-[#003B5C] font-bold text-lg">Мэдээллийг нягтлана уу</h3>
       </div>
 
@@ -820,7 +991,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
         <div className="bg-slate-50 rounded-xl p-4 border border-gray-100 space-y-2">
           <p className="text-xs font-bold text-[#003B5C] uppercase border-b pb-1 mb-2">Зээлийн мэдээлэл</p>
           <Row l="Бүтээгдэхүүн" v={productName}/>
-          <Row l="Дүн" v={formData.amount + ' ₮'} vClass="text-[#00A651] font-bold"/>
+          <Row l="Дүн" v={formData.amount + ' ₮'} vClass="text-[#007A3D] font-bold"/>
           <Row l="Хугацаа" v={formData.term + ' сар'}/>
           {formData.repaymentStartDate && <Row l="Төлж эхлэх" v={formData.repaymentStartDate}/>}
           {calcMonthly() && <Row l="Сарын төлбөр" v={calcMonthly() + ' ₮'}/>}
@@ -847,7 +1018,7 @@ const LoanRequest = ({ onBack, initialProduct }) => {
         {/* Files & guarantors */}
         <div className="bg-slate-50 rounded-xl p-4 border border-gray-100 space-y-2">
           <p className="text-xs font-bold text-[#003B5C] uppercase border-b pb-1 mb-2">Баримт & Батлан даагч</p>
-          <Row l="Файл" v={fileCount + ' төрлийн файл'} vClass={fileCount ? 'text-[#00A651]' : 'text-slate-400'}/>
+          <Row l="Файл" v={fileCount + ' төрлийн файл'} vClass={fileCount ? 'text-[#007A3D]' : 'text-slate-400'}/>
           <Row l="Батлан даагч" v={formData.guarantors.length ? formData.guarantors.length + ' хүн' : 'Байхгүй'}/>
         </div>
       </div>
@@ -876,6 +1047,40 @@ const LoanRequest = ({ onBack, initialProduct }) => {
 
       <div className="relative z-10 max-w-4xl mx-auto px-4 md:px-6">
         <div className="bg-white rounded-3xl shadow-[0_28px_80px_rgba(0,0,0,0.35)] p-5 md:p-9 border border-slate-200">
+          {/* P7.1 — Draft сэргээх banner */}
+          {showDraftBanner && (
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-xs font-semibold text-amber-800">Өмнө бөглөсөн хүсэлтийг үргэлжлүүлж байна.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem(STORAGE_KEY);
+                  setFormData(prev => ({
+                    ...prev,
+                    userType: 'individual', lastName: '', firstName: '', fatherName: '', regNo: '',
+                    dob: '', phone: '', email: '', address: '', gender: '', idIssueDate: '', idExpiryDate: '',
+                    employmentType: '', employer: '', employedSince: '', monthlyIncome: '', incomeSource: '',
+                    orgName: '', orgRegNo: '', legalForm: '', contactName: '', contactPosition: '',
+                    contactPhone: '', orgAddress: '', foundedDate: '', employeeCount: '', revenueRange: '',
+                    industry: '', selectedProduct: '', amount: '', term: '', repaymentStartDate: '',
+                    purpose: '', repaymentSource: '',
+                  }));
+                  setShowDraftBanner(false);
+                }}
+                className="text-xs font-bold text-amber-700 underline hover:text-amber-900 whitespace-nowrap"
+              >
+                Цэвэрлэх
+              </button>
+            </div>
+          )}
+          {/* P7.1 — Auto-save индикатор */}
+          <div className="flex justify-end mb-1 h-4">
+            {autoSaved && (
+              <span className="text-xs text-slate-400 transition-opacity" role="status" aria-live="polite">
+                Автоматаар хадгалагдлаа
+              </span>
+            )}
+          </div>
           {renderStepBar()}
           <form onSubmit={handleSubmit}>
             {step === 1 && renderStep1()}
@@ -914,11 +1119,16 @@ const LoanRequest = ({ onBack, initialProduct }) => {
       {showSuccess && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSuccess(false)}/>
-          <div className="bg-white rounded-2xl p-8 md:p-10 max-w-md w-full relative z-10 shadow-2xl text-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="success-dialog-title"
+            className="bg-white rounded-2xl p-8 md:p-10 max-w-md w-full relative z-10 shadow-2xl text-center"
+          >
             <button onClick={() => setShowSuccess(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-2"><X size={24}/></button>
-            <div className="w-20 h-20 bg-green-100 text-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle size={40} strokeWidth={2.5}/></div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#00A651] mb-2">Хүсэлт хүлээн авлаа</p>
-            <h3 className="font-bold text-2xl text-[#003B5C] mb-3">Таны кейс бүртгэгдлээ</h3>
+            <div className="w-20 h-20 bg-green-100 text-[#007A3D] rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle size={40} strokeWidth={2.5}/></div>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#007A3D] mb-2">Хүсэлт хүлээн авлаа</p>
+            <h3 id="success-dialog-title" className="font-bold text-2xl text-[#003B5C] mb-3">Таны кейс бүртгэгдлээ</h3>
             {applicationReference && <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Кейсийн дугаар</p><p className="mt-1 font-mono text-base font-bold text-[#003B5C]">{applicationReference}</p></div>}
             <div className="mb-7 space-y-3 text-left text-sm text-slate-600">
               <div className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#003B5C] text-xs font-bold text-white">1</span><span>Зээлийн ажилтан таны мэдээллийг хянаж эхэлнэ.</span></div>

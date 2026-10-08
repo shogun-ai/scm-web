@@ -159,7 +159,7 @@ const TrustCalculator = ({ onBack }) => {
 
                         {/* Сар бүр нэмэх */}
                         <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-[#00A651] mb-2 flex items-center gap-2">
+                            <label className="block text-xs font-bold uppercase tracking-wider text-[#007A3D] mb-2 flex items-center gap-2">
                                 <Coins size={14} /> Сар бүр нэмэх (Сонголттой)
                             </label>
                             <input 
@@ -245,7 +245,7 @@ const TrustCalculator = ({ onBack }) => {
                         </div>
                         <div>
                             <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Цэвэр ашиг</p>
-                            <p className="text-xl font-bold text-[#00A651]">{formatMoney(result?.netInterest)}</p>
+                            <p className="text-xl font-bold text-[#007A3D]">{formatMoney(result?.netInterest)}</p>
                         </div>
                     </div>
 
@@ -260,6 +260,18 @@ const TrustCalculator = ({ onBack }) => {
                         </button>
                     </div>
                 </div>
+
+                {/* Disclaimer */}
+                {result && (
+                  <div className="mt-4 p-3 rounded-lg bg-[#D4AF37]/5 border border-[#D4AF37]/20 flex items-start gap-2">
+                    <svg className="w-4 h-4 text-[#D4AF37] mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-xs text-white/50">
+                      Энэхүү тооцоолол нь <strong className="text-white/70">зөвхөн лавлагааны зориулалттай</strong> бөгөөд бодит зээлийн нөхцөлөөс ялгаатай байж болно. Нарийвчилсан мэдээлэлд манай мэргэжилтнүүдтэй холбоо барина уу.
+                    </p>
+                  </div>
+                )}
 
                 {/* 2. CUSTOM BAR CHART */}
                 <div className="bg-white/95 backdrop-blur rounded-2xl shadow-xl p-6 md:p-8 border border-white/20">
@@ -321,7 +333,7 @@ const TrustCalculator = ({ onBack }) => {
                                   <th className="px-6 py-4">Огноо</th>
                                   <th className="px-6 py-4 text-right">Эхний үлдэгдэл</th>
                                   <th className="px-6 py-4 text-right text-[#D4AF37] font-bold">Хүүгийн орлого</th>
-                                  <th className="px-6 py-4 text-right text-[#00A651]">Нэмсэн</th>
+                                  <th className="px-6 py-4 text-right text-[#007A3D]">Нэмсэн</th>
                                   <th className="px-6 py-4 text-right text-[#003B5C] font-bold">Эцсийн үлдэгдэл</th>
                               </tr>
                           </thead>
@@ -332,7 +344,7 @@ const TrustCalculator = ({ onBack }) => {
                                       <td className="px-6 py-4 text-gray-500">{row.date}</td>
                                       <td className="px-6 py-4 text-right">{formatMoney(row.openingBalance)}</td>
                                       <td className="px-6 py-4 text-right text-[#D4AF37] font-bold">+{formatMoney(row.interest)}</td>
-                                      <td className="px-6 py-4 text-right text-[#00A651]">+{formatMoney(row.contribution)}</td>
+                                      <td className="px-6 py-4 text-right text-[#007A3D]">+{formatMoney(row.contribution)}</td>
                                       <td className="px-6 py-4 text-right text-[#003B5C] font-bold">{formatMoney(row.closingBalance)}</td>
                                   </tr>
                               ))}

@@ -1705,7 +1705,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           <!-- ══════════════ PAGE HEADER ══════════════ -->
           <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:14px;border-bottom:3px solid #003B5C;margin-bottom:20px">
             <div>
-              <div style="font-size:9px;color:#00A651;font-weight:700;text-transform:uppercase;letter-spacing:.12em">Solongo Capital · Зээлийн хэлтэс</div>
+              <div style="font-size:9px;color:#007A3D;font-weight:700;text-transform:uppercase;letter-spacing:.12em">Solongo Capital · Зээлийн хэлтэс</div>
               <div style="font-size:22px;font-weight:900;color:#003B5C;margin-top:2px">Зээлийн судалгаа</div>
             </div>
             <div style="text-align:right;font-size:10px;color:#64748b">
@@ -1717,7 +1717,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
           <!-- ══════════════ BORROWER IDENTITY ══════════════ -->
           <div class="no-break" style="display:flex;gap:18px;margin-bottom:20px">
             ${f.profileImageUrl
-              ? `<img src="${esc(f.profileImageUrl)}" style="width:90px;height:105px;object-fit:cover;border-radius:10px;border:2px solid #003B5C;flex-shrink:0" />`
+              ? `<img src="${esc(f.profileImageUrl)}" alt="${esc(isOrg ? (f.orgName || f.borrowerName || '') : ((f.lastName || '') + ' ' + (f.firstName || '')).trim())}" style="width:90px;height:105px;object-fit:cover;border-radius:10px;border:2px solid #003B5C;flex-shrink:0" />`
               : `<div style="width:90px;height:105px;border-radius:10px;background:#e2e8f0;border:2px dashed #94a3b8;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;color:#94a3b8;flex-shrink:0">${(isOrg ? (f.orgName || f.borrowerName) : (f.firstName || f.lastName || '?')).charAt(0).toUpperCase()}</div>`}
             <div style="flex:1">
               <div style="font-size:22px;font-weight:900;color:#003B5C;line-height:1.1">${esc(getDisplayName(f))}</div>
@@ -2101,7 +2101,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
       {!documentOnly && viewMode === 'list' && (
         <div className="space-y-6">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#00A651]">Дотоод судалгаа</p>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#007A3D]">Дотоод судалгаа</p>
             <h2 className="text-2xl font-bold text-[#003B5C]">Зээлийн судалгаа</h2>
           </div>
 
@@ -2186,7 +2186,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
         <div className="space-y-4">
           {documentOnly && (
             <div className="bg-white border rounded-2xl p-5 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#00A651]">Баримтын AI уншилт</p>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#007A3D]">Баримтын AI уншилт</p>
               <h2 className="mt-1 text-2xl font-bold text-[#003B5C]">Дансны хуулга ба ЗМС лавлагаа</h2>
             </div>
           )}
@@ -2535,7 +2535,7 @@ const LoanResearch = ({ apiUrl, prefillRequest, studyRequests = [], onSelectStud
                       </button>
                     )}
                   </div>
-                  {creditReferenceStatus && <span className="block text-xs text-[#00A651] font-semibold">{creditReferenceStatus}</span>}
+                  {creditReferenceStatus && <span className="block text-xs text-[#007A3D] font-semibold">{creditReferenceStatus}</span>}
                   {creditRefError && <span className="block text-xs text-red-600 font-semibold">{creditRefError}</span>}
                   {creditRefAnalysis && (
                     <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-2">

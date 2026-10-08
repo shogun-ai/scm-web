@@ -342,6 +342,18 @@ const LoanCalculator = ({ onBack }) => {
                         Энэхүү тооцоолол нь зөвхөн урьдчилсан байдлаар хийгдэж байгаа бөгөөд зээлийн бодит нөхцөл, шимтгэл зэргээс шалтгаалан өөрчлөгдөх боломжтой.
                     </p>
                 </div>
+
+                {/* Disclaimer */}
+                {result && (
+                  <div className="mt-4 p-3 rounded-lg bg-[#D4AF37]/5 border border-[#D4AF37]/20 flex items-start gap-2">
+                    <svg className="w-4 h-4 text-[#D4AF37] mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-xs text-white/50">
+                      Энэхүү тооцоолол нь <strong className="text-white/70">зөвхөн лавлагааны зориулалттай</strong> бөгөөд бодит зээлийн нөхцөлөөс ялгаатай байж болно. Нарийвчилсан мэдээлэлд манай мэргэжилтнүүдтэй холбоо барина уу.
+                    </p>
+                  </div>
+                )}
             </div>
         </div>
       </div>

@@ -33,7 +33,7 @@ const BoardMembers = () => {
               <div className="relative mb-6 inline-block">
                 <div className="absolute inset-0 rounded-full border-2 border-[#D4AF37] scale-105 opacity-70 group-hover:scale-110 group-hover:opacity-100 transition-all duration-500 shadow-[0_0_20px_rgba(212,175,55,0.3)]"></div>
                 <div className="h-40 w-40 md:h-48 md:w-48 rounded-full overflow-hidden border-4 border-[#003B5C] bg-gray-700 relative z-10 group-hover:scale-105 transition-transform duration-500">
-                  <img src={member.imagePath || member.image} alt={member.name} className="w-full h-full object-cover object-top"
+                  <img src={member.imagePath || member.image} alt={member.name} loading="lazy" className="w-full h-full object-cover object-top"
                     onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/400x400?text=No+Image'; }}/>
                 </div>
               </div>

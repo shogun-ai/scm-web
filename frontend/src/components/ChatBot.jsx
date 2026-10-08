@@ -422,7 +422,7 @@ const ChatBot = () => {
                         <div className="grid grid-cols-3 gap-2">
                           <button
                             onClick={() => sendMessage('documents', 'Материал')}
-                            className="rounded-xl border border-[#00A651] px-2 py-2 text-[10px] font-bold text-[#00A651] transition hover:bg-[#00A651] hover:text-white"
+                            className="rounded-xl border border-[#00A651] px-2 py-2 text-[10px] font-bold text-[#007A3D] transition hover:bg-[#00A651] hover:text-white"
                           >
                             Материал
                           </button>
@@ -449,7 +449,7 @@ const ChatBot = () => {
                         <button
                           key={optionIndex}
                           onClick={() => handleOptionClick(option)}
-                          className="rounded-xl border border-[#00A651] bg-white px-4 py-2 text-[11px] font-bold text-[#00A651] shadow-sm transition-all hover:bg-[#00A651] hover:text-white active:scale-95"
+                          className="rounded-xl border border-[#00A651] bg-white px-4 py-2 text-[11px] font-bold text-[#007A3D] shadow-sm transition-all hover:bg-[#00A651] hover:text-white active:scale-95"
                         >
                           {option}
                         </button>

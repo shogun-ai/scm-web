@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
+const BlogCardSkeleton = () => (
+    <div className="rounded-xl overflow-hidden bg-white/10 animate-pulse" aria-hidden="true">
+        <div className="h-48 bg-white/20" />
+        <div className="p-4 space-y-3">
+            <div className="h-3 bg-white/20 rounded w-1/4" />
+            <div className="h-5 bg-white/25 rounded w-3/4" />
+            <div className="h-3 bg-white/15 rounded" />
+            <div className="h-3 bg-white/15 rounded w-5/6" />
+        </div>
+    </div>
+);
+
 const BlogList = ({ onBack, limit }) => {
     const [blogs, setBlogs] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -12,7 +24,7 @@ const BlogList = ({ onBack, limit }) => {
                 const baseUrl = window.location.hostname === 'localhost'
                     ? 'http://localhost:5000/api/blogs'
                     : 'https://scm-okjs.onrender.com/api/blogs';
-                
+
                 const finalUrl = limit ? `${baseUrl}?limit=${limit}` : baseUrl;
                 const response = await axios.get(finalUrl);
                 setBlogs(Array.isArray(response.data) ? response.data : []);
@@ -27,8 +39,13 @@ const BlogList = ({ onBack, limit }) => {
 
     if (loading) {
         return (
-            <div className="flex justify-center items-center py-20 w-full">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#D4AF37]"></div>
+            <div className="w-full max-w-7xl mx-auto px-4 pt-24 pb-12">
+                <p className="sr-only" aria-live="polite">Мэдээ ачааллаж байна...</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                    <BlogCardSkeleton />
+                    <BlogCardSkeleton />
+                    <BlogCardSkeleton />
+                </div>
             </div>
         );
     }
@@ -61,10 +78,11 @@ const BlogList = ({ onBack, limit }) => {
                         <div key={blog._id || idx} className="bg-[#1a1a1a] border border-white/10 rounded-2xl overflow-hidden hover:border-[#D4AF37]/40 transition-all duration-300 flex flex-col h-full shadow-2xl">
                             {/* Зургийн хэсэг */}
                             <div className="h-48 overflow-hidden relative">
-                                <img 
-                                    src={blog.imageUrl || "https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=800&q=80"} 
-                                    alt={blog.title} 
-                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-500" 
+                                <img
+                                    src={blog.imageUrl || "https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=800&q=80"}
+                                    alt={blog.title}
+                                    loading="lazy"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                                 />
                                 <div className={`absolute top-4 left-4 text-white text-[10px] font-bold px-2 py-1 rounded-md shadow-lg ${sourceColors[blog.source] || 'bg-gray-600'}`}>
                                     {blog.source}

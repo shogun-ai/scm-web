@@ -92,7 +92,7 @@ const TrustRequest = ({ onBack }) => {
       return (
         <div className="min-h-screen bg-[#1a4153] flex items-center justify-center p-4 font-sans">
             <div className="bg-white rounded-2xl p-8 text-center max-w-md w-full animate-scale-up shadow-2xl">
-                <div className="w-16 h-16 bg-green-100 text-[#00A651] rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="w-16 h-16 bg-green-100 text-[#007A3D] rounded-full flex items-center justify-center mx-auto mb-4">
                     <CheckCircle size={32} strokeWidth={3}/>
                 </div>
                 <h2 className="text-xl font-bold text-[#1a4153] mb-2">Хүсэлт амжилттай!</h2>

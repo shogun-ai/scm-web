@@ -448,7 +448,7 @@ const LoanExposureMonitor = ({ apiUrl, usersList = [] }) => {
       <div className="bg-white border rounded-[28px] p-5 md:p-6 space-y-5 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#00A651]">Exposure Monitor</p>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#007A3D]">Exposure Monitor</p>
             <h3 className="text-xl font-bold text-[#003B5C]">Loan exposure file upload</h3>
             <p className="text-sm text-slate-500 mt-1">
               Огноо оруулаад Excel файлаа хадгална. Өмнөх файл байвал түүнтэй харьцуулна, байхгүй бол зүгээр snapshot хэлбэрээр хадгална.
@@ -899,7 +899,7 @@ const LoanExposureMonitor = ({ apiUrl, usersList = [] }) => {
           <div className="max-w-6xl mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden">
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#00A651]">Snapshot Preview</p>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#007A3D]">Snapshot Preview</p>
                 <h4 className="text-lg font-black text-[#003B5C]">
                   {previewSnapshot?.reportDate || previewSnapshot?.snapshotLabel || 'Loading...'}
                 </h4>

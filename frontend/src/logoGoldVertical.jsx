@@ -322,7 +322,7 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
                   <input required type="text" placeholder="Итгэлцлийн дүн (Ойролцоогоор)" className="w-full p-4 bg-white/5 rounded-xl border border-white/20 focus:outline-none focus:border-[#D4AF37] text-white placeholder-gray-400 tabular-nums" onChange={(e) => setTrustForm({ ...trustForm, amount: e.target.value })} />
                   <div>
                     <button type="submit" className="w-full bg-[#00A651] text-white py-4 rounded-xl font-display font-bold hover:bg-[#008f45] transition shadow-lg">Илгээх</button>
-                    <p className="text-center text-sm text-[#00A651] font-bold mt-3">Бид тантай удахгүй холбогдох болно.</p>
+                    <p className="text-center text-sm text-[#007A3D] font-bold mt-3">Бид тантай удахгүй холбогдох болно.</p>
                   </div>
                 </form>
                 <div className="mt-12 pt-8 border-t border-white/10">
@@ -366,7 +366,7 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
                       <h3 className="font-display font-bold text-xl text-[#D4AF37] mb-5 border-b border-white/10 pb-2">Нөхцөл</h3>
                       <ul className="space-y-3">
                         {currentData.conditions.map((c, i) => (
-                          <li key={i} className="flex items-start gap-3 text-sm text-gray-200"><span className="text-[#00A651] font-bold mt-0.5">•</span> {c}</li>
+                          <li key={i} className="flex items-start gap-3 text-sm text-gray-200"><span className="text-[#007A3D] font-bold mt-0.5">•</span> {c}</li>
                         ))}
                       </ul>
                     </div>
@@ -374,7 +374,7 @@ const ProductDetail = ({ product, onBack, onNavigate }) => {
                       <h3 className="font-display font-bold text-xl text-[#D4AF37] mb-5 border-b border-white/10 pb-2">Тавигдах шаардлага</h3>
                       <ul className="space-y-3">
                         {currentData.requirements.map((r, i) => (
-                          <li key={i} className="flex items-start gap-3 text-sm text-gray-200"><span className="text-[#00A651] font-bold mt-0.5">✓</span> {r}</li>
+                          <li key={i} className="flex items-start gap-3 text-sm text-gray-200"><span className="text-[#007A3D] font-bold mt-0.5">✓</span> {r}</li>
                         ))}
                       </ul>
                     </div>
@@ -410,7 +410,7 @@ const FinancialReportsPage = ({ onBack }) => {
                   href={file.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[#00A651] font-bold text-xs uppercase hover:underline ml-auto md:ml-0 flex items-center gap-1"
+                  className="text-[#007A3D] font-bold text-xs uppercase hover:underline ml-auto md:ml-0 flex items-center gap-1"
                 >
                   Харах <span>→</span>
                 </a>
@@ -439,7 +439,7 @@ const PoliciesPage = ({ onBack }) => {
                   href={file.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[#00A651] font-bold text-xs uppercase hover:underline ml-auto md:ml-0 flex items-center gap-1"
+                  className="text-[#007A3D] font-bold text-xs uppercase hover:underline ml-auto md:ml-0 flex items-center gap-1"
                 >
                   Харах <span>→</span>
                 </a>
@@ -511,7 +511,7 @@ function App() {
           </div>
           <div className="hidden md:flex items-center space-x-8">
             {menuItems.map((item) => (
-              <button key={item.id} onClick={() => scrollToSection(item.id)} className={`text-small font-display font-semibold uppercase tracking-widest hover:text-[#00A651] transition-colors text-white`}>
+              <button key={item.id} onClick={() => scrollToSection(item.id)} className={`text-small font-display font-semibold uppercase tracking-widest hover:text-[#007A3D] transition-colors text-white`}>
                 {item.name}
               </button>
             ))}
@@ -531,7 +531,7 @@ function App() {
             {menuItems.map((item) => (
               <button key={item.id} onClick={() => scrollToSection(item.id)} className="text-2xl text-white font-display font-bold uppercase">{item.name}</button>
             ))}
-            <button onClick={() => { navigateTo('login'); setMobileMenuOpen(false); }} className="text-2xl text-[#00A651] font-display font-bold uppercase mt-4">Нэвтрэх</button>
+            <button onClick={() => { navigateTo('login'); setMobileMenuOpen(false); }} className="text-2xl text-[#007A3D] font-display font-bold uppercase mt-4">Нэвтрэх</button>
             <button onClick={() => setMobileMenuOpen(false)} className="text-xl text-white/50 font-display font-bold uppercase mt-10">Хаах</button>
           </div>
         )}
@@ -634,7 +634,7 @@ function App() {
               <div className="absolute inset-0 bg-[#003B5C]/80"></div>
               <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
                 <div className="text-center mb-16">
-                  <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-2 block">Бидний амжилт</span>
+                  <span className="text-[#007A3D] font-display font-bold uppercase tracking-widest text-xs mb-2 block">Бидний амжилт</span>
                   <h2 className="font-display font-bold text-3xl md:text-5xl text-white">Санхүүгийн үзүүлэлтүүд</h2>
                   <p className="text-blue-200/60 font-sans text-sm mt-2">{FINANCIAL_DATE}</p>
                 </div>
@@ -647,7 +647,7 @@ function App() {
                   ))}
                 </div>
                 <div className="text-center mt-16">
-                  <button onClick={() => navigateTo('financials')} className="text-white font-display font-bold uppercase tracking-wider text-small hover:text-[#00A651] transition border-b border-white/30 pb-1 hover:border-[#00A651]">
+                  <button onClick={() => navigateTo('financials')} className="text-white font-display font-bold uppercase tracking-wider text-small hover:text-[#007A3D] transition border-b border-white/30 pb-1 hover:border-[#00A651]">
                     Санхүүгийн тайлан дэлгэрэнгүй →
                   </button>
                 </div>
@@ -688,7 +688,7 @@ function App() {
 
             <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
               <div className="text-center mb-24 max-w-3xl mx-auto">
-                <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-4 block">Бидний шийдэл</span>
+                <span className="text-[#007A3D] font-display font-bold uppercase tracking-widest text-xs mb-4 block">Бидний шийдэл</span>
                 <h2 className="font-display font-bold text-3xl md:text-5xl text-white leading-tight">Бүтээгдэхүүн үйлчилгээ</h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
@@ -715,7 +715,7 @@ function App() {
             <div className="absolute inset-0 bg-slate-900/90"></div>
             <div className="max-w-7xl mx-auto px-4 md:px-6 w-full relative z-10">
               <div className="text-center mb-16">
-                <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-2 block">Мэдээ мэдээлэл</span>
+                <span className="text-[#007A3D] font-display font-bold uppercase tracking-widest text-xs mb-2 block">Мэдээ мэдээлэл</span>
                 <h2 className="font-display font-bold text-3xl md:text-5xl text-white">Блог</h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
@@ -725,7 +725,7 @@ function App() {
                       <img src={post.image} alt={post.title} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
                     </div>
                     <div className="p-6">
-                      <span className="text-[#00A651] text-xs font-bold uppercase tracking-wider block mb-2">{post.date}</span>
+                      <span className="text-[#007A3D] text-xs font-bold uppercase tracking-wider block mb-2">{post.date}</span>
                       <h3 className="font-display font-bold text-lg text-white mb-3 line-clamp-2 leading-snug group-hover:text-[#D4AF37] transition">{post.title}</h3>
                       <p className="text-gray-400 text-sm line-clamp-3 mb-4">{post.excerpt}</p>
                       <button onClick={() => navigateTo('blog_detail')} className="text-white/70 font-bold text-xs uppercase hover:text-[#D4AF37] transition">Дэлгэрэнгүй →</button>
@@ -743,18 +743,18 @@ function App() {
             <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-6 w-full grid grid-cols-1 lg:grid-cols-2 gap-20 items-center py-20">
               <div>
                 <img src={logoMetal} alt="Solongo Capital Metal" className="h-16 mb-10 object-contain brightness-0 invert opacity-80" />
-                <span className="text-[#00A651] font-display font-bold uppercase tracking-widest text-xs mb-2 block">Бидэнтэй нэгдээрэй</span>
+                <span className="text-[#007A3D] font-display font-bold uppercase tracking-widest text-xs mb-2 block">Бидэнтэй нэгдээрэй</span>
                 <h2 className="font-display font-bold text-3xl md:text-5xl mb-12">Холбоо барих</h2>
                 <div className="space-y-8">
                   <a href="https://goo.gl/maps/YOUR_LINK" target="_blank" rel="noopener noreferrer" className="flex items-start gap-6 group hover:opacity-80 transition cursor-pointer">
-                    <span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651] group-hover:bg-[#00A651] group-hover:text-white transition">📍</span>
+                    <span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#007A3D] group-hover:bg-[#00A651] group-hover:text-white transition">📍</span>
                     <div>
                       <p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">Хаяг</p>
                       <p className="font-display font-semibold text-lg leading-snug">Улаанбаатар хот, Хан-Уул дүүрэг, 20 хороо,<br />Чингисийн өргөн чөлөө, Мишээл оффис төв,<br />М3 цамхаг 12 давхар, 1207 тоот</p>
                     </div>
                   </a>
-                  <div className="flex items-start gap-6 group"><span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651]">📞</span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">Утас</p><p className="font-display font-semibold text-xl tabular-nums">7599 1919, 7599 9191</p></div></div>
-                  <div className="flex items-start gap-6 group"><span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#00A651]">📧</span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">И-мэйл</p><p className="font-display font-semibold text-xl">info@scm.mn</p></div></div>
+                  <div className="flex items-start gap-6 group"><span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#007A3D]">📞</span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">Утас</p><p className="font-display font-semibold text-xl tabular-nums">7599 1919, 7599 9191</p></div></div>
+                  <div className="flex items-start gap-6 group"><span className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-xl text-[#007A3D]">📧</span><div><p className="text-gray-400 text-xs font-display uppercase tracking-wider mb-1">И-мэйл</p><p className="font-display font-semibold text-xl">info@scm.mn</p></div></div>
                 </div>
               </div>
 

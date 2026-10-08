@@ -83,7 +83,7 @@ const ShogunStudio = ({ onBack }) => {
                 {portfolio.map((p, i) => (
                     <div key={i} className="group cursor-pointer">
                         <div className="relative h-80 overflow-hidden mb-6 border border-white/10">
-                            <img src={p.img} alt={p.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 grayscale group-hover:grayscale-0" />
+                            <img src={p.img} alt={p.title} loading="lazy" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 grayscale group-hover:grayscale-0" />
                             <div className="absolute inset-0 bg-black/50 group-hover:bg-transparent transition-colors duration-500"></div>
                         </div>
                         <h4 className="text-2xl font-bold font-display group-hover:text-[#D4AF37] transition-colors">{p.title}</h4>

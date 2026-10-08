@@ -1115,7 +1115,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
           <div className="space-y-4 animate-fade-in">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-[#00A651]">CRM</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-[#007A3D]">CRM</p>
                 <h2 className="text-2xl font-bold text-[#003B5C]">Харилцагч бүртгэл</h2>
               </div>
               <button
@@ -1233,7 +1233,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
         {activeTab === 'users' && user?.role === 'admin' && (
           <div className="space-y-6 animate-fade-in">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#00A651]">Систем</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-[#007A3D]">Систем</p>
               <h2 className="text-2xl font-bold text-[#003B5C]">Хэрэглэгчид</h2>
             </div>
 
@@ -1399,7 +1399,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
           <div className="space-y-6 animate-fade-in">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-[#00A651]">Аудит</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-[#007A3D]">Аудит</p>
                 <h2 className="text-2xl font-bold text-[#003B5C]">Үйлдлийн лог</h2>
                 <p className="text-sm text-slate-500">loan.scm.mn болон admin panel дээрх хэрэглэгчийн оролт, зээлийн үйлдлүүд.</p>
               </div>
@@ -1509,7 +1509,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
 
              {/* Бодлого журам (policy) */}
              <section className="bg-white p-8 rounded-2xl border shadow-sm">
-               <h3 className="text-xl font-bold mb-6 text-[#00A651]">📁 Байгууллагын бодлого журам</h3>
+               <h3 className="text-xl font-bold mb-6 text-[#007A3D]">📁 Байгууллагын бодлого журам</h3>
                 <form onSubmit={e => { e.preventDefault(); handlePolicyUpload(e, 'policy'); }} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <input placeholder="Журамын гарчиг" value={newPolicy.category === 'policy' ? newPolicy.title : ''} onChange={e => setNewPolicy(p => ({ ...p, title: e.target.value, category: 'policy' }))} className="p-3 bg-slate-50 border rounded-xl text-sm" required />
                   <input type="file" accept=".pdf" onChange={e => setNewPolicy(p => ({ ...p, file: e.target.files[0], category: 'policy' }))} className="py-2 text-xs" required />
@@ -1606,7 +1606,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                           <div className="space-y-2 pt-2 border-t">
                             <label className="text-xs font-bold text-gray-400 uppercase">Холбоо барих хэсгийн зураг</label>
                             {(configEdits['contact_image'] ?? siteConfig.contact?.contact_image?.value) && (
-                              <img src={configEdits['contact_image'] ?? siteConfig.contact?.contact_image?.value} alt="" className="h-40 w-full rounded-xl object-cover border"/>
+                              <img src={configEdits['contact_image'] ?? siteConfig.contact?.contact_image?.value} alt="Холбоо барих зураг" className="h-40 w-full rounded-xl object-cover border"/>
                             )}
                             <div className="flex gap-2">
                               <input type="text" value={configEdits['contact_image'] ?? siteConfig.contact?.contact_image?.value ?? ''} placeholder="URL эсвэл файл сонгоно уу"
@@ -1695,7 +1695,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                         </div>
                         <div className="space-y-2">
                           <label className="text-xs font-bold text-gray-400 uppercase">Суурь дэвсгэр зураг</label>
-                          {editingPromo.backgroundImageUrl && <img src={editingPromo.backgroundImageUrl} alt="" className="h-40 w-full rounded-xl object-cover border"/>}
+                          {editingPromo.backgroundImageUrl && <img src={editingPromo.backgroundImageUrl} alt="Promotion дэвсгэр зураг" className="h-40 w-full rounded-xl object-cover border"/>}
                           <div className="flex gap-2">
                             <input value={editingPromo.backgroundImageUrl || ''} onChange={e => setEditingPromo(p => ({ ...p, backgroundImageUrl: e.target.value }))}
                               placeholder="URL эсвэл зураг upload" className="flex-1 p-3 border rounded-xl text-sm bg-slate-50"/>
@@ -1857,7 +1857,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                         ].map(({ field, label }) => (
                           <div key={field} className="space-y-2">
                             <label className="text-xs font-bold text-gray-400 uppercase">{label}</label>
-                            {editingProduct[field] && <img src={editingProduct[field]} alt="" className="h-24 rounded-xl object-cover border"/>}
+                            {editingProduct[field] && <img src={editingProduct[field]} alt={label} className="h-24 rounded-xl object-cover border"/>}
                             <div className="flex gap-2">
                               <input value={editingProduct[field] || ''} placeholder="URL эсвэл доор файл сонгоно уу"
                                 onChange={e => setEditingProduct(p => ({ ...p, [field]: e.target.value }))}
@@ -1960,7 +1960,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                         <label className="text-xs font-bold text-gray-400 uppercase">{obj.label}</label>
                         {(key === 'ceo_image' || key === 'ceo_signature') ? (
                           <div className="space-y-2">
-                            {configEdits[key] && <img src={configEdits[key]} alt="" className="h-24 rounded-xl object-cover border"/>}
+                            {configEdits[key] && <img src={configEdits[key]} alt={obj.label} className="h-24 rounded-xl object-cover border"/>}
                             <div className="flex gap-2">
                               <input value={configEdits[key] ?? obj.value ?? ''} placeholder="URL эсвэл файл сонгоно уу"
                                 onChange={e => setConfigEdits(p => ({ ...p, [key]: e.target.value }))}
@@ -2102,7 +2102,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                             ))}
                             <div className="space-y-2">
                               <label className="text-xs font-bold text-gray-400">Зураг</label>
-                              {editingMember.imagePath && <img src={editingMember.imagePath} alt="" className="h-16 w-16 rounded-full object-cover border-2 border-[#003B5C]"/>}
+                              {editingMember.imagePath && <img src={editingMember.imagePath} alt={editingMember.name || ''} className="h-16 w-16 rounded-full object-cover border-2 border-[#003B5C]"/>}
                               <div className="flex gap-2">
                                 <input value={editingMember.imagePath||''} placeholder="/board/name.jpg эсвэл URL"
                                   onChange={e => setEditingMember(p => ({ ...p, imagePath: e.target.value }))}
@@ -2186,7 +2186,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                             ))}
                             <div className="space-y-2">
                               <label className="text-xs font-bold text-gray-400">Зураг</label>
-                              {editingMember.imagePath && <img src={editingMember.imagePath} alt="" className="h-16 w-16 rounded-full object-cover border-2 border-[#003B5C]"/>}
+                              {editingMember.imagePath && <img src={editingMember.imagePath} alt={editingMember.name || ''} className="h-16 w-16 rounded-full object-cover border-2 border-[#003B5C]"/>}
                               <div className="flex gap-2">
                                 <input value={editingMember.imagePath||''} placeholder="/board/name.jpg эсвэл URL"
                                   onChange={e => setEditingMember(p => ({ ...p, imagePath: e.target.value }))}
@@ -2386,7 +2386,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                           <div className="space-y-3 pt-2">
                             <p className="text-xs font-bold text-gray-400 uppercase">Дэвсгэр зураг</p>
                             {themeImage && (
-                              <img src={themeImage} alt="bg" className="w-full h-32 object-cover rounded-xl border"/>
+                              <img src={themeImage} alt="Дэвсгэр зураг" className="w-full h-32 object-cover rounded-xl border"/>
                             )}
                             <div className="flex gap-2">
                               <input type="text" value={themeImage} placeholder="URL эсвэл файл сонгоно уу"
@@ -2637,7 +2637,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                             <div key={post._id} className="rounded-2xl border bg-slate-50 p-4 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 {post.thumbnailUrl && (
-                                  <img src={post.thumbnailUrl} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover border bg-white" />
+                                  <img src={post.thumbnailUrl} alt={post.adName || 'Facebook post зураг'} className="h-16 w-16 shrink-0 rounded-xl object-cover border bg-white" />
                                 )}
                                 <div className="min-w-0">
                                   <p className="text-xs font-bold text-slate-400">{post.createdTime ? new Date(post.createdTime).toLocaleString('mn-MN') : 'Facebook ad post'}</p>
@@ -2696,7 +2696,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                         className="w-full p-3 border rounded-xl text-sm bg-slate-50 resize-none"
                       />
                       {(configEdits.chatbot_repayment_image ?? siteConfig.chatbot?.chatbot_repayment_image?.value) && (
-                        <img src={configEdits.chatbot_repayment_image ?? siteConfig.chatbot?.chatbot_repayment_image?.value} alt="" className="h-40 w-full rounded-xl object-cover border" />
+                        <img src={configEdits.chatbot_repayment_image ?? siteConfig.chatbot?.chatbot_repayment_image?.value} alt="Дансны мэдээлэл зураг" className="h-40 w-full rounded-xl object-cover border" />
                       )}
                       <div className="grid grid-cols-[1fr_auto] gap-2">
                         <input
@@ -2979,6 +2979,44 @@ const AdminPanel = ({ user, token, onLogout }) => {
               </div>
             </div>
 
+            {/* Google Maps URL тохиргоо */}
+            <div className="bg-white p-8 rounded-2xl border shadow-sm">
+              <h3 className="text-lg font-bold mb-6 text-[#003B5C] uppercase tracking-wider flex items-center gap-2">
+                <Globe size={22}/> Газрын зургийн тохиргоо
+              </h3>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-500 mb-2">
+                  Google Maps URL (Холбоо барих хэсэгт харагдана)
+                </label>
+                <input
+                  type="url"
+                  value={configEdits['maps_url'] ?? siteConfig.contact?.maps_url?.value ?? ''}
+                  onChange={e => setConfigEdits(p => ({ ...p, maps_url: e.target.value }))}
+                  placeholder="https://goo.gl/maps/..."
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#003B5C]"
+                />
+                {(configEdits['maps_url'] ?? siteConfig.contact?.maps_url?.value) && (
+                  <div className="mt-2 text-xs text-gray-400">
+                    Preview: <a
+                      href={configEdits['maps_url'] ?? siteConfig.contact?.maps_url?.value}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#D4AF37] underline"
+                    >
+                      Газрын зураг харах
+                    </a>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => saveBulkConfig('contact')}
+                disabled={cmsSaving}
+                className="bg-[#003B5C] hover:bg-[#002a42] disabled:opacity-50 text-white px-6 py-3 rounded-xl font-bold text-sm uppercase tracking-wider transition-colors flex items-center gap-2"
+              >
+                <Save size={16}/> {cmsSaving ? 'Хадгалж байна...' : 'Хадгалах'}
+              </button>
+            </div>
+
             {/* 2FA Тохиргоо */}
             <div className="bg-white p-8 rounded-2xl border shadow-sm">
               <h3 className="text-lg font-bold mb-6 text-green-600 uppercase tracking-wider flex items-center gap-2"><QrCode size={22}/> 2FA Тохиргоо</h3>
@@ -3012,7 +3050,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                   <UserCheck size={36} className="text-[#003B5C]"/>
                 </div>
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#00A651]">Харилцагч бүртгэл</p>
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#007A3D]">Харилцагч бүртгэл</p>
                   <h2 className="text-3xl font-black text-[#003B5C] mt-1">{getOnboardingDisplayName(selectedOnboarding)}</h2>
                   <p className="text-gray-400 mt-2 font-bold flex items-center gap-2">
                     <Calendar size={16}/> {formatSafeDate(getOnboardingDateValue(selectedOnboarding))}
@@ -3180,7 +3218,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
             <div className="space-y-12">
                <div className="flex items-center gap-10 border-b border-gray-100 pb-12">
                  {selectedRequest.selfieUrl ? (
-                   <img src={selectedRequest.selfieUrl} alt="B" className="w-32 h-32 object-cover rounded-[40px] border-4 border-[#003B5C] shadow-2xl"/>
+                   <img src={selectedRequest.selfieUrl} alt="Хэрэглэгчийн зураг" className="w-32 h-32 object-cover rounded-[40px] border-4 border-[#003B5C] shadow-2xl"/>
                  ) : (
                    <div className="w-32 h-32 bg-slate-50 rounded-[40px] flex items-center justify-center border-4 border-slate-100"><User size={48} className="text-slate-200"/></div>
                  )}

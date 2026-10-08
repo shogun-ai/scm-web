@@ -58,7 +58,7 @@ const Login = ({ onLogin, onBack }) => {
         <button onClick={onBack} className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 text-sm font-bold uppercase tracking-wider">Буцах</button>
         
         <div className="text-center mb-10">
-            <img src={logoColored} alt="Logo" className="h-16 mx-auto mb-6 object-contain" />
+            <img src={logoColored} alt="Solongo Capital лого" className="h-16 mx-auto mb-6 object-contain" />
             <h2 className="text-2xl font-display font-bold text-[#003B5C]">
                 {step === 1 ? 'Нэвтрэх' : '2FA Баталгаажуулалт'}
             </h2>
@@ -87,7 +87,7 @@ const Login = ({ onLogin, onBack }) => {
 
             {step === 2 && (
                 <div className="relative animate-scale-up">
-                    <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-[#00A651]" size={24}/>
+                    <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-[#007A3D]" size={24}/>
                     <input type="text" placeholder="000000" maxLength={6} inputMode="numeric" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#003B5C] text-center text-xl font-bold tracking-[0.5em]"
                         value={formData.token} onChange={(e) => setFormData({...formData, token: e.target.value.replace(/\s/g, '')})} autoFocus />
                 </div>

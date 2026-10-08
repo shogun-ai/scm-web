@@ -206,7 +206,7 @@ const printMatrix = (permMap) => {
   </head><body style="padding:20px">
   <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px;padding-bottom:12px;border-bottom:3px solid #003B5C">
     <div>
-      <div style="font-size:9px;font-weight:800;color:#00A651;text-transform:uppercase;letter-spacing:.15em">Solongo Capital SCM</div>
+      <div style="font-size:9px;font-weight:800;color:#007A3D;text-transform:uppercase;letter-spacing:.15em">Solongo Capital SCM</div>
       <div style="font-size:20px;font-weight:900;color:#003B5C">Хэрэглэгчийн эрхийн матриц</div>
       <div style="font-size:11px;color:#64748b;margin-top:3px">Огноо: ${today}</div>
     </div>
@@ -451,7 +451,7 @@ const PermissionMatrix = ({ apiUrl }) => {
       {/* Page header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-[#00A651]">Системийн тохиргоо</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-[#007A3D]">Системийн тохиргоо</p>
           <h2 className="text-2xl font-bold text-[#003B5C]">Хэрэглэгчийн эрх</h2>
         </div>
         <div className="flex items-center gap-2">
