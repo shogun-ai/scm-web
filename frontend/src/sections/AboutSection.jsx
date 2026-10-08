@@ -12,7 +12,6 @@ export default function AboutSection({ governanceItems, getSectionBackgroundStyl
         <div className="absolute inset-0 sc-overlay-70"></div>
         <div className="relative z-10 max-w-5xl space-y-12 animate-fade-in-up">
             <div className="space-y-6">
-                <span className="sc-kicker block">Solongo Capital</span>
                 <h2 className="font-display font-extrabold text-4xl md:text-6xl text-white leading-tight drop-shadow-xl">{cfg.about_title || 'Бид хэн бэ?'}</h2>
                 <p className="font-sans text-xl md:text-2xl text-white/90 leading-relaxed font-light">
                     <span className="text-[#D4AF37] font-bold">Солонго Капитал ББСБ ХХК</span> {cfg.about_intro || 'нь харилцагч төвтэй үйлчилгээг эрхэмлэн, санхүүгийн салбарт шинэ жишиг тогтоохоор зорин ажиллаж байна.'}

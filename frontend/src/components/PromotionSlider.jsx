@@ -101,10 +101,6 @@ export default function PromotionSlider({ promotions, fallbackBg, homeSlide, int
                             alt="Solongo Capital Logo"
                             className={`${current.logoClassName} drop-shadow-[0_18px_45px_rgba(0,0,0,0.45)]`}
                         />
-                        <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-white/85 backdrop-blur-md">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#00A651] shadow-[0_0_18px_rgba(0,166,81,0.9)]"></span>
-                            Solongo Capital
-                        </div>
                         <h1 className="font-display font-extrabold text-4xl md:text-5xl lg:text-7xl leading-[1.05] tracking-normal drop-shadow-2xl">
                             {current.line1} <br/>
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00A651] to-emerald-400">{current.highlight}</span> {current.line2}
@@ -112,13 +108,14 @@ export default function PromotionSlider({ promotions, fallbackBg, homeSlide, int
                         <p className="font-sans font-normal text-base md:text-lg lg:text-xl text-blue-50 max-w-2xl mx-auto leading-relaxed opacity-95">
                             {current.description}
                         </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl pt-1">
+                        <ul className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-x-8 gap-y-3 pt-1">
                             {['Хурдан шийдэл', 'Ил тод нөхцөл', 'Найдвартай түнш'].map((label) => (
-                                <div key={label} className="sc-glass-panel rounded-lg px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-white/85">
+                                <li key={label} className="flex items-center gap-2 text-sm font-medium text-white/85">
+                                    <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-[#D4AF37]"></span>
                                     {label}
-                                </div>
+                                </li>
                             ))}
-                        </div>
+                        </ul>
                         <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
                             <button
                                 onClick={onProducts}
