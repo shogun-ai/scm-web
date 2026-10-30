@@ -108,7 +108,7 @@ const LoanCalculator = ({ onBack }) => {
   const [dti, setDti] = useState(0.6);
   const [method, setMethod] = useState('equal');
   const [aprSettings, setAprSettings] = useState(DEFAULT_LOAN_APR_CONFIG);
-  const [feeIndex, setFeeIndex] = useState(0);
+  const [feeIndex, setFeeIndex] = useState(-1);
   const [insuranceCost, setInsuranceCost] = useState(String(DEFAULT_LOAN_APR_CONFIG.defaultInsuranceCost));
   const insuranceEdited = useRef(false);
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]); // Эхлэх огноо
@@ -172,21 +172,23 @@ const LoanCalculator = ({ onBack }) => {
   };
 
   return (
-    <div className="sc-public-page min-h-screen relative font-sans text-slate-800 pb-20 bg-[#f7f8f6]">
-      
-      {/* 1. BACKGROUND IMAGE */}
+    <div className="sc-public-page min-h-screen relative font-sans text-slate-800 pb-20" style={{background:'linear-gradient(135deg,#020f1c 0%,#041e34 50%,#020f1c 100%)'}}>
 
+      {/* Decorative blobs */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-32 -left-32 w-[600px] h-[600px] rounded-full opacity-[0.07]" style={{background:'radial-gradient(circle,#D4AF37,transparent 70%)'}}/>
+        <div className="absolute top-1/2 -right-48 w-[500px] h-[500px] rounded-full opacity-[0.05]" style={{background:'radial-gradient(circle,#4f9cf9,transparent 70%)'}}/>
+        <div className="absolute inset-0 opacity-[0.03]" style={{backgroundImage:'linear-gradient(rgba(255,255,255,.15) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.15) 1px,transparent 1px)',backgroundSize:'40px 40px'}}/>
+      </div>
 
       {/* 2. HEADER SECTION */}
       <div className="relative z-10 pt-32 pb-10 px-6 max-w-6xl mx-auto">
-         <button type="button" onClick={onBack} className="mb-6 inline-flex items-center gap-2 text-sm text-slate-600 hover:text-[#062842]"><ArrowLeft size={16} /> Нүүр хуудас</button>
-         
-         {/* ❌ ЭНД БАЙСАН <button> КОДЫГ БҮХЭЛД НЬ УСТГААРАЙ */}
-
-         <h1 className="text-3xl md:text-5xl font-display font-bold text-[#062842] mb-4 flex items-center gap-4 flex-wrap">
-            <Calculator className="text-[#D4AF37]" size={40}/> Зээлийн тооцоолуур
+         <button type="button" onClick={onBack} className="mb-6 inline-flex items-center gap-2 text-sm text-white/60 hover:text-white transition"><ArrowLeft size={16} /> Нүүр хуудас</button>
+         <h1 className="text-3xl md:text-5xl font-display font-bold text-white mb-4 flex items-center gap-4 flex-wrap">
+            <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/30"><Calculator className="text-[#D4AF37]" size={26}/></span>
+            Зээлийн тооцоолуур
          </h1>
-         <p className="text-slate-600 max-w-2xl text-base leading-7">
+         <p className="text-white/50 max-w-2xl text-base leading-7">
              Та өөрийн санхүүгийн боломжид тулгуурлан зээлийн тооцооллыг хийгээрэй.
          </p>
       </div>
@@ -196,25 +198,25 @@ const LoanCalculator = ({ onBack }) => {
         <div className="flex flex-col lg:flex-row gap-8">
             
             {/* LEFT: INPUTS */}
-            <div className="w-full lg:w-1/2 bg-white rounded-2xl shadow-sm p-6 md:p-8 border border-slate-200">
-                <h3 className="font-display font-bold text-xl mb-6 text-[#003B5C] border-b border-gray-100 pb-4">
-                    Зээлийн нөхцөл оруулах
+            <div className="w-full lg:w-1/2 rounded-2xl p-6 md:p-8 border border-white/10" style={{background:'rgba(255,255,255,0.04)',backdropFilter:'blur(16px)'}}>
+                <h3 className="font-display font-bold text-lg mb-6 text-white border-b border-white/10 pb-4 flex items-center gap-2">
+                    <span className="w-1.5 h-5 rounded-full bg-[#D4AF37] inline-block"/>Зээлийн нөхцөл оруулах
                 </h3>
                 
                 <div className="space-y-6">
                     {/* Зээлийн дүн */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-500 mb-2">
-                            Зээлийн дүн (₮)
+                        <label className="block text-xs font-semibold text-white/50 uppercase tracking-widest mb-2">
+                            Зээлийн дүн
                         </label>
                         <div className="relative">
-                            <input 
-                                type="text" 
+                            <input
+                                type="text"
                                 value={amount}
                                 onChange={handleAmountChange}
-                                className="w-full p-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#D4AF37] transition font-bold text-xl text-[#003B5C]"
+                                className="w-full p-4 bg-white/5 border border-white/15 rounded-xl focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 transition font-bold text-xl text-white placeholder-white/30"
                             />
-                            <div className="absolute right-4 top-4 text-gray-400 text-sm pointer-events-none font-bold">
+                            <div className="absolute right-4 top-4 text-[#D4AF37] text-sm pointer-events-none font-bold">
                                 ₮
                             </div>
                         </div>
@@ -223,13 +225,13 @@ const LoanCalculator = ({ onBack }) => {
                     <div className="grid grid-cols-2 gap-6">
                         {/* Хүү */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-500 mb-2">
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-widest mb-2">
                                 Сарын хүү (%)
                             </label>
-                            <select 
+                            <select
                                 value={rate}
                                 onChange={(e) => setRate(e.target.value)}
-                                className="w-full p-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#D4AF37] transition font-bold text-lg text-[#003B5C]"
+                                className="w-full p-4 bg-white/5 border border-white/15 rounded-xl focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 transition font-bold text-lg text-white [color-scheme:dark]"
                             >
                                 {rateOptions.map(r => (
                                     <option key={r} value={r}>{r}%</option>
@@ -239,47 +241,47 @@ const LoanCalculator = ({ onBack }) => {
 
                         {/* Хугацаа */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-500 mb-2">
+                            <label className="block text-xs font-semibold text-white/50 uppercase tracking-widest mb-2">
                                 Хугацаа (Сар)
                             </label>
-                            <input 
+                            <input
                                 type="number"
                                 min="1" max={maxTerm}
                                 value={months}
                                 onChange={(e) => setMonths(e.target.value)}
-                                className="w-full p-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#D4AF37] transition font-bold text-lg text-[#003B5C]"
+                                className="w-full p-4 bg-white/5 border border-white/15 rounded-xl focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 transition font-bold text-lg text-white"
                             />
                         </div>
                     </div>
 
                     {/* Огноо */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-500 mb-2 flex items-center gap-2">
-                            <Calendar size={14}/> Эхлэх огноо
+                        <label className="block text-xs font-semibold text-white/50 uppercase tracking-widest mb-2 flex items-center gap-2">
+                            <Calendar size={13}/> Эхлэх огноо
                         </label>
                         <input 
                             type="date"
                             value={startDate}
                             onChange={(e) => setStartDate(e.target.value)}
-                            className="w-full p-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#D4AF37] transition font-bold text-base text-[#003B5C]"
+                            className="w-full p-4 bg-white/5 border border-white/15 rounded-xl focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 transition font-bold text-base text-white [color-scheme:dark]"
                         />
                     </div>
 
                     {/* Төлбөрийн нөхцөл */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-500 mb-2">
+                        <label className="block text-xs font-semibold text-white/50 uppercase tracking-widest mb-2">
                             Төлбөрийн нөхцөл
                         </label>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <button 
+                        <div className="grid grid-cols-2 gap-3">
+                            <button
                                 onClick={() => setMethod('equal')}
-                                className={`p-4 rounded-xl border text-sm font-bold transition-all ${method === 'equal' ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-gray-500 border-gray-200 hover:border-[#D4AF37]'}`}
+                                className={`p-4 rounded-xl border text-sm font-bold transition-all ${method === 'equal' ? 'bg-[#D4AF37] text-[#020f1c] border-[#D4AF37]' : 'bg-white/5 text-white/60 border-white/15 hover:border-[#D4AF37]/50 hover:text-white'}`}
                             >
                                 Тэнцүү төлбөрт
                             </button>
-                            <button 
+                            <button
                                 onClick={() => setMethod('bullet')}
-                                className={`p-4 rounded-xl border text-sm font-bold transition-all ${method === 'bullet' ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-gray-500 border-gray-200 hover:border-[#D4AF37]'}`}
+                                className={`p-4 rounded-xl border text-sm font-bold transition-all ${method === 'bullet' ? 'bg-[#D4AF37] text-[#020f1c] border-[#D4AF37]' : 'bg-white/5 text-white/60 border-white/15 hover:border-[#D4AF37]/50 hover:text-white'}`}
                             >
                                 Хугацааны эцэст
                             </button>
@@ -310,16 +312,16 @@ const LoanCalculator = ({ onBack }) => {
                   principal={Number(amount.toString().replace(/,/g, ''))}
                   monthlyRate={Number(rate) / 100}
                   months={Number.isInteger(Number(months)) && Number(months) <= maxTerm ? Number(months) : NaN}
-                  serviceFee={aprSettings.serviceFeeOptions[feeIndex]}
+                  serviceFee={feeIndex < 0 ? 0 : aprSettings.serviceFeeOptions[feeIndex]}
                   insuranceCost={insuranceCost} settings={aprSettings}
                 />
                 {!result && <p role="alert" className="text-sm text-red-700">Зээлийн дүн, хугацаа (1–{maxTerm} бүтэн сар), сарын хүү болон эхлэх огноог зөв оруулна уу.</p>}
                 
                 {/* Үндсэн үр дүн */}
-                <div className="bg-[#003B5C] text-white rounded-2xl shadow-sm p-8 relative overflow-hidden border border-white/10">
-                    <div className="absolute -top-10 -right-10 w-40 h-40 bg-[#D4AF37] rounded-full opacity-10 blur-3xl"></div>
-                    <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-[#D4AF37] to-transparent"></div>
-                    
+                <div className="text-white rounded-2xl p-8 relative overflow-hidden border border-white/10" style={{background:'linear-gradient(135deg,rgba(212,175,55,0.12) 0%,rgba(4,30,52,0.95) 40%)'}}>
+                    <div className="absolute -top-16 -right-16 w-56 h-56 bg-[#D4AF37] rounded-full opacity-10 blur-3xl pointer-events-none"/>
+                    <div className="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-[#D4AF37]/60 to-transparent"/>
+
                     <h3 className="text-[#D4AF37] text-xs font-bold uppercase tracking-widest mb-8 flex items-center gap-2">
                         <CheckCircle size={14} /> Үндсэн зээлийн төлбөр
                     </h3>
@@ -356,45 +358,32 @@ const LoanCalculator = ({ onBack }) => {
                     </div>
                 </div>
 
-                {/* ШААРДЛАГАТАЙ ОРЛОГО (DTI Logic) */}
-                <div className="bg-emerald-50 rounded-2xl p-6 border border-emerald-100 shadow-lg">
+                {/* ШААРДЛАГАТАЙ ОРЛОГО */}
+                <div className="rounded-2xl p-6 border border-white/10 relative overflow-hidden" style={{background:'rgba(255,255,255,0.04)'}}>
+                    <div className="absolute -bottom-8 -right-8 w-32 h-32 rounded-full opacity-10 blur-2xl pointer-events-none" style={{background:'radial-gradient(circle,#4ade80,transparent)'}}/>
                     <div className="flex items-start gap-4">
-                        <div className="p-3 bg-emerald-100 text-emerald-600 rounded-full">
-                            <Banknote size={24} />
+                        <div className="p-3 rounded-xl border border-emerald-400/20" style={{background:'rgba(74,222,128,0.08)'}}>
+                            <Banknote size={22} className="text-emerald-400"/>
                         </div>
                         <div>
-                            <h4 className="font-bold text-lg text-emerald-900 mb-1">
+                            <h4 className="font-bold text-base text-white mb-1">
                                 Шаардлагатай сарын орлого
                             </h4>
-                            <p className="text-emerald-700 text-sm mb-3 opacity-90">
-                                Өр орлогын харьцааг {Math.round(dti * 100)}%-д барихын тулд таны сарын цэвэр орлого доод тал нь ийм байх шаардлагатай:
+                            <p className="text-white/50 text-sm mb-3">
+                                ӨОХ {Math.round(dti * 100)}%-д барихын тулд доод тал нь:
                             </p>
-                            <p className="text-3xl font-bold text-emerald-600 tracking-tight">
+                            <p className="text-3xl font-bold text-emerald-400 tracking-tight">
                                 {formatMoney(result?.minRequiredIncome)}
                             </p>
                         </div>
                     </div>
                 </div>
 
-                {/* Info Box */}
-                <div className="bg-white/80 backdrop-blur p-4 rounded-xl border border-slate-200 text-xs text-slate-500 flex gap-3">
-                    <Info className="flex-shrink-0 text-[#003B5C]" size={18} />
-                    <p>
-                        Энэхүү тооцоолол нь зөвхөн урьдчилсан байдлаар хийгдэж байгаа бөгөөд зээлийн бодит нөхцөл, шимтгэл зэргээс шалтгаалан өөрчлөгдөх боломжтой.
-                    </p>
-                </div>
-
                 {/* Disclaimer */}
-                {result && (
-                  <div className="mt-4 p-3 rounded-lg bg-[#D4AF37]/5 border border-[#D4AF37]/20 flex items-start gap-2">
-                    <svg className="w-4 h-4 text-[#D4AF37] mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <p className="text-xs text-slate-600">
-                      Энэхүү тооцоолол нь <strong className="text-slate-800">зөвхөн лавлагааны зориулалттай</strong> бөгөөд бодит зээлийн нөхцөлөөс ялгаатай байж болно. Нарийвчилсан мэдээлэлд манай мэргэжилтнүүдтэй холбоо барина уу.
-                    </p>
-                  </div>
-                )}
+                <div className="p-4 rounded-xl border border-white/8 text-xs text-white/40 flex gap-3" style={{background:'rgba(255,255,255,0.02)'}}>
+                    <Info className="flex-shrink-0 text-[#D4AF37]/60 mt-0.5" size={16} />
+                    <p>Энэхүү тооцоолол нь зөвхөн <strong className="text-white/60">лавлагааны зориулалттай</strong> бөгөөд бодит зээлийн нөхцөлөөс ялгаатай байж болно.</p>
+                </div>
             </div>
         </div>
       </div>
@@ -404,32 +393,32 @@ const LoanCalculator = ({ onBack }) => {
       {/* 4. PAYMENT SCHEDULE TABLE (TOGGLE) */}
       {showSchedule && schedule.length > 0 && (
           <div className="relative z-10 max-w-6xl mx-auto px-4 md:px-6 mt-8 animate-fade-in-up pb-20">
-              <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
-                  <div className="bg-slate-50 p-6 border-b border-gray-100 flex justify-between items-center">
-                      <h3 className="font-display font-bold text-lg text-[#003B5C]">Зээлийн эргэн төлөлтийн хуваарь</h3>
-                      <button onClick={() => setShowSchedule(false)} className="text-gray-400 hover:text-red-500 font-bold text-xs uppercase">Хаах</button>
+              <div className="rounded-2xl overflow-hidden border border-white/10" style={{background:'rgba(255,255,255,0.04)'}}>
+                  <div className="p-6 border-b border-white/10 flex justify-between items-center">
+                      <h3 className="font-display font-bold text-base text-white">Зээлийн эргэн төлөлтийн хуваарь</h3>
+                      <button onClick={() => setShowSchedule(false)} className="text-white/40 hover:text-red-400 font-bold text-xs uppercase transition">Хаах</button>
                   </div>
                   <div className="overflow-x-auto">
                       <table className="w-full text-sm text-left">
-                          <thead className="text-xs text-gray-500 uppercase bg-slate-50 border-b border-gray-100">
+                          <thead className="text-xs text-white/40 uppercase border-b border-white/10">
                               <tr>
                                   <th className="px-6 py-4">#</th>
                                   <th className="px-6 py-4">Огноо</th>
                                   <th className="px-6 py-4 text-right">Үндсэн зээл</th>
                                   <th className="px-6 py-4 text-right">Хүү</th>
-                                  <th className="px-6 py-4 text-right text-[#003B5C] font-bold">Нийт төлөх</th>
+                                  <th className="px-6 py-4 text-right text-[#D4AF37] font-bold">Нийт төлөх</th>
                                   <th className="px-6 py-4 text-right">Үлдэгдэл</th>
                               </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-100">
+                          <tbody className="divide-y divide-white/5">
                               {schedule.map((row) => (
-                                  <tr key={row.num} className="hover:bg-slate-50 transition-colors">
-                                      <td className="px-6 py-4 font-medium text-gray-900">{row.num}</td>
-                                      <td className="px-6 py-4 text-gray-500">{row.date}</td>
-                                      <td className="px-6 py-4 text-right">{formatMoney(row.principal)}</td>
-                                      <td className="px-6 py-4 text-right">{formatMoney(row.interest)}</td>
-                                      <td className="px-6 py-4 text-right font-bold text-[#003B5C]">{formatMoney(row.payment)}</td>
-                                      <td className="px-6 py-4 text-right text-gray-400">{formatMoney(row.balance)}</td>
+                                  <tr key={row.num} className="hover:bg-white/5 transition-colors">
+                                      <td className="px-6 py-4 font-medium text-white/70">{row.num}</td>
+                                      <td className="px-6 py-4 text-white/40">{row.date}</td>
+                                      <td className="px-6 py-4 text-right text-white/70">{formatMoney(row.principal)}</td>
+                                      <td className="px-6 py-4 text-right text-white/70">{formatMoney(row.interest)}</td>
+                                      <td className="px-6 py-4 text-right font-bold text-[#D4AF37]">{formatMoney(row.payment)}</td>
+                                      <td className="px-6 py-4 text-right text-white/40">{formatMoney(row.balance)}</td>
                                   </tr>
                               ))}
                           </tbody>

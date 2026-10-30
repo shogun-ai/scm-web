@@ -135,13 +135,12 @@ export default function PromotionSlider({ promotions, fallbackBg, homeSlide, int
                             ))}
                         </ul>
                       </div>
-                      {onRequest && <aside className="sc-hero-actions rounded-2xl border border-white/20 p-6 md:p-8">
-                        <p className="mb-3 text-xs font-medium text-[#e6cf87]">ЭХЛЭХЭД ХЯЛБАР</p>
-                        <h2 className="text-2xl font-semibold leading-snug">Танд ямар шийдэл<br className="hidden lg:block" /> хэрэгтэй вэ?</h2>
-                        <p className="mb-6 mt-3 text-sm leading-relaxed text-slate-300">Тооцоогоо хийж, хэрэгцээндээ тохирсон үйлчилгээг сонгоорой.</p>
-                        <button type="button" onClick={onRequest} className="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl bg-white px-5 py-4 text-left text-sm font-semibold text-[#062842] transition hover:bg-[#f2e3b4]">Зээлийн хүсэлт гаргах<ArrowRight size={18} aria-hidden="true" /></button>
-                        {onCalculator && <button type="button" onClick={onCalculator} className="mt-2 flex min-h-14 w-full items-center gap-3 border-b border-white/15 px-1 py-4 text-left text-sm text-white transition hover:text-[#e6cf87]"><Calculator size={18} aria-hidden="true" />Зээлийн тооцоолуур<MoveUpRight size={16} className="ml-auto" aria-hidden="true" /></button>}
-                        {onTrustCalculator && <button type="button" onClick={onTrustCalculator} className="flex min-h-14 w-full items-center gap-3 px-1 py-4 text-left text-sm text-white transition hover:text-[#e6cf87]"><Calculator size={18} aria-hidden="true" />Итгэлцлийн тооцоолуур<MoveUpRight size={16} className="ml-auto" aria-hidden="true" /></button>}
+                      {(onCalculator || onTrustCalculator) && <aside className="sc-hero-actions rounded-2xl border border-white/20 p-6 md:p-8">
+                        <p className="mb-3 text-xs font-medium text-[#e6cf87]">ТООЦООЛЛОО ХИЙНЭ ҮҮ</p>
+                        <h2 className="text-2xl font-semibold leading-snug">Зээлийн нөхцөлөө<br className="hidden lg:block" /> урьдчилан тооцоол</h2>
+                        <p className="mb-6 mt-3 text-sm leading-relaxed text-slate-300">Сарын төлбөр, нийт зардал болон бодит өртгийг шалгаарай.</p>
+                        {onCalculator && <button type="button" onClick={onCalculator} className="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl bg-white px-5 py-4 text-left text-sm font-semibold text-[#062842] transition hover:bg-[#f2e3b4]"><span className="flex items-center gap-3"><Calculator size={18} aria-hidden="true" />Зээлийн тооцоолуур</span><MoveUpRight size={16} aria-hidden="true" /></button>}
+                        {onTrustCalculator && <button type="button" onClick={onTrustCalculator} className="mt-2 flex min-h-14 w-full items-center gap-3 border-t border-white/15 px-1 py-4 text-left text-sm text-white transition hover:text-[#e6cf87]"><Calculator size={18} aria-hidden="true" />Итгэлцлийн тооцоолуур<MoveUpRight size={16} className="ml-auto" aria-hidden="true" /></button>}
                       </aside>}
                     </div>
                 </div>
