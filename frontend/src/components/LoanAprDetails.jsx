@@ -69,7 +69,7 @@ export function LoanAprResult({ principal, monthlyRate, months, serviceFee, insu
           </>
         )}
       </div>
-      <p className="text-xs leading-6 text-white/30 whitespace-pre-line">{settings.calculationNote}</p>
+      <p className="text-xs leading-6 text-white/30 whitespace-pre-line">{isBullet ? settings.bulletCalculationNote : settings.calculationNote}</p>
     </section>
   );
 }
