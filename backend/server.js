@@ -1,3 +1,4 @@
+import { isValidLoanAprConfig, LOAN_APR_CONFIG_KEY } from '../shared/loanAprConfig.js';
 // server.js-Ð¸Ð¹Ð½ Ñ…Ð°Ð¼Ð³Ð¸Ð¹Ð½ Ð´ÑÑÑ€ Ð±Ð°Ð¹Ð³Ð°Ð° Ð±Ò¯Ñ… require-Ð¸Ð¹Ð³ Ò¯Ò¯Ð³ÑÑÑ€ ÑÐ¾Ð»ÑŒ:
 import express from 'express';
 import mongoose from 'mongoose';
@@ -6874,7 +6875,7 @@ const seedProductContent = async () => {
     await Promise.all(defaults.map(d =>
         ProductContent.findOneAndUpdate(
             { productKey: d.productKey },
-            { $set: d },
+            { $setOnInsert: d },
             { upsert: true }
         )
     ));
@@ -7023,18 +7024,24 @@ app.get('/api/config/flat', async (req, res) => {
 
 app.put('/api/config/:key', authenticateUser, requireAdmin, async (req, res) => {
     try {
+        if (req.params.key === LOAN_APR_CONFIG_KEY && !isValidLoanAprConfig(req.body?.value)) {
+            return res.status(400).json({ message: 'Зээлийн бодит өртгийн тохиргоо буруу байна.' });
+        }
         if (req.params.key === 'hero_slider_interval' && !isValidHeroSliderInterval(req.body?.value)) {
             return res.status(400).json({ message: 'Слайдын хугацаа 0 (унтраах), эсвэл 3–120 секундийн бүхэл тоо байна.' });
         }
         await SiteConfig.findOneAndUpdate(
             { key: req.params.key },
-            { value: req.body.value, updatedAt: new Date() }
+            { value: req.body.value, updatedAt: new Date(),
+                ...(req.params.key === LOAN_APR_CONFIG_KEY ? { group: 'rates', label: 'Зээлийн бодит өртгийн тохиргоо' } : {}) },
+            { upsert: req.params.key === LOAN_APR_CONFIG_KEY }
         );
         res.json({ message: 'ÐÐ¼Ð¶Ð¸Ð»Ñ‚Ñ‚Ð°Ð¹ ÑˆÐ¸Ð½ÑÑ‡Ð»ÑÐ³Ð´Ð»ÑÑ' });
     } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
 const KEY_GROUP_MAP = {
+    [LOAN_APR_CONFIG_KEY]: 'rates',
     hero_slider_interval: 'hero',
     theme_mode: 'theme', theme_type: 'theme', theme_color: 'theme', theme_image: 'theme',
     theme_image_home: 'theme', theme_image_about: 'theme', theme_image_financials: 'theme',
@@ -7057,6 +7064,9 @@ const KEY_GROUP_MAP = {
 app.post('/api/config/bulk', authenticateUser, requireAdmin, async (req, res) => {
     try {
         const updates = req.body;
+        if (updates && Object.hasOwn(updates, LOAN_APR_CONFIG_KEY) && !isValidLoanAprConfig(updates[LOAN_APR_CONFIG_KEY])) {
+            return res.status(400).json({ message: 'Зээлийн бодит өртгийн тохиргоо буруу байна.' });
+        }
         if (updates && Object.hasOwn(updates, 'hero_slider_interval') && !isValidHeroSliderInterval(updates.hero_slider_interval)) {
             return res.status(400).json({ message: 'Слайдын хугацаа 0 (унтраах), эсвэл 3–120 секундийн бүхэл тоо байна.' });
         }
@@ -7064,6 +7074,7 @@ app.post('/api/config/bulk', authenticateUser, requireAdmin, async (req, res) =>
             const group = KEY_GROUP_MAP[key];
             const update = { value, updatedAt: new Date() };
             if (group) update.group = group;
+            if (key === LOAN_APR_CONFIG_KEY) update.label = 'Зээлийн бодит өртгийн тохиргоо';
             return SiteConfig.findOneAndUpdate({ key }, update, { upsert: true });
         }));
         chatbotCache = null; // refresh cache on next chatbot request
