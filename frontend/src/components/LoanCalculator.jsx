@@ -231,10 +231,11 @@ const LoanCalculator = ({ onBack }) => {
                             <select
                                 value={rate}
                                 onChange={(e) => setRate(e.target.value)}
-                                className="w-full p-4 bg-white/5 border border-white/15 rounded-xl focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 transition font-bold text-lg text-white [color-scheme:dark]"
+                                className="w-full p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 transition font-bold text-lg"
+                                style={{background:'#0a2540',color:'#fff',border:'1px solid rgba(255,255,255,0.15)'}}
                             >
                                 {rateOptions.map(r => (
-                                    <option key={r} value={r}>{r}%</option>
+                                    <option key={r} value={r} style={{background:'#0a2540',color:'#fff'}}>{r}%</option>
                                 ))}
                             </select>
                         </div>
@@ -263,7 +264,8 @@ const LoanCalculator = ({ onBack }) => {
                             type="date"
                             value={startDate}
                             onChange={(e) => setStartDate(e.target.value)}
-                            className="w-full p-4 bg-white/5 border border-white/15 rounded-xl focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 transition font-bold text-base text-white [color-scheme:dark]"
+                            className="w-full p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 transition font-bold text-base [color-scheme:dark]"
+                            style={{background:'#0a2540',color:'#fff',border:'1px solid rgba(255,255,255,0.15)'}}
                         />
                     </div>
 
@@ -314,6 +316,7 @@ const LoanCalculator = ({ onBack }) => {
                   months={Number.isInteger(Number(months)) && Number(months) <= maxTerm ? Number(months) : NaN}
                   serviceFee={feeIndex < 0 ? 0 : aprSettings.serviceFeeOptions[feeIndex]}
                   insuranceCost={insuranceCost} settings={aprSettings}
+                  method={method}
                 />
                 {!result && <p role="alert" className="text-sm text-red-700">Зээлийн дүн, хугацаа (1–{maxTerm} бүтэн сар), сарын хүү болон эхлэх огноог зөв оруулна уу.</p>}
                 
