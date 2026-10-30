@@ -9,6 +9,9 @@ import LoanOrigination from './LoanOrigination';
 import PermissionMatrix from './PermissionMatrix';
 import SafetyNoticesAdmin from './SafetyNoticesAdmin';
 import HeroSliderSettings from './HeroSliderSettings';
+import ProductTermsEditor from './ProductTermsEditor';
+import LoanAprSettingsEditor from './LoanAprSettingsEditor';
+import { DEFAULT_LOAN_APR_CONFIG, LOAN_APR_CONFIG_KEY, isValidLoanAprConfig, normalizeLoanAprConfig } from '../../../shared/loanAprConfig.js';
 import { isValidHeroSliderInterval, normalizeHeroSliderInterval } from '../../../shared/heroSliderConfig.js';
 
 const hasBrokenEncoding = (value = '') => /[ÐÑÒÓ]|â|�/.test(String(value));
@@ -284,6 +287,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
   const [cmsSubTab, setCmsSubTab] = useState('hero');
   const [siteConfig, setSiteConfig] = useState({});
   const [configEdits, setConfigEdits] = useState({});
+  const [cmsConfigStatus, setCmsConfigStatus] = useState('idle');
   const [chatbotCards, setChatbotCards] = useState(DEFAULT_CHATBOT_CARDS);
   const [facebookPosts, setFacebookPosts] = useState([]);
   const [products, setProducts] = useState([]);
@@ -677,6 +681,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
   // 🗄️ CMS FUNCTIONS
   // ============================================================
   const fetchCMSData = async () => {
+    setCmsConfigStatus('loading');
     const [cfgRes, prodRes, teamRes, loanFormRes, trustFormRes, blogRes, promoRes, fbPostRes] = await Promise.allSettled([
       axios.get(`${API_URL}/api/config`),
       axios.get(`${API_URL}/api/products/content`),
@@ -687,14 +692,18 @@ const AdminPanel = ({ user, token, onLogout }) => {
       axios.get(`${API_URL}/api/promotions?all=true`),
       axios.get(`${API_URL}/api/facebook-post-knowledge`),
     ]);
-    if (cfgRes.status === 'fulfilled') {
+    if (cfgRes.status === 'fulfilled' && cfgRes.value.data && typeof cfgRes.value.data === 'object' && !Array.isArray(cfgRes.value.data)) {
       setSiteConfig(cfgRes.value.data);
       const flat = {};
       Object.values(cfgRes.value.data).forEach(group => {
         Object.entries(group).forEach(([key, obj]) => { flat[key] = obj.value; });
       });
+      flat[LOAN_APR_CONFIG_KEY] = normalizeLoanAprConfig(flat[LOAN_APR_CONFIG_KEY]);
       setConfigEdits(flat);
       setChatbotCards(withDefaultChatbotCards(flat.chatbot_cards));
+      setCmsConfigStatus('ready');
+    } else {
+      setCmsConfigStatus('error');
     }
     if (prodRes.status === 'fulfilled') setProducts(prodRes.value.data);
     if (teamRes.status === 'fulfilled') setTeamMembers(teamRes.value.data);
@@ -778,6 +787,14 @@ const AdminPanel = ({ user, token, onLogout }) => {
   };
 
   const saveBulkConfig = async (group) => {
+    if (group === 'rates' && cmsConfigStatus !== 'ready') {
+      alert('Тооцоолуурын тохиргоог амжилттай ачаалсны дараа хадгална уу.');
+      return;
+    }
+    if (group === 'rates' && !isValidLoanAprConfig(configEdits[LOAN_APR_CONFIG_KEY] ?? DEFAULT_LOAN_APR_CONFIG)) {
+      alert('Бодит өртгийн тохиргоог шалгана уу. Шимтгэлийн хоёр сонголт ялгаатай, зардлууд 0 буюу түүнээс их бүхэл төгрөг байна. Тайлбарын уртыг шалгана уу.');
+      return;
+    }
     if (group === 'hero' && configEdits.hero_slider_interval !== undefined && !isValidHeroSliderInterval(configEdits.hero_slider_interval)) {
       alert('Слайдын хугацааг 3–120 секундийн бүхэл тоогоор оруулна уу, эсвэл автомат солилтыг унтраана уу.');
       return;
@@ -792,6 +809,9 @@ const AdminPanel = ({ user, token, onLogout }) => {
       }
       if (group === 'hero' && configEdits['hero_slider_interval'] !== undefined) {
         updates['hero_slider_interval'] = configEdits['hero_slider_interval'];
+      }
+      if (group === 'rates') {
+        updates[LOAN_APR_CONFIG_KEY] = configEdits[LOAN_APR_CONFIG_KEY] ?? DEFAULT_LOAN_APR_CONFIG;
       }
       await axios.post(`${API_URL}/api/config/bulk`, updates);
       alert('Амжилттай хадгалагдлаа!');
@@ -908,29 +928,6 @@ const AdminPanel = ({ user, token, onLogout }) => {
     });
   };
 
-  // Product condition/requirement засах helper
-  const updateProductList = (field, userType, idx, val) => {
-    setEditingProduct(prev => ({
-      ...prev,
-      [userType]: {
-        ...prev[userType],
-        [field]: prev[userType]?.[field]?.map((v, i) => i === idx ? val : v) || []
-      }
-    }));
-  };
-  const addProductListItem = (field, userType) => {
-    setEditingProduct(prev => ({
-      ...prev,
-      [userType]: { ...prev[userType], [field]: [...(prev[userType]?.[field] || []), ''] }
-    }));
-  };
-  const removeProductListItem = (field, userType, idx) => {
-    setEditingProduct(prev => ({
-      ...prev,
-      [userType]: { ...prev[userType], [field]: prev[userType]?.[field]?.filter((_, i) => i !== idx) || [] }
-    }));
-  };
-
   const updateChatbotProductList = (productKey, userType, field, idx, val) => {
     setProducts(prev => prev.map(product => (
       product.productKey === productKey
@@ -1036,7 +1033,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex font-sans [color-scheme:light] [forced-color-adjust:none]">
+    <div className="min-h-screen bg-slate-100 text-slate-800 flex font-sans [color-scheme:light] [forced-color-adjust:none]">
       <style>{` @media print { @page { margin: 1cm; size: auto; } body * { visibility: hidden; } #printable-content, #printable-content * { visibility: visible; } #printable-content { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; background: white; } .no-print { display: none !important; } } `}</style>
 
       {/* SIDEBAR */}
@@ -1873,29 +1870,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                             </div>
                           </div>
                         ))}
-                        {['individual', 'organization'].map(utype => (
-                          editingProduct[utype] && (
-                            <div key={utype} className="border rounded-2xl p-5 space-y-4">
-                              <p className="font-bold text-sm text-gray-600 uppercase">{utype === 'individual' ? 'Иргэн' : 'Байгууллага'}</p>
-                              {['conditions', 'requirements'].map(field => (
-                                <div key={field} className="space-y-2">
-                                  <p className="text-xs text-gray-400 font-bold">{field === 'conditions' ? 'Нөхцөл' : 'Шаардлага'}</p>
-                                  {(editingProduct[utype]?.[field] || []).map((item, idx) => (
-                                    <div key={idx} className="flex gap-2">
-                                      <input value={item} onChange={e => updateProductList(field, utype, idx, e.target.value)}
-                                        className="flex-1 p-2 border rounded-lg text-sm bg-slate-50"/>
-                                      <button onClick={() => removeProductListItem(field, utype, idx)} className="text-red-400 hover:text-red-600"><X size={16}/></button>
-                                    </div>
-                                  ))}
-                                  <button onClick={() => addProductListItem(field, utype)}
-                                    className="flex items-center gap-1 text-xs text-[#003B5C] font-bold hover:underline">
-                                    <Plus size={14}/> Нэмэх
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )
-                        ))}
+                        <ProductTermsEditor product={editingProduct} onChange={setEditingProduct} />
                         <div className="flex gap-4 pt-2">
                           <button onClick={async () => {
                             setCmsSaving(true);
@@ -1936,7 +1911,12 @@ const AdminPanel = ({ user, token, onLogout }) => {
                   <div className="bg-white rounded-2xl border shadow-sm p-8 space-y-6 max-w-2xl">
                     <h3 className="font-bold text-lg text-[#003B5C] border-b pb-3">🧮 Тооцоолуурын тохиргоо</h3>
                     <p className="text-xs text-gray-400">Зээл болон итгэлцлийн тооцоолуурын параметрүүд. Хадгалсны дараа вэбсайт дээр автоматаар шинэчлэгдэнэ.</p>
-                    {Object.entries(siteConfig.rates || {}).map(([key, obj]) => (
+                    {cmsConfigStatus !== 'ready' && <p role="status" className="text-sm text-amber-800">
+                      {cmsConfigStatus === 'error' ? 'Тохиргоог ачаалж чадсангүй. Хадгалалт хаалттай.' : 'Тохиргоог ачаалж байна…'}
+                      {cmsConfigStatus === 'error' && <button type="button" onClick={fetchCMSData} className="ml-2 underline font-bold">Дахин ачаалах</button>}
+                    </p>}
+                    <fieldset disabled={cmsConfigStatus !== 'ready' || cmsSaving} className="space-y-6 disabled:opacity-60">
+                    {Object.entries(siteConfig.rates || {}).filter(([key]) => key !== LOAN_APR_CONFIG_KEY).map(([key, obj]) => (
                       <div key={key} className="flex items-center gap-4">
                         <label className="w-64 text-sm text-gray-600 font-medium shrink-0">{obj.label}</label>
                         <input type="number" step="0.1" value={configEdits[key] ?? obj.value ?? ''}
@@ -1944,7 +1924,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
                           className="flex-1 p-3 border rounded-xl text-sm font-bold bg-slate-50 focus:outline-none focus:border-[#003B5C]"/>
                       </div>
                     ))}
-                    <button onClick={() => saveBulkConfig('rates')} disabled={cmsSaving}
+                    <LoanAprSettingsEditor value={configEdits[LOAN_APR_CONFIG_KEY]}
+                      onChange={value => setConfigEdits(previous => ({ ...previous, [LOAN_APR_CONFIG_KEY]: value }))} />
+                    </fieldset>
+                    <button onClick={() => saveBulkConfig('rates')} disabled={cmsSaving || cmsConfigStatus !== 'ready'}
                       className="bg-[#003B5C] text-white px-8 py-3 rounded-xl font-bold text-sm">
                       {cmsSaving ? 'Хадгалж байна...' : 'Хадгалах'}
                     </button>

@@ -27,7 +27,7 @@ const ShareholderInfo = () => {
             strokeDasharray="289.02" strokeDashoffset="0" strokeLinecap="round" className="transition-all duration-1000 ease-out"/>
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center animate-fade-in">
-          <span className="text-5xl md:text-6xl font-display font-bold text-white drop-shadow-lg tracking-tighter">
+          <span className="text-5xl md:text-6xl font-display font-bold text-[#062842] drop-shadow-lg tracking-tighter">
             {cfg.shareholder_percent}<span className="text-3xl text-[#D4AF37]">%</span>
           </span>
           <span className="text-[10px] md:text-xs text-[#D4AF37] uppercase tracking-[0.3em] mt-2 font-bold border-t border-[#D4AF37]/50 pt-2 px-4">Эзэмшил</span>
@@ -35,9 +35,9 @@ const ShareholderInfo = () => {
       </div>
       <div className="max-w-4xl text-center space-y-8 animate-fade-in-up z-10 px-4">
         <div className="space-y-2">
-          <h3 className="text-white/60 text-sm uppercase tracking-[0.2em] font-sans">Хувьцаа эзэмшигч</h3>
-          <h1 className="text-4xl md:text-6xl font-display font-bold text-white leading-tight">
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D4AF37] via-[#F4E285] to-[#D4AF37]">{cfg.shareholder_name}</span>
+          <h3 className="text-slate-500 text-sm uppercase tracking-[0.2em] font-sans">Хувьцаа эзэмшигч</h3>
+          <h1 className="text-4xl md:text-6xl font-display font-bold text-[#062842] leading-tight">
+            <span className="text-[#062842]">{cfg.shareholder_name}</span>
           </h1>
         </div>
         <div className="flex items-center justify-center gap-4 opacity-50">
@@ -45,7 +45,7 @@ const ShareholderInfo = () => {
           <div className="w-2 h-2 rotate-45 border border-[#D4AF37]"></div>
           <div className="w-12 h-[1px] bg-gradient-to-l from-transparent to-[#D4AF37]"></div>
         </div>
-        <p className="text-blue-100/80 font-sans leading-relaxed text-lg md:text-xl max-w-2xl mx-auto font-light">
+        <p className="text-slate-600 font-sans leading-relaxed text-lg md:text-xl max-w-2xl mx-auto font-normal">
           {cfg.shareholder_description}
         </p>
       </div>

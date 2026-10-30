@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { TrendingUp, ArrowLeft, PiggyBank, Coins, Info, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 
 const TrustCalculator = ({ onBack }) => {
@@ -11,9 +11,6 @@ const TrustCalculator = ({ onBack }) => {
   const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com';
   const [rate, setRate] = useState(1.8);
 
-  const [result, setResult] = useState(null);
-  const [chartData, setChartData] = useState([]);
-  const [schedule, setSchedule] = useState([]); // Дэлгэрэнгүй хуваарь
   const [showSchedule, setShowSchedule] = useState(false); // Хуваарь харагдах эсэх
 
   // --- CONFIG FETCH ---
@@ -22,14 +19,10 @@ const TrustCalculator = ({ onBack }) => {
       .then(r => r.json())
       .then(d => { if (d.trust_rate) setRate(parseFloat(d.trust_rate)); })
       .catch(() => {});
-  }, []);
+  }, [API_URL]);
 
   // --- ТОЙМ ТООЦООЛОЛ ---
-  useEffect(() => {
-    calculateTrust();
-  }, [initialAmount, monthlyContribution, duration, startDate, rate]);
-
-  const calculateTrust = () => {
+  const { result, chartData, schedule } = useMemo(() => {
     const principal = parseFloat(initialAmount.toString().replace(/,/g, '')) || 0;
     const monthlyAdd = parseFloat(monthlyContribution.toString().replace(/,/g, '')) || 0;
 
@@ -80,16 +73,14 @@ const TrustCalculator = ({ onBack }) => {
     const netInterest = grossInterest - tax; // Гарт олгох хүү
     const netBalance = totalInvested + netInterest; // Гарт олгох нийт мөнгө
 
-    setResult({
+    return { result: {
         totalInvested,
         grossInterest,
         tax,
         netInterest,
         netBalance
-    });
-    setChartData(history);
-    setSchedule(tempSchedule);
-  };
+    }, chartData: history, schedule: tempSchedule };
+  }, [initialAmount, monthlyContribution, duration, startDate, rate]);
 
   // --- HELPER ---
   const handleMoneyInput = (val, setter) => {
@@ -107,27 +98,21 @@ const TrustCalculator = ({ onBack }) => {
   };
 
   return (
-    <div className="min-h-screen relative font-sans text-slate-800 pb-20">
+    <div className="sc-public-page min-h-screen relative font-sans text-slate-800 pb-20 bg-[#f7f8f6]">
       
       {/* 1. BACKGROUND */}
-      <div className="absolute inset-0 z-0">
-          <img 
-            src="https://images.unsplash.com/photo-1623227413718-44243c3d52d9?ixlib=rb-1.2.1&auto=format&fit=crop&w=1920&q=80" 
-            alt="Investment Background" 
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-[#003B5C]/85 backdrop-blur-sm"></div>
-      </div>
+
 
       {/* 2. HEADER */}
       <div className="relative z-10 pt-32 pb-10 px-6 max-w-6xl mx-auto">
+        <button type="button" onClick={onBack} className="mb-6 inline-flex items-center gap-2 text-sm text-slate-600 hover:text-[#062842]"><ArrowLeft size={16} /> Нүүр хуудас</button>
         
         {/* ❌ ЭНД БАЙСАН "БУЦАХ" ТОВЧИЙГ УСТГАЛАА */}
 
-        <h1 className="text-3xl md:text-5xl font-display font-bold text-white mb-4 flex items-center gap-4">
+        <h1 className="text-3xl md:text-5xl font-display font-bold text-[#062842] mb-4 flex items-center gap-4 flex-wrap">
            <TrendingUp className="text-[#D4AF37]" size={40}/> Итгэлцлийн тооцоолуур
         </h1>
-        <p className="text-blue-100 max-w-2xl font-light text-lg">
+        <p className="text-slate-600 max-w-2xl text-base leading-7">
             Таны мөнгө сар бүр хэрхэн өсөхийг тооцоолж үзээрэй.
         </p>
       </div>
@@ -138,7 +123,7 @@ const TrustCalculator = ({ onBack }) => {
             
             {/* LEFT: INPUTS */}
             <div className="w-full lg:w-1/3 space-y-6">
-                <div className="bg-white/95 backdrop-blur rounded-2xl shadow-xl p-6 border border-white/20">
+                <div className="bg-white rounded-2xl shadow-sm p-6 border border-slate-200">
                     <h3 className="font-display font-bold text-lg mb-6 text-[#003B5C] border-b border-gray-100 pb-4">
                         Хөрөнгө оруулалт
                     </h3>
@@ -146,7 +131,7 @@ const TrustCalculator = ({ onBack }) => {
                     <div className="space-y-6">
                         {/* Анхны дүн */}
                         <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
+                            <label className="block text-sm font-medium text-gray-500 mb-2">
                                 Анх байршуулах дүн (₮)
                             </label>
                             <input 
@@ -159,7 +144,7 @@ const TrustCalculator = ({ onBack }) => {
 
                         {/* Сар бүр нэмэх */}
                         <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-[#007A3D] mb-2 flex items-center gap-2">
+                            <label className="block text-sm font-medium text-[#007A3D] mb-2 flex items-center gap-2">
                                 <Coins size={14} /> Сар бүр нэмэх (Сонголттой)
                             </label>
                             <input 
@@ -172,7 +157,7 @@ const TrustCalculator = ({ onBack }) => {
 
                         {/* Хугацаа */}
                         <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 flex items-center gap-2">
+                            <label className="block text-sm font-medium text-gray-500 mb-2 flex items-center gap-2">
                                 <Calendar size={14} /> Хугацаа (Сар)
                             </label>
                             <div className="grid grid-cols-2 gap-4">
@@ -193,7 +178,7 @@ const TrustCalculator = ({ onBack }) => {
 
                         {/* Огноо */}
                         <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
+                            <label className="block text-sm font-medium text-gray-500 mb-2">
                                 Эхлэх огноо
                             </label>
                             <input 
@@ -225,7 +210,7 @@ const TrustCalculator = ({ onBack }) => {
             <div className="w-full lg:w-2/3 space-y-6">
                 
                 {/* 1. RESULTS SUMMARY */}
-                <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+                <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                     <div className="bg-[#003B5C] p-6 text-white flex justify-between items-center">
                         <div>
                             <p className="text-blue-200 text-xs uppercase tracking-wider mb-1">Нийт хүлээж авах дүн</p>
@@ -253,7 +238,7 @@ const TrustCalculator = ({ onBack }) => {
                     <div className="px-6 pb-6">
                         <button 
                             onClick={() => setShowSchedule(!showSchedule)}
-                            className="w-full py-3 bg-slate-50 hover:bg-slate-100 border border-gray-200 rounded-xl text-[#003B5C] font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                            className="w-full py-3 bg-slate-50 hover:bg-slate-100 border border-gray-200 rounded-xl text-[#003B5C] font-bold text-sm flex items-center justify-center gap-2 transition-all"
                         >
                             {showSchedule ? 'Хуваарь хаах' : 'Өсөлтийн хуваарь харах'}
                             {showSchedule ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
@@ -274,7 +259,7 @@ const TrustCalculator = ({ onBack }) => {
                 )}
 
                 {/* 2. CUSTOM BAR CHART */}
-                <div className="bg-white/95 backdrop-blur rounded-2xl shadow-xl p-6 md:p-8 border border-white/20">
+                <div className="bg-white rounded-2xl shadow-sm p-6 md:p-8 border border-slate-200">
                      <div className="flex justify-between items-center mb-8">
                         <h3 className="font-display font-bold text-sm uppercase tracking-widest text-[#003B5C]">
                             Өсөлтийн график ({duration} сар)
@@ -320,7 +305,7 @@ const TrustCalculator = ({ onBack }) => {
       {/* 4. SCHEDULE TABLE (TOGGLE) */}
       {showSchedule && schedule.length > 0 && (
           <div className="relative z-10 max-w-6xl mx-auto px-4 md:px-6 mt-8 animate-fade-in-up pb-20">
-              <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+              <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
                   <div className="bg-slate-50 p-6 border-b border-gray-100 flex justify-between items-center">
                       <h3 className="font-display font-bold text-lg text-[#003B5C]">Өсөлтийн дэлгэрэнгүй хуваарь</h3>
                       <button onClick={() => setShowSchedule(false)} className="text-gray-400 hover:text-red-500 font-bold text-xs uppercase">Хаах</button>

@@ -13,33 +13,39 @@ const BlogCardSkeleton = () => (
     </div>
 );
 
-const BlogList = ({ onBack, limit }) => {
+const BlogList = ({ onBack, limit, embedded = false }) => {
     const [blogs, setBlogs] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [failed, setFailed] = useState(false);
+    const [retry, setRetry] = useState(0);
+    const containerClass = embedded ? 'w-full' : 'w-full max-w-7xl mx-auto px-4 pt-24 pb-12';
 
     useEffect(() => {
+        const controller = new AbortController();
         const fetchBlogs = async () => {
             try {
                 setLoading(true);
+                setFailed(false);
                 const baseUrl = window.location.hostname === 'localhost'
                     ? 'http://localhost:5000/api/blogs'
                     : 'https://scm-okjs.onrender.com/api/blogs';
 
                 const finalUrl = limit ? `${baseUrl}?limit=${limit}` : baseUrl;
-                const response = await axios.get(finalUrl);
+                const response = await axios.get(finalUrl, { signal: controller.signal, timeout: 15000 });
                 setBlogs(Array.isArray(response.data) ? response.data : []);
-            } catch (err) {
-                console.error("Алдаа:", err);
+            } catch {
+                if (!controller.signal.aborted) setFailed(true);
             } finally {
-                setLoading(false);
+                if (!controller.signal.aborted) setLoading(false);
             }
         };
         fetchBlogs();
-    }, [limit]);
+        return () => controller.abort();
+    }, [limit, retry]);
 
     if (loading) {
         return (
-            <div className="w-full max-w-7xl mx-auto px-4 pt-24 pb-12">
+            <div className={containerClass}>
                 <p className="sr-only" aria-live="polite">Мэдээ ачааллаж байна...</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                     <BlogCardSkeleton />
@@ -52,7 +58,7 @@ const BlogList = ({ onBack, limit }) => {
 
     return (
         /* 1. Дээд талаас нь зай авч (pt-24) цэсэнд даруулахаас хамгаална */
-        <div className="w-full max-w-7xl mx-auto px-4 pt-24 pb-12">
+        <div className={containerClass}>
             
             {/* 2. Нүүр хуудас руу буцах товчийг цэвэрхэн байрлуулах */}
             {onBack && (
@@ -65,7 +71,8 @@ const BlogList = ({ onBack, limit }) => {
                 </button>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {failed ? <div role="status" className="rounded-xl border border-white/15 px-6 py-8 text-white/80"><p>Мэдээ ачааллах боломжгүй байна.</p><button type="button" onClick={() => setRetry(value => value + 1)} className="mt-4 min-h-11 rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white hover:bg-white/10">Дахин оролдох</button></div> : blogs.length === 0 ? <p role="status" className="border-t border-white/15 py-8 text-sm text-white/70">Одоогоор нийтлэгдсэн мэдээ байхгүй байна.</p> : null}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {blogs.map((blog, idx) => {
                     const sourceColors = {
                         'Ikon': 'bg-[#00A651]',
@@ -75,7 +82,7 @@ const BlogList = ({ onBack, limit }) => {
                     };
 
                     return (
-                        <div key={blog._id || idx} className="bg-[#1a1a1a] border border-white/10 rounded-2xl overflow-hidden hover:border-[#D4AF37]/40 transition-all duration-300 flex flex-col h-full shadow-2xl">
+                        <article key={blog._id || idx} className="group bg-[#0b2336] border border-white/15 rounded-2xl overflow-hidden hover:border-[#D4AF37]/40 transition-all duration-300 flex flex-col h-full">
                             {/* Зургийн хэсэг */}
                             <div className="h-48 overflow-hidden relative">
                                 <img
@@ -90,7 +97,7 @@ const BlogList = ({ onBack, limit }) => {
                             </div>
 
                             {/* Агуулгын хэсэг - Текстийг тод харагдуулах (text-white) */}
-                            <div className="p-6 flex flex-col flex-grow bg-[#1a1a1a]">
+                            <div className="p-6 flex flex-col flex-grow">
                                 <span className="text-[#D4AF37] text-[10px] font-bold uppercase mb-2">
                                     {blog.pubDate ? new Date(blog.pubDate).toLocaleDateString('mn-MN') : 'Саяхан'}
                                 </span>
@@ -114,7 +121,7 @@ const BlogList = ({ onBack, limit }) => {
                                     Дэлгэрэнгүй унших <span className="ml-1">↗</span>
                                 </a>
                             </div>
-                        </div>
+                        </article>
                     );
                 })}
             </div>

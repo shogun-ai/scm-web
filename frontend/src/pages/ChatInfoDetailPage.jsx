@@ -6,7 +6,7 @@ const ChatInfoDetailPage = () => {
     const { selectedItem, navigateTo } = useAppContext();
     const { product, section, audience } = selectedItem;
 
-    useEffect(() => window.scrollTo(0, 0), []);
+    useEffect(() => { window.scrollTo(0, 0); }, []);
     const isDocuments = section === 'documents';
     const field = isDocuments ? 'requirements' : 'conditions';
     const title = isDocuments ? 'Бүрдүүлэх баримт бичиг' : 'Үйлчилгээний нөхцөл';
@@ -34,7 +34,7 @@ const ChatInfoDetailPage = () => {
       .filter(item => item.groups.length);
 
     return (
-        <div className="min-h-screen bg-slate-50 pb-14 text-slate-800">
+        <div className="sc-public-page min-h-screen bg-[#f7f8f6] pt-20 pb-14 text-slate-800">
             <div className="relative h-56 bg-cover bg-center" style={{ backgroundImage: `url(${headerBg})` }}>
                 <div className="absolute inset-0 bg-[#003B5C]/75"></div>
                 <button onClick={() => navigateTo('home')} className="absolute left-4 top-5 z-10 rounded-full bg-white/15 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm">Буцах</button>

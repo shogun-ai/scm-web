@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Briefcase } from 'lucide-react';
 import { API_URL, PRODUCT_KEY_MAP } from '../data/constants';
 import { productsData } from '../data/products';
+import { hasProductTerms } from '../utils/productTerms.mjs';
 
 const hasBrokenEncoding = (value = '') => /[ÐÑÒÓ]|â|�/.test(String(value));
 
@@ -69,8 +70,8 @@ export function useCmsData() {
             headerImage: db.headerImageUrl ? db.headerImageUrl : p.headerImage,
             ...(db.individual?.conditions?.length > 0 ? { individual: db.individual } : {}),
             ...(db.organization?.conditions?.length > 0 ? { organization: db.organization } : {}),
-            ...(db.purchase?.individual?.conditions?.length > 0 ? { purchase: db.purchase } : {}),
-            ...(db.collateral?.individual?.conditions?.length > 0 ? { collateral: db.collateral } : {}),
+            ...(hasProductTerms(db.purchase) ? { purchase: db.purchase } : {}),
+            ...(hasProductTerms(db.collateral) ? { collateral: db.collateral } : {}),
           };
         });
         // DB-д байгаа гэхдээ productsData-д байхгүй шинэ бүтээгдэхүүнүүдийг нэмэх

@@ -20,6 +20,7 @@ import Policy from './models/Policy.js';
 import SiteConfig from './models/SiteConfig.js';
 import SafetyNoticeConfig from './models/SafetyNoticeConfig.js';
 import { isValidHeroSliderInterval } from '../shared/heroSliderConfig.js';
+import { isValidLoanAprConfig, LOAN_APR_CONFIG_KEY } from '../shared/loanAprConfig.js';
 import { createSafetyNoticeGuard, isSafetyNoticeRequest, readSafetyNotices, saveSafetyNotices, SafetyNoticeError } from './safetyNotices.js';
 import ProductContent from './models/ProductContent.js';
 import TeamMember from './models/TeamMember.js';
@@ -35,6 +36,7 @@ import ZentroTransaction from './models/ZentroTransaction.js';
 import ZentroImportBatch from './models/ZentroImportBatch.js';
 import { createZentroFacebookIntegration } from './zentroFacebook.js';
 import { classifyTransaction as classifyStatementTransaction, DEFAULT_INCOME_WEIGHTS } from '../shared/statementWorkbenchUtils.js';
+import { registerLoanIntakeRoutes, canAccessRequest, isRequestManager, isRequestStaff, requestScope, isAllowedLoanRemoteUrl, automationWriteQuery, researchVisibilityStages, assertLinkedResearchAccess } from './loanIntake.js';
 
 const ZentroCodeRuleSchema = new mongoose.Schema({
   keyword: { type: String, required: true, unique: true },
@@ -379,6 +381,8 @@ const LoanRequestSchema = new mongoose.Schema({
     lastname: String, firstname: String, regNo: String, phone: String, email: String,
     address: String, status: { type: String, default: 'pending' },
     applicationReference: { type: String, index: true, sparse: true },
+    intakeVersion: { type: String, immutable: true },
+    workflowRevision: { type: Number, default: 0 },
     // Байгууллага
     orgName: String, orgRegNo: String, legalForm: String, contactName: String, contactPosition: String, contactPhone: String, orgAddress: String,
     purpose: String, repaymentSource: String,
@@ -391,7 +395,7 @@ const LoanRequestSchema = new mongoose.Schema({
     selfieUrl: String,
     fileNames: [String],
     fileDetails: [{
-        fieldName: String, fileName: String, fileUrl: String, mimeType: String, size: Number
+        fieldName: String, fileName: String, fileUrl: String, mimeType: String, size: Number, publicId: String, deliveryType: String
     }],
     // Дэлгэрэнгүй хүсэлтийн мэдээлэл (Application form data)
     applicationData: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -1781,7 +1785,7 @@ const getCommitteeDecisionAction = (nextStatus, currentStatus) => {
     if (nextStatus === 'approved') return 'Зөвшөөрөх';
     if (nextStatus === 'rejected') return 'Татгалзах';
     if (nextStatus === 'resolved') return 'Нөхцөлтэй зөвшөөрөх';
-    if (nextStatus === 'committee' && ['approved', 'rejected', 'resolved', 'disbursed'].includes(currentStatus)) {
+    if (nextStatus === 'committee' && ['approved', 'rejected', 'resolved', 'closed', 'disbursed'].includes(currentStatus)) {
         return 'Дахин шийдэх (цуцлах)';
     }
     return null;
@@ -3212,6 +3216,28 @@ app.post('/api/auth/2fa/verify', authenticateUser, async (req, res) => {
 // ðŸ“„ LOAN & TRUST & LOG ROUTES
 // ============================================================
 
+// Quick requests reuse existing employee tools, with assignment enforced server-side.
+app.use('/api/loans/:id', (req, res, next) => {
+    if (!/^[a-f\d]{24}$/i.test(req.params.id || '')) return next();
+    authenticateUser(req, res, async () => {
+        try {
+            const loan = await LoanRequest.findById(req.params.id).select('intakeVersion assignee status').lean();
+            if (!loan || loan.intakeVersion !== 'quick-v1') return next();
+            if (!canAccessRequest(req.user, loan)) return res.status(404).json({ message: 'Хүсэлт олдсонгүй.' });
+            req.quickLoan = loan;
+            if (!isRequestManager(req.user) && ['approved', 'rejected', 'resolved', 'closed', 'disbursed'].includes(loan.status) && !['GET', 'HEAD'].includes(req.method)) return res.status(403).json({ message: 'Шийдвэрлэсэн хүсэлтийг өөрчлөх эрхгүй байна.' });
+            if (req.method === 'PUT' && req.path === '/') {
+                const allowed = ['applicationData', 'amount', 'term', 'selectedProduct', 'purpose', 'repaymentSource', 'userType', 'lastname', 'firstname', 'regNo', 'phone', 'email', 'address', 'orgName', 'orgRegNo', 'legalForm', 'orgAddress', 'contactName', 'contactPhone', 'contactPosition', 'adminUser'];
+                if (Object.keys(req.body || {}).some(key => !allowed.includes(key))) return res.status(400).json({ message: 'Төлөв, хуваарилалтыг хүсэлтийн жагсаалтаас өөрчилнө үү.' });
+                if (!isRequestManager(req.user) && ['approved', 'rejected', 'resolved', 'closed', 'disbursed'].includes(loan.status)) return res.status(403).json({ message: 'Шийдвэрлэсэн хүсэлтийг өөрчлөх эрхгүй байна.' });
+            }
+            next();
+        } catch { res.status(500).json({ message: 'Хүсэлтийг шалгахад алдаа гарлаа.' }); }
+    });
+});
+
+registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest, User, authenticateUser, committeeAction: getCommitteeDecisionAction, userHasPermission, automate: runPostSubmissionAutomationInBackground, createLog });
+
 app.post('/api/loans', (req, res) => {
     upload(req, res, async (err) => {
         try {
@@ -3362,6 +3388,15 @@ app.post('/api/loans', (req, res) => {
 
             const newLoan = new LoanRequest({
                 ...body,
+                status: 'pending',
+                assignee: { userId: '', name: '' },
+                source: 'web',
+                createdByStaff: false,
+                createdByUser: undefined,
+                intakeVersion: undefined,
+                workflowRevision: 0,
+                approvalNote: undefined,
+                complianceReview: null,
                 lastname: body.lastName || body.lastname || '',
                 firstname: body.firstName || body.firstname || '',
                 amount: parseInt(body.amount) || 0,
@@ -3385,7 +3420,12 @@ app.post('/api/loans', (req, res) => {
     });
 });
 
-app.get('/api/loans', authenticateUser, async (req, res) => { try { res.json(await LoanRequest.find().sort({ createdAt: -1 })); } catch (e) { res.status(500).send("Error"); } });
+app.get('/api/loans', authenticateUser, async (req, res) => {
+    try {
+        const query = isRequestManager(req.user) ? {} : { $or: [{ intakeVersion: { $ne: 'quick-v1' } }, ...(isRequestStaff(req.user) ? [{ intakeVersion: 'quick-v1', ...requestScope(req.user) }] : [])] };
+        res.json(await LoanRequest.find(query).sort({ createdAt: -1 }).limit(500).lean());
+    } catch { res.status(500).json({ message: 'Хүсэлтүүдийг ачаалж чадсангүй.' }); }
+});
 
 app.post('/api/loans/maintenance/prune-before-date', authenticateUser, async (req, res) => {
     try {
@@ -3466,7 +3506,15 @@ app.put('/api/loans/:id', authenticateUser, async (req, res) => {
                 }
             }
         }
-        let updated = await LoanRequest.findByIdAndUpdate(req.params.id, updateData, { new: true });
+        let updated;
+        if (existingLoanForLog.intakeVersion === 'quick-v1') {
+            if (!canAccessRequest(req.user, existingLoanForLog)) return res.status(404).json({ message: 'Хүсэлт олдсонгүй.' });
+            if (updateData.applicationData) updateData.applicationData = { ...updateData.applicationData, consents: existingLoanForLog.applicationData?.consents, intake: existingLoanForLog.applicationData?.intake };
+            const quickQuery = { _id: req.params.id, ...requestScope(req.user), status: existingLoanForLog.status, workflowRevision: existingLoanForLog.workflowRevision ?? { $exists: false } };
+            if (!isRequestManager(req.user) && ['approved', 'rejected', 'resolved', 'closed', 'disbursed'].includes(existingLoanForLog.status)) return res.status(403).json({ message: 'Шийдвэрлэсэн хүсэлтийг өөрчлөх эрхгүй байна.' });
+            updated = await LoanRequest.findOneAndUpdate(quickQuery, { $set: updateData, $inc: { workflowRevision: 1 } }, { new: true });
+            if (!updated) return res.status(409).json({ message: 'Хүсэлт өөрчлөгдсөн байна. Дахин ачаална уу.' });
+        } else updated = await LoanRequest.findByIdAndUpdate(req.params.id, updateData, { new: true });
         if (updated && (
             Object.prototype.hasOwnProperty.call(updateData, 'applicationData') ||
             Object.prototype.hasOwnProperty.call(updateData, 'amount') ||
@@ -3634,7 +3682,7 @@ app.put('/api/onboarding/:id', authenticateUser, async (req, res) => {
     }
 });
 
-app.post('/api/loans/intake-automation/backfill', authenticateUser, async (req, res) => {
+app.post('/api/loans/intake-automation/backfill', authenticateUser, requireAdmin, async (req, res) => {
     try {
         const limit = Math.min(Number(req.body?.limit) || 50, 200);
         const force = Boolean(req.body?.force);
@@ -3708,7 +3756,7 @@ app.post('/api/loans/:id/compliance-review', authenticateUser, async (req, res) 
     }
 });
 
-app.post('/api/loans/ai-loan-officer/backfill', authenticateUser, async (req, res) => {
+app.post('/api/loans/ai-loan-officer/backfill', authenticateUser, requireAdmin, async (req, res) => {
     try {
         const limit = Math.min(Number(req.body?.limit) || 50, 200);
         const force = Boolean(req.body?.force);
@@ -3788,6 +3836,9 @@ app.delete('/api/loans/:id/files/:fileId', authenticateUser, async (req, res) =>
 // Зээлийн судалгааг эх хүсэлтийн ID-аар шүүх
 app.get('/api/loan-research/by-request/:requestId', authenticateUser, async (req, res) => {
     try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.requestId)) return res.status(400).json({ message: 'Хүсэлтийн ID буруу байна.' });
+        const request = await LoanRequest.findById(req.params.requestId).select('intakeVersion assignee').lean();
+        if (request?.intakeVersion === 'quick-v1' && !canAccessRequest(req.user, request)) return res.status(404).json({ message: 'Хүсэлт олдсонгүй.' });
         const research = await LoanResearch.find({ 'borrower.sourceRequestId': req.params.requestId })
             .sort({ createdAt: -1 }).limit(1);
         res.json(research[0] || null);
@@ -4598,12 +4649,14 @@ const normalizeStatementAnalysis = (analysis = {}) => {
 
 // Cloudinary URL-аас файл татах helper — signed download URL (API endpoint) ашиглан auth bypass
 const downloadFromUrl = async (url) => {
-    if (!url || !url.includes('res.cloudinary.com')) {
-        return axios.get(url, { responseType: 'arraybuffer', timeout: 30000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!isAllowedLoanRemoteUrl(url)) {
+        const error = new Error('Зөвшөөрөгдөөгүй файлын холбоос байна.');
+        error.statusCode = 400;
+        throw error;
     }
     // Parse: https://res.cloudinary.com/{cloud}/{type}/upload/v{ver}/{public_id_with_ext}
     const m = url.match(/cloudinary\.com\/[^/]+\/(image|raw|video)\/upload\/(?:v\d+\/)?(.+?)(?:\?|$)/);
-    if (!m) return axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
+    if (!m) return axios.get(url, { responseType: 'arraybuffer', timeout: 30000, maxRedirects: 0, maxContentLength: 50 * 1024 * 1024 });
     const [, resourceType, rawId] = m;
     // Cloudinary public_id does NOT include extension — strip it
     const extMatch = rawId.match(/^(.+)\.([^.]+)$/);
@@ -4615,8 +4668,7 @@ const downloadFromUrl = async (url) => {
         expires_at: Math.floor(Date.now() / 1000) + 600,
         attachment: false,
     });
-    console.log('[DOWNLOAD] Signed URL:', signedUrl.substring(0, 150));
-    return axios.get(signedUrl, { responseType: 'arraybuffer', timeout: 60000 });
+    return axios.get(signedUrl, { responseType: 'arraybuffer', timeout: 60000, maxRedirects: 0, maxContentLength: 50 * 1024 * 1024 });
 };
 
 const remoteFileUrl = (item) => typeof item === 'string' ? item : (item?.fileUrl || item?.url || '');
@@ -5037,7 +5089,7 @@ app.post('/api/statement-workbench/reviews/:id/convert-customer', authenticateUs
 
 app.get('/api/loan-research', authenticateUser, async (req, res) => {
     try {
-        const researches = await LoanResearch.find().sort({ createdAt: -1 }).limit(100);
+        const researches = await LoanResearch.aggregate([...researchVisibilityStages(req.user), { $sort: { createdAt: -1 } }, { $limit: 100 }]);
         res.json(researches);
     } catch (e) {
         res.status(500).json({ message: 'Error' });
@@ -5049,7 +5101,8 @@ app.get('/api/loan-research', authenticateUser, async (req, res) => {
 // ============================================================
 app.post('/api/loan-research/similar', authenticateUser, async (req, res) => {
     try {
-        const { borrower = {}, outputs = {}, limit = 5 } = req.body;
+        const { borrower = {}, outputs = {} } = req.body;
+        const limit = Math.min(20, Math.max(1, parseInt(req.body.limit, 10) || 5));
         const loanText = generateLoanText(borrower, outputs);
         const queryEmbedding = await generateEmbedding(loanText);
 
@@ -5070,6 +5123,7 @@ app.post('/api/loan-research/similar', authenticateUser, async (req, res) => {
                         limit: Number(limit) + 1,
                     }
                 },
+                ...researchVisibilityStages(req.user),
                 {
                     $project: {
                         score: { $meta: 'vectorSearchScore' },
@@ -5093,9 +5147,11 @@ app.post('/api/loan-research/similar', authenticateUser, async (req, res) => {
         } catch (vecErr) {
             // Atlas vector search index байхгүй бол текст хайлтаар fallback
             console.warn('Vector search unavailable, falling back to recent results:', vecErr.message);
-            const recent = await LoanResearch.find(
-                {},
-                {
+            const recent = await LoanResearch.aggregate([
+                ...researchVisibilityStages(req.user),
+                { $sort: { createdAt: -1 } },
+                { $limit: Number(limit) },
+                { $project: {
                     'borrower.borrowerName': 1, 'borrower.borrowerType': 1,
                     'borrower.requestedAmount': 1, 'borrower.termMonths': 1,
                     'borrower.classification': 1, 'borrower.analystDecision': 1,
@@ -5106,8 +5162,8 @@ app.post('/api/loan-research/similar', authenticateUser, async (req, res) => {
                     'outputs.incomeExpense.freeCashFlow': 1,
                     'outputs.collateral.ltvRatio': 1,
                     createdAt: 1,
-                }
-            ).sort({ createdAt: -1 }).limit(Number(limit));
+                } }
+            ]);
             return res.json({ results: recent, source: 'recent', message: 'Vector search index тохируулаагүй тул сүүлийн судалгаанууд харуулж байна.' });
         }
 
@@ -6276,6 +6332,10 @@ async function runPostSubmissionAutomation(loanId) {
         complianceReview: buildComplianceStatus('running', 'Файл уншилт дуусмагц комплианс, хуулийн агент ажиллана.'),
     });
 
+    // Quick cases must not replace data saved by an employee while AI is running.
+    if (loan.intakeVersion === 'quick-v1') loan = await LoanRequest.findById(loanId);
+    const extractionBase = loan.intakeVersion === 'quick-v1' ? structuredClone(loan.toObject().applicationData || {}) : null;
+    const extractionLoanId = loan._id;
     const { applicationData, extracted, errors } = await autoExtractSubmittedFiles(loan);
     applicationData.autoIntake = {
         status: errors.length ? 'completed_with_warnings' : 'completed',
@@ -6285,8 +6345,8 @@ async function runPostSubmissionAutomation(loanId) {
         errors,
     };
 
-    loan = await LoanRequest.findByIdAndUpdate(
-        loan._id,
+    loan = await LoanRequest.findOneAndUpdate(
+        automationWriteQuery(loan._id, extractionBase),
         {
             applicationData,
             lastname: applicationData.borrower?.lastName || loan.lastname,
@@ -6300,6 +6360,10 @@ async function runPostSubmissionAutomation(loanId) {
         { new: true }
     );
 
+    if (!loan) {
+        await LoanRequest.updateOne({ _id: extractionLoanId, 'applicationData.autoIntake.startedAt': extractionBase?.autoIntake?.startedAt }, { $set: { 'applicationData.autoIntake.status': 'completed_with_warnings', 'applicationData.autoIntake.note': 'Ажилтны өөрчлөлтийг хадгалсан тул AI талбар нөхөлтийг дахин ажиллуулна уу.' } });
+        return null;
+    }
     const withLoanAgent = await updateLoanOfficerAssessment(loan);
     return await updateComplianceReview(withLoanAgent || loan);
 }
@@ -6373,6 +6437,14 @@ app.post('/api/loan-research', authenticateUser, (req, res) => {
         try {
             const borrower = parseJsonField(req.body.borrower);
             const outputs = parseJsonField(req.body.outputs);
+            const sourceRequestId = String(borrower.sourceRequestId || '');
+            let linkedRequest = null;
+            if (sourceRequestId) {
+                if (!/^[a-f\d]{24}$/i.test(sourceRequestId)) return res.status(400).json({ message: 'Хүсэлтийн ID буруу байна.' });
+                linkedRequest = await LoanRequest.findById(sourceRequestId).lean();
+                if (!linkedRequest) return res.status(404).json({ message: 'Хүсэлт олдсонгүй.' });
+                assertLinkedResearchAccess(req.user, linkedRequest, true);
+            }
             if (!borrower.borrowerName || !borrower.regNo || !borrower.requestedAmount || !borrower.termMonths) {
                 return res.status(400).json({ message: 'Required fields are missing' });
             }
@@ -6396,11 +6468,10 @@ app.post('/api/loan-research', authenticateUser, (req, res) => {
                 }
             }).save();
 
-            const sourceRequestId = String(borrower.sourceRequestId || '');
             const projectedRevenueRows = safeList(borrower.collaterals)
                 .filter(item => item.collateralType === 'account_revenue' && item.projectedRevenueAnalysis);
             if (sourceRequestId && projectedRevenueRows.length) {
-                const linkedLoan = await LoanRequest.findById(sourceRequestId).lean();
+                const linkedLoan = linkedRequest;
                 if (linkedLoan?.applicationData?.collaterals?.length) {
                     let projectedIndex = 0;
                     const applicationData = {
@@ -6419,10 +6490,15 @@ app.post('/api/loan-research', authenticateUser, (req, res) => {
                             };
                         }),
                     };
-                    await LoanRequest.findByIdAndUpdate(sourceRequestId, { applicationData });
-                    updateLoanOfficerAssessment(sourceRequestId)
-                        .then(updated => updateComplianceReview(updated))
-                        .catch(error => console.error('Research review refresh error:', error.message));
+                    const linkQuery = linkedLoan.intakeVersion === 'quick-v1'
+                        ? { ...automationWriteQuery(sourceRequestId, linkedLoan.applicationData), ...requestScope(req.user), status: linkedLoan.status }
+                        : { _id: sourceRequestId };
+                    const linkedUpdate = await LoanRequest.findOneAndUpdate(linkQuery, { applicationData });
+                    if (linkedUpdate) {
+                        updateLoanOfficerAssessment(sourceRequestId)
+                            .then(updated => updateComplianceReview(updated))
+                            .catch(error => console.error('Research review refresh error:', error.message));
+                    }
                 }
             }
 
@@ -6437,7 +6513,7 @@ app.post('/api/loan-research', authenticateUser, (req, res) => {
                 }
             });
         } catch (e) {
-            res.status(500).json({ message: 'Error' });
+            res.status(e.status || 500).json({ message: e.status ? e.message : 'Судалгаа хадгалахад алдаа гарлаа.' });
         }
     });
 });
@@ -6874,7 +6950,8 @@ const seedProductContent = async () => {
     await Promise.all(defaults.map(d =>
         ProductContent.findOneAndUpdate(
             { productKey: d.productKey },
-            { $set: d },
+            // Existing CMS edits must survive application restarts.
+            { $setOnInsert: d },
             { upsert: true }
         )
     ));
@@ -7023,18 +7100,24 @@ app.get('/api/config/flat', async (req, res) => {
 
 app.put('/api/config/:key', authenticateUser, requireAdmin, async (req, res) => {
     try {
+        if (req.params.key === LOAN_APR_CONFIG_KEY && !isValidLoanAprConfig(req.body?.value)) {
+            return res.status(400).json({ message: 'Зээлийн бодит өртгийн тохиргоо буруу байна.' });
+        }
         if (req.params.key === 'hero_slider_interval' && !isValidHeroSliderInterval(req.body?.value)) {
             return res.status(400).json({ message: 'Слайдын хугацаа 0 (унтраах), эсвэл 3–120 секундийн бүхэл тоо байна.' });
         }
         await SiteConfig.findOneAndUpdate(
             { key: req.params.key },
-            { value: req.body.value, updatedAt: new Date() }
+            { value: req.body.value, updatedAt: new Date(),
+                ...(req.params.key === LOAN_APR_CONFIG_KEY ? { group: 'rates', label: 'Зээлийн бодит өртгийн тохиргоо' } : {}) },
+            { upsert: req.params.key === LOAN_APR_CONFIG_KEY }
         );
         res.json({ message: 'ÐÐ¼Ð¶Ð¸Ð»Ñ‚Ñ‚Ð°Ð¹ ÑˆÐ¸Ð½ÑÑ‡Ð»ÑÐ³Ð´Ð»ÑÑ' });
     } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
 const KEY_GROUP_MAP = {
+    [LOAN_APR_CONFIG_KEY]: 'rates',
     hero_slider_interval: 'hero',
     theme_mode: 'theme', theme_type: 'theme', theme_color: 'theme', theme_image: 'theme',
     theme_image_home: 'theme', theme_image_about: 'theme', theme_image_financials: 'theme',
@@ -7057,6 +7140,9 @@ const KEY_GROUP_MAP = {
 app.post('/api/config/bulk', authenticateUser, requireAdmin, async (req, res) => {
     try {
         const updates = req.body;
+        if (updates && Object.hasOwn(updates, LOAN_APR_CONFIG_KEY) && !isValidLoanAprConfig(updates[LOAN_APR_CONFIG_KEY])) {
+            return res.status(400).json({ message: 'Зээлийн бодит өртгийн тохиргоо буруу байна.' });
+        }
         if (updates && Object.hasOwn(updates, 'hero_slider_interval') && !isValidHeroSliderInterval(updates.hero_slider_interval)) {
             return res.status(400).json({ message: 'Слайдын хугацаа 0 (унтраах), эсвэл 3–120 секундийн бүхэл тоо байна.' });
         }
@@ -7064,6 +7150,7 @@ app.post('/api/config/bulk', authenticateUser, requireAdmin, async (req, res) =>
             const group = KEY_GROUP_MAP[key];
             const update = { value, updatedAt: new Date() };
             if (group) update.group = group;
+            if (key === LOAN_APR_CONFIG_KEY) update.label = 'Зээлийн бодит өртгийн тохиргоо';
             return SiteConfig.findOneAndUpdate({ key }, update, { upsert: true });
         }));
         chatbotCache = null; // refresh cache on next chatbot request

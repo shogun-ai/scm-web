@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+const frontendDirectory = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   plugins: [
@@ -11,9 +14,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@shared': path.resolve(__dirname, '../shared'),
-      'react/jsx-runtime': path.resolve(__dirname, 'node_modules/react/jsx-runtime.js'),
-      react: path.resolve(__dirname, 'node_modules/react'),
+      '@shared': path.resolve(frontendDirectory, '../shared'),
+      'lucide-react': path.resolve(frontendDirectory, 'node_modules/lucide-react'),
+      'react/jsx-runtime': path.resolve(frontendDirectory, 'node_modules/react/jsx-runtime.js'),
+      react: path.resolve(frontendDirectory, 'node_modules/react'),
     },
   },
   build: {

@@ -24,7 +24,7 @@ const BoardMembers = () => {
   }, []);
 
   return (
-    <section className="py-16 w-full bg-[#003B5C]/30 relative">
+    <section className="py-16 w-full bg-slate-50 relative">
       <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1497366216548-37526070297c?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80')] bg-cover bg-center opacity-10 -z-10 mix-blend-overlay"></div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16 justify-items-center">
@@ -38,10 +38,10 @@ const BoardMembers = () => {
                 </div>
               </div>
               <div className="space-y-3">
-                <h3 className="font-display font-bold text-2xl text-white group-hover:text-[#D4AF37] transition-colors duration-300 drop-shadow-md">{member.name}</h3>
-                <p className="text-[#D4AF37] font-sans font-semibold text-sm uppercase tracking-wider px-3 py-1 rounded-full bg-[#003B5C]/60 border border-[#D4AF37]/30 inline-block">{member.role}</p>
+                <h3 className="font-display font-bold text-2xl text-[#062842] group-hover:text-[#D4AF37] transition-colors duration-300 drop-shadow-md">{member.name}</h3>
+                <p className="text-[#D4AF37] font-sans font-semibold text-sm  px-3 py-1 rounded-full bg-slate-100 border border-[#D4AF37]/30 inline-block">{member.role}</p>
                 {member.experience && (
-                  <p className="text-gray-300 text-sm leading-relaxed font-sans font-light opacity-90 max-w-[260px] mx-auto border-t border-white/10 pt-3 mt-3">{member.experience}</p>
+                  <p className="text-slate-600 text-sm leading-relaxed font-sans font-normal opacity-90 max-w-[260px] mx-auto border-t border-slate-200 pt-3 mt-3">{member.experience}</p>
                 )}
               </div>
             </div>

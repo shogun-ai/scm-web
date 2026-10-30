@@ -1,201 +1,136 @@
-import React, { useState, useMemo } from 'react';
-import { ChevronDown, Menu, X } from 'lucide-react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowUpRight, ChevronDown, Menu, X } from 'lucide-react';
 import logoWhite from '../assets/logo-white.png';
 import { useAppContext } from '../context/AppContext';
 
 export default function Navbar() {
-  const { navigateTo, scrollToSection, currentView, scrolled, products } =
-    useAppContext();
-
+  const { navigateTo, scrollToSection, currentView, products } = useAppContext();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState(null);
+  const navRef = useRef(null);
+  const toggleRef = useRef(null);
+  const triggerRefs = useRef({});
+  const items = useMemo(() => [
+    { name: 'Нүүр', id: 'home' },
+    { name: 'Бидний тухай', id: 'about-intro', children: [
+      { name: 'Бид хэн бэ?', id: 'about-intro' },
+      { name: 'Санхүүгийн үзүүлэлтүүд', id: 'financials' },
+      { name: 'Компанийн засаглал', id: 'governance' },
+    ] },
+    { name: 'Бүтээгдэхүүн', id: 'products', children: (Array.isArray(products) ? products : []).map(product => ({ name: product.title, product })) },
+    { name: 'Блог', id: 'blog' },
+    { name: 'Холбоо барих', id: 'contact' },
+  ], [products]);
 
-  const menuItems = useMemo(
-    () => [
-      { name: 'Нүүр', id: 'home' },
-      {
-        name: 'Бидний тухай',
-        id: 'about-intro',
-        submenu: [
-          { name: 'Бид хэн бэ?', type: 'scroll', target: 'about-intro' },
-          {
-            name: 'Санхүүгийн үзүүлэлтүүд',
-            type: 'scroll',
-            target: 'financials',
-          },
-          {
-            name: 'Компанийн засаглал',
-            type: 'scroll',
-            target: 'governance',
-          },
-        ],
-      },
-      {
-        name: 'Бүтээгдэхүүн',
-        id: 'products',
-        submenu: products.map((prod) => ({
-          name: prod.title,
-          type: 'product',
-          data: prod,
-        })),
-      },
-      {
-        name: 'Харилцагч болох',
-        id: 'onboarding',
-        type: 'view',
-        view: 'onboarding',
-      },
-      { name: 'Блог', id: 'blog' },
-      { name: 'Холбоо барих', id: 'contact' },
-    ],
-    [products]
-  );
+  useEffect(() => {
+    const outside = event => {
+      if (!navRef.current?.contains(event.target)) {
+        setOpenDropdown(null);
+        setMobileMenuOpen(false);
+      }
+    };
+    const escape = event => {
+      if (event.key !== 'Escape') return;
+      if (openDropdown) triggerRefs.current[openDropdown]?.focus();
+      else if (mobileMenuOpen) toggleRef.current?.focus();
+      setOpenDropdown(null);
+      setMobileMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [openDropdown, mobileMenuOpen]);
 
-  const handleMenuItemClick = (item) => {
-    if (item.type === 'view') {
-      setMobileMenuOpen(false);
-      navigateTo(item.view);
-      return;
-    }
-    if (!item.submenu) {
-      setMobileMenuOpen(false);
-      scrollToSection(item.id);
-    }
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const desktop = window.matchMedia('(min-width: 1280px)');
+    const containFocus = event => {
+      if (event.key !== 'Tab') return;
+      const controls = Array.from(navRef.current?.querySelectorAll('button, a[href]') || []).filter(element => element.getClientRects().length > 0);
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    const close = () => { if (desktop.matches) setMobileMenuOpen(false); };
+    desktop.addEventListener('change', close);
+    document.addEventListener('keydown', containFocus);
+    return () => {
+      document.body.style.overflow = previous;
+      desktop.removeEventListener('change', close);
+      document.removeEventListener('keydown', containFocus);
+    };
+  }, [mobileMenuOpen]);
+
+  const go = item => {
+    setMobileMenuOpen(false);
+    setOpenDropdown(null);
+    if (item.product) navigateTo('product_detail', item.product);
+    else if (item.view) navigateTo(item.view);
+    else scrollToSection(item.id);
   };
-
+  const focus = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#E6C879]';
   if (currentView === 'shogun_studio') return null;
 
-  const isScrolledOrNotHome = scrolled || currentView !== 'home';
-
   return (
-    <nav
-      className={`fixed top-0 w-full z-50 transition-all duration-300 ${
-        isScrolledOrNotHome
-          ? 'bg-[#062842]/88 backdrop-blur-xl sc-nav-shell py-2.5 border-b border-white/10'
-          : 'bg-transparent py-4 md:py-6'
-      }`}
-    >
-      <div className="max-w-7xl mx-auto px-4 md:px-6 flex justify-between items-center">
-        {/* Logo */}
-        <div
-          className="cursor-pointer z-50 transition-transform hover:scale-105 duration-300"
-          onClick={() => navigateTo('home')}
-        >
-          <img
-            src={logoWhite}
-            alt="Solongo Capital"
-            className={`${
-              isScrolledOrNotHome
-                ? 'h-10 md:h-12 lg:h-14'
-                : 'h-11 md:h-14 lg:h-20'
-            } object-contain transition-all duration-300`}
-          />
+    <nav ref={navRef} aria-label="Үндсэн цэс" className="sc-public-nav fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#062842]/95 text-white backdrop-blur-xl">
+      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between gap-6 px-5 md:px-8">
+        <button type="button" onClick={() => go({ view: 'home' })} aria-label="Нүүр хуудас" className={`shrink-0 rounded-md ${focus}`}>
+          <img src={logoWhite} alt="Solongo Capital" className="h-10 w-auto max-w-[180px] object-contain md:h-11" />
+        </button>
+        <div className="hidden items-center gap-1 xl:flex">
+          {items.map(item => <div key={item.id} className="relative" onBlur={event => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setOpenDropdown(previous => previous === item.id ? null : previous);
+          }}>
+            <button type="button" ref={element => { triggerRefs.current[item.id] = element; }}
+              onClick={() => item.children ? setOpenDropdown(openDropdown === item.id ? null : item.id) : go(item)}
+              onKeyDown={event => {
+                if (item.children && event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  setOpenDropdown(item.id);
+                  requestAnimationFrame(() => document.getElementById(`nav-${item.id}`)?.querySelector('button')?.focus());
+                }
+              }}
+              aria-expanded={item.children ? openDropdown === item.id : undefined}
+              aria-controls={item.children ? `nav-${item.id}` : undefined}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-3 text-sm font-medium text-white/80 transition hover:bg-white/5 hover:text-white ${focus}`}>
+              {item.name}{item.children && <ChevronDown size={15} aria-hidden="true" className={`transition-transform ${openDropdown === item.id ? 'rotate-180' : ''}`} />}
+            </button>
+            {item.children && openDropdown === item.id && <div id={`nav-${item.id}`} className="absolute left-0 top-full mt-3 w-72 rounded-2xl border border-slate-200 bg-white p-2 text-[#062842] shadow-xl">
+              {item.children.map((child, index) => <button type="button" key={index} onClick={() => go(child)} className={`block w-full rounded-xl px-4 py-3 text-left text-sm leading-relaxed transition hover:bg-slate-100 ${focus}`}>{child.name}</button>)}
+            </div>}
+          </div>)}
         </div>
-
-        {/* Desktop menu */}
-        <div className="hidden md:flex items-center gap-7">
-          {menuItems.map((item) => (
-            <div
-              key={item.id}
-              className="relative group h-full flex items-center"
-            >
-              <button
-                onClick={() => handleMenuItemClick(item)}
-                className={`flex items-center gap-1 rounded-full px-1 py-4 text-xs font-sans font-bold uppercase tracking-[0.14em] hover:text-[#D4AF37] transition-colors duration-300 ${
-                  isScrolledOrNotHome ? 'text-gray-100' : 'text-white'
-                }`}
-              >
-                {item.name}
-                {item.submenu && (
-                  <ChevronDown
-                    size={12}
-                    className="group-hover:rotate-180 transition-transform duration-300 text-[#D4AF37]/70"
-                  />
-                )}
-              </button>
-
-              {item.submenu && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 pt-6 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-500 transform group-hover:translate-y-0 translate-y-4 w-72 perspective-1000">
-                  <div className="bg-[#051a2a]/88 backdrop-blur-3xl border border-[#D4AF37]/20 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col p-1.5 ring-1 ring-white/5">
-                    <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-black/60 border-t border-l border-[#D4AF37]/20 rotate-45"></div>
-                    {item.submenu.map((subItem, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => {
-                          if (subItem.type === 'scroll') {
-                            scrollToSection(subItem.target);
-                          } else if (subItem.type === 'product') {
-                            navigateTo('product_detail', subItem.data);
-                          }
-                        }}
-                        className="text-left px-5 py-3.5 text-sm text-gray-200 hover:text-white hover:bg-[#D4AF37]/10 rounded-lg transition-all duration-300 font-sans font-medium border-b border-white/5 last:border-0 hover:pl-7 flex items-center group/item"
-                      >
-                        <span className="w-1 h-1 bg-[#D4AF37] rounded-full mr-3 opacity-0 group-hover/item:opacity-100 transition-opacity"></span>
-                        {subItem.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-
-          <button
-            onClick={() => navigateTo('login')}
-            className={`rounded-full px-6 py-2.5 font-sans text-xs font-extrabold uppercase tracking-widest transition-all duration-300 border ${
-              isScrolledOrNotHome
-                ? 'border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#062842]'
-                : 'border-white/70 text-white hover:bg-[#D4AF37] hover:border-[#D4AF37] hover:text-[#062842]'
-            } ml-3`}
-          >
-            Нэвтрэх
-          </button>
+        <div className="hidden shrink-0 items-center gap-4 xl:flex">
+          <button type="button" onClick={() => go({ view: 'login' })} className={`rounded-lg px-2 py-3 text-sm text-white/80 hover:text-white ${focus}`}>Нэвтрэх</button>
+          <button type="button" onClick={() => go({ view: 'loan_request' })} className={`flex items-center gap-2 rounded-full bg-[#E6C879] px-5 py-3 text-sm font-semibold text-[#062842] transition hover:bg-[#F0D997] ${focus}`}>Хүсэлт гаргах <ArrowUpRight size={16} aria-hidden="true" /></button>
         </div>
-
-        {/* Mobile hamburger */}
-        <button
-          className="z-50 grid h-11 w-11 place-items-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur-md transition hover:bg-white/15 md:hidden"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          aria-label={mobileMenuOpen ? 'Цэс хаах' : 'Цэс нээх'}
-          aria-expanded={mobileMenuOpen}
-          aria-controls="mobile-menu"
-        >
+        <button type="button" ref={toggleRef} onClick={() => { setOpenDropdown(null); setMobileMenuOpen(!mobileMenuOpen); }} aria-label={mobileMenuOpen ? 'Цэс хаах' : 'Цэс нээх'} aria-expanded={mobileMenuOpen} aria-controls="mobile-menu" className={`grid h-11 w-11 shrink-0 place-items-center rounded-full border border-white/20 hover:bg-white/10 xl:hidden ${focus}`}>
           {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
       </div>
-
-      {/* Mobile menu overlay */}
-      {mobileMenuOpen && (
-        <div id="mobile-menu" className="absolute top-0 left-0 w-full h-screen bg-[#041621]/96 backdrop-blur-2xl flex flex-col items-center justify-center space-y-7 z-40 px-6">
-          {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() =>
-                item.type === 'view'
-                  ? navigateTo(item.view)
-                  : scrollToSection(item.id)
-              }
-              className="w-full max-w-sm rounded-lg border border-white/10 bg-white/[0.04] px-5 py-4 text-center text-lg text-white font-display font-bold uppercase tracking-widest transition hover:border-[#D4AF37]/50 hover:bg-white/10"
-            >
-              {item.name}
-            </button>
-          ))}
-          <button
-            onClick={() => {
-              navigateTo('login');
-              setMobileMenuOpen(false);
-            }}
-            className="sc-primary-button mt-2 w-full max-w-sm rounded-full px-6 py-4 text-sm font-display font-extrabold uppercase tracking-widest transition"
-          >
-            Нэвтрэх
-          </button>
-          <button
-            onClick={() => setMobileMenuOpen(false)}
-            className="text-sm text-white/55 font-display font-bold uppercase mt-4 tracking-widest"
-          >
-            Хаах
-          </button>
+      {mobileMenuOpen && <div id="mobile-menu" className="max-h-[calc(100dvh-5rem)] overflow-y-auto border-t border-white/10 bg-[#062842] px-5 pb-8 pt-3 xl:hidden">
+        <div className="mx-auto max-w-xl">
+          {items.map(item => <div key={item.id} className="border-b border-white/10 py-2">
+            <button type="button" onClick={() => go(item)} className={`w-full rounded-lg px-3 py-3 text-left text-base font-medium hover:bg-white/5 ${focus}`}>{item.name}</button>
+            {item.children && <div className="mb-2 ml-3 border-l border-white/15 pl-3">
+              {item.children.map((child, index) => <button type="button" key={index} onClick={() => go(child)} className={`block w-full rounded-lg px-3 py-2.5 text-left text-sm leading-relaxed text-white/65 hover:bg-white/5 hover:text-white ${focus}`}>{child.name}</button>)}
+            </div>}
+          </div>)}
+          <button type="button" onClick={() => go({ view: 'loan_request' })} className={`mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-[#E6C879] px-5 py-3.5 font-semibold text-[#062842] ${focus}`}>Хүсэлт гаргах <ArrowUpRight size={18} aria-hidden="true" /></button>
+          <button type="button" onClick={() => go({ view: 'login' })} className={`mt-3 w-full rounded-full px-5 py-3 text-sm text-white/80 hover:bg-white/5 ${focus}`}>Нэвтрэх</button>
         </div>
-      )}
+      </div>}
     </nav>
   );
 }

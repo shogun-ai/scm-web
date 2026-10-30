@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Montserrat';
+  src: url('/fonts/Montserrat-Variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 @layer base {
   :root {
     color-scheme: dark;
@@ -40,6 +48,79 @@
 }
 
 @layer components {
+  .sc-public-page {
+    color-scheme: light;
+    font-weight: 400;
+  }
+
+  .sc-public-page input,
+  .sc-public-page textarea,
+  .sc-public-page select {
+    font-family: inherit;
+  }
+  /* Public homepage surfaces are scoped so admin and application forms keep their theme. */
+  .sc-home {
+    background: #f7f8f6;
+    color: #062842;
+    color-scheme: light;
+  }
+
+  .sc-home section[id],
+  .sc-home [id="about-intro"] {
+    scroll-margin-top: 96px;
+  }
+
+  .sc-home-hero {
+    min-height: clamp(760px, 90svh, 960px);
+    background: #062842;
+    color-scheme: dark;
+  }
+
+  .sc-home .sc-hero-vignette {
+    background: linear-gradient(90deg, #062842 0%, rgba(6, 40, 66, 0.96) 35%, rgba(6, 40, 66, 0.68) 72%, rgba(6, 40, 66, 0.55)),
+      linear-gradient(0deg, #062842, transparent 70%);
+  }
+
+  .sc-hero-title {
+    font-size: clamp(2.4rem, 4.5vw, 4.3rem);
+    overflow-wrap: anywhere;
+  }
+
+  .sc-hero-layout {
+    min-height: clamp(760px, 90svh, 960px);
+  }
+
+  .sc-hero-actions {
+    background: rgba(3, 24, 39, 0.72);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.15);
+  }
+
+  .sc-home .sc-primary-button {
+    background: #e2c56e;
+    box-shadow: none;
+  }
+
+  .sc-home .sc-primary-button:hover {
+    background: #edd68f;
+    transform: none;
+  }
+
+  .sc-home .sc-kicker {
+    letter-spacing: 0.12em;
+  }
+
+  @media (max-width: 1023px) {
+    .sc-hero-layout {
+      gap: 2rem;
+      align-content: center;
+    }
+
+    .sc-hero-actions {
+      max-width: 40rem;
+    }
+  }
+
   .sc-nav-shell {
     box-shadow: 0 18px 55px rgba(1, 13, 24, 0.24);
   }
@@ -101,6 +182,22 @@
 }
 
 @layer utilities {
+  @media (prefers-reduced-motion: reduce) {
+    html, body, #root {
+      scroll-behavior: auto;
+    }
+
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+
+    .sc-card-lift:hover,
+    .sc-primary-button:hover {
+      transform: none;
+    }
+  }
   .animate-fade-in-up {
     animation: sc-fade-in-up 0.85s ease both;
   }

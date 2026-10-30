@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+﻿import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import {
   AlertCircle, BadgeCheck, BarChart2, CheckCircle2, ChevronRight,
@@ -9,12 +9,14 @@ import {
 import LoanResearch from './LoanResearch';
 import LoanApplicationDetail from './LoanApplicationDetail';
 import LoanExposureMonitor from './LoanExposureMonitor';
+import LoanRequestQueue from './LoanRequestQueue';
+import LoanRequestReadiness from './LoanRequestReadiness';
 
 // ─────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────
 const LOS_STEPS = [
-  { key: 'application',  label: 'Аппликэйшн',      icon: FileText    },
+  { key: 'application',  label: 'Хүсэлтүүд',      icon: FileText    },
   { key: 'assessment',   label: 'Зээлийн үнэлгээ',  icon: BarChart2   },
   { key: 'committee',    label: 'Зээлийн хороо',    icon: BadgeCheck  },
   { key: 'disbursement', label: 'Олголт',            icon: CreditCard  },
@@ -30,7 +32,9 @@ const STATUS_META = {
   committee:       { label: 'Зээлийн хороо',          color: 'bg-orange-100 text-orange-700'  },
   approved:        { label: 'Зөвшөөрөгдсөн',        color: 'bg-green-100 text-green-700'    },
   rejected:        { label: 'Татгалзсан',            color: 'bg-red-100 text-red-700'        },
-  resolved:        { label: 'Шийдсэн',              color: 'bg-green-100 text-green-700'    },
+  resolved:        { label: 'Нөхцөлтэй зөвшөөрсөн',              color: 'bg-green-100 text-green-700'    },
+  returned:        { label: 'Буцаасан', color: 'bg-amber-100 text-amber-700' },
+  closed:          { label: 'Хаасан', color: 'bg-slate-100 text-slate-600' },
   disbursed:       { label: 'Зээл олгосон',         color: 'bg-emerald-100 text-emerald-700'},
 };
 
@@ -41,8 +45,10 @@ const NEXT_ACTIONS = {
   rejected: 'Кейс хаагдсан', disbursed: 'Олголт дууссан',
 };
 
-const getCaseReference = (loan = {}) => loan.applicationReference || (loan._id ? `SCM-${String(loan._id).slice(-6).toUpperCase()}` : '');
-const getNextAction = (status) => NEXT_ACTIONS[status] || 'Кейсийг хянах';
+const authHeaders = () => {
+  try { const token = JSON.parse(localStorage.getItem('scm_auth') || '{}').token; return token ? { Authorization: `Bearer ${token}` } : {}; }
+  catch { return {}; }
+};
 
 const PRODUCTS = {
   biz_loan: 'Бизнесийн зээл', car_purchase_loan: 'Автомашин худалдан авах',
@@ -73,12 +79,24 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
   const [applicationView, setApplicationView] = useState('requests');
 
   // Tab 1 state
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [queueItems, setQueueItems] = useState([]);
+  const [queueRefresh, setQueueRefresh] = useState(0);
+  const roles = [user?.role, ...(Array.isArray(user?.roles) ? user.roles : [])];
+  const isManager = roles.some(role => ['admin', 'director'].includes(role));
+  const [permissionMatrix, setPermissionMatrix] = useState(null);
+  const canCommitteeAction = action => roles.includes('admin') || (permissionMatrix !== null && roles.some(role => (permissionMatrix?.[role]?.[`los_committee:${action}`] || (role === 'director' ? 'full' : 'none')) === 'full'));
+  const committeeActions = {
+    approve: canCommitteeAction('Зөвшөөрөх'), conditional: canCommitteeAction('Нөхцөлтэй зөвшөөрөх'),
+    reject: canCommitteeAction('Татгалзах'), revert: canCommitteeAction('Дахин шийдэх (цуцлах)'),
+  };
+  const canUseCommittee = isManager || Object.values(committeeActions).some(Boolean);
+  const workspaceSteps = LOS_STEPS.filter(step => ['application', 'assessment'].includes(step.key) || (step.key === 'committee' && canUseCommittee) || (step.key === 'disbursement' && isManager));
   const [showNewForm, setShowNewForm] = useState(false);
   const [viewLoan, setViewLoan] = useState(null); // modal-д харуулах зээл
 
   // Tab 2 — research seed
   const [researchSeed, setResearchSeed] = useState(null);
+  const previousRequestId = useRef(null);
 
   // Зээлийн хороо
   const [latestResearch, setLatestResearch] = useState(null);
@@ -96,44 +114,46 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
     toastRef.current = setTimeout(() => setToast(null), 3500);
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    axios.get(`${apiUrl}/api/config/permissions`, { headers: authHeaders(), signal: controller.signal })
+      .then(response => setPermissionMatrix(response.data && typeof response.data === 'object' ? response.data : {}))
+      .catch(() => {});
+    return () => controller.abort();
+  }, [apiUrl]);
+
   // When loan changes, reset downstream state
   useEffect(() => {
     if (!selectedLoan) return;
     setResearchSeed({ ...selectedLoan, seedKey: `${selectedLoan._id}-${Date.now()}` });
     setLatestResearch(null);
-    setApprovalNote('');
-  }, [selectedLoan?._id]);
+    if (previousRequestId.current !== selectedLoan._id) setApprovalNote('');
+    previousRequestId.current = selectedLoan._id;
+  }, [selectedLoan]);
 
   // Fetch latest research when on committee tab
   useEffect(() => {
-    if (activeStep === 'committee' && selectedLoan?._id && !latestResearch) {
-      setLoadingResearch(true);
-      axios.get(`${apiUrl}/api/loan-research/by-request/${selectedLoan._id}`)
-        .then(res => setLatestResearch(res.data))
-        .catch(() => {})
-        .finally(() => setLoadingResearch(false));
-    }
-  }, [activeStep, selectedLoan?._id]);
+    if (activeStep !== 'committee' || !selectedLoan?._id) return;
+    const controller = new AbortController();
+    let mounted = true;
+    setLoadingResearch(true);
+    axios.get(`${apiUrl}/api/loan-research/by-request/${selectedLoan._id}`, { headers: authHeaders(), signal: controller.signal })
+      .then(res => { if (mounted) setLatestResearch(res.data); })
+      .catch(() => {})
+      .finally(() => { if (mounted) setLoadingResearch(false); });
+    return () => { mounted = false; controller.abort(); };
+  }, [activeStep, selectedLoan, apiUrl]);
 
   // ── helpers ──────────────────────────────
   const updateStatus = async (loan, status) => {
     try {
-      const res = await axios.put(`${apiUrl}/api/loans/${loan._id}`, { status });
-      onRequestsChange(requests.map(r => r._id === loan._id ? res.data : r));
+      const res = await axios.patch(`${apiUrl}/api/loan-requests/${loan._id}`, { status }, { headers: authHeaders() });
+      onRequestsChange?.(requests.map(r => r._id === loan._id ? res.data : r));
       setSelectedLoan(res.data);
+      setQueueRefresh(value => value + 1);
       showToast('Статус шинэчлэгдлээ.');
-    } catch { showToast('Статус шинэчлэхэд алдаа гарлаа.', 'error'); }
-  };
-
-  const assignUser = async (loan, userId, userName) => {
-    try {
-      const res = await axios.put(`${apiUrl}/api/loans/${loan._id}`, {
-        assignee: { userId, name: userName },
-        status: loan.status === 'pending' || loan.status === 'created' ? 'assigned' : loan.status,
-      });
-      onRequestsChange(requests.map(r => r._id === loan._id ? res.data : r));
-      if (selectedLoan?._id === loan._id) setSelectedLoan(res.data);
-    } catch { showToast('Хариуцагч хуваарилахад алдаа гарлаа.', 'error'); }
+      return true;
+    } catch (error) { showToast(error.response?.data?.message || 'Статус шинэчлэхэд алдаа гарлаа.', 'error'); return false; }
   };
 
   const selectAndGo = (loan, step) => {
@@ -144,26 +164,28 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
 
   // ── Committee decision ────────────────────
   const makeDecision = async (decision) => {
-    if (!selectedLoan) return;
+    if (!selectedLoan || !committeeActions[decision]) return;
     setSavingDecision(true);
     const status = decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'resolved';
     try {
-      const res = await axios.put(`${apiUrl}/api/loans/${selectedLoan._id}`, { status, approvalNote });
-      onRequestsChange(requests.map(r => r._id === res.data._id ? res.data : r));
+      const res = await axios.patch(`${apiUrl}/api/loan-requests/${selectedLoan._id}`, { status, note: approvalNote }, { headers: authHeaders() });
+      onRequestsChange?.(requests.map(r => r._id === res.data._id ? res.data : r));
       setSelectedLoan(res.data);
+      setQueueRefresh(value => value + 1);
       const msg = status === 'approved' ? 'Зээл зөвшөөрөгдлөө.' : status === 'rejected' ? 'Зээл татгалзагдлаа.' : 'Нөхцөлтэй шийдвэр хадгалагдлаа.';
       showToast(msg);
-      if (status === 'approved') setActiveStep('disbursement');
-    } catch { showToast('Шийдвэр хадгалахад алдаа гарлаа.', 'error'); }
+      if (status === 'approved' && isManager) setActiveStep('disbursement');
+    } catch (error) { showToast(error.response?.data?.message || 'Шийдвэр хадгалахад алдаа гарлаа.', 'error'); }
     finally { setSavingDecision(false); }
   };
 
   const revertDecision = async (reason) => {
-    if (!selectedLoan) return;
+    if (!selectedLoan || !committeeActions.revert) return;
     try {
-      const res = await axios.put(`${apiUrl}/api/loans/${selectedLoan._id}`, { status: 'committee', approvalNote: reason });
-      onRequestsChange(requests.map(r => r._id === res.data._id ? res.data : r));
+      const res = await axios.patch(`${apiUrl}/api/loan-requests/${selectedLoan._id}`, { status: 'committee', note: reason }, { headers: authHeaders() });
+      onRequestsChange?.(requests.map(r => r._id === res.data._id ? res.data : r));
       setSelectedLoan(res.data);
+      setQueueRefresh(value => value + 1);
       showToast('Шийдвэр цуцлагдлаа. Хүсэлт хороонд буцаалаа.');
     } catch { showToast('Алдаа гарлаа.', 'error'); }
   };
@@ -171,9 +193,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
   // ─────────────────────────────────────────
   // FILTERED REQUESTS
   // ─────────────────────────────────────────
-  const filteredRequests = statusFilter === 'all'
-    ? requests
-    : requests.filter(r => r.status === statusFilter);
+
 
   // ─────────────────────────────────────────
   // RENDER
@@ -192,7 +212,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#007A3D]">Зээлийн үйл явц</p>
-          <h2 className="text-2xl font-bold text-[#003B5C]">Loan Origination System</h2>
+          <h2 className="text-2xl font-bold text-[#003B5C]">Зээлийн хүсэлтийн ажлын орчин</h2>
         </div>
         {selectedLoan && (
           <div className="flex items-center gap-2 bg-white border rounded-xl px-4 py-2 text-sm">
@@ -208,10 +228,10 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
       {/* Step nav */}
       <div className="bg-white border rounded-2xl overflow-hidden">
         <div className="flex overflow-x-auto">
-          {LOS_STEPS.map((step, idx) => {
+          {workspaceSteps.map((step, idx) => {
             const Icon = step.icon;
             const isActive = activeStep === step.key;
-            const isDone = selectedLoan && LOS_STEPS.findIndex(s => s.key === activeStep) > idx;
+            const isDone = selectedLoan && workspaceSteps.findIndex(s => s.key === activeStep) > idx;
             return (
               <button
                 key={step.key}
@@ -239,6 +259,8 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
         </div>
       </div>
 
+      {selectedLoan && activeStep !== 'application' && <LoanRequestReadiness loan={selectedLoan} apiUrl={apiUrl} user={user} onUpdated={setSelectedLoan} />}
+
       {/* ══════════════════════════════════════
           TAB 1 — АППЛИКЭЙШН
       ══════════════════════════════════════ */}
@@ -253,7 +275,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                   : 'text-slate-500 hover:bg-slate-50'
               }`}
             >
-              Loan requests
+              Зээлийн хүсэлтүүд
             </button>
             <button
               onClick={() => {
@@ -266,7 +288,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                   : 'text-slate-500 hover:bg-slate-50'
               }`}
             >
-              Exposure monitor
+              Зээлийн эрсдэлийн хяналт
             </button>
           </div>
 
@@ -276,24 +298,6 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
             <>
           {/* Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-2 flex-wrap">
-              {[
-                { value: 'all', label: 'Бүгд' },
-                { value: 'pending', label: 'Онлайн' },
-                { value: 'created', label: 'Ажилтан үүсгэсэн' },
-                { value: 'assigned', label: 'Хариуцагч томилогдсон' },
-                { value: 'approved', label: 'Зөвшөөрөгдсөн' },
-                { value: 'rejected', label: 'Татгалзсан' },
-                { value: 'disbursed', label: 'Олгосон' },
-              ].map(f => (
-                <button key={f.value} onClick={() => setStatusFilter(f.value)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                    statusFilter === f.value ? 'bg-[#003B5C] text-white border-[#003B5C]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#003B5C]'
-                  }`}>
-                  {f.label}
-                </button>
-              ))}
-            </div>
             <button onClick={() => setShowNewForm(v => !v)}
               className="inline-flex items-center gap-2 bg-[#003B5C] text-white px-4 py-2 rounded-lg font-bold text-sm">
               <Plus size={15} /> Шинэ хүсэлт үүсгэх
@@ -312,9 +316,8 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                 apiUrl={apiUrl}
                 createMode={true}
                 onCancel={() => setShowNewForm(false)}
-                onCreated={async (newLoan) => {
-                  const res = await axios.get(`${apiUrl}/api/loans`);
-                  onRequestsChange(res.data || []);
+                onCreated={(newLoan) => {
+                  setQueueRefresh(value => value + 1);
                   setShowNewForm(false);
                   setSelectedLoan(newLoan);
                 }}
@@ -322,77 +325,15 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
             </div>
           )}
 
-          {/* Table */}
-          <div className="bg-white border rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[860px]">
-                <thead className="bg-slate-50 border-b text-[11px] font-bold text-slate-500 uppercase">
-                  <tr>
-                    <th className="p-3 text-left">Огноо</th>
-                    <th className="p-3 text-left">Нэр</th>
-                    <th className="p-3 text-left">Зээлийн төрөл</th>
-                    <th className="p-3 text-right">Дүн</th>
-                    <th className="p-3 text-center">Статус</th>
-                    <th className="p-3 text-left">Хариуцагч</th>
-                    <th className="p-3 text-center">Үйлдэл</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filteredRequests.map(req => (
-                    <tr key={req._id} className={`hover:bg-slate-50 cursor-pointer ${selectedLoan?._id === req._id ? 'bg-blue-50' : ''}`}
-                      onClick={() => setSelectedLoan(req)}>
-                      <td className="p-3 text-slate-500 text-xs">{fmtDate(req.createdAt)}</td>
-                      <td className="p-3 font-semibold text-[#003B5C]">
-                        {borrowerName(req)}
-                        {getCaseReference(req) && <span className="mt-1 block font-mono text-[10px] font-semibold tracking-wide text-slate-400">{getCaseReference(req)}</span>}
-                        {req.source === 'web' && !req.createdByStaff && (
-                          <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">ВЭБ</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-xs">
-                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-bold">
-                          {PRODUCTS[req.selectedProduct] || req.selectedProduct || '-'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right font-bold">{fmt(req.amount)}</td>
-                      <td className="p-3 text-center"><StatusBadge status={req.status} /><span className="mt-1 block text-[10px] font-semibold text-slate-500">{getNextAction(req.status)}</span></td>
-                      <td className="p-3" onClick={e => e.stopPropagation()}>
-                        <select
-                          value={req.assignee?.userId || ''}
-                          onChange={e => {
-                            const u = usersList.find(u => u._id === e.target.value);
-                            if (u) assignUser(req, u._id, u.name);
-                          }}
-                          className="text-xs border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-[#003B5C] max-w-[140px]"
-                        >
-                          <option value="">— сонгох —</option>
-                          {usersList.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
-                        </select>
-                        {req.assignee?.name && (
-                          <span className="block text-[11px] text-[#003B5C] font-bold mt-0.5">{req.assignee.name}</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => setViewLoan(req)}
-                            className="p-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200" title="Харилцагчийн дэлгэрэнгүй">
-                            <Eye size={14} />
-                          </button>
-                          <button onClick={() => selectAndGo(req, 'assessment')}
-                            className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100" title="Зээлийн үнэлгээ">
-                            <BarChart2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {!filteredRequests.length && (
-                    <tr><td colSpan={7} className="p-10 text-center text-slate-400">Хүсэлт байхгүй байна.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <LoanRequestQueue
+            apiUrl={apiUrl}
+            user={user}
+            usersList={usersList}
+            onItemsChange={setQueueItems}
+            refreshKey={queueRefresh}
+            onOpen={(request) => { setSelectedLoan(request); setViewLoan(request); }}
+            onResearch={(request) => selectAndGo(request, 'assessment')}
+          />
             </>
           )}
         </div>
@@ -419,7 +360,8 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
                 apiUrl={apiUrl}
                 user={user}
                 onSaved={(updated) => {
-                  onRequestsChange(requests.map(r => r._id === updated._id ? updated : r));
+                  onRequestsChange?.(requests.map(r => r._id === updated._id ? updated : r));
+                  setQueueRefresh(value => value + 1);
                   setViewLoan(updated);
                   if (selectedLoan?._id === updated._id) setSelectedLoan(updated);
                 }}
@@ -446,16 +388,22 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <LoanHeader loan={selectedLoan} />
-              <button onClick={() => { updateStatus(selectedLoan, 'committee'); setActiveStep('committee'); }}
+              {canUseCommittee && <button onClick={async () => { if (await updateStatus(selectedLoan, 'committee')) setActiveStep('committee'); }}
                 className="inline-flex items-center gap-2 bg-[#003B5C] text-white px-4 py-2 rounded-lg font-bold text-sm">
                 <BadgeCheck size={15} /> Зээлийн хороо руу шилжих
-              </button>
+              </button>}
             </div>
             <LoanResearch
               apiUrl={apiUrl}
               prefillRequest={researchSeed}
-              studyRequests={requests.filter(r => ['studying','assessment','assigned'].includes(r.status))}
-              onSelectStudyRequest={(req) => { setSelectedLoan(req); setResearchSeed({ ...req, seedKey: `${req._id}-${Date.now()}` }); }}
+              studyRequests={queueItems.filter(r => ['studying','assessment','assigned','data_collection'].includes(r.status))}
+              onSelectStudyRequest={async (req) => {
+                try {
+                  const response = await axios.get(`${apiUrl}/api/loan-requests/${req._id}`, { headers: authHeaders() });
+                  setSelectedLoan(response.data);
+                  setResearchSeed({ ...response.data, seedKey: `${req._id}-${Date.now()}` });
+                } catch { showToast('Хүсэлтийн дэлгэрэнгүйг ачаалж чадсангүй.', 'error'); }
+              }}
               embeddedMode={true}
             />
           </div>
@@ -465,7 +413,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
       {/* ══════════════════════════════════════
           TAB 3 — ЗЭЭЛИЙН ХОРОО
       ══════════════════════════════════════ */}
-      {activeStep === 'committee' && (
+      {canUseCommittee && activeStep === 'committee' && (
         !selectedLoan ? (
           <NoSelection onBack={() => setActiveStep('application')} />
         ) : (
@@ -478,6 +426,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
             savingDecision={savingDecision}
             makeDecision={makeDecision}
             revertDecision={revertDecision}
+            committeeActions={committeeActions}
             onGoAssessment={() => setActiveStep('assessment')}
           />
         )
@@ -486,7 +435,7 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
       {/* ══════════════════════════════════════
           TAB 6 — ОЛГОЛТ
       ══════════════════════════════════════ */}
-      {activeStep === 'disbursement' && (
+      {isManager && activeStep === 'disbursement' && (
         !selectedLoan ? (
           <NoSelection onBack={() => setActiveStep('application')} />
         ) : (
@@ -539,10 +488,10 @@ const LoanOrigination = ({ apiUrl, user, requests = [], onRequestsChange, usersL
       )}
       {/* ── Universal prev/next step navigation ── */}
       {selectedLoan && (() => {
-        const currentIdx = LOS_STEPS.findIndex(s => s.key === activeStep);
+        const currentIdx = workspaceSteps.findIndex(s => s.key === activeStep);
         if (currentIdx < 0) return null;
-        const prev = LOS_STEPS[currentIdx - 1];
-        const next = LOS_STEPS[currentIdx + 1];
+        const prev = workspaceSteps[currentIdx - 1];
+        const next = workspaceSteps[currentIdx + 1];
         return (
           <div className="flex items-center justify-between pt-2">
             {prev ? (
@@ -596,7 +545,7 @@ const ANALYST_DECISION_LABELS = {
   reject: 'Татгалзах',
 };
 
-const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, setApprovalNote, savingDecision, makeDecision, revertDecision, onGoAssessment }) => {
+const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, setApprovalNote, savingDecision, makeDecision, revertDecision, onGoAssessment, committeeActions }) => {
   const nfmt = v => new Intl.NumberFormat('mn-MN').format(Math.round(v || 0));
   const [revertMode, setRevertMode] = useState(false);
   const [revertReason, setRevertReason] = useState('');
@@ -664,13 +613,14 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
   const autoVerdict = passCount >= 4 ? 'approve' : passCount >= 2 ? 'conditional' : 'reject';
   const verdictStyle = { approve: 'bg-green-50 border-green-300 text-green-700', conditional: 'bg-amber-50 border-amber-300 text-amber-700', reject: 'bg-red-50 border-red-300 text-red-700' }[autoVerdict];
 
-  const isDecided = ['approved', 'rejected', 'resolved', 'disbursed'].includes(loan.status);
+  const isDecided = ['approved', 'rejected', 'resolved', 'disbursed', 'closed'].includes(loan.status);
 
   const decidedMeta = {
     approved:  { label: 'Зөвшөөрөгдсөн',      cls: 'bg-green-50 border-green-400 text-green-700',   icon: <ThumbsUp size={20} /> },
     rejected:  { label: 'Татгалзсан',           cls: 'bg-red-50 border-red-400 text-red-700',         icon: <ThumbsDown size={20} /> },
     resolved:  { label: 'Нөхцөлтэй зөвшөөрөв', cls: 'bg-amber-50 border-amber-400 text-amber-700',  icon: <BadgeCheck size={20} /> },
     disbursed: { label: 'Зөвшөөрөгдсөн — Олгогдсон', cls: 'bg-emerald-50 border-emerald-400 text-emerald-700', icon: <ThumbsUp size={20} /> },
+    closed: { label: 'Хүсэлт хаагдсан', cls: 'bg-slate-50 border-slate-300 text-slate-700', icon: <CheckCircle2 size={20} /> },
   }[loan.status] || null;
 
   const handleRevert = async () => {
@@ -1151,7 +1101,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
             </div>
 
             {/* Re-decide — not available after disbursement */}
-            {loan.status !== 'disbursed' && (
+            {loan.status !== 'disbursed' && committeeActions.revert && (
               revertMode ? (
                 <div className="border-2 border-amber-300 bg-amber-50 rounded-2xl p-4 space-y-3">
                   <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Дахин шийдэх шалтгаан</p>
@@ -1202,7 +1152,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
             <div className="grid grid-cols-3 gap-3">
               <button
                 onClick={() => makeDecision('approve')}
-                disabled={savingDecision}
+                disabled={savingDecision || !committeeActions.approve}
                 className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white py-3 rounded-xl font-bold text-sm transition-all"
               >
                 {savingDecision ? <Loader2 size={16} className="animate-spin" /> : <ThumbsUp size={16} />}
@@ -1210,7 +1160,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
               </button>
               <button
                 onClick={() => makeDecision('conditional')}
-                disabled={savingDecision}
+                disabled={savingDecision || !committeeActions.conditional}
                 className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold text-sm transition-all"
               >
                 {savingDecision ? <Loader2 size={16} className="animate-spin" /> : <AlertCircle size={16} />}
@@ -1218,7 +1168,7 @@ const CommitteePanel = ({ loan, latestResearch, loadingResearch, approvalNote, s
               </button>
               <button
                 onClick={() => makeDecision('reject')}
-                disabled={savingDecision}
+                disabled={savingDecision || !committeeActions.reject || !approvalNote.trim()}
                 className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white py-3 rounded-xl font-bold text-sm transition-all"
               >
                 {savingDecision ? <Loader2 size={16} className="animate-spin" /> : <ThumbsDown size={16} />}

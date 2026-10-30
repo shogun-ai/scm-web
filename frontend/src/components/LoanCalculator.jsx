@@ -1,59 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Calculator, ArrowLeft, Banknote, Info, CheckCircle, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
+import { DEFAULT_LOAN_APR_CONFIG, LOAN_APR_CONFIG_KEY, normalizeLoanAprConfig } from '../../../shared/loanAprConfig.js';
+import { calculateAnnuityPayment } from '../../../shared/loanApr.js';
+import { LoanAprFields, LoanAprResult, LoanAprExplanation } from './LoanAprDetails';
 
-const LoanCalculator = ({ onBack }) => {
-  const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com';
-
-  // --- STATE ---
-  const [amount, setAmount] = useState('10000000');
-  const [rate, setRate] = useState(2.5);
-  const [months, setMonths] = useState(12);
-  const [rateMin, setRateMin] = useState(2.5);
-  const [rateMax, setRateMax] = useState(3.5);
-  const [maxTerm, setMaxTerm] = useState(96);
-  const [dti, setDti] = useState(0.6);
-  const [method, setMethod] = useState('equal');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]); // Эхлэх огноо
-  
-  const [result, setResult] = useState(null);
-  const [schedule, setSchedule] = useState([]); // Төлбөрийн хуваарь
-  const [showSchedule, setShowSchedule] = useState(false); // Хуваарь харагдах эсэх
-
-  // --- ХҮҮНИЙ СОНГОЛТУУД ---
-  const rateOptions = [];
-  for (let r = rateMin; r <= rateMax + 0.05; r += 0.1) {
-    rateOptions.push(parseFloat(r.toFixed(1)));
-  }
-
-  // --- CONFIG FETCH ---
-  useEffect(() => {
-    fetch(`${API_URL}/api/config/flat`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.loan_rate_min) setRateMin(parseFloat(d.loan_rate_min));
-        if (d.loan_rate_max) setRateMax(parseFloat(d.loan_rate_max));
-        if (d.loan_max_term) setMaxTerm(parseInt(d.loan_max_term));
-        if (d.loan_rate_min) setRate(parseFloat(d.loan_rate_min));
-        if (d.dti_individual) setDti(parseFloat(d.dti_individual) / 100);
-      })
-      .catch(() => {});
-  }, []);
-
-  // --- ТООЦООЛОХ ---
-  useEffect(() => {
-    calculateLoan();
-  }, [amount, rate, months, method, startDate, dti]);
-
-  const calculateLoan = () => {
+function calculateLoanSchedule(amount, rate, months, method, startDate, dti, maxTerm) {
     const rawAmount = amount.toString().replace(/,/g, '');
     const p = parseFloat(rawAmount); // Зээлийн дүн
     const r = parseFloat(rate) / 100; // Сарын хүү
-    const n = parseInt(months); // Хугацаа
+    const n = Number(months); // Хугацаа
 
-    if (!p || !n) {
-        setResult(null);
-        setSchedule([]);
-        return;
+    if (!Number.isFinite(p) || p <= 0 || !Number.isFinite(r) || r < 0
+      || !Number.isInteger(n) || n < 1 || n > Math.min(maxTerm, 1200)
+      || !startDate || !Number.isFinite(new Date(startDate).getTime())) {
+        return { result: null, schedule: [] };
     }
 
     let monthlyPayment = 0;
@@ -66,11 +26,13 @@ const LoanCalculator = ({ onBack }) => {
     let currentDate = new Date(startDate);
     
     // Тогтмол төлбөрийг эхэлж олох (Тэнцүү төлбөрт үед)
-    const fixedMonthlyPayment = p * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1);
+    const fixedMonthlyPayment = calculateAnnuityPayment(p, r, n);
+    if (fixedMonthlyPayment === null) return { result: null, schedule: [] };
 
     for (let i = 1; i <= n; i++) {
         // Огноо ахиулах
         currentDate.setMonth(currentDate.getMonth() + 1);
+        if (!Number.isFinite(currentDate.getTime())) return { result: null, schedule: [] };
         const dateStr = currentDate.toISOString().split('T')[0];
 
         let interest = currentBalance * r;
@@ -124,16 +86,75 @@ const LoanCalculator = ({ onBack }) => {
     // ӨОХ байхын тулд шаардлагатай хамгийн бага орлого
     const minRequiredIncome = monthlyPayment / dti;
 
-    setResult({
+    return { result: {
       monthlyPayment,
       totalPayment,
       totalInterest,
       minRequiredIncome, 
       lastPayment: tempSchedule[n-1].payment // Сүүлийн төлбөр
-    });
+    }, schedule: tempSchedule };
+}
 
-    setSchedule(tempSchedule);
-  };
+const LoanCalculator = ({ onBack }) => {
+  const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com';
+
+  // --- STATE ---
+  const [amount, setAmount] = useState('10000000');
+  const [rate, setRate] = useState(2.5);
+  const [months, setMonths] = useState(12);
+  const [rateMin, setRateMin] = useState(2.5);
+  const [rateMax, setRateMax] = useState(3.5);
+  const [maxTerm, setMaxTerm] = useState(96);
+  const [dti, setDti] = useState(0.6);
+  const [method, setMethod] = useState('equal');
+  const [aprSettings, setAprSettings] = useState(DEFAULT_LOAN_APR_CONFIG);
+  const [feeIndex, setFeeIndex] = useState(0);
+  const [insuranceCost, setInsuranceCost] = useState(String(DEFAULT_LOAN_APR_CONFIG.defaultInsuranceCost));
+  const insuranceEdited = useRef(false);
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]); // Эхлэх огноо
+
+  const [showSchedule, setShowSchedule] = useState(false); // Хуваарь харагдах эсэх
+  const [configStatus, setConfigStatus] = useState('loading');
+  const [configRequest, setConfigRequest] = useState(0);
+
+  // --- ХҮҮНИЙ СОНГОЛТУУД ---
+  const rateOptions = [];
+  for (let r = rateMin; r <= rateMax + 0.05; r += 0.1) {
+    rateOptions.push(parseFloat(r.toFixed(1)));
+  }
+
+  // --- CONFIG FETCH ---
+  useEffect(() => {
+    fetch(`${API_URL}/api/config/flat`)
+      .then(r => {
+        if (!r.ok) throw new Error('Config request failed');
+        return r.json();
+      })
+      .then(d => {
+        if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('Invalid config');
+        const settings = normalizeLoanAprConfig(d[LOAN_APR_CONFIG_KEY]);
+        setAprSettings(settings);
+        if (!insuranceEdited.current) setInsuranceCost(String(settings.defaultInsuranceCost));
+        const min = Number(d.loan_rate_min);
+        const max = Number(d.loan_rate_max);
+        if (d.loan_rate_min != null && d.loan_rate_max != null
+          && Number.isFinite(min) && Number.isFinite(max) && min >= 0 && max >= min && max <= 100) {
+          setRateMin(min);
+          setRateMax(max);
+          setRate(min);
+        }
+        const term = Number(d.loan_max_term);
+        if (Number.isInteger(term) && term >= 1 && term <= 1200) setMaxTerm(term);
+        const configuredDti = Number(d.dti_individual);
+        if (Number.isFinite(configuredDti) && configuredDti > 0 && configuredDti <= 100) setDti(configuredDti / 100);
+        setConfigStatus('ready');
+      })
+      .catch(() => setConfigStatus('error'));
+  }, [API_URL, configRequest]);
+
+  // --- ТООЦООЛОХ ---
+  const { result, schedule } = useMemo(() => calculateLoanSchedule(amount, rate, months, method, startDate, dti, maxTerm),
+    [amount, rate, months, method, startDate, dti, maxTerm]);
 
   // --- INPUT FORMATTING ---
   const handleAmountChange = (e) => {
@@ -151,27 +172,21 @@ const LoanCalculator = ({ onBack }) => {
   };
 
   return (
-    <div className="min-h-screen relative font-sans text-slate-800 pb-20">
+    <div className="sc-public-page min-h-screen relative font-sans text-slate-800 pb-20 bg-[#f7f8f6]">
       
       {/* 1. BACKGROUND IMAGE */}
-      <div className="absolute inset-0 z-0">
-          <img 
-            src="https://images.unsplash.com/photo-1501854140884-074cf27f731d?ixlib=rb-1.2.1&auto=format&fit=crop&w=1920&q=80" 
-            alt="Background" 
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-[#003B5C]/80 backdrop-blur-sm"></div>
-      </div>
+
 
       {/* 2. HEADER SECTION */}
       <div className="relative z-10 pt-32 pb-10 px-6 max-w-6xl mx-auto">
+         <button type="button" onClick={onBack} className="mb-6 inline-flex items-center gap-2 text-sm text-slate-600 hover:text-[#062842]"><ArrowLeft size={16} /> Нүүр хуудас</button>
          
          {/* ❌ ЭНД БАЙСАН <button> КОДЫГ БҮХЭЛД НЬ УСТГААРАЙ */}
 
-         <h1 className="text-3xl md:text-5xl font-display font-bold text-white mb-4 flex items-center gap-4">
+         <h1 className="text-3xl md:text-5xl font-display font-bold text-[#062842] mb-4 flex items-center gap-4 flex-wrap">
             <Calculator className="text-[#D4AF37]" size={40}/> Зээлийн тооцоолуур
          </h1>
-         <p className="text-blue-100 max-w-2xl font-light text-lg">
+         <p className="text-slate-600 max-w-2xl text-base leading-7">
              Та өөрийн санхүүгийн боломжид тулгуурлан зээлийн тооцооллыг хийгээрэй.
          </p>
       </div>
@@ -181,7 +196,7 @@ const LoanCalculator = ({ onBack }) => {
         <div className="flex flex-col lg:flex-row gap-8">
             
             {/* LEFT: INPUTS */}
-            <div className="w-full lg:w-1/2 bg-white/95 backdrop-blur rounded-2xl shadow-2xl p-6 md:p-8 border border-white/20">
+            <div className="w-full lg:w-1/2 bg-white rounded-2xl shadow-sm p-6 md:p-8 border border-slate-200">
                 <h3 className="font-display font-bold text-xl mb-6 text-[#003B5C] border-b border-gray-100 pb-4">
                     Зээлийн нөхцөл оруулах
                 </h3>
@@ -189,7 +204,7 @@ const LoanCalculator = ({ onBack }) => {
                 <div className="space-y-6">
                     {/* Зээлийн дүн */}
                     <div>
-                        <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
+                        <label className="block text-sm font-medium text-gray-500 mb-2">
                             Зээлийн дүн (₮)
                         </label>
                         <div className="relative">
@@ -208,7 +223,7 @@ const LoanCalculator = ({ onBack }) => {
                     <div className="grid grid-cols-2 gap-6">
                         {/* Хүү */}
                         <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
+                            <label className="block text-sm font-medium text-gray-500 mb-2">
                                 Сарын хүү (%)
                             </label>
                             <select 
@@ -224,7 +239,7 @@ const LoanCalculator = ({ onBack }) => {
 
                         {/* Хугацаа */}
                         <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
+                            <label className="block text-sm font-medium text-gray-500 mb-2">
                                 Хугацаа (Сар)
                             </label>
                             <input 
@@ -239,7 +254,7 @@ const LoanCalculator = ({ onBack }) => {
 
                     {/* Огноо */}
                     <div>
-                        <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 flex items-center gap-2">
+                        <label className="block text-sm font-medium text-gray-500 mb-2 flex items-center gap-2">
                             <Calendar size={14}/> Эхлэх огноо
                         </label>
                         <input 
@@ -252,7 +267,7 @@ const LoanCalculator = ({ onBack }) => {
 
                     {/* Төлбөрийн нөхцөл */}
                     <div>
-                        <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
+                        <label className="block text-sm font-medium text-gray-500 mb-2">
                             Төлбөрийн нөхцөл
                         </label>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -270,22 +285,47 @@ const LoanCalculator = ({ onBack }) => {
                             </button>
                         </div>
                     </div>
+                    <LoanAprFields settings={aprSettings} feeIndex={feeIndex} onFeeChange={setFeeIndex}
+                      insuranceCost={insuranceCost} onInsuranceChange={value => {
+                        insuranceEdited.current = true;
+                        setInsuranceCost(value);
+                      }} />
                 </div>
             </div>
 
             {/* RIGHT: RESULTS */}
             <div className="w-full lg:w-1/2 space-y-6">
+                {configStatus !== 'ready' && (
+                  <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    {configStatus === 'loading'
+                      ? 'Тохиргоог ачаалж байна. Одоогоор анхны тохиргоогоор тооцож байна.'
+                      : 'Тохиргоог ачаалж чадсангүй. Анхны тохиргоогоор тооцож байна; шимтгэл, даатгалын дүнгээ шалгана уу.'}
+                    {configStatus === 'error' && <button type="button" onClick={() => {
+                      setConfigStatus('loading');
+                      setConfigRequest(previous => previous + 1);
+                    }} className="ml-2 underline font-semibold">Дахин ачаалах</button>}
+                  </div>
+                )}
+                <LoanAprResult
+                  principal={Number(amount.toString().replace(/,/g, ''))}
+                  monthlyRate={Number(rate) / 100}
+                  months={Number.isInteger(Number(months)) && Number(months) <= maxTerm ? Number(months) : NaN}
+                  serviceFee={aprSettings.serviceFeeOptions[feeIndex]}
+                  insuranceCost={insuranceCost} settings={aprSettings}
+                />
+                {!result && <p role="alert" className="text-sm text-red-700">Зээлийн дүн, хугацаа (1–{maxTerm} бүтэн сар), сарын хүү болон эхлэх огноог зөв оруулна уу.</p>}
                 
                 {/* Үндсэн үр дүн */}
-                <div className="bg-[#003B5C] text-white rounded-2xl shadow-2xl p-8 relative overflow-hidden border border-white/10">
+                <div className="bg-[#003B5C] text-white rounded-2xl shadow-sm p-8 relative overflow-hidden border border-white/10">
                     <div className="absolute -top-10 -right-10 w-40 h-40 bg-[#D4AF37] rounded-full opacity-10 blur-3xl"></div>
                     <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-[#D4AF37] to-transparent"></div>
                     
                     <h3 className="text-[#D4AF37] text-xs font-bold uppercase tracking-widest mb-8 flex items-center gap-2">
-                        <CheckCircle size={14} /> Тооцооллын үр дүн
+                        <CheckCircle size={14} /> Үндсэн зээлийн төлбөр
                     </h3>
                     
                     <div className="space-y-8 relative z-10">
+                        <p className="text-sm text-blue-100">Энэ хуваарьт үйлчилгээний шимтгэл болон даатгалын зардал ороогүй. Зардал багтсан тэнцүү төлбөрийг бодит өртгийн хэсгээс харна уу.</p>
                         <div>
                             <p className="text-blue-200 text-sm mb-2 uppercase tracking-wide">Сард төлөх дүн {method === 'bullet' && '(Зөвхөн хүү)'}</p>
                             <p className="text-5xl md:text-6xl font-display font-bold text-white tracking-tight">
@@ -306,8 +346,9 @@ const LoanCalculator = ({ onBack }) => {
 
                         {/* Хуваарь харах товч */}
                         <button 
+                            disabled={!result}
                             onClick={() => setShowSchedule(!showSchedule)}
-                            className="w-full mt-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                            className="w-full mt-4 py-3 bg-white/10 hover:bg-white/20 border border-slate-200 rounded-xl text-white font-bold text-sm flex items-center justify-center gap-2 transition-all"
                         >
                             {showSchedule ? 'Хуваарь хаах' : 'Төлбөрийн хуваарь харах'}
                             {showSchedule ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
@@ -336,7 +377,7 @@ const LoanCalculator = ({ onBack }) => {
                 </div>
 
                 {/* Info Box */}
-                <div className="bg-white/80 backdrop-blur p-4 rounded-xl border border-white/20 text-xs text-slate-500 flex gap-3">
+                <div className="bg-white/80 backdrop-blur p-4 rounded-xl border border-slate-200 text-xs text-slate-500 flex gap-3">
                     <Info className="flex-shrink-0 text-[#003B5C]" size={18} />
                     <p>
                         Энэхүү тооцоолол нь зөвхөн урьдчилсан байдлаар хийгдэж байгаа бөгөөд зээлийн бодит нөхцөл, шимтгэл зэргээс шалтгаалан өөрчлөгдөх боломжтой.
@@ -349,8 +390,8 @@ const LoanCalculator = ({ onBack }) => {
                     <svg className="w-4 h-4 text-[#D4AF37] mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <p className="text-xs text-white/50">
-                      Энэхүү тооцоолол нь <strong className="text-white/70">зөвхөн лавлагааны зориулалттай</strong> бөгөөд бодит зээлийн нөхцөлөөс ялгаатай байж болно. Нарийвчилсан мэдээлэлд манай мэргэжилтнүүдтэй холбоо барина уу.
+                    <p className="text-xs text-slate-600">
+                      Энэхүү тооцоолол нь <strong className="text-slate-800">зөвхөн лавлагааны зориулалттай</strong> бөгөөд бодит зээлийн нөхцөлөөс ялгаатай байж болно. Нарийвчилсан мэдээлэлд манай мэргэжилтнүүдтэй холбоо барина уу.
                     </p>
                   </div>
                 )}
@@ -358,10 +399,12 @@ const LoanCalculator = ({ onBack }) => {
         </div>
       </div>
 
+      <LoanAprExplanation settings={aprSettings} />
+
       {/* 4. PAYMENT SCHEDULE TABLE (TOGGLE) */}
       {showSchedule && schedule.length > 0 && (
           <div className="relative z-10 max-w-6xl mx-auto px-4 md:px-6 mt-8 animate-fade-in-up pb-20">
-              <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+              <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
                   <div className="bg-slate-50 p-6 border-b border-gray-100 flex justify-between items-center">
                       <h3 className="font-display font-bold text-lg text-[#003B5C]">Зээлийн эргэн төлөлтийн хуваарь</h3>
                       <button onClick={() => setShowSchedule(false)} className="text-gray-400 hover:text-red-500 font-bold text-xs uppercase">Хаах</button>

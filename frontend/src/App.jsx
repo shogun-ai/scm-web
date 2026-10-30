@@ -50,7 +50,7 @@ import ShogunStudio from './components/ShogunStudio';
 import BlogList from './components/BlogList';
 import LoanCalculator from './components/LoanCalculator';
 import TrustCalculator from './components/TrustCalculator';
-const LoanRequest = React.lazy(() => import('./components/LoanRequest'));
+const LoanRequest = React.lazy(() => import('./components/QuickLoanRequest'));
 import Login from './components/Login';
 const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
 const TrustRequest = React.lazy(() => import('./components/TrustRequest'));
@@ -240,7 +240,7 @@ const governanceItems = [
 // ======================================================================
 
 const UnderConstructionPage = ({ onBack, title = "Хөгжүүлэлт хийгдэж байна" }) => {
-    useEffect(() => window.scrollTo(0, 0), []);
+    useEffect(() => { window.scrollTo(0, 0); }, []);
     return (
         <div className="min-h-screen relative flex flex-col items-center justify-center text-center px-4 md:px-6"
              style={{ backgroundImage: `url(${BACKGROUNDS.detail_page})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}
@@ -364,7 +364,23 @@ function App() {
       fixed = true,
       position = 'center',
       size = 'cover',
+      surface,
     } = options;
+
+    if (surface) {
+      const tint = surface.match(/[a-f\d]{2}/gi)?.map(value => parseInt(value, 16)).join(', ');
+      const image = themeType === 'image' ? sectionThemeImages[sectionKey] || themeImage : null;
+      if (image) return {
+        backgroundImage: `linear-gradient(rgba(${tint}, 0.94), rgba(${tint}, 0.94)), url(${image})`,
+        backgroundPosition: position,
+        backgroundSize: size,
+      };
+      if (themeType === 'color') return {
+        backgroundColor: SECTION_RAINBOW_COLORS[sectionKey] || themeColor,
+        backgroundImage: `linear-gradient(rgba(${tint}, 0.9), rgba(${tint}, 0.9))`,
+      };
+      return {};
+    }
 
     if (themeType === 'color') {
       return {
@@ -440,11 +456,11 @@ function App() {
         .sc-overlay-97 { background-color: rgba(${overlayRgb}, ${(0.97 * oMul).toFixed(2)}) !important; }
         .sc-grad-bottom { background: linear-gradient(to top, rgba(${overlayRgb}, 1) 0%, rgba(${overlayRgb}, 0.6) 50%, transparent 100%) !important; }
         ${isLight ? `
-        .sc-light section, .sc-light .min-h-screen { color: #1e293b; }
-        .sc-light .text-white { color: #1e293b !important; }
-        .sc-light .text-white\\/80, .sc-light .text-white\\/90 { color: #334155 !important; }
-        .sc-light .text-gray-400, .sc-light .text-gray-300 { color: #475569 !important; }
-        .sc-light .text-blue-100, .sc-light .text-blue-50 { color: #475569 !important; }
+        .sc-light section:not(.sc-home *, .sc-public-page *), .sc-light .min-h-screen:not(.sc-home *, .sc-public-page) { color: #1e293b; }
+        .sc-light .text-white:not(.sc-home *, .sc-public-page *, .sc-public-nav, .sc-public-nav *) { color: #1e293b !important; }
+        .sc-light .text-white\\/80:not(.sc-home *, .sc-public-page *, .sc-public-nav *), .sc-light .text-white\\/90:not(.sc-home *, .sc-public-page *, .sc-public-nav *) { color: #334155 !important; }
+        .sc-light .text-gray-400:not(.sc-home *, .sc-public-page *), .sc-light .text-gray-300:not(.sc-home *, .sc-public-page *) { color: #475569 !important; }
+        .sc-light .text-blue-100:not(.sc-home *, .sc-public-page *), .sc-light .text-blue-50:not(.sc-home *, .sc-public-page *) { color: #475569 !important; }
         ` : ''}
       `}</style>
       {themeType === 'image' && themeImage && (
@@ -516,7 +532,7 @@ function App() {
             ) : currentView === 'not_found' ? (
                 <NotFoundPage />
             ) : (
-                  <div>
+                  <div className="sc-home">
                     <Helmet>
                       <title>Solongo Capital ББСБ — Найдвартай санхүүгийн түнш</title>
                       <meta name="description" content="Бизнесийн болон хэрэглээний зээл, итгэлцлийн хөрөнгө оруулалт. Хурдан шийдвэр, найдвартай үйлчилгээ." />
@@ -524,14 +540,14 @@ function App() {
                       <meta property="og:locale" content="mn_MN" />
                     </Helmet>
                     <HeroSection heroText={heroText} />
+                    <ProductsSection getSectionBackgroundStyle={getSectionBackgroundStyle} />
                     <AboutSection
                       governanceItems={governanceItems}
                       getSectionBackgroundStyle={getSectionBackgroundStyle}
                       handleGovernanceClick={handleGovernanceClick}
                     />
-                    <ProductsSection getSectionBackgroundStyle={getSectionBackgroundStyle} />
                     <BlogSection getSectionBackgroundStyle={getSectionBackgroundStyle} />
-                    <FAQSection getSectionBackgroundStyle={getSectionBackgroundStyle} />
+                    <FAQSection />
                     <ContactSection getSectionBackgroundStyle={getSectionBackgroundStyle} />
                   </div>
             )}

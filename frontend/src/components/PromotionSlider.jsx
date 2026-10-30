@@ -1,14 +1,17 @@
-import { useEffect, useState } from 'react';
-import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, ChevronLeft, ChevronRight, Pause, Play, Calculator, MoveUpRight } from 'lucide-react';
 import { requestSafetyNotices } from '../safetyNoticesApi';
 import { normalizeHeroSliderInterval } from '../../../shared/heroSliderConfig.js';
 import SafetyNotices from './SafetyNotices';
 
-export default function PromotionSlider({ promotions, fallbackBg, homeSlide, intervalSeconds = 15, onOpen, onProducts, initialSlideKind = 'home' }) {
+export default function PromotionSlider({ promotions, fallbackBg, homeSlide, intervalSeconds = 15, onOpen, onProducts, onRequest, onCalculator, onTrustCalculator, onContact, initialSlideKind = 'home' }) {
     const [notices, setNotices] = useState([]);
     const [active, setActive] = useState(0);
     const [hovered, setHovered] = useState(false);
     const [focused, setFocused] = useState(false);
+    const [paused, setPaused] = useState(false);
+    const [heroHeight, setHeroHeight] = useState(0);
+    const sliderRef = useRef(null);
     const [hidden, setHidden] = useState(() => document.hidden);
     const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     const safePromotions = Array.isArray(promotions) ? promotions.filter(item => item && typeof item === 'object') : [];
@@ -16,6 +19,14 @@ export default function PromotionSlider({ promotions, fallbackBg, homeSlide, int
     const activeIndex = active < slides.length ? active : 0;
     const current = slides[activeIndex];
     const duration = normalizeHeroSliderInterval(intervalSeconds);
+
+    useEffect(() => {
+        if (current?.kind !== 'home' || !sliderRef.current) return;
+        const measure = () => setHeroHeight(sliderRef.current?.getBoundingClientRect().height || 0);
+        const observer = new ResizeObserver(measure);
+        observer.observe(sliderRef.current);
+        return () => observer.disconnect();
+    }, [current?.kind]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -50,16 +61,18 @@ export default function PromotionSlider({ promotions, fallbackBg, homeSlide, int
     }, []);
 
     useEffect(() => {
-        if (slides.length <= 1 || duration === 0 || hovered || focused || hidden || reducedMotion) return undefined;
+        if (slides.length <= 1 || duration === 0 || paused || hovered || focused || hidden || reducedMotion) return undefined;
         const timer = window.setTimeout(() => setActive((activeIndex + 1) % slides.length), duration * 1000);
         return () => window.clearTimeout(timer);
-    }, [activeIndex, slides.length, duration, hovered, focused, hidden, reducedMotion]);
+    }, [activeIndex, slides.length, duration, paused, hovered, focused, hidden, reducedMotion]);
 
     const go = direction => setActive((activeIndex + direction + slides.length) % slides.length);
 
     return (
         <div
-            className="absolute inset-0 overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#D4AF37]"
+            ref={sliderRef}
+            className="relative overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#D4AF37]"
+            style={current?.kind !== 'home' ? { height: heroHeight || 'clamp(760px, 90svh, 960px)' } : undefined}
             role="region"
             aria-roledescription="слайд"
             aria-label="Нүүр хуудасны мэдээлэл"
@@ -94,42 +107,42 @@ export default function PromotionSlider({ promotions, fallbackBg, homeSlide, int
                     <SafetyNotices notices={notices} />
                 </div>
             ) : current?.kind === 'home' ? (
-                <div className="relative z-10 h-full overflow-y-auto px-12 pb-24 pt-24 text-center md:px-20">
-                    <div className="mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center space-y-7 text-white motion-safe:animate-fade-in-up">
-                        <img
-                            src={current.logo}
-                            alt="Solongo Capital Logo"
-                            className={`${current.logoClassName} drop-shadow-[0_18px_45px_rgba(0,0,0,0.45)]`}
-                        />
-                        <h1 className="font-display font-extrabold text-4xl md:text-5xl lg:text-7xl leading-[1.05] tracking-normal drop-shadow-2xl">
-                            {current.line1} <br/>
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00A651] to-emerald-400">{current.highlight}</span> {current.line2}
+                <div className="relative z-10">
+                    <div className="sc-hero-layout mx-auto grid max-w-7xl items-center gap-12 px-6 pb-28 pt-32 text-white lg:grid-cols-[1.45fr_0.8fr] lg:gap-16 lg:px-10 lg:pt-36">
+                      <div className="motion-safe:animate-fade-in-up">
+                        <p className="mb-7 flex items-center gap-3 text-xs font-semibold tracking-[0.16em] text-[#e6cf87]"><span className="h-px w-9 bg-[#d4af37]" aria-hidden="true" />ТАНЫ САНХҮҮГИЙН ТҮНШ</p>
+                        <h1 className="sc-hero-title font-display font-semibold leading-[1.12] tracking-tight">
+                            {current.line1}<br />
+                            <span className="text-[#72d1b0]">{current.highlight}</span> {current.line2}
                         </h1>
-                        <p className="font-sans font-normal text-base md:text-lg lg:text-xl text-blue-50 max-w-2xl mx-auto leading-relaxed opacity-95">
+                        <p className="mt-7 max-w-xl text-base leading-[1.8] text-slate-200 md:text-lg">
                             {current.description}
                         </p>
-                        <ul className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-x-8 gap-y-3 pt-1">
+                        <div className="mt-9 flex flex-wrap items-center gap-4">
+                            <button type="button" onClick={onProducts} className="sc-primary-button inline-flex min-h-12 items-center justify-center gap-4 rounded-xl px-6 py-4 text-sm font-semibold transition">
+                                {current.button}<ArrowRight size={18} aria-hidden="true" />
+                            </button>
+                            <button type="button" onClick={onContact || (() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' }))} className="inline-flex min-h-12 items-center gap-3 px-2 py-3 text-sm font-medium text-white transition hover:text-[#e6cf87]">
+                                Холбоо барих<MoveUpRight size={16} aria-hidden="true" />
+                            </button>
+                        </div>
+                        <ul className="mt-10 flex flex-wrap gap-x-6 gap-y-3 border-t border-white/15 pt-6">
                             {['Хурдан шийдэл', 'Ил тод нөхцөл', 'Найдвартай түнш'].map((label) => (
-                                <li key={label} className="flex items-center gap-2 text-sm font-medium text-white/85">
+                                <li key={label} className="flex items-center gap-2 text-xs font-medium text-slate-300">
                                     <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-[#D4AF37]"></span>
                                     {label}
                                 </li>
                             ))}
                         </ul>
-                        <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
-                            <button
-                                onClick={onProducts}
-                                className="sc-primary-button inline-flex min-h-12 items-center justify-center rounded-full px-9 py-4 font-sans text-xs font-extrabold uppercase tracking-widest transition-all duration-300"
-                            >
-                                {current.button}
-                            </button>
-                            <button
-                                onClick={() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })}
-                                className="sc-secondary-button inline-flex min-h-12 items-center justify-center rounded-full px-9 py-4 font-sans text-xs font-bold uppercase tracking-widest text-white transition-all duration-300"
-                            >
-                                Холбоо барих
-                            </button>
-                        </div>
+                      </div>
+                      {onRequest && <aside className="sc-hero-actions rounded-2xl border border-white/20 p-6 md:p-8">
+                        <p className="mb-3 text-xs font-medium text-[#e6cf87]">ЭХЛЭХЭД ХЯЛБАР</p>
+                        <h2 className="text-2xl font-semibold leading-snug">Танд ямар шийдэл<br className="hidden lg:block" /> хэрэгтэй вэ?</h2>
+                        <p className="mb-6 mt-3 text-sm leading-relaxed text-slate-300">Тооцоогоо хийж, хэрэгцээндээ тохирсон үйлчилгээг сонгоорой.</p>
+                        <button type="button" onClick={onRequest} className="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl bg-white px-5 py-4 text-left text-sm font-semibold text-[#062842] transition hover:bg-[#f2e3b4]">Зээлийн хүсэлт гаргах<ArrowRight size={18} aria-hidden="true" /></button>
+                        {onCalculator && <button type="button" onClick={onCalculator} className="mt-2 flex min-h-14 w-full items-center gap-3 border-b border-white/15 px-1 py-4 text-left text-sm text-white transition hover:text-[#e6cf87]"><Calculator size={18} aria-hidden="true" />Зээлийн тооцоолуур<MoveUpRight size={16} className="ml-auto" aria-hidden="true" /></button>}
+                        {onTrustCalculator && <button type="button" onClick={onTrustCalculator} className="flex min-h-14 w-full items-center gap-3 px-1 py-4 text-left text-sm text-white transition hover:text-[#e6cf87]"><Calculator size={18} aria-hidden="true" />Итгэлцлийн тооцоолуур<MoveUpRight size={16} className="ml-auto" aria-hidden="true" /></button>}
+                      </aside>}
                     </div>
                 </div>
             ) : (
@@ -151,8 +164,12 @@ export default function PromotionSlider({ promotions, fallbackBg, homeSlide, int
             )}
             {slides.length > 1 && (
                 <>
-                    <button type="button" onClick={() => go(-1)} className="absolute left-1 top-1/2 z-20 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-white/20 bg-[#031827]/60 text-white backdrop-blur-md transition hover:border-[#D4AF37] hover:bg-white hover:text-[#003B5C] focus-visible:outline-2 focus-visible:outline-[#D4AF37] md:left-5 md:h-12 md:w-12" aria-label="Өмнөх слайд"><ChevronLeft size={26} aria-hidden="true" /></button>
-                    <button type="button" onClick={() => go(1)} className="absolute right-1 top-1/2 z-20 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-white/20 bg-[#031827]/60 text-white backdrop-blur-md transition hover:border-[#D4AF37] hover:bg-white hover:text-[#003B5C] focus-visible:outline-2 focus-visible:outline-[#D4AF37] md:right-5 md:h-12 md:w-12" aria-label="Дараах слайд"><ChevronRight size={26} aria-hidden="true" /></button>
+                    <div className="absolute bottom-6 right-6 z-20 flex items-center gap-2 text-white lg:right-10">
+                      <span className="mr-3 text-xs tabular-nums text-slate-300" aria-live="off">{String(activeIndex + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}</span>
+                      <button type="button" onClick={() => go(-1)} className="grid h-11 w-11 place-items-center rounded-full border border-white/25 bg-[#062842]/80 transition hover:bg-white hover:text-[#062842]" aria-label="Өмнөх слайд"><ChevronLeft size={20} aria-hidden="true" /></button>
+                      <button type="button" onClick={() => go(1)} className="grid h-11 w-11 place-items-center rounded-full border border-white/25 bg-[#062842]/80 transition hover:bg-white hover:text-[#062842]" aria-label="Дараах слайд"><ChevronRight size={20} aria-hidden="true" /></button>
+                      {duration > 0 && !reducedMotion && <button type="button" onClick={() => setPaused(value => !value)} className="grid h-11 w-11 place-items-center rounded-full border border-white/25 bg-[#062842]/80 transition hover:bg-white hover:text-[#062842]" aria-label={paused ? 'Слайдын автомат шилжилтийг үргэлжлүүлэх' : 'Слайдын автомат шилжилтийг түр зогсоох'} aria-pressed={paused}>{paused ? <Play size={16} aria-hidden="true" /> : <Pause size={16} aria-hidden="true" />}</button>}
+                    </div>
                 </>
             )}
         </div>

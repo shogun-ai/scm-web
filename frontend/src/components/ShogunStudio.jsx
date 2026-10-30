@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Code, Layers, Smartphone, Mail, ArrowLeft, Globe, Monitor, Zap } from 'lucide-react';
 
 const ShogunStudio = ({ onBack }) => {
-  useEffect(() => window.scrollTo(0, 0), []);
+  useEffect(() => { window.scrollTo(0, 0); }, []);
 
   const services = [
     { title: "Web Development", desc: "Орчин үеийн React, Next.js технологи ашиглан хурдтай, найдвартай вэб сайт бүтээнэ.", icon: Globe },

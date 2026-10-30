@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { ArrowLeft, Send, CheckCircle, Loader, AlertCircle } from 'lucide-react';
+import PublicPageShell from './PublicPageShell';
+import { Send, CheckCircle, Loader, AlertCircle } from 'lucide-react';
 
 const TrustRequest = ({ onBack }) => {
   const [formData, setFormData] = useState({
@@ -51,7 +52,7 @@ const TrustRequest = ({ onBack }) => {
 
     // 3. ЗӨВХӨН КИРИЛ ҮСЭГ (Овог, Нэр)
     if (name === 'lastname' || name === 'firstname') {
-        if (value !== '' && !/^[\u0400-\u04FF\s\-]+$/.test(value)) {
+        if (value !== '' && !/^[\u0400-\u04FF\s-]+$/.test(value)) {
             return; // Латин үсэг бичигдэхгүй
         }
         setFormData(prev => ({ ...prev, [name]: value }));
@@ -88,58 +89,35 @@ const TrustRequest = ({ onBack }) => {
     }
   };
 
-  if (showSuccess) {
-      return (
-        <div className="min-h-screen bg-[#1a4153] flex items-center justify-center p-4 font-sans">
-            <div className="bg-white rounded-2xl p-8 text-center max-w-md w-full animate-scale-up shadow-2xl">
-                <div className="w-16 h-16 bg-green-100 text-[#007A3D] rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle size={32} strokeWidth={3}/>
-                </div>
-                <h2 className="text-xl font-bold text-[#1a4153] mb-2">Хүсэлт амжилттай!</h2>
-                <p className="text-gray-600 mb-6 text-sm">Таны итгэлцлийн хүсэлтийг хүлээн авлаа. Бид тантай удахгүй холбогдох болно.</p>
-                <button onClick={onBack} className="w-full py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] transition">Ойлголоо</button>
-            </div>
-        </div>
-      );
-  }
-
+  if (showSuccess) return (
+    <PublicPageShell title="Хүсэлт амжилттай илгээгдлээ" onBack={onBack}>
+      <div role="status" className="max-w-xl bg-white border border-slate-200 rounded-2xl p-8">
+        <CheckCircle size={40} className="text-[#007A3D] mb-4" />
+        <p className="text-slate-600 leading-7">Таны итгэлцлийн хүсэлтийг хүлээн авлаа. Бид тантай удахгүй холбогдох болно.</p>
+        <button type="button" onClick={onBack} className="mt-6 rounded-xl bg-[#062842] text-white px-6 py-3">Нүүр хуудас</button>
+      </div>
+    </PublicPageShell>
+  );
+  const fields = [
+    { name: 'lastname', label: 'Овог', autoComplete: 'family-name' },
+    { name: 'firstname', label: 'Нэр', autoComplete: 'given-name' },
+    { name: 'phone', label: 'Утасны дугаар', type: 'tel', autoComplete: 'tel', inputMode: 'numeric', pattern: '[0-9]{8}' },
+    { name: 'email', label: 'Имэйл хаяг', type: 'email', autoComplete: 'email' },
+    { name: 'amount', label: 'Итгэлцлийн дүн (₮)', inputMode: 'numeric' },
+  ];
   return (
-    <div className="min-h-screen bg-[#1a4153] flex flex-col items-center justify-center p-4 relative font-sans">
-        <button onClick={onBack} className="absolute top-8 left-8 text-white/70 hover:text-white flex items-center gap-2 font-bold text-sm uppercase transition-colors">
-            <ArrowLeft size={18}/> Буцах
-        </button>
-
-        <div className="w-full max-w-2xl animate-fade-in">
-            <h1 className="text-lg md:text-2xl font-bold text-[#D4AF37] text-center mb-8 leading-relaxed">
-                Та итгэлцлийн талаар мэдээлэл авах бол <br/> доорх мэдээллүүдийг оруулна уу
-            </h1>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-                {error && (
-                    <div className="bg-red-500/20 border border-red-500/50 p-3 rounded-xl flex items-center gap-3 text-red-200 text-sm">
-                        <AlertCircle size={18} /> {error}
-                    </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <input name="lastname" value={formData.lastname} onChange={handleChange} placeholder="Овог (Зөвхөн Кирил)" className="bg-[#2a5569] text-white placeholder-white/50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-[#D4AF37] w-full" />
-                    <input name="firstname" value={formData.firstname} onChange={handleChange} placeholder="Нэр (Зөвхөн Кирил)" className="bg-[#2a5569] text-white placeholder-white/50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-[#D4AF37] w-full" />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <input name="phone" type="tel" value={formData.phone} onChange={handleChange} placeholder="Утасны дугаар (Зөвхөн тоо)" className="bg-[#2a5569] text-white placeholder-white/50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-[#D4AF37]" />
-                    <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="Имэйл хаяг" className="bg-[#2a5569] text-white placeholder-white/50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-[#D4AF37]" />
-                </div>
-
-                <input name="amount" value={formData.amount} onChange={handleChange} placeholder="Итгэлцлийн дүн (Ойролцоогоор)" className="w-full bg-[#2a5569] text-white placeholder-white/50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-[#D4AF37]" />
-
-                <button type="submit" disabled={loading} className="w-full bg-[#00A651] text-white font-bold text-lg py-4 rounded-xl hover:bg-[#008f45] transition-all shadow-lg mt-4 flex items-center justify-center gap-2">
-                    {loading ? <><Loader className="animate-spin" size={20}/> Илгээж байна...</> : <>Илгээх <Send size={20}/></>}
-                </button>
-            </form>
+    <PublicPageShell title="Итгэлцлийн хүсэлт" description="Холбоо барих мэдээлэл болон хөрөнгө оруулах дүнгээ оруулна уу. Манай ажилтан тантай холбогдож дэлгэрэнгүй мэдээлэл өгнө." eyebrow="Хөрөнгө оруулалт" onBack={onBack}>
+      <form onSubmit={handleSubmit} className="max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 md:p-8">
+        {error && <p role="alert" className="mb-6 flex items-center gap-2 rounded-xl bg-red-50 p-4 text-sm text-red-700"><AlertCircle size={18} />{error}</p>}
+        <div className="grid gap-5 sm:grid-cols-2">
+          {fields.map(field => <label key={field.name} className={field.name === 'amount' ? 'sm:col-span-2' : ''}>
+            <span className="mb-2 block text-sm font-medium">{field.label}{field.name !== 'email' && ' *'}</span>
+            <input name={field.name} type={field.type || 'text'} autoComplete={field.autoComplete} inputMode={field.inputMode} pattern={field.pattern} required={field.name !== 'email'} value={formData[field.name]} onChange={handleChange} className="w-full rounded-xl border border-slate-300 bg-white p-3.5 text-base text-[#062842] focus:outline-none focus:ring-2 focus:ring-[#062842]/20" />
+          </label>)}
         </div>
-    </div>
+        <button type="submit" disabled={loading} className="mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#062842] px-6 py-4 font-semibold text-white hover:bg-[#0a3857] disabled:opacity-60">{loading ? <><Loader size={18} className="animate-spin" /> Илгээж байна...</> : <>Хүсэлт илгээх <Send size={18} /></>}</button>
+      </form>
+    </PublicPageShell>
   );
 };
-
 export default TrustRequest;
