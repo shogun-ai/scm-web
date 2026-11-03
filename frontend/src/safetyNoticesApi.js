@@ -1,7 +1,15 @@
 const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const API_URL = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com');
+const API_URL = import.meta.env?.VITE_API_URL || (isLocal ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com');
 
-export async function requestSafetyNotices({ token, notices, revision, signal } = {}) {
+export function safePosterUrl(value) {
+  if (typeof value !== 'string' || value.length > 2000 || /[\s\\]/.test(value) || [...value].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) || !/^https:\/\/[^/?#]/i.test(value)) return '';
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname && !url.username && !url.password ? url.href : '';
+  } catch { return ''; }
+}
+
+export async function requestSafetyNotices({ token, notices, revision, posterLinks, signal } = {}) {
   const isSave = notices !== undefined;
   const response = await fetch(`${API_URL}/api/${token ? 'admin/' : ''}safety-notices`, {
     method: isSave ? 'PUT' : 'GET',
@@ -9,7 +17,7 @@ export async function requestSafetyNotices({ token, notices, revision, signal } 
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(isSave ? { 'Content-Type': 'application/json' } : {}),
     },
-    ...(isSave ? { body: JSON.stringify({ notices, revision }) } : {}),
+    ...(isSave ? { body: JSON.stringify({ notices, revision, ...(posterLinks !== undefined ? { posterLinks } : {}) }) } : {}),
     signal,
     cache: 'no-store',
   });
@@ -26,5 +34,5 @@ export async function requestSafetyNotices({ token, notices, revision, signal } 
   if (!Array.isArray(data?.notices) || data.notices.some(item => !item || typeof item.id !== 'string' || typeof item.title !== 'string' || typeof item.body !== 'string') || (token && !Number.isSafeInteger(data.revision))) {
     throw new Error('Сэрэмжлүүлгийн мэдээлэл буруу байна. Дахин ачаална уу.');
   }
-  return data;
+  return { ...data, posterLinks: { safety: safePosterUrl(data.posterLinks?.safety), gambling: safePosterUrl(data.posterLinks?.gambling) } };
 }

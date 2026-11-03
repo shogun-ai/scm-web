@@ -3,9 +3,11 @@ import { ArrowRight, ChevronLeft, ChevronRight, Pause, Play, Calculator, MoveUpR
 import { requestSafetyNotices } from '../safetyNoticesApi';
 import { normalizeHeroSliderInterval } from '../../../shared/heroSliderConfig.js';
 import SafetyNotices from './SafetyNotices';
+import GamblingWarning from './GamblingWarning';
 
 export default function PromotionSlider({ promotions, fallbackBg, homeSlide, intervalSeconds = 15, onOpen, onProducts, onRequest, onCalculator, onTrustCalculator, onContact, initialSlideKind = 'home' }) {
     const [notices, setNotices] = useState([]);
+    const [posterLinks, setPosterLinks] = useState({ safety: '', gambling: '' });
     const [active, setActive] = useState(0);
     const [hovered, setHovered] = useState(false);
     const [focused, setFocused] = useState(false);
@@ -15,7 +17,7 @@ export default function PromotionSlider({ promotions, fallbackBg, homeSlide, int
     const [hidden, setHidden] = useState(() => document.hidden);
     const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     const safePromotions = Array.isArray(promotions) ? promotions.filter(item => item && typeof item === 'object') : [];
-    const slides = [homeSlide, ...(notices.length ? [{ kind: 'safety' }] : []), ...safePromotions];
+    const slides = [homeSlide, ...(notices.length ? [{ kind: 'safety' }] : []), { kind: 'gambling-warning' }, ...safePromotions];
     const activeIndex = active < slides.length ? active : 0;
     const current = slides[activeIndex];
     const duration = normalizeHeroSliderInterval(intervalSeconds);
@@ -37,6 +39,7 @@ export default function PromotionSlider({ promotions, fallbackBg, homeSlide, int
                 if (!mounted) return;
                 const published = data.notices.filter(item => item.isPublished);
                 setNotices(published);
+                setPosterLinks(data.posterLinks);
                 if (initialSlideKind === 'safety' && published.length) setActive(1);
             })
             .catch(() => { /* Optional notices must not interrupt the homepage. */ })
@@ -101,10 +104,14 @@ export default function PromotionSlider({ promotions, fallbackBg, homeSlide, int
                     />
                 ))}
             </div>
-            <div className={`absolute inset-0 transition-colors duration-700 ${current?.kind === 'home' ? 'sc-hero-vignette' : current?.kind === 'safety' ? 'bg-[#041b2b]/95' : 'sc-overlay-70'}`}></div>
-            {current?.kind === 'safety' ? (
+            <div className={`absolute inset-0 transition-colors duration-700 ${current?.kind === 'home' ? 'sc-hero-vignette' : ['safety', 'gambling-warning'].includes(current?.kind) ? 'bg-[#041b2b]/95' : 'sc-overlay-70'}`}></div>
+            {current?.kind === 'gambling-warning' ? (
                 <div className="absolute inset-0 z-10">
-                    <SafetyNotices notices={notices} />
+                    <GamblingWarning posterUrl={posterLinks.gambling} />
+                </div>
+            ) : current?.kind === 'safety' ? (
+                <div className="absolute inset-0 z-10">
+                    <SafetyNotices notices={notices} posterUrl={posterLinks.safety} />
                 </div>
             ) : current?.kind === 'home' ? (
                 <div className="relative z-10">

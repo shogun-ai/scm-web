@@ -37,8 +37,8 @@ test('rejects malformed payloads, duplicate ids, unsafe keys, and unbounded fiel
 test('defaults appear only for missing document; empty saves and all drafts stay empty publicly', () => {
     assert.equal(safetyNoticeResponse(null).revision, 0);
     assert.equal(safetyNoticeResponse(null, true).notices.length, DEFAULT_SAFETY_NOTICES.length);
-    assert.deepEqual(safetyNoticeResponse({ notices: [], revision: 1 }, true), { notices: [] });
-    assert.deepEqual(safetyNoticeResponse({ notices: [notice({ isPublished: false })], revision: 1 }, true), { notices: [] });
+    assert.deepEqual(safetyNoticeResponse({ notices: [], revision: 1 }, true), { notices: [], posterLinks: { safety: '', gambling: '' } });
+    assert.deepEqual(safetyNoticeResponse({ notices: [notice({ isPublished: false })], revision: 1 }, true), { notices: [], posterLinks: { safety: '', gambling: '' } });
     const response = safetyNoticeResponse({ notices: [notice({ id: 'b', order: 2, private: 'secret' }), notice({ id: 'a', order: 0 })], revision: 3 }, true);
     assert.deepEqual(response.notices.map(n => n.id), ['a', 'b']);
     assert.equal('private' in response.notices[1], false);
@@ -49,7 +49,7 @@ test('read uses singleton id, bounded projection, lean and no writes', async () 
     const Model = { findById(id) {
         assert.equal(id, 'homepage');
         return { select(projection) {
-            assert.deepEqual(projection, { notices: { $slice: 30 }, revision: 1 });
+            assert.deepEqual(projection, { notices: { $slice: 30 }, revision: 1, posterLinks: 1 });
             return { async lean() { return null; } };
         } };
     } };
@@ -66,7 +66,7 @@ function memoryModel() {
         assert.equal(options.setDefaultsOnInsert, false);
         return { async lean() {
             if (!state && options.upsert) state = { ...update.$set };
-            else if (state && state.revision === filter.revision) state = { ...update.$set };
+            else if (state && state.revision === filter.revision) state = { ...state, ...update.$set };
             else if (options.upsert) throw Object.assign(new Error('duplicate'), { code: 11000 });
             else return null;
             return structuredClone(state);
@@ -80,7 +80,7 @@ test('concurrent first saves have a single winner; later stale writes fail; dele
     assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
     assert.equal(results.find(result => result.status === 'rejected').reason.status, 409);
     const deleted = await saveSafetyNotices(Model, { notices: [], revision: 1 });
-    assert.deepEqual(deleted, { notices: [], revision: 2 });
+    assert.deepEqual(deleted, { notices: [], revision: 2, posterLinks: { safety: '', gambling: '' } });
     await assert.rejects(saveSafetyNotices(Model, input({ revision: 1 })), error => error.status === 409);
     await assert.rejects(saveSafetyNotices(Model, input({ revision: 0 })), error => error.status === 409);
 });
@@ -92,9 +92,40 @@ test('database errors propagate instead of returning defaults or false success',
     await assert.rejects(saveSafetyNotices(neverWrite, input({ revision: null })), error => error.status === 400);
 });
 
+test('poster links save and roundtrip, legacy saves preserve them, empty links clear them', async () => {
+    const Model = memoryModel();
+    const posterLinks = { safety: 'https://www.facebook.com/example/posts/123?view=poster', gambling: 'https://scm.mn/posters/warning.png' };
+    const first = await saveSafetyNotices(Model, input({ posterLinks }));
+    assert.deepEqual(first.posterLinks, posterLinks);
+    assert.deepEqual(safetyNoticeResponse(first, true).posterLinks, posterLinks);
+    const legacy = await saveSafetyNotices(Model, input({ revision: 1 }));
+    assert.deepEqual(legacy.posterLinks, posterLinks);
+    const cleared = await saveSafetyNotices(Model, input({ revision: 2, posterLinks: { safety: '', gambling: '' } }));
+    assert.deepEqual(cleared.posterLinks, { safety: '', gambling: '' });
+    assert.deepEqual(safetyNoticeResponse(null).posterLinks, { safety: '', gambling: '' });
+    await assert.rejects(saveSafetyNotices(Model, input({ revision: 2, posterLinks })), error => error.status === 409);
+});
+
+test('poster link validation rejects malformed, credentialed and unsafe URLs', () => {
+    const invalidLinks = [null, 1, {}, 'javascript:alert(1)', 'data:text/html,unsafe', '//example.com',
+        'http://example.com', 'https://', 'https:///example.com', 'https://user:password@example.com',
+        'https://example.com/\npath', 'https://example.com/\tpath', 'https://example.com/\u0000path',
+        'https://example.com/\\path', ' https://example.com', 'https://example.com path', `https://example.com/${'a'.repeat(2000)}`];
+    for (const safety of invalidLinks) {
+        assert.throws(() => validateSafetyNoticeUpdate(input({ posterLinks: { safety, gambling: '' } })), error => error.status === 400, String(safety));
+    }
+    for (const posterLinks of [null, [], {}, { safety: '' }, { safety: '', gambling: '', extra: '' }]) {
+        assert.throws(() => validateSafetyNoticeUpdate(input({ posterLinks })), error => error.status === 400);
+    }
+    assert.deepEqual(safetyNoticeResponse({ notices: [], revision: 1, posterLinks: { safety: 'javascript:bad', gambling: 'https://example.com/poster' } }).posterLinks,
+        { safety: '', gambling: 'https://example.com/poster' });
+});
+
 test('Mongoose schema validates without opening a connection', async () => {
     await new SafetyNoticeConfig({ _id: 'homepage', notices: [notice()], revision: 1 }).validate();
     await new SafetyNoticeConfig({ _id: 'homepage', notices: [], revision: 2 }).validate();
+    await new SafetyNoticeConfig({ _id: 'homepage', notices: [], revision: 2, posterLinks: { safety: '', gambling: 'https://scm.mn/poster.png' } }).validate();
+    await assert.rejects(new SafetyNoticeConfig({ _id: 'homepage', notices: [], revision: 2, posterLinks: { safety: 'javascript:bad', gambling: '' } }).validate());
     await assert.rejects(new SafetyNoticeConfig({ _id: 'other', notices: [notice(), notice()], revision: 0 }).validate());
 });
 

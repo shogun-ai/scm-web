@@ -1,10 +1,11 @@
 import { useRef } from 'react';
 import { ShieldCheck, LockKeyhole, Link2, ScanLine, ArrowUpRight } from 'lucide-react';
 import SafetyGuide from './SafetyGuide';
+import { safePosterUrl } from '../safetyNoticesApi';
 
 const icons = [Link2, ScanLine, ShieldCheck];
 
-export default function SafetyNotices({ notices = [] }) {
+export default function SafetyNotices({ notices = [], posterUrl }) {
   const dialogRef = useRef(null);
   const safeNotices = Array.isArray(notices) ? notices : [];
   const [featured, ...remaining] = safeNotices;
@@ -26,12 +27,13 @@ export default function SafetyNotices({ notices = [] }) {
           <div className="min-w-0">
             <div className="mb-7 inline-flex items-center gap-3 text-[#e8c966]">
               <ShieldCheck size={20} strokeWidth={1.5} aria-hidden="true" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.22em] md:text-xs">Сэрэмжлүүлэг · Зөвлөмж</span>
+              <span className="text-[10px] font-bold md:text-xs">Аюулгүй байдлын сэрэмжлүүлэг зөвлөмж #1</span>
             </div>
             <h2 className="break-words font-display text-3xl font-bold tracking-tight text-white sm:text-4xl xl:text-[3.6rem]" style={{ lineHeight: 1.16 }}>{featured.title}</h2>
             <div className="my-7 h-px w-16 bg-[#d4af37]" />
             <p className="max-w-xl whitespace-pre-wrap break-words text-sm leading-7 text-[#cad7de] md:text-base md:leading-8">{featured.body.length > 500 ? `${featured.body.slice(0, 500)}…` : featured.body}</p>
             <button type="button" onClick={() => dialogRef.current?.showModal()} className="mt-7 inline-flex items-center gap-3 rounded-full border border-[#d4af37]/60 bg-[#d4af37] px-5 py-3 text-sm font-bold text-[#061f32] transition hover:bg-[#e8c966]">Бүх зөвлөмжийг унших <ArrowUpRight size={18} aria-hidden="true" /></button>
+            {safePosterUrl(posterUrl) && <a href={safePosterUrl(posterUrl)} target="_blank" rel="noopener noreferrer" className="mt-4 flex min-h-11 w-fit items-center gap-2 rounded-full border border-[#e8c966]/60 px-5 py-3 text-sm font-semibold text-[#e8c966] hover:bg-white/10">Постер үзэх <ArrowUpRight size={18} aria-hidden="true" /><span className="sr-only">(шинэ цонхонд нээгдэнэ)</span></a>}
             <div aria-hidden="true" className="mt-8 flex items-center gap-4 text-[#e8c966] md:mt-10">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#d4af37]/30 bg-[#d4af37]/5"><LockKeyhole size={20} strokeWidth={1.5} /></div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-xs tracking-[0.18em] text-[#d9c98c]">

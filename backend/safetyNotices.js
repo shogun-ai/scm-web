@@ -11,9 +11,19 @@ const isObject = value => value !== null && typeof value === 'object' && !Array.
 const hasExactKeys = (value, keys) => isObject(value)
     && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 
+export function isValidPosterLink(value) {
+    if (typeof value !== 'string' || value.length > 2000) return false;
+    if (value === '') return true;
+    if (!/^https:\/\/[^/?#]/i.test(value) || /[\s\u0000-\u001f\u007f\\]/u.test(value)) return false;
+    try {
+        const url = new URL(value);
+        return url.protocol === 'https:' && !!url.hostname && !url.username && !url.password;
+    } catch { return false; }
+}
+
 export function validateSafetyNoticeUpdate(input) {
     const invalid = () => { throw new SafetyNoticeError(400, 'Сэрэмжлүүлгийн мэдээлэл буруу байна. Гарчиг 120, тайлбар 2000 тэмдэгтээс хэтрэхгүй байх ёстой.'); };
-    if (!hasExactKeys(input, ['notices', 'revision']) || !Number.isSafeInteger(input.revision)
+    if (!(hasExactKeys(input, ['notices', 'revision']) || hasExactKeys(input, ['notices', 'revision', 'posterLinks'])) || !Number.isSafeInteger(input.revision)
         || input.revision < 0 || input.revision >= Number.MAX_SAFE_INTEGER
         || !Array.isArray(input.notices) || input.notices.length > SAFETY_NOTICE_LIMIT) invalid();
     const ids = new Set();
@@ -31,6 +41,13 @@ export function validateSafetyNoticeUpdate(input) {
             order: notice.order, imageUrl: notice.imageUrl,
         };
     });
+    if (Object.hasOwn(input, 'posterLinks')) {
+        if (!hasExactKeys(input.posterLinks, ['safety', 'gambling'])
+            || !isValidPosterLink(input.posterLinks.safety) || !isValidPosterLink(input.posterLinks.gambling)) {
+            throw new SafetyNoticeError(400, 'Постерийн холбоос https:// хаягтай, 2000 тэмдэгтээс хэтрэхгүй байх ёстой.');
+        }
+        return { notices, revision: input.revision, posterLinks: { ...input.posterLinks } };
+    }
     return { notices, revision: input.revision };
 }
 
@@ -40,23 +57,27 @@ export function safetyNoticeResponse(document, publicOnly = false) {
         .filter(notice => !publicOnly || notice.isPublished === true)
         .map(({ id, title, body, isPublished, order, imageUrl }) => ({ id, title, body, isPublished, order, imageUrl }))
         .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-    return publicOnly ? { notices } : { notices, revision: document ? document.revision : 0 };
+    const posterLinks = {
+        safety: isValidPosterLink(document?.posterLinks?.safety) ? document.posterLinks.safety : '',
+        gambling: isValidPosterLink(document?.posterLinks?.gambling) ? document.posterLinks.gambling : '',
+    };
+    return publicOnly ? { notices, posterLinks } : { notices, posterLinks, revision: document ? document.revision : 0 };
 }
 
 export async function readSafetyNotices(Model, publicOnly = false) {
     const document = await Model.findById(SAFETY_NOTICE_DOCUMENT_ID)
-        .select({ notices: { $slice: SAFETY_NOTICE_LIMIT }, revision: 1 }).lean();
+        .select({ notices: { $slice: SAFETY_NOTICE_LIMIT }, revision: 1, posterLinks: 1 }).lean();
     return safetyNoticeResponse(document, publicOnly);
 }
 
 export async function saveSafetyNotices(Model, input) {
-    const { notices, revision } = validateSafetyNoticeUpdate(input);
+    const { notices, revision, posterLinks } = validateSafetyNoticeUpdate(input);
     const conflict = () => new SafetyNoticeError(409, 'Өөр админ мэдээллийг шинэчилсэн байна. Дахин ачаалж, өөрчлөлтөө оруулна уу.');
     try {
         // The fixed _id also protects the first save: a concurrent upsert gets E11000.
         const document = await Model.findOneAndUpdate(
             { _id: SAFETY_NOTICE_DOCUMENT_ID, revision },
-            { $set: { notices, revision: revision + 1 } },
+            { $set: { notices, revision: revision + 1, ...(posterLinks === undefined ? {} : { posterLinks }) } },
             { new: true, upsert: revision === 0, runValidators: true, setDefaultsOnInsert: false },
         ).lean();
         if (!document) throw conflict();

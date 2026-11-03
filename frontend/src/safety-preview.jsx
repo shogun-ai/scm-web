@@ -33,11 +33,11 @@ export function SafetyPreview({ admin }) {
         <span className="hidden text-[10px] font-semibold uppercase tracking-[0.2em] text-white/70 md:block">Таны санхүүгийн найдвартай түнш</span>
       </div>
       <PromotionSlider
-        promotions={[]}
+        promotions={[{ slug: 'bond-announcement', title: '“Солонго 2” бонд гаргалаа', subtitle: 'Локал preview · Бонд', excerpt: 'Бондын слайдын дарааллыг шалгах жишээ.', ctaLabel: 'Бондын мэдээлэл' }]}
         fallbackBg={heroBackground}
         intervalSeconds={interval}
         initialSlideKind="safety"
-        onOpen={() => {}}
+        onOpen={() => window.open('https://www.scm.mn/promo/bond-announcement', '_blank', 'noopener,noreferrer')}
         onProducts={() => {}}
         homeSlide={{ kind: 'home', backgroundImageUrl: heroBackground, logo: logoGold, logoClassName: 'h-24 md:h-32 object-contain mb-4', line1: 'Бизнесийн', highlight: 'Өсөлтийг', line2: 'Дэмжинэ', description: 'Бид танд зах зээлийн хамгийн уян хатан нөхцөлийг санал болгож, таны санхүүгийн найдвартай түнш байх болно.', button: 'Бүтээгдэхүүн үзэх' }}
       />
@@ -56,13 +56,13 @@ if (import.meta.env.DEV) {
       try {
         const update = validateSafetyNoticeUpdate(JSON.parse(options.body));
         if (window.conflictSafety || update.revision !== data.revision) return new Response('{}', { status: 409 });
-        data = { notices: update.notices, revision: data.revision + 1 };
+        data = { notices: update.notices, posterLinks: update.posterLinks ?? data.posterLinks, revision: data.revision + 1 };
         localStorage.setItem('scm-safety-preview', JSON.stringify(data));
       } catch {
         return new Response('{}', { status: 400 });
       }
     }
-    return new Response(JSON.stringify(String(url).includes('/admin/') ? data : { notices: data.notices.filter(item => item.isPublished).sort((a, b) => a.order - b.order) }), { headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify(String(url).includes('/admin/') ? data : { notices: data.notices.filter(item => item.isPublished).sort((a, b) => a.order - b.order), posterLinks: data.posterLinks }), { headers: { 'Content-Type': 'application/json' } });
   };
   const admin = new URLSearchParams(location.search).get('view') === 'admin';
   createRoot(document.getElementById('root')).render(<SafetyPreview admin={admin} />);

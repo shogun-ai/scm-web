@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Plus, Pencil, Trash2, ShieldCheck, ImagePlus, X } from 'lucide-react';
-import { requestSafetyNotices } from '../safetyNoticesApi';
+import { requestSafetyNotices, safePosterUrl } from '../safetyNoticesApi';
 
 export default function SafetyNoticesAdmin({ token, uploadImage }) {
   const [data, setData] = useState(null);
   const [draft, setDraft] = useState(null);
+  const [posterLinks, setPosterLinks] = useState({ safety: '', gambling: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -31,7 +32,7 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
       try {
         if (!token) throw new Error('Дахин нэвтэрнэ үү.');
         const result = await requestSafetyNotices({ token, signal: controller.signal });
-        if (active) setData(result);
+        if (active) { setData(result); setPosterLinks(result.posterLinks); }
       } catch (err) {
         if (active) setError(err.name === 'AbortError' ? 'Сервер хариу өгсөнгүй. Дахин ачаална уу.' : err.message);
       } finally {
@@ -44,23 +45,34 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
   }, [token, attempt]);
 
   const reload = () => {
-    if (draft && !window.confirm('Хадгалаагүй өөрчлөлтийг орхиод дахин ачаалах уу?')) return;
+    const linksChanged = data && (posterLinks.safety !== data.posterLinks.safety || posterLinks.gambling !== data.posterLinks.gambling);
+    if ((draft || linksChanged) && !window.confirm('Хадгалаагүй өөрчлөлтийг орхиод дахин ачаалах уу?')) return;
     setDraft(null); setData(null); setError(''); setSuccess(''); setLoading(true); setAttempt(value => value + 1);
   };
 
-  const persist = async (notices, message) => {
+  const persist = async (notices, message, linksToSave) => {
     if (!token || !data || saving) return;
     setSaving(true); setError(''); setSuccess('');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
     try {
-      const result = await requestSafetyNotices({ token, notices, revision: data.revision, signal: controller.signal });
+      const result = await requestSafetyNotices({ token, notices, posterLinks: linksToSave ?? data.posterLinks, revision: data.revision, signal: controller.signal });
       setData(result); setDraft(null); setSuccess(message);
+      if (linksToSave) setPosterLinks(result.posterLinks);
     } catch (err) {
       setError(err.name === 'AbortError' ? 'Сервер хариу өгсөнгүй. Хадгалсан эсэхийг дахин ачаалж шалгана уу.' : err.message);
     } finally {
       clearTimeout(timeout); setSaving(false);
     }
+  };
+
+  const savePosterLinks = event => {
+    event.preventDefault();
+    const links = { safety: posterLinks.safety.trim(), gambling: posterLinks.gambling.trim() };
+    if (Object.values(links).some(value => value && !safePosterUrl(value))) {
+      setError('Постерийн холбоос https://-ээр эхэлсэн зөв URL байх ёстой.'); return;
+    }
+    persist(data.notices, 'Постерийн холбоосууд хадгалагдлаа.', links);
   };
 
   const saveDraft = event => {
@@ -100,6 +112,16 @@ export default function SafetyNoticesAdmin({ token, uploadImage }) {
       {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
       {success && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{success}</p>}
       {loading ? <p role="status">Мэдээлэл ачаалж байна…</p> : data && <>
+        <form onSubmit={savePosterLinks} className="space-y-4 rounded-2xl border bg-white p-5">
+          <fieldset disabled={saving || !!draft} className="space-y-4">
+            <legend className="font-bold text-[#003B5C]">Сэрэмжлүүлгийн постерийн холбоос</legend>
+            <p className="text-sm text-slate-500">Холбоос оруулсан слайд дээр «Постер үзэх» товч гарна. Хоосон бол товч харагдахгүй.</p>
+            {[['safety', '#1'], ['gambling', '#2']].map(([key, number]) => <label key={key} className="block text-sm font-semibold">Аюулгүй байдлын сэрэмжлүүлэг зөвлөмж {number}
+              <input type="url" maxLength={2000} placeholder="https://..." value={posterLinks[key]} onChange={event => { setPosterLinks(current => ({ ...current, [key]: event.target.value })); setSuccess(''); }} className="mt-2 w-full rounded-xl border p-3 font-normal" />
+            </label>)}
+            <button type="submit" className="rounded-xl bg-[#003B5C] px-5 py-2.5 font-bold text-white disabled:opacity-50">{saving ? 'Хадгалж байна…' : 'Постерийн холбоос хадгалах'}</button>
+          </fieldset>
+        </form>
         <button type="button" disabled={saving || !!draft || data.notices.length >= 30} onClick={() => {
           setSuccess(''); setError('');
           setDraft({ id: crypto.randomUUID(), title: '', body: '', isPublished: true, imageUrl: '', order: Math.min(1000000, Math.max(0, ...data.notices.map(item => item.order)) + 1) });

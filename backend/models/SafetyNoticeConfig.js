@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { isValidPosterLink } from '../safetyNotices.js';
 
 const noticeSchema = new mongoose.Schema({
     id: { type: String, required: true, match: /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/ },
@@ -13,6 +14,13 @@ const safetyNoticeConfigSchema = new mongoose.Schema({
     _id: { type: String, enum: ['homepage'] },
     notices: { type: [noticeSchema], default: [], validate: value => value.length <= 30 && new Set(value.map(notice => notice.id)).size === value.length },
     revision: { type: Number, required: true, min: 1, validate: Number.isSafeInteger },
+    posterLinks: {
+        type: new mongoose.Schema({
+            safety: { type: String, default: '', maxlength: 2000, validate: isValidPosterLink },
+            gambling: { type: String, default: '', maxlength: 2000, validate: isValidPosterLink },
+        }, { _id: false, strict: 'throw' }),
+        default: () => ({ safety: '', gambling: '' }),
+    },
 }, { timestamps: true, strict: 'throw', collection: 'safety_notice_config' });
 
 export default mongoose.models.SafetyNoticeConfig || mongoose.model('SafetyNoticeConfig', safetyNoticeConfigSchema);
