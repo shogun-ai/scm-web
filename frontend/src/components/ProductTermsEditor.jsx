@@ -6,7 +6,7 @@ export default function ProductTermsEditor({ product, onChange }) {
     onChange(previous => updateProductTermList(previous, path, field, update));
   };
 
-  return getProductTermSections(product).map(section => (
+  return getProductTermSections(product, { includeAll: true }).map(section => (
     <section key={section.key} aria-label={section.label} className="border rounded-2xl p-5 space-y-4 text-slate-800">
       <h4 className="font-bold text-sm text-gray-600">{section.label}</h4>
       {['conditions', 'requirements'].map(field => {

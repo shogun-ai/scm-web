@@ -27,6 +27,7 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [flash, setFlash] = useState('');
+  const [selected, setSelected] = useState(() => new Set());
 
   useEffect(() => { const timer = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); }, 300); return () => clearTimeout(timer); }, [searchInput]);
   useEffect(() => {
@@ -79,15 +80,33 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
     }
   };
 
+  const deleteMessage = err => (err.response?.data?.code === 'DELETE_DISABLED' ? 'Устгах тохиргоо унтраалттай байна. Тохиргоо → Устгах тохиргоо хэсгээс асаана уу.' : errorMessage(err, 'Устгаж чадсангүй.'));
+  const deletable = list.items.filter(item => item.canDelete);
+  const selectedIds = deletable.filter(item => selected.has(item._id)).map(item => item._id);
+  const toggleSelect = id => setSelected(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const allSelected = deletable.length > 0 && selectedIds.length === deletable.length;
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(deletable.map(item => item._id)));
+
   const confirmDelete = async () => {
     if (!deleting) return;
     setDeleteBusy(true); setDeleteError('');
+    if (deleting.bulk) {
+      let done = 0; let lastError = '';
+      for (const id of deleting.ids) {
+        try { await deleteLoanRequest(apiUrl, id); done += 1; } catch (err) { lastError = deleteMessage(err); if (err.response?.data?.code === 'DELETE_DISABLED') break; }
+      }
+      setDeleteBusy(false); setSelected(new Set()); load();
+      if (lastError && done === 0) { setDeleteError(lastError); return; }
+      setFlash(`${done} хүсэлт устгагдлаа.${lastError ? ` ${deleting.ids.length - done} хүсэлтийг устгаж чадсангүй: ${lastError}` : ''}`);
+      setDeleting(null);
+      return;
+    }
     try {
       await deleteLoanRequest(apiUrl, deleting._id);
       setFlash(`Хүсэлт ${deleting.applicationReference || ''} устгагдлаа.`);
       setDeleting(null); load();
     } catch (err) {
-      setDeleteError(err.response?.data?.code === 'DELETE_DISABLED' ? 'Устгах тохиргоо унтраалттай байна. Тохиргоо → Устгах тохиргоо хэсгээс асаана уу.' : errorMessage(err, 'Устгаж чадсангүй.'));
+      setDeleteError(deleteMessage(err));
     } finally { setDeleteBusy(false); }
   };
   const deleteButton = (item, mobile) => (item.canDelete ? <button type="button" onClick={() => { setDeleteError(''); setDeleting(item); }} aria-label={`${item.applicationReference || 'Хүсэлт'} — устгах`} className={`inline-flex items-center justify-center gap-1 border border-red-300 bg-white font-semibold text-red-700 hover:bg-red-50 ${mobile ? 'mt-2 min-h-11 w-full rounded-xl text-sm' : 'ml-2 min-h-10 rounded-lg px-3 text-xs'}`}><Trash2 size={14} aria-hidden="true" />Устгах</button> : null);
@@ -141,11 +160,17 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
     {status === 'ready' && list.items.length === 0 && <p className="rounded-2xl bg-white p-10 text-center text-slate-500">Хүсэлт олдсонгүй.</p>}
 
     {list.items.length > 0 && <>
+      {selectedIds.length > 0 && <div role="region" aria-label="Сонгосон хүсэлтүүд" className="sticky top-2 z-10 flex flex-wrap items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-900 shadow-sm">
+        <span className="font-semibold">{selectedIds.length} хүсэлт сонгосон</span>
+        <button type="button" onClick={() => { setDeleteError(''); setDeleting({ bulk: true, ids: selectedIds }); }} className="inline-flex min-h-10 items-center gap-1 rounded-lg bg-red-600 px-3 font-semibold text-white"><Trash2 size={14} aria-hidden="true" />Сонгосныг устгах</button>
+        <button type="button" onClick={() => setSelected(new Set())} className="min-h-10 rounded-lg border border-red-300 bg-white px-3">Сонголт цуцлах</button>
+      </div>}
       <div className="hidden overflow-x-auto rounded-2xl bg-white shadow-sm md:block">
         <table className="w-full text-left text-sm">
           <caption className="sr-only">Зээлийн хүсэлтийн жагсаалт</caption>
-          <thead className="bg-slate-50 text-xs text-slate-600"><tr>{['Дугаар', 'Нэр', 'Бүтээгдэхүүн', 'Дүн', 'Төлөв', 'Хариуцагч', 'Огноо', ''].map(label => <th key={label} scope="col" className="px-4 py-3 font-semibold">{label}</th>)}</tr></thead>
-          <tbody className="divide-y divide-slate-100">{list.items.map(item => <tr key={item._id} className="hover:bg-slate-50">
+          <thead className="bg-slate-50 text-xs text-slate-600"><tr>{deletable.length > 0 && <th scope="col" className="w-10 px-4 py-3"><input type="checkbox" aria-label="Энэ хуудасны устгаж болох бүх хүсэлтийг сонгох" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-red-600" /></th>}{['Дугаар', 'Нэр', 'Бүтээгдэхүүн', 'Дүн', 'Төлөв', 'Хариуцагч', 'Огноо', ''].map(label => <th key={label} scope="col" className="px-4 py-3 font-semibold">{label}</th>)}</tr></thead>
+          <tbody className="divide-y divide-slate-100">{list.items.map(item => <tr key={item._id} className={selected.has(item._id) ? 'bg-red-50/60' : 'hover:bg-slate-50'}>
+            {deletable.length > 0 && <td className="px-4 py-3">{item.canDelete && <input type="checkbox" aria-label={`${item.applicationReference || 'Дугааргүй хүсэлт'} сонгох`} checked={selected.has(item._id)} onChange={() => toggleSelect(item._id)} className="h-4 w-4 accent-red-600" />}</td>}
             <td className="px-4 py-3 font-mono text-xs">{item.applicationReference || '—'}</td>
             <td className="px-4 py-3 font-medium">{item.displayName || '—'}<span className="block text-xs font-normal text-slate-500">{item.phone}</span></td>
             <td className="px-4 py-3">{item.productName || item.productKey || '—'}{item.subProductName && <span className="block text-xs text-slate-500">{item.subProductName}</span>}</td>
@@ -158,7 +183,7 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
         </table>
       </div>
       <ul className="space-y-3 md:hidden">{list.items.map(item => <li key={item._id} className="rounded-2xl bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-2"><div><p className="font-mono text-xs text-slate-500">{item.applicationReference || '—'}</p><p className="font-semibold">{item.displayName || '—'}</p></div><TaskStatusBadge status={item.taskStatus} outcome={item.outcome} legacy={item.taskStatusSource === 'legacy'} /></div>
+        <div className="flex items-start justify-between gap-2"><div>{item.canDelete && <label className="mb-1 flex min-h-9 items-center gap-2 text-xs text-red-700"><input type="checkbox" checked={selected.has(item._id)} onChange={() => toggleSelect(item._id)} className="h-4 w-4 accent-red-600" />Сонгох</label>}<p className="font-mono text-xs text-slate-500">{item.applicationReference || '—'}</p><p className="font-semibold">{item.displayName || '—'}</p></div><TaskStatusBadge status={item.taskStatus} outcome={item.outcome} legacy={item.taskStatusSource === 'legacy'} /></div>
         <p className="mt-2 text-sm text-slate-600">{item.productName || item.productKey || '—'}{item.subProductName ? ` · ${item.subProductName}` : ''}</p>
         <p className="mt-1 text-sm tabular-nums">{money(item.amount)} · {date(item.createdAt)}</p>
         <p className="mt-1 text-xs text-slate-500">Хариуцагч: {item.assignee?.name || '—'}</p>
@@ -173,6 +198,6 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
     </>}
 
     {openId && <LoanTaskDetail apiUrl={apiUrl} id={openId} user={user} assignees={assignees} onClose={() => setOpenId(null)} onChanged={load} onDeleted={() => { setOpenId(null); setFlash('Хүсэлт устгагдлаа.'); load(); }} />}
-    {deleting && <ConfirmDeleteDialog reference={deleting.applicationReference} busy={deleteBusy} error={deleteError} onCancel={() => setDeleting(null)} onConfirm={confirmDelete} />}
+    {deleting && <ConfirmDeleteDialog reference={deleting.bulk ? '' : deleting.applicationReference} count={deleting.bulk ? deleting.ids.length : 1} busy={deleteBusy} error={deleteError} onCancel={() => setDeleting(null)} onConfirm={confirmDelete} />}
   </div>;
 }

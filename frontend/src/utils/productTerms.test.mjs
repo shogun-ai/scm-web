@@ -58,3 +58,27 @@ test('public data accepts saved empty conditions and organization-only variants'
   assert.equal(hasProductTerms({}), false);
   assert.equal(hasProductTerms({ individual: { conditions: 'invalid' } }), false);
 });
+
+import { pruneNewEmptyTerms, copyProductContent } from './productTerms.mjs';
+
+test('editor offers both borrower sections for a new product', () => {
+  assert.deepEqual(getProductTermSections({ productKey: 'new_loan' }, { includeAll: true }).map(section => section.path), [['individual'], ['organization']]);
+});
+
+test('pruneNewEmptyTerms drops new empty sections but keeps saved ones', () => {
+  const edited = { individual: { conditions: ['a'], requirements: [] }, organization: { conditions: [''], requirements: [] } };
+  assert.deepEqual(Object.keys(pruneNewEmptyTerms(edited, null)).sort(), ['individual']);
+  assert.ok(pruneNewEmptyTerms(edited, { organization: { conditions: [] } }).organization);
+});
+
+test('copyProductContent copies content but not identity', () => {
+  const source = { _id: 'x', productKey: 'cons_loan', order: 3, title: 'Хэрэглээний зээл', description: 'd', individual: { conditions: ['c'] } };
+  const result = copyProductContent({ productKey: 'new_loan', title: '', order: 9 }, source);
+  assert.equal(result.productKey, 'new_loan');
+  assert.equal(result.order, 9);
+  assert.equal(result._id, undefined);
+  assert.equal(result.title, 'Хэрэглээний зээл (хуулбар)');
+  assert.deepEqual(result.individual, { conditions: ['c'] });
+  result.individual.conditions.push('z');
+  assert.deepEqual(source.individual.conditions, ['c']);
+});

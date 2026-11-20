@@ -18,6 +18,7 @@ import InviteUserForm from './admin/InviteUserForm';
 import SafetyNoticesAdmin from './SafetyNoticesAdmin';
 import HeroSliderSettings from './HeroSliderSettings';
 import ProductTermsEditor from './ProductTermsEditor';
+import { copyProductContent, pruneNewEmptyTerms } from '../utils/productTerms.mjs';
 import LoanAprSettingsEditor from './LoanAprSettingsEditor';
 import { DEFAULT_LOAN_APR_CONFIG, LOAN_APR_CONFIG_KEY, isValidLoanAprConfig, normalizeLoanAprConfig } from '../../../shared/loanAprConfig.js';
 import { isValidHeroSliderInterval, normalizeHeroSliderInterval } from '../../../shared/heroSliderConfig.js';
@@ -1883,6 +1884,16 @@ const AdminPanel = ({ user, token, onLogout }) => {
                           <h3 className="font-bold text-xl text-[#003B5C]">{editingProduct._id ? editingProduct.title : 'Шинэ бүтээгдэхүүн'}</h3>
                           <button onClick={() => setEditingProduct(null)} className="text-gray-400 hover:text-red-500"><X size={22}/></button>
                         </div>
+                        <label className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                          <span className="font-semibold">Өөр бүтээгдэхүүнээс хуулах</span>
+                          <select value="" aria-label="Хуулах бүтээгдэхүүн сонгох"
+                            onChange={e => { const source = products.find(p => p._id === e.target.value); if (source) setEditingProduct(p => copyProductContent(p, source)); }}
+                            className="min-w-0 flex-1 p-2 border rounded-lg bg-white text-sm">
+                            <option value="">Бүтээгдэхүүн сонгох…</option>
+                            {products.filter(p => p._id && p._id !== editingProduct._id).map(p => <option key={p._id} value={p._id}>{p.title}</option>)}
+                          </select>
+                          <span className="w-full text-xs text-slate-500">Тайлбар, нөхцөл, шаардлага, зургийг хуулна. Key болон дараалал хуулагдахгүй. Хуулсны дараа засаад хадгална.</span>
+                        </label>
                         {!editingProduct._id && (
                           <div className="space-y-1">
                             <label className="text-xs font-bold text-gray-400 uppercase">Бүтээгдэхүүний key (eng, жишээ: new_loan)</label>
@@ -1937,10 +1948,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
                             setCmsSaving(true);
                             try {
                               if (editingProduct._id) {
-                                await axios.put(`${API_URL}/api/products/content/${editingProduct.productKey}`, editingProduct);
+                                await axios.put(`${API_URL}/api/products/content/${editingProduct.productKey}`, pruneNewEmptyTerms(editingProduct, products.find(p => p._id === editingProduct._id)));
                                 alert('✅ Хадгалагдлаа!');
                               } else {
-                                await axios.post(`${API_URL}/api/products/content`, editingProduct);
+                                await axios.post(`${API_URL}/api/products/content`, pruneNewEmptyTerms(editingProduct, null));
                                 alert('✅ Нэмэгдлээ!');
                               }
                               setEditingProduct(null);
