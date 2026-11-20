@@ -2969,7 +2969,7 @@ const scmMessenger = createScmMessenger({
     content: { loadProducts: botContent.loadProducts, loadSetting: botContent.loadSetting },
 });
 registerScmMessengerRoutes({ app, authenticateUser, requireAdmin, createLog, messenger: scmMessenger });
-registerBotRoutes({ app, authenticateUser, requireAdmin, source: botContent, getPosts: () => scmMessenger.getPosts(), SiteConfig, createLog, limiter: createSafetyNoticeGuard({ max: 120 }) });
+registerBotRoutes({ app, authenticateUser, requireAdmin, source: botContent, getPosts: () => scmMessenger.getPosts(), configureProfile: () => scmMessenger.configureProfile(), SiteConfig, createLog, limiter: createSafetyNoticeGuard({ max: 120 }) });
 sharedWebhookForwarder = createSharedWebhookForwarder({ messenger: scmMessenger });
 
 // D9: legacy unprotected public submission is closed (registered first, so the handler below is unreachable).

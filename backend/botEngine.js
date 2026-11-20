@@ -11,12 +11,21 @@ export const DEFAULT_WELCOME = 'Сайн байна уу! Солонго Кап�
 export const WELCOME_KEY = 'bot_welcome_text';
 export const PAYMENT_KEY = 'payment_accounts';
 export const LEGACY_PAYMENT_TEXT_KEY = 'chatbot_repayment_text'; // AdminPanel "Банк, дансны дугаар, дансны нэр" field (read-only fallback)
+export const GREETING_KEY = 'bot_greeting_text';
+export const DEFAULT_GREETING = 'Сайн байна уу! Солонго Капитал ББСБ. Зээл, итгэлцэл, төлөлтийн мэдээллийг доорх цэснээс аваарай.';
+export const MAX_GREETING = 160;
 export const MAX_WELCOME = 500;
 export const MAX_ACCOUNTS = 10;
 export const MAX_CARDS = 10;
 export const MAX_POSTS = 6;
 export const MAX_TEXT = 8000;
 export const SITE_PATHS = { calculator: '/calculator', trustCalculator: '/trust-calculator', trustRequest: '/trust-request' };
+export const POST_META_KEY = 'bot_post_meta';
+export const POST_CATEGORIES = ['loan', 'safety', 'news'];
+export const MAX_ADMIN_POSTS = 20;
+export const MAX_POST_META = 300;
+export const CONTACT_KEYS = { phone: 'contact_phone', email: 'contact_email', address: 'contact_address', hours: 'contact_hours' };
+export const DEFAULT_HOURS = 'Даваа–Баасан 09:00–18:00';
 export const CONTENT_CACHE_MS = 60 * 1000;
 const KEY_RE = /^[A-Za-z0-9_-]{1,50}$/;
 
@@ -157,20 +166,86 @@ async function trustNode(ctx) {
   };
 }
 
+// ---------- post categories (D20) ----------
+const LOAN_WORDS = /зээл|хүү|олгож|барьцаа|шугам|лизинг/i;
+const SAFETY_WORDS = /сэрэмж|залилан|залилуул|анхаар|аюулгүй/i;
+export function suggestCategory(message) {
+  const text = String(message || '');
+  if (SAFETY_WORDS.test(text)) return 'safety';
+  if (LOAN_WORDS.test(text)) return 'loan';
+  return 'news';
+}
+const POST_ID_RE = /^[A-Za-z0-9_-]{1,100}$/;
+const sanitizeMeta = value => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+
+// -> [{ kind, title, payload|url }] (<=3). `meta` = admin override | undefined; `loans` = active loan products.
+export function postButtons(post, meta, loans, ctx) {
+  const id = String(post?.id || '');
+  const permalink = httpsUrl(post?.permalink_url);
+  const category = POST_CATEGORIES.includes(meta?.category) ? meta.category : suggestCategory(post?.message);
+  const productKey = category === 'loan' && meta?.productKey && loans.some(item => item.productKey === meta.productKey) ? meta.productKey : '';
+  const view = permalink ? [url('Пост үзэх', permalink)] : [];
+  const contact = postback('Холбоо барих', 'contact');
+  if (category === 'loan' && productKey) {
+    return [postback('Хүсэлт гаргах', `apply:${productKey}`), postback('Нөхцөл, шаардлага', `terms:${productKey}`), url('Тооцоолуур', calculatorUrl(productKey, ctx))];
+  }
+  if (category === 'loan') return [...(POST_ID_RE.test(id) ? [postback('Хүсэлт гаргах', `apply:post:${id}`)] : []), ...view, contact].slice(0, 3);
+  return [...view, contact];
+}
+
 async function adsNode(ctx) {
   let posts = [];
   try { posts = ctx.getPosts ? await ctx.getPosts() : []; } catch { posts = []; }
+  let metas = {};
+  try { metas = sanitizeMeta(await ctx.loadSetting(POST_META_KEY)); } catch { metas = {}; }
+  let loans = [];
+  try { loans = await activeLoans(ctx); } catch { loans = []; }
   const cards = (Array.isArray(posts) ? posts : []).filter(post => post?.id && (post.message || post.full_picture)).slice(0, MAX_POSTS).map(post => {
     const [first = '', ...rest] = String(post.message || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    const permalink = httpsUrl(post.permalink_url);
-    const id = String(post.id);
-    return card({
-      title: first, subtitle: rest.join(' '), imageUrl: post.full_picture,
-      buttons: [...(permalink ? [url('Дэлгэрэнгүй', permalink)] : []), ...(/^[A-Za-z0-9_-]{1,100}$/.test(id) ? [postback('Хүсэлт өгөх', `apply:post:${id}`)] : [])],
-    });
+    const meta = Object.prototype.hasOwnProperty.call(metas, String(post.id)) ? metas[String(post.id)] : undefined;
+    return card({ title: first, subtitle: rest.join(' '), imageUrl: post.full_picture, buttons: postButtons(post, meta, loans, ctx) });
   });
   if (!cards.length) return { text: 'Одоогоор идэвхтэй зар алга байна.', quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY] };
   return { cards, quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY] };
+}
+
+// "75991919, 75999191" | "7599-1919" | "+976 7599 1919" -> "+97675991919" (first valid number) | ''
+export function normalizePhone(value) {
+  const toE164 = raw => {
+    const digits = String(raw || '').replace(/[\s()\-.]/g, '');
+    if (/^\+?976\d{8}$/.test(digits)) return `+976${digits.slice(-8)}`;
+    if (/^\d{8}$/.test(digits)) return `+976${digits}`;
+    return '';
+  };
+  for (const part of String(value ?? '').split(/[,;/]/)) {
+    const whole = toE164(part);
+    if (whole) return whole;
+    for (const token of part.split(/\s+/)) { const hit = toE164(token); if (hit) return hit; }
+  }
+  return '';
+}
+
+async function contactNode(ctx) {
+  const read = async (key, limit) => { try { return clean(await ctx.loadSetting(key), limit); } catch { return ''; } };
+  const [phone, email, address, hours] = await Promise.all([read(CONTACT_KEYS.phone, 100), read(CONTACT_KEYS.email, 100), read(CONTACT_KEYS.address, 300), read(CONTACT_KEYS.hours, 100)]);
+  const lines = ['Солонго Капитал ББСБ — холбоо барих', `Утас: ${phone || CONTACT_PHONE}`];
+  if (email) lines.push(`Имэйл: ${email}`);
+  if (address) lines.push(`Хаяг: ${address}`);
+  lines.push(`Ажлын цаг: ${hours || DEFAULT_HOURS}`);
+  const e164 = normalizePhone(phone || CONTACT_PHONE);
+  const buttons = [...(e164 ? [{ kind: 'call', title: 'Залгах', phone: e164 }] : []), url('Вэбсайт', SITE_URL), postback('Зээл', 'loans')];
+  return { text: lines.join('\n'), buttons, quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY] };
+}
+
+function languageNode() {
+  return { text: 'Хэлээ сонгоно уу / Choose your language', quickReplies: [{ title: 'Монгол', payload: 'lang:mn' }, { title: 'English', payload: 'lang:en' }] };
+}
+// No language preference is stored yet (D20); English is a placeholder message.
+function englishNode() {
+  return {
+    text: 'English version is coming soon. For now, please continue in Mongolian.\nАнгли хувилбар одоогоор хийгдэж байна. Түр монголоор үргэлжлүүлнэ үү.',
+    quickReplies: [{ title: 'Монголоор үргэлжлүүлэх', payload: 'restart' }],
+  };
 }
 
 async function paymentNode(ctx) {
@@ -193,6 +268,10 @@ export async function buildNode(nodeId, ctx = {}) {
     if (id === 'trust') return await trustNode(ctx);
     if (id === 'ads') return await adsNode(ctx);
     if (id === 'payment') return await paymentNode(ctx);
+    if (id === 'contact') return await contactNode(ctx);
+    if (id === 'language') return languageNode();
+    if (id === 'lang:mn') return await restartNode(ctx);
+    if (id === 'lang:en') return englishNode();
     if (id === 'calc') return await calcNode('', ctx);
     if (id.startsWith('terms:')) return await termsNode(id.slice(6), ctx);
     if (id.startsWith('calc:')) return await calcNode(id.slice(5), ctx);
@@ -202,8 +281,8 @@ export async function buildNode(nodeId, ctx = {}) {
   return fallbackNode();
 }
 
-export const NODE_IDS = ['restart', 'loans', 'trust', 'ads', 'payment'];
-export const isNodeId = id => NODE_IDS.includes(id) || id === 'menu' || id === 'calc' || /^(terms|calc):[A-Za-z0-9_-]{1,50}$/.test(String(id || ''));
+export const NODE_IDS = ['restart', 'loans', 'trust', 'ads', 'payment', 'contact', 'language'];
+export const isNodeId = id => NODE_IDS.includes(id) || id === 'menu' || id === 'calc' || id === 'lang:mn' || id === 'lang:en' || /^(terms|calc):[A-Za-z0-9_-]{1,50}$/.test(String(id || ''));
 
 // ---------- admin bot content validation ----------
 // -> { ok:true, value:{welcomeText, paymentAccounts} } | { ok:false, message }
@@ -224,7 +303,13 @@ export function validateBotContent(body) {
     if (!account.bank || !account.accountNumber || !account.accountName) return { ok: false, message: 'Банк, дансны дугаар, хүлээн авагч заавал бөглөнө.' };
     accounts.push(account);
   }
-  return { ok: true, value: { welcomeText, paymentAccounts: accounts } };
+  // greetingText (Messenger Get Started greeting) is optional for backward compatibility: absent -> left unchanged (null).
+  let greetingText = null;
+  if (body.greetingText !== undefined) {
+    if (typeof body.greetingText !== 'string' || body.greetingText.trim().length > MAX_GREETING) return { ok: false, message: `Messenger мэндчилгээ ${MAX_GREETING} тэмдэгтээс ихгүй байна.` };
+    greetingText = body.greetingText.trim();
+  }
+  return { ok: true, value: { welcomeText, paymentAccounts: accounts, greetingText } };
 }
 
 // ---------- cached content source (Mongo-backed in server.js, fakes in tests) ----------
@@ -251,7 +336,7 @@ export function createBotContentSource({ ProductContent, SiteConfig, now = Date.
 
 // ---------- routes ----------
 // `limiter` is an Express middleware (rate limit) for the public endpoint. Admin routes: authenticateUser + requireAdmin.
-export function registerBotRoutes({ app, authenticateUser, requireAdmin, source, getPosts, SiteConfig, limiter = (_req, _res, next) => next(), createLog = async () => {} }) {
+export function registerBotRoutes({ app, authenticateUser, requireAdmin, source, getPosts, SiteConfig, configureProfile = async () => ({ ok: false, skipped: true }), limiter = (_req, _res, next) => next(), createLog = async () => {} }) {
   app.get('/api/bot/node/:id', limiter, async (req, res) => {
     const id = String(req.params.id || '');
     if (id.length > 80 || !isNodeId(id)) return res.status(404).json({ message: 'Node олдсонгүй.' });
@@ -264,12 +349,13 @@ export function registerBotRoutes({ app, authenticateUser, requireAdmin, source,
 
   app.get('/api/admin/bot-content', authenticateUser, requireAdmin, async (_req, res) => {
     try {
-      const [welcome, accounts, legacy] = await Promise.all([
-        SiteConfig.findOne({ key: WELCOME_KEY }).lean(), SiteConfig.findOne({ key: PAYMENT_KEY }).lean(), SiteConfig.findOne({ key: LEGACY_PAYMENT_TEXT_KEY }).lean(),
+      const [welcome, accounts, legacy, greeting] = await Promise.all([
+        SiteConfig.findOne({ key: WELCOME_KEY }).lean(), SiteConfig.findOne({ key: PAYMENT_KEY }).lean(), SiteConfig.findOne({ key: LEGACY_PAYMENT_TEXT_KEY }).lean(), SiteConfig.findOne({ key: GREETING_KEY }).lean(),
       ]);
       res.set?.('Cache-Control', 'no-store');
       return res.json({
         welcomeText: typeof welcome?.value === 'string' ? welcome.value : '', defaultWelcomeText: DEFAULT_WELCOME,
+        greetingText: typeof greeting?.value === 'string' ? greeting.value.slice(0, MAX_GREETING) : '', defaultGreetingText: DEFAULT_GREETING,
         paymentAccounts: sanitizeAccounts(accounts?.value),
         legacyPaymentText: typeof legacy?.value === 'string' ? legacy.value.slice(0, MAX_TEXT) : '',
       });
@@ -280,12 +366,78 @@ export function registerBotRoutes({ app, authenticateUser, requireAdmin, source,
     const checked = validateBotContent(req.body);
     if (!checked.ok) return res.status(400).json({ message: checked.message });
     try {
-      const { welcomeText, paymentAccounts } = checked.value;
+      const { welcomeText, paymentAccounts, greetingText } = checked.value;
       await SiteConfig.findOneAndUpdate({ key: WELCOME_KEY }, { $set: { value: welcomeText, updatedAt: new Date() }, $setOnInsert: { label: 'Ботын мэндчилгээ', group: 'chatbot' } }, { upsert: true });
       await SiteConfig.findOneAndUpdate({ key: PAYMENT_KEY }, { $set: { value: paymentAccounts, updatedAt: new Date() }, $setOnInsert: { label: 'Төлбөр хүлээн авах данснууд', group: 'chatbot' } }, { upsert: true });
+      if (greetingText !== null) await SiteConfig.findOneAndUpdate({ key: GREETING_KEY }, { $set: { value: greetingText, updatedAt: new Date() }, $setOnInsert: { label: 'Messenger мэндчилгээ', group: 'chatbot' } }, { upsert: true });
       source.invalidate();
       await createLog(req.user, 'bot_content_update', `accounts:${paymentAccounts.length}`);
-      return res.json({ ok: true, welcomeText, paymentAccounts });
+      let profile = null;
+      if (greetingText !== null) { try { profile = await configureProfile(); } catch { profile = { ok: false }; } } // Messenger greeting refresh (best effort)
+      return res.json({ ok: true, welcomeText, paymentAccounts, ...(greetingText !== null ? { greetingText, profile: { ok: Boolean(profile?.ok) } } : {}) });
     } catch { return res.status(500).json({ message: 'Хадгалахад алдаа гарлаа.' }); }
+  });
+
+  // ---- D20: post categories (admin only) ----
+  const readMetas = async () => sanitizeMeta((await SiteConfig.findOne({ key: POST_META_KEY }).lean())?.value);
+  const writeMetas = async metas => {
+    const entries = Object.entries(metas).sort((a, b) => String(b[1]?.updatedAt || '').localeCompare(String(a[1]?.updatedAt || ''))).slice(0, 200);
+    await SiteConfig.findOneAndUpdate({ key: POST_META_KEY }, { $set: { value: Object.fromEntries(entries), updatedAt: new Date() }, $setOnInsert: { label: 'Ботын пост ангилал', group: 'chatbot' } }, { upsert: true });
+    source.invalidate();
+  };
+  const actorOf = user => clean(user?.username || user?.email || user?.name || user?._id || user?.id || '', 80);
+
+  app.get('/api/admin/bot-posts', authenticateUser, requireAdmin, async (_req, res) => {
+    try {
+      let posts = [];
+      try { posts = await getPosts(); } catch { posts = []; }
+      const metas = await readMetas();
+      const items = (Array.isArray(posts) ? posts : []).filter(post => post?.id).slice(0, MAX_ADMIN_POSTS).map(post => {
+        const id = String(post.id);
+        const meta = Object.prototype.hasOwnProperty.call(metas, id) ? metas[id] : null;
+        return {
+          id, createdTime: post.created_time || '', message: String(post.message || '').slice(0, MAX_POST_META), imageUrl: httpsUrl(post.full_picture) || '', permalink: httpsUrl(post.permalink_url) || '',
+          meta: meta && POST_CATEGORIES.includes(meta.category) ? { category: meta.category, productKey: meta.productKey || null } : null,
+          suggested: { category: suggestCategory(post.message) },
+        };
+      });
+      let products = [];
+      try { products = (await activeLoans({ loadProducts: source.loadProducts })).map(item => ({ productKey: item.productKey, title: clean(item.title, 80) })); } catch { products = []; }
+      res.set?.('Cache-Control', 'no-store');
+      return res.json({ posts: items, products });
+    } catch { return res.status(500).json({ message: 'Постын жагсаалтыг ачаалж чадсангүй.' }); }
+  });
+
+  app.put('/api/admin/bot-posts/:postId', authenticateUser, requireAdmin, async (req, res) => {
+    const postId = String(req.params?.postId || '');
+    if (!POST_ID_RE.test(postId)) return res.status(400).json({ message: 'Постын ID буруу байна.' });
+    const category = req.body?.category;
+    if (!POST_CATEGORIES.includes(category)) return res.status(400).json({ message: 'Ангилал буруу байна.' });
+    let productKey = null;
+    try {
+      if (category === 'loan' && req.body?.productKey) {
+        const key = String(req.body.productKey);
+        const loans = await activeLoans({ loadProducts: source.loadProducts });
+        if (!KEY_RE.test(key) || !loans.some(item => item.productKey === key)) return res.status(400).json({ message: 'Идэвхтэй зээлийн бүтээгдэхүүн сонгоно уу.' });
+        productKey = key;
+      }
+      const metas = await readMetas();
+      metas[postId] = { category, productKey, updatedAt: new Date().toISOString(), updatedBy: actorOf(req.user) };
+      await writeMetas(metas);
+      await createLog(req.user, 'bot_post_meta_update', `post:${postId} ${category}${productKey ? `:${productKey}` : ''}`);
+      return res.json({ ok: true, postId, meta: { category, productKey } });
+    } catch { return res.status(500).json({ message: 'Хадгалахад алдаа гарлаа.' }); }
+  });
+
+  app.delete('/api/admin/bot-posts/:postId', authenticateUser, requireAdmin, async (req, res) => {
+    const postId = String(req.params?.postId || '');
+    if (!POST_ID_RE.test(postId)) return res.status(400).json({ message: 'Постын ID буруу байна.' });
+    try {
+      const metas = await readMetas();
+      delete metas[postId];
+      await writeMetas(metas);
+      await createLog(req.user, 'bot_post_meta_clear', `post:${postId}`);
+      return res.json({ ok: true, postId, meta: null });
+    } catch { return res.status(500).json({ message: 'Устгахад алдаа гарлаа.' }); }
   });
 }

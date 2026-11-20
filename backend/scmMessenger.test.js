@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {
   verifySignature, buildPostElement, buildPostsCarousel, splitText, buildMessengerProfile, parsePhone, parseAmount, parseTerm, parseName,
-  startApplication, advance, nodeToMessengerMessages, createPsidLimiter, createGraphClient, createScmMessenger, registerScmMessengerRoutes, partitionEntries,
+  startApplication, advance, nodeToMessengerMessages, toMessengerButtons, createPsidLimiter, createGraphClient, createScmMessenger, registerScmMessengerRoutes, partitionEntries,
   createSharedWebhookForwarder, GraphError, stripChatControlTokens,
 } from './scmMessenger.js';
 import { buildMessengerTaskDoc, validateMessengerInput, toTaskListItem, LOAN_TASK_SCHEMA_FIELDS, sanitizeLegacyLoanWrite, CHANNELS } from './loanTasks.js';
@@ -115,13 +115,26 @@ test('splitText chunks long posts at boundaries, max 5 chunks', () => {
   assert.deepEqual(splitText(''), []);
 });
 
+test('messenger profile greeting: default Mongolian text <=160, custom text trimmed to 160, no ice_breakers; configureProfile reads bot_greeting_text', async () => {
+  const profile = buildMessengerProfile();
+  assert.equal(profile.greeting[0].locale, 'default');
+  assert.match(profile.greeting[0].text, /^Сайн байна уу! Солонго Капитал ББСБ\./);
+  assert.ok(profile.greeting[0].text.length <= 160);
+  assert.equal('ice_breakers' in profile, false);
+  assert.equal(buildMessengerProfile('я'.repeat(300)).greeting[0].text.length, 160);
+  assert.equal(buildMessengerProfile('  Шинэ   мэндчилгээ ').greeting[0].text, 'Шинэ мэндчилгээ');
+  const custom = makeMessenger({ content: { ...CONTENT, loadSetting: async key => (key === 'bot_greeting_text' ? 'Тусгай мэндчилгээ' : undefined) } });
+  await custom.messenger.configureProfile();
+  assert.equal(custom.axios.calls.post.find(item => item.url.endsWith('/me/messenger_profile')).data.greeting[0].text, 'Тусгай мэндчилгээ');
+});
+
 test('persistent menu per §19: restart, loans, trust, ads, payment postbacks; get started = restart', () => {
   const profile = buildMessengerProfile();
   assert.deepEqual(profile.get_started, { payload: 'restart' });
   const items = profile.persistent_menu[0].call_to_actions;
   assert.deepEqual(items.map(item => [item.type, item.title, item.payload]), [
     ['postback', 'Дахин эхлүүлэх', 'restart'], ['postback', 'Зээл', 'loans'], ['postback', 'Итгэлцэл', 'trust'],
-    ['postback', 'Идэвхтэй зээлийн зар', 'ads'], ['postback', 'Төлөлт хийх', 'payment'],
+    ['postback', 'Идэвхтэй зээлийн зар', 'ads'], ['postback', 'Төлөлт хийх', 'payment'], ['postback', 'Хэл / Language', 'language'],
   ]);
   assert.ok(items.every(item => item.title.length <= 30));
 });
@@ -325,7 +338,7 @@ test('request creation failure keeps the draft at confirm and shows a fallback; 
   assert.equal(await store.get(PSID), null);
 });
 
-test('restart/menu abort the flow and show the welcome node; contact goes to legacy chat; back goes one step inside the flow', async () => {
+test('restart/menu abort the flow and show the welcome node; contact shows the contact node; back goes one step inside the flow', async () => {
   const { messenger, axios, store } = makeMessenger({ content: CONTENT });
   await messenger.handleEntry({ id: '111', messaging: [postback('apply'), quick('product:cons_loan'), say('Бат Болд')] });
   assert.equal((await store.get(PSID)).state, 'phone');
@@ -337,9 +350,14 @@ test('restart/menu abort the flow and show the welcome node; contact goes to leg
   const welcome = sent(axios).at(-1);
   assert.match(welcome.text, /Солонго Капитал/);
   assert.deepEqual(welcome.quick_replies.map(reply => reply.payload), ['loans', 'trust', 'ads', 'payment']);
-  await messenger.handleEntry({ id: '111', messaging: [postback('contact'), postback('back'), say('Хүү хэд вэ?')] });
+  await messenger.handleEntry({ id: '111', messaging: [postback('contact')] });
+  assert.equal(axios.calls.post.filter(call => call.url.endsWith('/api/chat')).length, 0, 'contact no longer uses legacy chat');
+  const contactMsg = sent(axios).at(-1);
+  assert.equal(contactMsg.attachment.payload.template_type, 'button');
+  assert.match(contactMsg.attachment.payload.text, /Утас: /);
+  await messenger.handleEntry({ id: '111', messaging: [postback('back'), say('Хүү хэд вэ?')] });
   const chats = axios.calls.post.filter(call => call.url.endsWith('/api/chat'));
-  assert.deepEqual(chats.map(call => call.data.message), ['contact', 'back', 'Хүү хэд вэ?']);
+  assert.deepEqual(chats.map(call => call.data.message), ['back', 'Хүү хэд вэ?']);
   assert.equal(chats[0].data.sessionId, `fb_${PSID}`);
   assert.ok(texts(axios).includes('Сайн байна уу'));
   await messenger.handleEntry({ id: '111', messaging: [say('Төлөлт хийх')] });
@@ -405,7 +423,7 @@ test('menu payloads send nodes: loans carousel, terms text, trust, payment, ads;
   await messenger.handleEntry({ id: '111', messaging: [postback('trust')] });
   assert.deepEqual(sent(axios).at(-1).attachment.payload.elements[0].buttons.map(b => b.url), ['https://www.scm.mn/trust-request?source=messenger', 'https://www.scm.mn/trust-calculator?source=messenger']);
   await messenger.handleEntry({ id: '111', messaging: [postback('ads')] });
-  assert.deepEqual(sent(axios).at(-1).attachment.payload.elements[0].buttons.map(b => b.payload || b.url), ['https://www.facebook.com/p/1', 'apply:post:p_1']);
+  assert.deepEqual(sent(axios).at(-1).attachment.payload.elements[0].buttons.map(b => b.payload || b.url), ['https://www.facebook.com/p/1', 'contact']);
   await messenger.handleEntry({ id: '111', messaging: [postback('payment')] });
   assert.match(texts(axios).at(-1), /Хаан банк/);
   await messenger.handleEntry({ id: '111', messaging: [postback('apply:cons_loan'), postback('loans')] });
@@ -679,4 +697,40 @@ test('shared webhook forwarder: Zentro entry stays on the Zentro path; other Pag
   boom({ body: bodyBoom, rawBody: rawBoom, headers: {}, protocol: 'https', get: () => sign(rawBoom) }, {}, () => { ok += 1; });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(ok, 1);
+});
+
+test('contact node -> Messenger button template with phone_number / web_url / postback buttons; call button dropped for invalid phone', () => {
+  const node = { text: 'Утас: 75991919', buttons: [{ kind: 'call', title: 'Залгах', phone: '+97675991919' }, { kind: 'url', title: 'Вэбсайт', url: 'https://www.scm.mn' }, { kind: 'postback', title: 'Зээл', payload: 'loans' }], quickReplies: [{ title: 'Цэс', payload: 'restart' }] };
+  const [message] = nodeToMessengerMessages(node);
+  assert.equal(message.attachment.payload.template_type, 'button');
+  assert.deepEqual(message.attachment.payload.buttons.map(b => [b.type, b.payload || b.url]), [['phone_number', '+97675991919'], ['web_url', 'https://www.scm.mn'], ['postback', 'loans']]);
+  assert.equal(message.quick_replies[0].payload, 'restart');
+  assert.deepEqual(toMessengerButtons([{ kind: 'call', title: 'Залгах', phone: '123' }, { kind: 'call', title: 'x', phone: '+97675991919' }]).map(b => b.type), ['phone_number']);
+});
+
+test('apply:<productKey>:post:<id> keeps the product and post context; apply:post:<id> unchanged', async () => {
+  const { messenger, store } = makeMessenger({ content: CONTENT });
+  await messenger.handleEntry({ id: '111', messaging: [postback('apply:cons_loan:post:p_9')] });
+  const session = await store.get(PSID);
+  assert.equal(session.state, 'name');
+  assert.equal(session.draft.productKey, 'cons_loan');
+  assert.equal(session.postId, 'p_9');
+  await messenger.handleEntry({ id: '111', messaging: [postback('apply:post:p_7')] });
+  const second = await store.get(PSID);
+  assert.equal(second.state, 'product');
+  assert.equal(second.postId, 'p_7');
+});
+
+test('language menu: language node, lang:en placeholder, lang:mn restarts and clears the session; typed text is not affected', async () => {
+  const { messenger, axios, store } = makeMessenger({ content: CONTENT });
+  await messenger.handleEntry({ id: '111', messaging: [postback('language')] });
+  assert.match(texts(axios).at(-1), /Choose your language/);
+  assert.deepEqual(sent(axios).at(-1).quick_replies.map(reply => reply.payload), ['lang:mn', 'lang:en']);
+  await messenger.handleEntry({ id: '111', messaging: [quick('lang:en')] });
+  assert.match(texts(axios).at(-1), /English version is coming soon[\s\S]*Англи хувилбар/);
+  assert.deepEqual(sent(axios).at(-1).quick_replies.map(reply => reply.payload), ['restart']);
+  await messenger.handleEntry({ id: '111', messaging: [postback('apply:cons_loan'), quick('lang:mn')] });
+  assert.equal(await store.get(PSID), null, 'lang:mn restarts');
+  assert.match(texts(axios).at(-1), /Солонго Капитал/);
+  assert.equal(axios.calls.post.filter(call => call.url.endsWith('/api/chat')).length, 0);
 });

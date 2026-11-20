@@ -181,7 +181,8 @@ const ChatBot = () => {
       }
       const cards = (Array.isArray(node.cards) ? node.cards : []).map((card) => ({ ...card, nodeCard: true }));
       const quickReplies = (Array.isArray(node.quickReplies) ? node.quickReplies : []).filter((q) => q && q.title && q.payload);
-      const next = { role: 'ai', text: String(node.text || ''), options: [], cards, quickReplies, fromNode: true };
+      const nodeButtons = (Array.isArray(node.buttons) ? node.buttons : []).filter((b) => b && b.title && (b.kind === 'call' ? /^\+976\d{8}$/.test(String(b.phone || '')) : (b.payload || b.url))).slice(0, 3);
+      const next = { role: 'ai', text: String(node.text || ''), options: [], cards, quickReplies, nodeButtons, fromNode: true };
       setMessages((prev) => (replace ? [next] : [...prev, next]));
       setHasNodes(true);
       return true;
@@ -207,7 +208,7 @@ const ChatBot = () => {
       return;
     }
     if (value.startsWith('apply:')) {
-      navigateToLoanRequest(value.slice('apply:'.length));
+      navigateToLoanRequest(value.slice('apply:'.length).split(':post:')[0]); // apply:<productKey>[:post:<id>]
       return;
     }
     loadNode(value, title);
@@ -215,6 +216,10 @@ const ChatBot = () => {
 
   const handleBotButton = (button) => {
     if (!button) return;
+    if (button.kind === 'call') {
+      if (/^\+976\d{8}$/.test(String(button.phone || ''))) window.location.href = `tel:${button.phone}`;
+      return;
+    }
     if (button.kind === 'url' || (button.url && !button.payload)) {
       const raw = String(button.url || '').trim();
       if (!raw) return;
@@ -329,6 +334,10 @@ const ChatBot = () => {
       actions[option]();
       return;
     }
+    if (option === 'Холбоо барих') { // D20: shared backend contact node
+      loadNode('contact', option);
+      return;
+    }
 
     sendMessage(OPTION_COMMANDS[option] || option, option);
   };
@@ -350,6 +359,10 @@ const ChatBot = () => {
     }
     if (command === 'map') {
       window.open('https://maps.google.com/?q=Misheel+City+M3+Tower', '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (command === 'contact') {
+      loadNode('contact', card.title);
       return;
     }
     if (card.command === 'online_request') {
@@ -399,6 +412,13 @@ const ChatBot = () => {
                   Үндсэн цэс
                 </button>
               )}
+              <button
+                onClick={() => loadNode('language', 'Хэл / Language')}
+                disabled={isLoading}
+                className="rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-60"
+              >
+                Хэл / Language
+              </button>
               <a
                 href="https://m.me/Solongo.Capital"
                 target="_blank"
@@ -548,6 +568,17 @@ const ChatBot = () => {
                           </button>
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {message.role === 'ai' && message.nodeButtons?.length > 0 && (
+                    <div className="mt-3 grid gap-2">
+                      {message.nodeButtons.map((button, buttonIndex) => {
+                        const cls = 'block rounded-xl bg-slate-100 px-3 py-2 text-center text-[11px] font-bold text-[#003B5C] transition hover:bg-[#003B5C] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#003B5C]';
+                        return button.kind === 'call'
+                          ? <a key={`${button.title}-${buttonIndex}`} href={`tel:${button.phone}`} className={cls}>{button.title}</a>
+                          : <button key={`${button.title}-${buttonIndex}`} onClick={() => handleBotButton(button)} disabled={isLoading} className={cls}>{button.title}</button>;
+                      })}
                     </div>
                   )}
 

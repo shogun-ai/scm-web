@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildNode, formatTerms, sanitizeAccounts, validateBotContent, createBotContentSource, registerBotRoutes, isNodeId,
-  DEFAULT_WELCOME, MAX_CARDS,
+  DEFAULT_WELCOME, DEFAULT_GREETING, MAX_CARDS, suggestCategory, normalizePhone, postButtons,
 } from './botEngine.js';
 
 const person = { conditions: ['Хүү 2%', 'Хугацаа 12 сар'], requirements: ['18 нас хүрсэн'] };
@@ -131,9 +131,9 @@ test('ads: last 6 posts, permalink + apply:post:<id> buttons, junk skipped, empt
   assert.equal(node.cards.length, 6);
   assert.equal(node.cards[0].title, 'Гарчиг 0');
   assert.equal(node.cards[0].subtitle.length, 80);
-  assert.deepEqual(node.cards[0].buttons.map(button => button.payload || button.url), ['https://www.facebook.com/p/0', 'apply:post:p_0']);
+  assert.deepEqual(node.cards[0].buttons.map(button => button.payload || button.url), ['https://www.facebook.com/p/0', 'contact']);
   const noLink = await buildNode('ads', ctxOf({ posts: [{ id: 'p_1', message: 'Зар', permalink_url: 'javascript:alert(1)' }] }));
-  assert.deepEqual(noLink.cards[0].buttons.map(button => button.payload), ['apply:post:p_1']);
+  assert.deepEqual(noLink.cards[0].buttons.map(button => button.payload), ['contact']);
   assert.match((await buildNode('ads', ctxOf())).text, /зар алга/);
   const failing = await buildNode('ads', { ...ctxOf(), getPosts: async () => { throw new Error('graph'); } });
   assert.match(failing.text, /зар алга/);
@@ -217,18 +217,19 @@ test('content source caches products and settings for the TTL and invalidate() c
 });
 
 // ---------- routes ----------
-function harness({ docs = {}, limiter, logs = [] } = {}) {
+function harness({ docs = {}, limiter, logs = [], posts = [{ id: 'p_1', message: 'Зар' }] } = {}) {
   const routes = new Map();
-  const app = Object.fromEntries(['get', 'put'].map(method => [method, (path, ...handlers) => routes.set(`${method}:${path}`, handlers)]));
+  const app = Object.fromEntries(['get', 'put', 'delete'].map(method => [method, (path, ...handlers) => routes.set(`${method}:${path}`, handlers)]));
   const updates = [];
   const SiteConfig = {
     findOne: ({ key }) => ({ lean: async () => (docs[key] === undefined ? null : { value: docs[key] }) }),
     findOneAndUpdate: async (filter, update) => { updates.push({ filter, update }); docs[filter.key] = update.$set.value; },
   };
   let invalidated = 0;
+  const profileCalls = [];
   const content = { loadProducts: async () => PRODUCTS, loadSetting: async key => docs[key], invalidate: () => { invalidated += 1; } };
   registerBotRoutes({
-    app, source: content, SiteConfig, getPosts: async () => [{ id: 'p_1', message: 'Зар' }], limiter,
+    app, source: content, SiteConfig, getPosts: async () => posts, limiter, configureProfile: async () => { profileCalls.push(1); return { ok: true }; },
     authenticateUser: (_req, _res, next) => next(),
     requireAdmin: (req, res, next) => (req.user?.role === 'admin' ? next() : res.status(403).json({ message: 'Forbidden' })),
     createLog: async (_user, action, details) => { logs.push({ action, details }); },
@@ -242,7 +243,7 @@ function harness({ docs = {}, limiter, logs = [] } = {}) {
     await run(0);
     return response;
   };
-  return { invoke, updates, docs, logs, invalidated: () => invalidated };
+  return { invoke, updates, docs, logs, profileCalls, invalidated: () => invalidated };
 }
 
 test('GET /api/bot/node/:id: public, node JSON with web urls, 404 for unknown/oversized ids, rate limited, no secrets', async () => {
@@ -253,7 +254,7 @@ test('GET /api/bot/node/:id: public, node JSON with web urls, 404 for unknown/ov
   assert.equal(loans.data.cards[0].buttons[2].url, 'https://www.scm.mn/calculator?product=biz_loan&source=web');
   assert.equal((await h.invoke('get', '/api/bot/node/:id', { params: { id: 'terms:cons_loan' } })).code, 200);
   assert.match((await h.invoke('get', '/api/bot/node/:id', { params: { id: 'payment' } })).data.text, /5000123456/);
-  assert.equal((await h.invoke('get', '/api/bot/node/:id', { params: { id: 'ads' } })).data.cards[0].buttons[0].payload, 'apply:post:p_1');
+  assert.equal((await h.invoke('get', '/api/bot/node/:id', { params: { id: 'ads' } })).data.cards[0].buttons[0].payload, 'contact');
   for (const id of ['nope', '..%2Fx', 'terms:', `terms:${'a'.repeat(100)}`, '__proto__']) assert.equal((await h.invoke('get', '/api/bot/node/:id', { params: { id } })).code, 404, id);
   const json = JSON.stringify(loans.data);
   assert.ok(!/token|secret|password|mongodb/i.test(json));
@@ -271,7 +272,7 @@ test('admin bot-content: admin only; GET returns defaults + legacy text; PUT val
   assert.equal(h.updates.length, 0);
   const got = await h.invoke('get', '/api/admin/bot-content');
   assert.equal(got.headers['Cache-Control'], 'no-store');
-  assert.deepEqual(got.data, { welcomeText: '', defaultWelcomeText: DEFAULT_WELCOME, paymentAccounts: [{ bank: 'Б', accountNumber: '1', accountName: 'Н', iban: '', note: '' }], legacyPaymentText: 'Хуучин данс' });
+  assert.deepEqual(got.data, { welcomeText: '', defaultWelcomeText: DEFAULT_WELCOME, greetingText: '', defaultGreetingText: DEFAULT_GREETING, paymentAccounts: [{ bank: 'Б', accountNumber: '1', accountName: 'Н', iban: '', note: '' }], legacyPaymentText: 'Хуучин данс' });
   const bad = await h.invoke('put', '/api/admin/bot-content', { body: { welcomeText: 'я'.repeat(501), paymentAccounts: [] } });
   assert.equal(bad.code, 400);
   assert.equal(h.updates.length, 0);
@@ -285,4 +286,131 @@ test('admin bot-content: admin only; GET returns defaults + legacy text; PUT val
   assert.ok(!('chatbot_repayment_text' in h.updates.map(update => update.filter.key)), 'legacy payment text is never written');
   assert.equal(h.invalidated(), 1);
   assert.deepEqual(h.logs.at(-1), { action: 'bot_content_update', details: 'accounts:1' });
+});
+
+// ---------- D20: post categories + contact ----------
+test('suggestCategory: keywords, safety wins over loan, default news', () => {
+  assert.equal(suggestCategory('Хэрэглээний зээл олгож байна, хүү 1.8%'), 'loan');
+  assert.equal(suggestCategory('Залилан сэрэмжил! Анхаараарай'), 'safety');
+  assert.equal(suggestCategory('Зээлийн залилангаас сэрэмжил'), 'safety');
+  assert.equal(suggestCategory('Шинэ жилийн мэнд'), 'news');
+  assert.equal(suggestCategory(undefined), 'news');
+});
+
+test('ads buttons per category; admin override beats suggestion; unknown/inactive product falls back', async () => {
+  const posts = [
+    { id: 'a1', message: 'Автомашины зээл', permalink_url: 'https://www.facebook.com/p/a1' },
+    { id: 'a2', message: 'Шинэ мэдээ', permalink_url: 'https://www.facebook.com/p/a2' },
+    { id: 'a3', message: 'Залилан сэрэмжил', permalink_url: 'https://www.facebook.com/p/a3' },
+    { id: 'a4', message: 'Мэдээ', permalink_url: 'https://www.facebook.com/p/a4' },
+    { id: 'a5', message: 'Зээл', permalink_url: 'https://www.facebook.com/p/a5' },
+  ];
+  const meta = { a2: { category: 'loan', productKey: 'biz_loan' }, a3: { category: 'news', productKey: null }, a4: { category: 'loan', productKey: 'old_loan' }, a5: { category: 'loan', productKey: 'trust' } };
+  const node = await buildNode('ads', ctxOf({ posts, settings: { bot_post_meta: meta }, channel: 'web' }));
+  assertNodeShape(node);
+  const view = item => item.buttons.map(button => button.payload || button.url);
+  assert.deepEqual(view(node.cards[0]), ['apply:post:a1', 'https://www.facebook.com/p/a1', 'contact']);
+  assert.deepEqual(view(node.cards[1]), ['apply:biz_loan', 'terms:biz_loan', 'https://www.scm.mn/calculator?product=biz_loan&source=web']);
+  assert.deepEqual(view(node.cards[2]), ['https://www.facebook.com/p/a3', 'contact'], 'override safety->news');
+  assert.deepEqual(view(node.cards[3]), ['apply:post:a4', 'https://www.facebook.com/p/a4', 'contact'], 'inactive product ignored');
+  assert.deepEqual(view(node.cards[4]), ['apply:post:a5', 'https://www.facebook.com/p/a5', 'contact'], 'trust is not a loan product');
+  assert.deepEqual(postButtons({ id: 'z', message: 'мэдээ' }, undefined, [], {}).map(button => button.payload), ['contact']);
+  const broken = await buildNode('ads', { ...ctxOf({ posts }), loadSetting: async () => { throw new Error('db'); } });
+  assert.equal(broken.cards.length, 5, 'meta failure falls back to suggestions');
+});
+
+test('normalizePhone: E.164 with +976, first valid number, junk rejected', () => {
+  assert.equal(normalizePhone('75991919, 75999191'), '+97675991919');
+  assert.equal(normalizePhone('7599-1919'), '+97675991919');
+  assert.equal(normalizePhone('+976 7599 1919'), '+97675991919');
+  assert.equal(normalizePhone('97675991919'), '+97675991919');
+  assert.equal(normalizePhone('75991919 75999191'), '+97675991919');
+  assert.equal(normalizePhone('1919'), '');
+  assert.equal(normalizePhone(''), '');
+  assert.equal(normalizePhone(undefined), '');
+});
+
+test('contact node: SiteConfig phone/email/address/hours, defaults, call button only for valid phone', async () => {
+  assert.ok(isNodeId('contact'));
+  const node = await buildNode('contact', ctxOf({ settings: { contact_phone: '75991919, 75999191', contact_email: 'info@scm.mn', contact_address: 'Хан-Уул', contact_hours: '09-18' } }));
+  assert.match(node.text, /Утас: 75991919, 75999191/);
+  assert.match(node.text, /Имэйл: info@scm.mn/);
+  assert.match(node.text, /Хаяг: Хан-Уул/);
+  assert.match(node.text, /Ажлын цаг: 09-18/);
+  assert.deepEqual(node.buttons.map(button => [button.kind, button.phone || button.payload || button.url]), [['call', '+97675991919'], ['url', 'https://www.scm.mn'], ['postback', 'loans']]);
+  assert.deepEqual(quickPayloads(node), ['loans', 'restart']);
+  const defaults = await buildNode('contact', ctxOf());
+  assert.match(defaults.text, /Ажлын цаг: Даваа/);
+  assert.equal(defaults.buttons[0].phone, '+97675991919');
+  const bad = await buildNode('contact', ctxOf({ settings: { contact_phone: 'ask staff' } }));
+  assert.ok(!bad.buttons.some(button => button.kind === 'call'));
+});
+
+test('admin bot-posts: admin only; GET list with meta + suggestion; PUT validates category/product, stores, invalidates; DELETE clears', async () => {
+  const posts = Array.from({ length: 25 }, (_, i) => ({ id: `p_${i}`, message: i === 0 ? `Зээл ${'я'.repeat(400)}` : 'Мэдээ', full_picture: 'https://fb/i.jpg', permalink_url: `https://www.facebook.com/p/${i}`, created_time: '2026-11-20T01:00:00+0000' }));
+  const h = harness({ posts, docs: { bot_post_meta: { p_1: { category: 'safety', productKey: null } } } });
+  const employee = { role: 'employee' };
+  assert.equal((await h.invoke('get', '/api/admin/bot-posts', { user: employee })).code, 403);
+  assert.equal((await h.invoke('put', '/api/admin/bot-posts/:postId', { user: employee, params: { postId: 'p_1' }, body: { category: 'news' } })).code, 403);
+  assert.equal((await h.invoke('delete', '/api/admin/bot-posts/:postId', { user: employee, params: { postId: 'p_1' } })).code, 403);
+  const got = await h.invoke('get', '/api/admin/bot-posts');
+  assert.equal(got.data.posts.length, 20);
+  assert.deepEqual(got.data.products.map(item => item.productKey), ['biz_loan', 'car_loan', 'cons_loan'], 'active loan products only, ordered');
+  assert.equal(got.data.posts[0].message.length, 300);
+  assert.deepEqual(got.data.posts[0].suggested, { category: 'loan' });
+  assert.equal(got.data.posts[0].meta, null);
+  assert.deepEqual(got.data.posts[1].meta, { category: 'safety', productKey: null });
+  assert.equal(got.data.posts[0].permalink, 'https://www.facebook.com/p/0');
+  const put = (params, body) => h.invoke('put', '/api/admin/bot-posts/:postId', { params, body, user: { role: 'admin', username: 'boss' } });
+  assert.equal((await put({ postId: 'p_0' }, { category: 'bogus' })).code, 400);
+  assert.equal((await put({ postId: 'p 0!' }, { category: 'news' })).code, 400);
+  assert.equal((await put({ postId: 'p_0' }, { category: 'loan', productKey: 'old_loan' })).code, 400, 'inactive');
+  assert.equal((await put({ postId: 'p_0' }, { category: 'loan', productKey: 'trust' })).code, 400, 'trust is not a loan');
+  assert.equal((await put({ postId: 'p_0' }, { category: 'loan', productKey: 'nope' })).code, 400);
+  assert.equal(h.updates.length, 0);
+  assert.equal(h.invalidated(), 0);
+  const ok = await put({ postId: 'p_0' }, { category: 'loan', productKey: 'biz_loan' });
+  assert.equal(ok.code, 200);
+  assert.equal(h.docs.bot_post_meta.p_0.productKey, 'biz_loan');
+  assert.equal(h.docs.bot_post_meta.p_0.updatedBy, 'boss');
+  assert.ok(h.docs.bot_post_meta.p_0.updatedAt);
+  assert.ok(h.docs.bot_post_meta.p_1, 'other entries kept');
+  assert.equal(h.invalidated(), 1);
+  const news = await put({ postId: 'p_2' }, { category: 'news', productKey: 'biz_loan' });
+  assert.equal(news.data.meta.productKey, null, 'product only kept for loan');
+  const del = await h.invoke('delete', '/api/admin/bot-posts/:postId', { params: { postId: 'p_0' } });
+  assert.equal(del.code, 200);
+  assert.ok(!('p_0' in h.docs.bot_post_meta));
+  assert.equal(h.invalidated(), 3);
+  assert.ok(h.logs.some(log => log.action === 'bot_post_meta_clear'));
+});
+
+test('admin bot-content greetingText: optional, <=160, stored under bot_greeting_text, refreshes Messenger profile only when provided', async () => {
+  assert.equal(validateBotContent({ welcomeText: '', paymentAccounts: [], greetingText: 'я'.repeat(161) }).ok, false);
+  assert.equal(validateBotContent({ welcomeText: '', paymentAccounts: [], greetingText: 5 }).ok, false);
+  assert.equal(validateBotContent({ welcomeText: '', paymentAccounts: [], greetingText: 'я'.repeat(160) }).ok, true);
+  assert.equal(validateBotContent({ welcomeText: '', paymentAccounts: [] }).value.greetingText, null);
+  const h = harness({ docs: { bot_greeting_text: 'Хуучин' } });
+  assert.equal((await h.invoke('get', '/api/admin/bot-content')).data.greetingText, 'Хуучин');
+  const plain = await h.invoke('put', '/api/admin/bot-content', { body: { welcomeText: '', paymentAccounts: [] } });
+  assert.equal(plain.code, 200);
+  assert.equal(h.docs.bot_greeting_text, 'Хуучин', 'untouched when absent');
+  assert.equal(h.profileCalls.length, 0);
+  const saved = await h.invoke('put', '/api/admin/bot-content', { body: { welcomeText: '', paymentAccounts: [], greetingText: ' Шинэ ' } });
+  assert.equal(saved.data.greetingText, 'Шинэ');
+  assert.deepEqual(saved.data.profile, { ok: true });
+  assert.equal(h.docs.bot_greeting_text, 'Шинэ');
+  assert.equal(h.profileCalls.length, 1);
+  assert.equal((await h.invoke('put', '/api/admin/bot-content', { body: { welcomeText: '', paymentAccounts: [], greetingText: 'я'.repeat(161) } })).code, 400);
+});
+
+test('language nodes: choose language, English placeholder (bilingual), Mongolian = restart; valid node ids', async () => {
+  for (const id of ['language', 'lang:mn', 'lang:en']) assert.ok(isNodeId(id), id);
+  assert.ok(!isNodeId('lang:fr'));
+  const language = await buildNode('language', ctxOf());
+  assert.deepEqual(language.quickReplies.map(reply => [reply.title, reply.payload]), [['Монгол', 'lang:mn'], ['English', 'lang:en']]);
+  const english = await buildNode('lang:en', ctxOf());
+  assert.match(english.text, /English version is coming soon\. For now, please continue in Mongolian\.\nАнгли хувилбар одоогоор хийгдэж байна\. Түр монголоор үргэлжлүүлнэ үү\./);
+  assert.deepEqual(english.quickReplies, [{ title: 'Монголоор үргэлжлүүлэх', payload: 'restart' }]);
+  assert.deepEqual(await buildNode('lang:mn', ctxOf()), await buildNode('restart', ctxOf()));
 });

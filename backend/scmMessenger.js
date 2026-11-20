@@ -4,7 +4,7 @@
 // Dependencies are injected (axios, session store, request creator, clock) so everything is testable without Meta/Mongo.
 import crypto from 'node:crypto';
 import { LOAN_PRODUCTS, PRODUCTS_MAP } from '../shared/loanFormConfig.js';
-import { buildNode, SITE_URL, CONTACT_PHONE, MENU_REPLY } from './botEngine.js';
+import { buildNode, SITE_URL, CONTACT_PHONE, MENU_REPLY, GREETING_KEY, DEFAULT_GREETING, MAX_GREETING } from './botEngine.js';
 
 export { SITE_URL, CONTACT_PHONE };
 export const LOAN_REQUEST_URL = `${SITE_URL}/loan-request`;
@@ -88,9 +88,11 @@ export function buildPostsCarousel(posts = []) {
 }
 
 // Persistent menu + get started (§19). Messenger shows the first 3 items in the composer; the rest sit under "more".
-export function buildMessengerProfile() {
+export function buildMessengerProfile(greetingText = '') {
+  const text = String(greetingText || '').replace(/\s+/g, ' ').trim().slice(0, MAX_GREETING) || DEFAULT_GREETING;
   return {
     get_started: { payload: 'restart' },
+    greeting: [{ locale: 'default', text }], // no ice_breakers (D20)
     persistent_menu: [{
       locale: 'default', composer_input_disabled: false,
       call_to_actions: [
@@ -99,6 +101,7 @@ export function buildMessengerProfile() {
         { type: 'postback', title: 'Итгэлцэл', payload: 'trust' },
         { type: 'postback', title: 'Идэвхтэй зээлийн зар', payload: 'ads' },
         { type: 'postback', title: 'Төлөлт хийх', payload: 'payment' },
+        { type: 'postback', title: 'Хэл / Language', payload: 'language' },
       ],
     }],
   };
@@ -106,13 +109,25 @@ export function buildMessengerProfile() {
 
 // Node (botEngine) -> ordered Messenger messages: text chunks, one generic template (<=10 cards, <=3 buttons, title/subtitle <=80),
 // quick replies (<=13, title <=20) attached to the last message. Messenger forbids text + template in one message.
+export function toMessengerButtons(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 3).map(button => {
+    const title = String(button.title).slice(0, 20);
+    if (button.kind === 'call') return /^\+976\d{8}$/.test(String(button.phone)) ? { type: 'phone_number', title, payload: String(button.phone) } : null;
+    if (button.kind === 'url') return { type: 'web_url', title, url: String(button.url), webview_height_ratio: 'full' };
+    return { type: 'postback', title, payload: String(button.payload).slice(0, 1000) };
+  }).filter(Boolean);
+}
+
 export function nodeToMessengerMessages(node = {}) {
   const messages = [];
-  for (const chunk of splitText(node.text || '', 1900, 5)) messages.push({ text: chunk });
+  const nodeButtons = toMessengerButtons(node.buttons);
+  // Node-level buttons (e.g. contact) -> a button template carrying the last text chunk (<=640 chars).
+  const chunks = splitText(node.text || '', nodeButtons.length ? 640 : 1900, 5);
+  const lastChunk = nodeButtons.length && chunks.length ? chunks.pop() : '';
+  for (const chunk of chunks) messages.push({ text: chunk });
+  if (lastChunk) messages.push({ attachment: { type: 'template', payload: { template_type: 'button', text: lastChunk, buttons: nodeButtons } } });
   const elements = (Array.isArray(node.cards) ? node.cards : []).slice(0, 10).map(cardItem => {
-    const buttons = (Array.isArray(cardItem.buttons) ? cardItem.buttons : []).slice(0, 3).map(button => (button.kind === 'url'
-      ? { type: 'web_url', title: String(button.title).slice(0, 20), url: String(button.url), webview_height_ratio: 'full' }
-      : { type: 'postback', title: String(button.title).slice(0, 20), payload: String(button.payload).slice(0, 1000) }));
+    const buttons = toMessengerButtons(cardItem.buttons);
     const element = { title: String(cardItem.title || 'Солонго Капитал').slice(0, 80) };
     if (cardItem.subtitle) element.subtitle = String(cardItem.subtitle).slice(0, 80);
     if (cardItem.imageUrl) element.image_url = cardItem.imageUrl;
@@ -327,8 +342,8 @@ export function createMongoSessionStore(mongoose) {
 }
 
 // ---------- Messenger service ----------
-const GLOBAL_LEGACY = new Set(['back', 'contact']);
-const NODE_VALUES = new Set(['restart', 'menu', 'loans', 'trust', 'ads', 'payment']);
+const GLOBAL_LEGACY = new Set(['back']);
+const NODE_VALUES = new Set(['restart', 'menu', 'loans', 'trust', 'ads', 'payment', 'contact', 'language', 'lang:mn', 'lang:en']);
 // Typed text equal to a menu title behaves like the button (only outside the in-chat application).
 const NODE_TEXTS = new Map([['зээл', 'loans'], ['итгэлцэл', 'trust'], ['идэвхтэй зээлийн зар', 'ads'], ['төлөлт хийх', 'payment'], ['дахин эхлүүлэх', 'restart'], ['цэс', 'restart'], ['start', 'restart']]);
 export const FREE_TEXT_MAX = 600;
@@ -361,7 +376,7 @@ export function createScmMessenger({
     if (postsCache.posts && now() - postsCache.at < POSTS_CACHE_MS) return postsCache.posts;
     try {
       const data = await graph.get('me/posts', { fields: 'id,message,full_picture,permalink_url,created_time', limit: 25 });
-      const posts = (Array.isArray(data?.data) ? data.data : []).filter(post => post?.id && (post.message || post.full_picture)).slice(0, 10);
+      const posts = (Array.isArray(data?.data) ? data.data : []).filter(post => post?.id && (post.message || post.full_picture)).slice(0, 20);
       postsCache = { at: now(), posts };
       return posts;
     } catch (error) {
@@ -465,11 +480,11 @@ export function createScmMessenger({
       const nodeValue = NODE_VALUES.has(value) || /^(terms|calc):/.test(value) ? value : (!payload && !inFlow ? NODE_TEXTS.get(lowered) : '');
       const isApply = value === 'apply' || value.startsWith('apply:') || (!payload && !inFlow && APPLY_TEXTS.has(lowered));
       // Menu / node / apply payloads interrupt a running application (e.g. persistent menu); anything else continues it.
-      const interrupts = nodeValue || value === 'contact' || (payload && isApply);
+      const interrupts = nodeValue || (payload && isApply);
       if (inFlow && interrupts) await sessionStore.clear(psid);
       else if (inFlow) return await runApplicationStep(psid, session, payload ? { payload } : { text });
       if (nodeValue) {
-        if (nodeValue === 'restart' || nodeValue === 'menu') await sessionStore.clear(psid);
+        if (nodeValue === 'restart' || nodeValue === 'menu' || nodeValue === 'lang:mn') await sessionStore.clear(psid);
         return await sendNode(psid, nodeValue);
       }
       if (GLOBAL_LEGACY.has(value)) return await legacyChat(psid, value, ctx);
@@ -478,6 +493,8 @@ export function createScmMessenger({
       if (value.startsWith('detail:')) return await showDetail(psid, value.slice(7));
       if (isApply) {
         const arg = value.startsWith('apply:') ? value.slice(6) : '';
+        const [productArg, ...ctxParts] = arg.split(':'); // apply:<productKey>[:post:<id>] (optional post context)
+        if (ctxParts[0] === 'post' && resolveProductKey(productArg)) return await startFlow(psid, { productKey: productArg, ...(ctxParts[1] ? { postId: ctxParts[1] } : {}) });
         if (arg.startsWith('post:')) return await startFlow(psid, { postId: arg.slice(5) });
         if (resolveProductKey(arg)) return await startFlow(psid, { productKey: arg });
         return await startFlow(psid, { postId: arg }); // legacy apply:<postId>; invalid ids are dropped
@@ -507,7 +524,9 @@ export function createScmMessenger({
     let page;
     try { page = await getPage(); } catch { page = null; }
     if (guardPageId() && String(page?.id || '') === guardPageId()) return { ok: false, skipped: true, reason: 'ZENTRO_PAGE' };
-    try { await graph.post('me/messenger_profile', buildMessengerProfile()); return { ok: true }; } catch (error) { return { ok: false, reason: 'GRAPH_ERROR', fbCode: error.fbCode || 0 }; }
+    let greeting = '';
+    try { greeting = await content.loadSetting?.(GREETING_KEY); } catch { greeting = ''; }
+    try { await graph.post('me/messenger_profile', buildMessengerProfile(typeof greeting === 'string' ? greeting : '')); return { ok: true }; } catch (error) { return { ok: false, reason: 'GRAPH_ERROR', fbCode: error.fbCode || 0 }; }
   }
 
   async function status() {
