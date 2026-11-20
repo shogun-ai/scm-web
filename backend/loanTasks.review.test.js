@@ -172,9 +172,9 @@ test('L5 (code) / item 15: legacy serializers never expose upload token hashes',
   assert.equal(JSON.stringify(stripTaskSecrets({ toJSON: () => ({ taskUploadLinks: [{ tokenHash: 'abc' }] }) })).includes('abc'), false, 'mongoose documents');
   assert.equal(stripTaskSecrets(null), null);
   const src = serverSrc();
-  assert.match(routeBlock(src, "app.get('/api/loans', authenticateUser", 500), /select\('-taskUploadLinks\.tokenHash'\)/);
+  assert.match(routeBlock(src, "app.get('/api/loans', authenticateUser", 500), /select\('-taskUploadLinks\.tokenHash -messenger.psid'\)/);
   const intake = fs.readFileSync(new URL('./loanIntake.js', import.meta.url), 'utf8');
-  assert.match(routeBlock(intake, "app.get('/api/loan-requests/:id'", 600), /select\('-taskUploadLinks\.tokenHash'\)[\s\S]*stripTaskSecrets\(loan\)/);
+  assert.match(routeBlock(intake, "app.get('/api/loan-requests/:id'", 600), /select\('-taskUploadLinks\.tokenHash -messenger.psid'\)[\s\S]*stripTaskSecrets\(loan\)/);
 });
 
 test('admin editor payload (name/version kept, status/saved stripped) passes validateConfig', () => {

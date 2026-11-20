@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapPin, Phone, Mail, ArrowRight } from 'lucide-react';
+import { MapPin, Phone, Mail, ArrowRight, Facebook, MessageCircle } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
 export default function ContactSection({ getSectionBackgroundStyle }) {
@@ -26,6 +26,7 @@ export default function ContactSection({ getSectionBackgroundStyle }) {
             <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="flex items-start gap-4 hover:text-[#D8C6A5] transition"><MapPin size={21} className="text-[#D8C6A5] shrink-0 mt-1" /><div><p className="text-white/60 text-xs mb-2">Хаяг · Газрын зураг харах ↗</p><p className="font-medium text-sm md:text-base leading-relaxed">{address}</p></div></a>
             <div className="flex items-start gap-4"><Phone size={21} className="text-[#D8C6A5] shrink-0 mt-1" /><div><p className="text-white/60 text-xs mb-2">Утас</p><div className="flex flex-wrap gap-x-4 gap-y-2">{phones.map((phone) => <a key={phone} href={`tel:${phone.replace(/[^\d+]/g, '')}`} className="font-medium text-lg tabular-nums hover:text-[#D8C6A5]">{phone}</a>)}</div></div></div>
             <div className="flex items-start gap-4"><Mail size={21} className="text-[#D8C6A5] shrink-0 mt-1" /><div className="min-w-0"><p className="text-white/60 text-xs mb-2">И-мэйл</p><a href={`mailto:${email}`} className="font-medium text-lg break-words hover:text-[#D8C6A5]">{email}</a></div></div>
+            <div className="flex items-start gap-4"><Facebook size={21} className="text-[#D8C6A5] shrink-0 mt-1" aria-hidden="true" /><div><p className="text-white/60 text-xs mb-2">Facebook</p><div className="flex flex-wrap items-center gap-x-5 gap-y-3"><a href="https://www.facebook.com/Solongo.Capital" target="_blank" rel="noopener noreferrer" aria-label="Солонго Капитал Facebook хуудас (шинэ цонхонд нээгдэнэ)" className="font-medium text-lg hover:text-[#D8C6A5]">Solongo.Capital</a><a href="https://m.me/Solongo.Capital" target="_blank" rel="noopener noreferrer" aria-label="Messenger-ээр бичих (шинэ цонхонд нээгдэнэ)" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[#D8C6A5]/60 px-4 text-sm font-semibold text-[#E5D5B5] hover:bg-white/10 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#E5D5B5]"><MessageCircle size={17} aria-hidden="true" />Messenger-ээр бичих</a></div></div></div>
           </div>
         </div>
         <div className="lg:self-center">

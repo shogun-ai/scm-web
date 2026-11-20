@@ -39,9 +39,10 @@ import { classifyTransaction as classifyStatementTransaction, DEFAULT_INCOME_WEI
 import { registerLoanIntakeRoutes, canAccessRequest, isRequestManager, isRequestStaff, requestScope, isAllowedLoanRemoteUrl, automationWriteQuery, researchVisibilityStages, assertLinkedResearchAccess, TRUST_PROXY_HOPS, stripTaskSecrets } from './loanIntake.js';
 import nodemailer from 'nodemailer';
 import LoanFormConfig from './models/LoanFormConfig.js';
+import { createScmMessenger, registerScmMessengerRoutes, createMongoSessionStore, createSharedWebhookForwarder } from './scmMessenger.js';
 import { applyLoanTaskSchema, registerLoanTaskRoutes, legacyLoanPostGone, taskLockBlocks, sanitizeLegacyLoanWrite } from './loanTasks.js';
 import { createMailer, isValidEmailAddress } from './mailer.js';
-import { registerAccountRoutes, readDeleteFlag, recordLoginEvent } from './accountRoutes.js';
+import { registerAccountRoutes, readDeleteFlag, recordLoginEvent, normalizePixelId, META_PIXEL_KEY } from './accountRoutes.js';
 import { createPermissionService, registerPermissionRoutes, parseMatrix } from './permissions.js';
 import { sanitizeMatrix } from '../shared/permissions.js';
 
@@ -257,7 +258,7 @@ const guardPublicOnboardingIntake = (req, res, next) => {
 const defaultJsonParser = express.json({
     limit: '50mb',
     verify: (req, res, buffer) => {
-        if (req.originalUrl?.startsWith('/api/zentro/facebook/webhook')) req.rawBody = Buffer.from(buffer);
+        if (req.originalUrl?.startsWith('/api/zentro/facebook/webhook') || req.originalUrl?.startsWith('/api/messenger/webhook')) req.rawBody = Buffer.from(buffer);
     },
 });
 const onboardingJsonParser = express.json({ limit: ONBOARDING_PUBLIC_BODY_LIMIT });
@@ -1763,6 +1764,12 @@ app.put('/api/admin/safety-notices', authenticateUser, requireAdmin, guardAdminS
     }
 });
 
+// D18.2: Solongo.Capital shares the Meta app (one webhook URL) with AutoMarket/Zentro. Entries from any page other than
+// ZENTRO_FB_PAGE_ID are handed to the SCM bot and removed before the Zentro handler runs; Zentro entries pass unchanged.
+// Registered before the Zentro route so it runs first; the forwarder is assigned once scmMessenger exists below.
+let sharedWebhookForwarder = null;
+app.post('/api/zentro/facebook/webhook', (req, res, next) => (sharedWebhookForwarder ? sharedWebhookForwarder(req, res, next) : next()));
+
 const zentroFacebook = createZentroFacebookIntegration({
     app,
     ZentroWebConfig,
@@ -2837,333 +2844,10 @@ app.post('/api/chat', async (req, res) => {
 // Facebook Messenger webhook
 // ============================================================
 const FB_GRAPH_VERSION = process.env.FB_GRAPH_VERSION || 'v20.0';
-const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || process.env.MESSENGER_VERIFY_TOKEN;
 const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN || process.env.MESSENGER_PAGE_ACCESS_TOKEN;
 const FB_AD_ACCOUNT_ID = String(process.env.FB_AD_ACCOUNT_ID || process.env.META_AD_ACCOUNT_ID || '').replace(/^act_/, '');
 const FB_ADS_ACCESS_TOKEN = process.env.FB_ADS_ACCESS_TOKEN || process.env.META_ADS_ACCESS_TOKEN || FB_PAGE_ACCESS_TOKEN;
-const ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD = String(process.env.ZENTRO_FB_PAGE_ID || '');
-let legacyMessengerPageIdPromise;
-
-async function getLegacyMessengerPageId() {
-    if (!FB_PAGE_ACCESS_TOKEN) return '';
-    if (!legacyMessengerPageIdPromise) {
-        const graphVersion = process.env.ZENTRO_FB_GRAPH_VERSION || FB_GRAPH_VERSION;
-        legacyMessengerPageIdPromise = axios.get(
-            `https://graph.facebook.com/${graphVersion}/me`,
-            { params: { fields: 'id', access_token: FB_PAGE_ACCESS_TOKEN }, timeout: 15000 }
-        ).then(response => String(response.data?.id || '')).catch(() => '');
-    }
-    return legacyMessengerPageIdPromise;
-}
-
-async function configureMessengerProfile() {
-    if (!FB_PAGE_ACCESS_TOKEN) return;
-    try {
-        const legacyPageId = await getLegacyMessengerPageId();
-        if (ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD && legacyPageId === ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD) {
-            console.log('Legacy SCM Messenger profile skipped for the Zentro Page.');
-            return;
-        }
-        await axios.post(
-            `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messenger_profile`,
-            {
-                get_started: { payload: 'menu' },
-                persistent_menu: [{
-                    locale: 'default',
-                    composer_input_disabled: false,
-                    call_to_actions: [
-                        { type: 'postback', title: 'Буцах', payload: 'back' },
-                        { type: 'postback', title: 'Үндсэн цэс', payload: 'menu' },
-                        { type: 'postback', title: 'Холбоо барих', payload: 'contact' }
-                    ]
-                }]
-            },
-            { params: { access_token: FB_PAGE_ACCESS_TOKEN } }
-        );
-        console.log('Messenger persistent menu configured.');
-    } catch (error) {
-        console.warn('Messenger profile configure skipped:', error.response?.data || error.message);
-    }
-}
-
-function stripChatControlTokens(reply = '') {
-    const optionsMatch = String(reply).match(/\[OPTIONS:\s*(.*?)\]/i);
-    const actionMatch = String(reply).match(/\[ACTION:\s*(.*?)\]/i);
-    const cleanText = [optionsMatch?.[0], actionMatch?.[0]]
-        .filter(Boolean)
-        .reduce((text, token) => text.replace(token, ''), String(reply))
-        .trim();
-    const options = optionsMatch
-        ? optionsMatch[1].split(',').map(option => option.trim()).filter(Boolean)
-        : [];
-    return { cleanText, options, action: actionMatch?.[1]?.trim() || '' };
-}
-
-function buildMessengerQuickReplies(options = []) {
-    return options.slice(0, 11).map(option => ({
-        content_type: 'text',
-        title: String(option).slice(0, 20),
-        payload: String(option).slice(0, 1000)
-    }));
-}
-
-function toAbsoluteScmUrl(url = '') {
-    const value = String(url || '').trim();
-    if (!value) return '';
-    if (/^https?:\/\//i.test(value)) return value;
-    if (value.startsWith('/')) return `https://www.scm.mn${value}`;
-    return `https://www.scm.mn/${value}`;
-}
-
-function compactMessengerText(text = '', limit = 80) {
-    return String(text || '')
-        .replace(/\[OPTIONS:\s*.*?\]/gi, '')
-        .replace(/\[ACTION:\s*.*?\]/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, limit);
-}
-
-function buildMessengerProductButtons(card = {}) {
-    const buttons = [
-        {
-            type: 'web_url',
-            title: 'Хүсэлт өгөх',
-            url: 'https://www.scm.mn/loan-request',
-            webview_height_ratio: 'full'
-        },
-        {
-            type: 'web_url',
-            title: 'Дэлгэрэнгүй',
-            url: toAbsoluteScmUrl(card.productUrl),
-            webview_height_ratio: 'full'
-        }
-    ];
-
-    if (card.hasUserTypeDocs) {
-        buttons.unshift({ type: 'postback', title: 'Материал', payload: 'documents' });
-    } else {
-        buttons.unshift({ type: 'postback', title: 'Тооцоолол', payload: 'Тооцоолол' });
-    }
-
-    return buttons.slice(0, 3);
-}
-
-async function sendMessengerProductCard(recipientId, card, summaryText = '') {
-    if (!FB_PAGE_ACCESS_TOKEN) {
-        console.warn('FB_PAGE_ACCESS_TOKEN is not configured; Messenger product card skipped.');
-        return;
-    }
-
-    const payload = {
-        recipient: { id: recipientId },
-        messaging_type: 'RESPONSE',
-        message: {
-            attachment: {
-                type: 'template',
-                payload: {
-                    template_type: 'generic',
-                    elements: [{
-                        title: compactMessengerText(card.title || 'Солонго Капитал', 80),
-                        image_url: toAbsoluteScmUrl(card.imageUrl),
-                        subtitle: compactMessengerText(summaryText || card.subtitle, 80),
-                        default_action: {
-                            type: 'web_url',
-                            url: toAbsoluteScmUrl(card.productUrl),
-                            webview_height_ratio: 'full'
-                        },
-                        buttons: buildMessengerProductButtons(card)
-                    }]
-                }
-            }
-        }
-    };
-
-    if (!payload.message.attachment.payload.elements[0].image_url) {
-        delete payload.message.attachment.payload.elements[0].image_url;
-    }
-
-    await axios.post(
-        `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messages`,
-        payload,
-        { params: { access_token: FB_PAGE_ACCESS_TOKEN } }
-    );
-}
-
-function buildMessengerCardButtons(card = {}) {
-    if (card.navigationOnly) {
-        return [{
-            type: 'postback',
-            title: 'Сонгох',
-            payload: String(card.command || card.title || 'menu').slice(0, 1000)
-        }];
-    }
-    if (card.productUrl) return buildMessengerProductButtons(card);
-    if (Array.isArray(card.buttons) && card.buttons.length) {
-        return card.buttons.slice(0, 3).map(button => (
-            button.url
-                ? {
-                    type: 'web_url',
-                    title: String(button.title || 'Харах').slice(0, 20),
-                    url: toAbsoluteScmUrl(button.url),
-                    webview_height_ratio: 'full'
-                }
-                : {
-                    type: 'postback',
-                    title: String(button.title || 'Сонгох').slice(0, 20),
-                    payload: String(button.command || button.title || 'menu').slice(0, 1000)
-                }
-        ));
-    }
-
-    return [{
-        type: 'postback',
-        title: 'Сонгох',
-        payload: String(card.command || card.title || 'menu').slice(0, 1000)
-    }];
-}
-
-async function sendMessengerCardCarousel(recipientId, cards = [], summaryText = '') {
-    if (!FB_PAGE_ACCESS_TOKEN) {
-        console.warn('FB_PAGE_ACCESS_TOKEN is not configured; Messenger card carousel skipped.');
-        return;
-    }
-
-    const elements = cards
-        .filter(card => card?.title && (card.command || card.productUrl || card.linkUrl || card.buttons?.length))
-        .slice(0, 10)
-        .map(card => {
-            const productUrl = card.navigationOnly ? '' : toAbsoluteScmUrl(card.linkUrl || card.productUrl || '');
-            const element = {
-                title: compactMessengerText(card.title || 'Солонго Капитал', 80),
-                image_url: toAbsoluteScmUrl(card.imageUrl),
-                subtitle: compactMessengerText(card.subtitle || summaryText, 80),
-                buttons: buildMessengerCardButtons(card)
-            };
-            if (productUrl) {
-                element.default_action = {
-                    type: 'web_url',
-                    url: productUrl,
-                    webview_height_ratio: 'full'
-                };
-            }
-            if (!element.image_url) delete element.image_url;
-            return element;
-        });
-
-    if (!elements.length) {
-        await sendMessengerText(recipientId, summaryText || 'Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.');
-        return;
-    }
-
-    await axios.post(
-        `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messages`,
-        {
-            recipient: { id: recipientId },
-            messaging_type: 'RESPONSE',
-            message: {
-                attachment: {
-                    type: 'template',
-                    payload: {
-                        template_type: 'generic',
-                        elements
-                    }
-                }
-            }
-        },
-        { params: { access_token: FB_PAGE_ACCESS_TOKEN } }
-    );
-}
-
-async function sendMessengerText(recipientId, text) {
-    if (!FB_PAGE_ACCESS_TOKEN) {
-        console.warn('FB_PAGE_ACCESS_TOKEN is not configured; Messenger reply skipped.');
-        return;
-    }
-
-    const payload = {
-        recipient: { id: recipientId },
-        messaging_type: 'RESPONSE',
-        message: {
-            text: String(text || 'Уучлаарай, хариу бэлтгэхэд алдаа гарлаа.').slice(0, 1900)
-        }
-    };
-
-    await axios.post(
-        `https://graph.facebook.com/${FB_GRAPH_VERSION}/me/messages`,
-        payload,
-        { params: { access_token: FB_PAGE_ACCESS_TOKEN } }
-    );
-}
-
-async function getChatbotReplyForMessenger(req, senderId, messageText) {
-    const baseUrl = process.env.PUBLIC_API_BASE_URL || `${req.protocol}://${req.get('host')}`;
-    const response = await axios.post(`${baseUrl}/api/chat`, {
-        sessionId: `fb_${senderId}`,
-        message: messageText,
-        history: []
-    }, {
-        headers: { 'x-session-id': `fb_${senderId}` },
-        timeout: 30000
-    });
-    return response.data || { reply: '' };
-}
-
-app.get('/api/messenger/webhook', (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
-
-    if (mode === 'subscribe' && token && token === FB_VERIFY_TOKEN) {
-        return res.status(200).send(challenge);
-    }
-
-    return res.sendStatus(403);
-});
-
-app.post('/api/messenger/webhook', async (req, res) => {
-    if (req.body?.object !== 'page') return res.sendStatus(404);
-
-    res.sendStatus(200);
-
-    const entries = Array.isArray(req.body.entry) ? req.body.entry : [];
-    for (const entry of entries) {
-        if (ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD && String(entry.id || '') === ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD) continue;
-        const events = Array.isArray(entry.messaging) ? entry.messaging : [];
-        for (const event of events) {
-            const senderId = event.sender?.id;
-            const messageText = event.message?.quick_reply?.payload || event.message?.text || event.postback?.payload;
-
-            if (!senderId || !messageText || event.message?.is_echo) continue;
-
-            try {
-                const chatResponse = await getChatbotReplyForMessenger(req, senderId, messageText);
-                const { cleanText, action } = stripChatControlTokens(chatResponse.reply || '');
-                const productCard = chatResponse.productCard;
-                if (productCard) {
-                    await sendMessengerProductCard(senderId, productCard, cleanText);
-                    continue;
-                }
-                if (Array.isArray(chatResponse.cards) && chatResponse.cards.length) {
-                    if (cleanText) await sendMessengerText(senderId, cleanText);
-                    await sendMessengerCardCarousel(senderId, chatResponse.cards, cleanText);
-                    continue;
-                }
-                const actionText = action === 'loan_request'
-                    ? '\n\nЗээлийн хүсэлт: https://www.scm.mn/loan-request'
-                    : '';
-                await sendMessengerText(senderId, `${cleanText}${actionText}`.trim());
-            } catch (error) {
-                console.error('Messenger webhook error:', error.response?.data || error.message);
-                try {
-                    await sendMessengerText(senderId, 'Уучлаарай, чатбот түр саатлаа. Та дахин бичнэ үү эсвэл 7599-1919 дугаараар холбогдоно уу.');
-                } catch (sendError) {
-                    console.error('Messenger fallback send error:', sendError.response?.data || sendError.message);
-                }
-            }
-        }
-    }
-});
+// SCM Messenger: webhook, Page posts carousel, in-chat application and admin endpoints live in scmMessenger.js (registered after registerLoanTaskRoutes).
 // ðŸ” AUTH & 2FA & ADMIN ROUTES
 // ============================================================
 
@@ -3267,7 +2951,7 @@ app.use('/api/loans/:id', (req, res, next) => {
 registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest, User, authenticateUser, committeeAction: getCommitteeDecisionAction, userHasPermission, automate: runPostSubmissionAutomationInBackground, createLog });
 const appMailer = createMailer({ createTransport: nodemailer.createTransport });
 const getCompanyPhoneConfig = async () => { const doc = await SiteConfig.findOne({ key: 'contact_phone' }).lean(); return typeof doc?.value === 'string' ? doc.value : ''; };
-registerLoanTaskRoutes({
+const loanTasks = registerLoanTaskRoutes({
     app, multer, cloudinary, LoanRequest, LoanFormConfig, User, authenticateUser, requireAdmin, createLog,
     mailer: appMailer,
     getPermissions: user => permissionService.permissionsFor(user),
@@ -3275,6 +2959,13 @@ registerLoanTaskRoutes({
     automate: runPostSubmissionAutomationInBackground,
     getCompanyPhone: async () => { const doc = await SiteConfig.findOne({ key: 'contact_phone' }).lean(); return typeof doc?.value === 'string' ? doc.value : ''; },
 });
+
+// D18: SCM Messenger (Page posts carousel, in-chat application, admin status/profile). Read-only toward the Page.
+const scmMessenger = createScmMessenger({
+    axios, env: process.env, sessionStore: createMongoSessionStore(mongoose), createRequest: input => loanTasks.createMessengerTask(input),
+});
+registerScmMessengerRoutes({ app, authenticateUser, requireAdmin, createLog, messenger: scmMessenger });
+sharedWebhookForwarder = createSharedWebhookForwarder({ messenger: scmMessenger });
 
 // D9: legacy unprotected public submission is closed (registered first, so the handler below is unreachable).
 app.post('/api/loans', legacyLoanPostGone);
@@ -3463,7 +3154,7 @@ app.post('/api/loans', (req, res) => {
 app.get('/api/loans', authenticateUser, async (req, res) => {
     try {
         const query = isRequestManager(req.user) ? {} : { $or: [{ intakeVersion: { $ne: 'quick-v1' } }, ...(isRequestStaff(req.user) ? [{ intakeVersion: 'quick-v1', ...requestScope(req.user) }] : [])] };
-        res.json(await LoanRequest.find(query).select('-taskUploadLinks.tokenHash').sort({ createdAt: -1 }).limit(500).lean());
+        res.json(await LoanRequest.find(query).select('-taskUploadLinks.tokenHash -messenger.psid').sort({ createdAt: -1 }).limit(500).lean());
     } catch { res.status(500).json({ message: 'Хүсэлтүүдийг ачаалж чадсангүй.' }); }
 });
 
@@ -7094,7 +6785,7 @@ mongoose.connect(MONGO_URI).then(async () => {
     await seedFormConfig();
     await seedStats();
     await seedPromoSlides();
-    await configureMessengerProfile();
+    await scmMessenger.configureProfile();
     syncFacebookPostKnowledgeInBackground('startup');
     cron.schedule('0 */6 * * *', () => syncFacebookPostKnowledgeInBackground('cron'));
     zentroFacebook.start();
@@ -7128,6 +6819,8 @@ app.get('/api/config/flat', async (req, res) => {
         const configs = await SiteConfig.find();
         const flat = {};
         configs.forEach(c => { flat[c.key] = c.value; });
+        // D18: validated Meta Pixel ID for the public site (empty string when unset/invalid).
+        flat.metaPixelId = normalizePixelId(flat[META_PIXEL_KEY]) || '';
         res.json(flat);
     } catch (err) { res.status(500).json({ message: err.message }); }
 });

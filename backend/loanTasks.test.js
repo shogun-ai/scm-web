@@ -106,7 +106,7 @@ function harness({ env = { LOAN_TASKS_ENABLED: 'true' }, configs = [], loans = [
   };
   const fakeMailer = mailer || { send: async message => { calls.sent.push(message); return { result: 'sent' }; } };
   const requireAdmin = (req, res, next) => (req.user?.role === 'admin' || req.user?.roles?.includes('admin') ? next() : res.status(403).json({ message: 'Forbidden' }));
-  registerLoanTaskRoutes({
+  const api = registerLoanTaskRoutes({
     app, multer, cloudinary, LoanRequest, LoanFormConfig, User,
     authenticateUser: (_req, _res, next) => next(), requireAdmin,
     createLog: async (user, action, details) => { calls.logs.push({ action, details }); },
@@ -125,7 +125,7 @@ function harness({ env = { LOAN_TASKS_ENABLED: 'true' }, configs = [], loans = [
     return done;
   };
   const flush = async () => { while (tasks.length) await tasks.shift()(); };
-  return { invoke, calls, records, store, configStore, flush, setNow: date => { clock = date; } };
+  return { api, invoke, calls, records, store, configStore, flush, setNow: date => { clock = date; } };
 }
 
 const activeConfig = (extra = {}) => ({
@@ -886,4 +886,82 @@ test('D17 view_all widens scope; granting assign to an officer allows assign on 
   h = harness({ loans: [legacyLoan()], users: [otherOfficer], extraDeps: { getPermissions: async () => new Set(['loan_requests.view_assigned', 'loan_requests.assign']) } });
   const response = await h.invoke('post', '/api/loan-tasks/:id/actions', { user: officer, params: { id: LOAN_ID }, body: { type: 'assign', assigneeId: OTHER_ID, expectedRevision: 0 } });
   assert.equal(response.code, 200);
+});
+
+// ---------- D18: channel + Messenger in-chat task ----------
+test('D18 public submit: channel web|messenger stored; default web; invalid rejected', async () => {
+  let h = harness({ configs: [activeConfig()] });
+  assert.equal((await submit(h)).code, 201);
+  assert.equal(h.records[0].channel, 'web');
+  h = harness({ configs: [activeConfig()] });
+  assert.equal((await submit(h, { body: { channel: 'messenger' } })).code, 201);
+  assert.equal(h.records[0].channel, 'messenger');
+  assert.equal(h.records[0].source, 'web');
+  h = harness({ configs: [activeConfig()] });
+  const bad = await submit(h, { body: { channel: 'telegram' } });
+  assert.equal(bad.code, 400);
+  assert.ok(bad.data.errors.channel);
+  assert.equal(h.records.length, 0);
+  assert.equal(h.calls.uploads, 0, 'rejected before any upload');
+});
+
+test('D18 list: source=messenger/web filters by channel; TaskListItem exposes channel and no psid', async () => {
+  const base = { formVersion: 'task-v1', taskStatus: 'new', status: 'pending', firstname: 'А', phone: '99001234', selectedProduct: 'cons_loan' };
+  const h = harness({ loans: [
+    { ...base, _id: 'aaaaaaaaaaaaaaaaaaaaaa01', channel: 'messenger', messenger: { psid: '1234567890' }, createdAt: NOW },
+    { ...base, _id: 'aaaaaaaaaaaaaaaaaaaaaa02', channel: 'web', createdAt: NOW },
+    { ...base, _id: 'aaaaaaaaaaaaaaaaaaaaaa03', createdAt: NOW },
+  ] });
+  let response = await h.invoke('get', '/api/loan-tasks', { user: manager, query: { source: 'messenger' } });
+  assert.deepEqual(response.data.items.map(item => [item._id, item.channel]), [['aaaaaaaaaaaaaaaaaaaaaa01', 'messenger']]);
+  assert.equal(JSON.stringify(response.data).includes('1234567890'), false);
+  assert.match(h.calls.selects.at(-1), /\bchannel\b/);
+  assert.ok(!/messenger/.test(h.calls.selects.at(-1)), 'psid not selected for lists');
+  response = await h.invoke('get', '/api/loan-tasks', { user: manager, query: { source: 'web' } });
+  assert.deepEqual(response.data.items.map(item => item.channel), ['web', 'web']);
+  response = await h.invoke('get', '/api/loan-tasks', { user: manager, query: { source: 'bogus' } });
+  assert.equal(response.code, 400);
+});
+
+test('D18 createMessengerTask: saves task-v1 messenger request with default assignee + staff email; returns reference only', async () => {
+  const h = harness({ configs: [activeConfig({ defaultAssigneeId: OTHER_ID })], users: [{ ...otherOfficer, isActive: true }] });
+  const result = await h.api.createMessengerTask({ productKey: 'cons_loan', lastname: 'Бат', firstname: 'Болд', phone: '99001234', amount: 5000000, term: 12, psid: '1234567890', postId: 'p_1' });
+  assert.match(result.applicationReference, /^SCM-2026-[A-F0-9]{6}$/);
+  assert.deepEqual(Object.keys(result).sort(), ['applicationReference', 'assigned', 'productKey', 'productName']);
+  const loan = h.records[0];
+  assert.deepEqual([loan.formVersion, loan.channel, loan.taskStatus, loan.status, loan.source], ['task-v1', 'messenger', 'assigned', 'assigned', 'web']);
+  assert.deepEqual(loan.assignee, { userId: OTHER_ID, name: 'Дорж' });
+  assert.equal(loan.messenger.psid, '1234567890');
+  assert.equal(loan.applicationReference, result.applicationReference);
+  await h.flush();
+  assert.equal(h.calls.sent.length, 1);
+  assert.equal(h.calls.sent[0].to, 'dorj@scm.mn');
+  assert.ok(h.calls.sent[0].subject.includes(result.applicationReference));
+  assert.equal(JSON.stringify(h.calls.sent[0]).includes('1234567890'), false, 'staff email never carries the psid');
+});
+
+test('D18 createMessengerTask: unassigned when no default assignee; rejects disabled flag, inactive product, invalid input', async () => {
+  const h = harness({ configs: [activeConfig()] });
+  const result = await h.api.createMessengerTask({ productKey: 'cons_loan', lastname: '', firstname: 'Болд', phone: '99001234', amount: 100000, term: 6, psid: '1234567890' });
+  assert.equal(result.assigned, false);
+  assert.equal(h.records[0].taskStatus, 'new');
+  assert.equal(h.records[0].assignee, undefined);
+  await h.flush();
+  assert.equal(h.calls.sent.length, 0);
+  const input = { productKey: 'cons_loan', firstname: 'Б', phone: '99001234', amount: 100000, term: 6, psid: '1234567890' };
+  const off = harness({ env: {}, configs: [activeConfig()] });
+  await assert.rejects(() => off.api.createMessengerTask(input), error => error.status === 503 && error.code === 'DISABLED');
+  assert.equal(off.records.length, 0);
+  const closed = harness({ configs: [activeConfig({ isActive: false })] });
+  await assert.rejects(() => closed.api.createMessengerTask(input), error => error.status === 404 && error.code === 'PRODUCT_UNAVAILABLE');
+  const invalid = harness({ configs: [activeConfig()] });
+  await assert.rejects(() => invalid.api.createMessengerTask({ ...input, phone: '123' }), error => error.status === 400);
+  assert.equal(invalid.records.length, 0);
+});
+
+test('D18 inactive default assignee leaves the Messenger task unassigned with a system note', async () => {
+  const h = harness({ configs: [activeConfig({ defaultAssigneeId: OTHER_ID })], users: [{ ...otherOfficer, isActive: false }] });
+  await h.api.createMessengerTask({ productKey: 'cons_loan', firstname: 'Болд', lastname: 'Бат', phone: '99001234', amount: 100000, term: 6, psid: '1234567890' });
+  assert.equal(h.records[0].taskStatus, 'new');
+  assert.ok(h.records[0].taskHistory.some(item => item.type === 'note'));
 });

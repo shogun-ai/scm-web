@@ -54,6 +54,9 @@ export const LOAN_TASK_SCHEMA_FIELDS = {
   taskHistory: { type: [TaskHistorySchema], default: undefined },
   taskFiles: { type: [TaskFileSchema], default: undefined },
   taskUploadLinks: { type: [UploadLinkSchema], default: undefined },
+  // D18: submission channel ('web' | 'messenger'); `messenger` ({ psid, postId }) is never exposed in list/detail DTOs.
+  channel: { type: String, enum: ['web', 'messenger'] },
+  messenger: { type: Mixed },
 };
 
 export const LOAN_TASK_INDEXES = [
@@ -175,7 +178,7 @@ export function deletablePublicIds(loan) {
 const str = (value, max = 300) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
 const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const MB = 1024 * 1024;
-const LIST_FIELDS = '_id applicationReference userType firstname lastname orgName contactName phone contactPhone selectedProduct amount term status taskStatus taskOutcome assignee formVersion taskForm.productKey taskForm.productName taskForm.subProductId taskForm.subProductName createdAt taskUpdatedAt taskRevision';
+const LIST_FIELDS = '_id applicationReference userType firstname lastname orgName contactName phone contactPhone selectedProduct amount term status taskStatus taskOutcome assignee formVersion taskForm.productKey taskForm.productName taskForm.subProductId taskForm.subProductName channel createdAt taskUpdatedAt taskRevision';
 const STAFF_FILE_RULE = { formats: Object.keys(FILE_FORMATS), maxBytes: LIMITS.fileMaxMb * MB, maxFiles: 5, required: false };
 const LINK_UPLOAD_CAP = 30;
 
@@ -256,6 +259,7 @@ export function toTaskListItem(loan, { canDelete = false } = {}) {
     outcome: state.outcome,
     assignee: loan.assignee?.userId ? { userId: String(loan.assignee.userId), name: loan.assignee.name || '' } : null,
     isTaskForm,
+    channel: loan.channel === 'messenger' ? 'messenger' : 'web',
     createdAt: loan.createdAt || null,
     taskUpdatedAt: loan.taskUpdatedAt || null,
     taskRevision: loan.taskRevision || 0,
@@ -427,6 +431,66 @@ function toPublicProduct(config, now) {
   };
 }
 
+// ---------- D18: in-chat (Messenger) application ----------
+export const CHANNELS = ['web', 'messenger'];
+const MESSENGER_PSID_RE = /^\d{5,30}$/;
+const MESSENGER_POST_RE = /^[A-Za-z0-9_-]{1,100}$/;
+const MESSENGER_STEPS = resolveSteps([{
+  id: 'messenger', title: 'Messenger хүсэлт', description: '',
+  fields: [{ kind: 'preset', key: 'full_name', required: true }, { kind: 'preset', key: 'phone', required: true }, { kind: 'preset', key: 'loan_amount', required: true }, { kind: 'preset', key: 'loan_term', required: true }],
+}]);
+
+export function validateMessengerInput(input) {
+  const value = input && typeof input === 'object' ? input : {};
+  const errors = {};
+  const lastname = str(value.lastname, 100);
+  const firstname = str(value.firstname, 100);
+  const phone = typeof value.phone === 'string' ? value.phone.trim() : '';
+  const psid = typeof value.psid === 'string' ? value.psid : '';
+  const postId = typeof value.postId === 'string' && value.postId ? value.postId : '';
+  if (!PRODUCT_KEYS.has(value.productKey)) errors.productKey = 'Бүтээгдэхүүн буруу байна.';
+  if (!firstname) errors.firstname = 'Нэрээ оруулна уу.';
+  if (!/^\d{8}$/.test(phone)) errors.phone = 'Утасны дугаар 8 оронтой байна.';
+  if (!Number.isSafeInteger(value.amount) || value.amount < 1 || value.amount > 1e12) errors.amount = 'Дүн буруу байна.';
+  if (!Number.isInteger(value.term) || value.term < 1 || value.term > 120) errors.term = 'Хугацаа 1–120 сар байна.';
+  if (!MESSENGER_PSID_RE.test(psid)) errors.psid = 'Messenger хэрэглэгч буруу байна.';
+  if (postId && !MESSENGER_POST_RE.test(postId)) errors.postId = 'Пост буруу байна.';
+  if (Object.keys(errors).length) throw new HttpError('Мэдээллээ шалгана уу.', 400, { code: 'INVALID_INPUT', errors });
+  return { productKey: value.productKey, lastname, firstname, phone, amount: value.amount, term: value.term, psid, postId };
+}
+
+// Pure: the LoanRequest constructor payload for an in-chat application (task-v1, channel 'messenger').
+// `source` stays 'web' (legacy enum); the channel lives in `channel` + `messenger`.
+export function buildMessengerTaskDoc({ input, config, assignee = null, history = [], at, productName }) {
+  const answers = { full_name: { lastName: input.lastname, firstName: input.firstname }, phone: input.phone, loan_amount: input.amount, loan_term: input.term };
+  const mirror = mirrorAnswers(answers, { productKey: input.productKey });
+  const taskStatus = assignee ? 'assigned' : 'new';
+  const events = [{ at, type: 'created', to: taskStatus, actor: { name: 'Messenger', system: true } }];
+  if (assignee) events.push({ at, type: 'assigned', to: 'assigned', assignee, actor: SYSTEM_ACTOR });
+  events.push(...history);
+  const application = taskApplicationData(mirror, answers, [], { productKey: input.productKey, subProductId: null, at });
+  return {
+    ...mirror,
+    status: assignee ? 'assigned' : 'pending',
+    intakeVersion: 'quick-v1',
+    formVersion: 'task-v1',
+    source: 'web',
+    channel: 'messenger',
+    messenger: { psid: input.psid, ...(input.postId ? { postId: input.postId } : {}) },
+    createdByStaff: false,
+    ...(assignee ? { assignee, taskAssignedAt: at } : {}),
+    fileDetails: [],
+    fileNames: [],
+    applicationData: { ...application, intake: { ...application.intake, channel: 'messenger' } },
+    taskForm: { productKey: input.productKey, productName, subProductId: null, subProductName: null, configVersion: config.version ?? 0, widgetsVersion: LOAN_WIDGETS_VERSION, steps: MESSENGER_STEPS },
+    taskAnswers: answers,
+    taskStatus,
+    taskHistory: events,
+    taskRevision: 0,
+    taskUpdatedAt: at,
+  };
+}
+
 // ---------- Routes ----------
 export function registerLoanTaskRoutes({
   app, multer, cloudinary, LoanRequest, LoanFormConfig, User, authenticateUser, requireAdmin, createLog = async () => {},
@@ -524,6 +588,21 @@ export function registerLoanTaskRoutes({
     return staff?.isActive && isRequestStaff(staff) ? staff : null;
   };
 
+  // Default assignee (product config) -> { assignee, history }; an inactive default leaves the task unassigned with a system note.
+  const resolveDefaultAssignee = async (defaultAssigneeId, productKey, at) => {
+    let assignee = null;
+    const history = [];
+    if (defaultAssigneeId) {
+      const staff = await findActiveStaff(defaultAssigneeId);
+      if (staff) assignee = { userId: String(staff._id), name: staff.name || '' };
+      else {
+        logger.warn?.(`[loan-tasks] default assignee unavailable product=${productKey}`);
+        history.push({ at, type: 'note', note: 'Анхдагч хариуцагч идэвхгүй тул автоматаар хуваарилаагүй.', actor: SYSTEM_ACTOR });
+      }
+    }
+    return { assignee, history };
+  };
+
   // Public config cache (single instance; TTL bounds staleness across instances).
   let cache = { at: 0, list: null };
   const loadConfigs = async () => {
@@ -577,6 +656,8 @@ export function registerLoanTaskRoutes({
         const at = now();
         const config = effectiveConfig(await loadConfigs(), productKey, env);
         if (!config?.isActive) throw unavailable();
+        const channel = body.channel === undefined || body.channel === '' ? 'web' : body.channel;
+        if (!CHANNELS.includes(channel)) throw new HttpError('Мэдээллээ шалгана уу.', 400, { errors: { channel: 'Суваг буруу байна.' } });
         const subProductId = str(body.subProductId, 60);
         let sub = null;
         if (subProductId) {
@@ -610,17 +691,7 @@ export function registerLoanTaskRoutes({
           }
         }
 
-        let assignee = null;
-        const history = [];
-        const defaultAssigneeId = (sub && sub.defaultAssigneeId) || config.defaultAssigneeId || '';
-        if (defaultAssigneeId) {
-          const staff = await findActiveStaff(defaultAssigneeId);
-          if (staff) assignee = { userId: String(staff._id), name: staff.name || '' };
-          else {
-            logger.warn?.(`[loan-tasks] default assignee unavailable product=${productKey}`);
-            history.push({ at, type: 'note', note: 'Анхдагч хариуцагч идэвхгүй тул автоматаар хуваарилаагүй.', actor: SYSTEM_ACTOR });
-          }
-        }
+        const { assignee, history } = await resolveDefaultAssignee((sub && sub.defaultAssigneeId) || config.defaultAssigneeId || '', productKey, at);
         const taskStatus = assignee ? 'assigned' : 'new';
         history.unshift({ at, type: 'created', to: taskStatus, actor: { name: 'Вэб маягт', system: true } });
         if (assignee) history.splice(1, 0, { at, type: 'assigned', to: 'assigned', assignee, actor: SYSTEM_ACTOR });
@@ -632,6 +703,7 @@ export function registerLoanTaskRoutes({
           intakeVersion: 'quick-v1',
           formVersion: 'task-v1',
           source: 'web',
+          channel,
           createdByStaff: false,
           ...(assignee ? { assignee, taskAssignedAt: at } : {}),
           fileDetails: persisted,
@@ -827,6 +899,8 @@ export function registerLoanTaskRoutes({
     if (query.source && query.source !== 'all') {
       if (query.source === 'task') filters.push({ formVersion: 'task-v1' });
       else if (query.source === 'legacy') filters.push({ formVersion: { $ne: 'task-v1' } });
+      else if (query.source === 'messenger') filters.push({ channel: 'messenger' });
+      else if (query.source === 'web') filters.push({ channel: { $ne: 'messenger' } });
       else throw new HttpError('Эх үүсвэр буруу байна.', 400);
     }
     const search = str(query.search, 80);
@@ -1106,5 +1180,23 @@ export function registerLoanTaskRoutes({
     } catch (error) { fail(res, error); }
   });
 
-  return { invalidateConfigs };
+  // D18: creates the request for an in-chat application (called by scmMessenger.js). Same default-assignee
+  // and staff-email logic as the web submit. Returns only { applicationReference, productKey, productName, assigned }.
+  const createMessengerTask = async rawInput => {
+    if (!enabled()) throw new HttpError('Энэ үйлчилгээ түр идэвхгүй байна.', 503, { code: 'DISABLED' });
+    const input = validateMessengerInput(rawInput);
+    const at = now();
+    const config = effectiveConfig(await loadConfigs(), input.productKey, env);
+    if (!config?.isActive || config.baseProductEnabled === false) throw new HttpError('Энэ бүтээгдэхүүнд одоогоор хүсэлт авахгүй байна.', 404, { code: 'PRODUCT_UNAVAILABLE' });
+    const { assignee, history } = await resolveDefaultAssignee(config.defaultAssigneeId || '', input.productKey, at);
+    const productName = PRODUCTS_MAP[input.productKey] || input.productKey;
+    const loan = new LoanRequest(buildMessengerTaskDoc({ input, config, assignee, history, at, productName }));
+    loan.applicationReference = `SCM-${ubDate(at).slice(0, 4)}-${String(loan._id).slice(-6).toUpperCase()}`;
+    await loan.save();
+    const reference = loan.applicationReference;
+    if (assignee) deliver(loan._id, async () => ({ to: await staffEmail(assignee.userId), reference, ...emails.staffAssignment({ reference, productName, subProductName: '', adminUrl: adminUrl() }) }));
+    return { applicationReference: reference, productKey: input.productKey, productName, assigned: Boolean(assignee) };
+  };
+
+  return { invalidateConfigs, createMessengerTask };
 }

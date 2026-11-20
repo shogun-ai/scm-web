@@ -24,7 +24,12 @@ export function taskLockBlocks(user, loan, method) {
 // Upload tokens are stored only as hashes, but legacy serializers must not expose even the hash.
 export function stripTaskSecrets(doc) {
   if (!doc || typeof doc !== 'object') return doc;
-  const plain = typeof doc.toJSON === 'function' ? doc.toJSON() : doc;
+  let plain = typeof doc.toJSON === 'function' ? doc.toJSON() : doc;
+  // D18: the Messenger PSID is a private identifier and never leaves the API in legacy serializers.
+  if (plain?.messenger && typeof plain.messenger === 'object') {
+    const { psid: _psid, ...messenger } = plain.messenger;
+    plain = { ...plain, messenger };
+  }
   if (!Array.isArray(plain?.taskUploadLinks)) return plain;
   return {
     ...plain,
@@ -280,7 +285,7 @@ export function registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest,
   app.get('/api/loan-requests/:id', authenticateUser, requireStaff, async (req, res) => {
     try {
       if (!validId(req.params.id)) throw new IntakeError('Хүсэлтийн ID буруу байна.');
-      const loan = await LoanRequest.findOne({ _id: req.params.id, ...requestScope(req.user) }).select('-taskUploadLinks.tokenHash').lean();
+      const loan = await LoanRequest.findOne({ _id: req.params.id, ...requestScope(req.user) }).select('-taskUploadLinks.tokenHash -messenger.psid').lean();
       if (!loan) throw new IntakeError('Хүсэлт олдсонгүй.', 404);
       res.json(stripTaskSecrets(loan));
     } catch (error) { fail(res, error); }

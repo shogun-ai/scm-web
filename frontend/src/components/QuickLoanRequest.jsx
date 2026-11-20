@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Check, CheckCircle2, Loader2, Paperclip, ShieldC
 import { LOAN_PRODUCTS } from '@shared/loanFormConfig';
 import TaskLoanForm from './loanTask/TaskLoanForm';
 import TaskUploadForm from './loanTask/TaskUploadForm';
+import { trackLead } from '../utils/metaPixel';
 import { fetchPublicProduct, fetchPublicProducts } from './loanTask/api';
 
 const PRODUCT_IDS = { 1: 'biz_loan', 2: 'car_purchase_loan', 3: 'cons_loan', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' };
@@ -109,6 +110,7 @@ function LegacyQuickLoanRequest({ onBack, initialProduct }) {
       const response = await axios.post(`${apiUrl}/api/loans/quick`, payload, { onUploadProgress: event => { if (event.total) setProgress(Math.round(event.loaded / event.total * 100)); } });
       if (!response.data?.applicationReference) throw new Error('Хүсэлтийн дугаар буцаж ирсэнгүй.');
       setReference(response.data.applicationReference);
+      trackLead(form.loanType);
       setFiles({});
     } catch (error) {
       setSubmitError(error.response?.status === 429 ? 'Хүсэлт илгээх давтамжийн хязгаарт хүрлээ. Түр хүлээгээд дахин оролдоно уу.' : error.response?.data?.message || 'Хүсэлт илгээж чадсангүй. Мэдээлэл, файлууд тань энэ дэлгэцэд хадгалагдсан тул дахин оролдоорой.');

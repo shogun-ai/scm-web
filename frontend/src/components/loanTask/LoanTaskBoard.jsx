@@ -9,6 +9,7 @@ import ConfirmDeleteDialog from '../admin/ConfirmDeleteDialog';
 import { deleteLoanRequest, errorMessage, fetchAssignees, fetchTaskList, fetchTaskSummary, postTaskAction } from './api';
 
 const SELECT = 'min-h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#003B5C] focus:outline-none focus:ring-2 focus:ring-[#003B5C]/20';
+const MessengerBadge = () => <span className="ml-2 inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">Messenger</span>;
 const money = value => (Number(value) > 0 ? `${Number(value).toLocaleString('mn-MN')} ₮` : '—');
 const date = value => { try { return value ? new Date(value).toLocaleDateString('mn-MN') : '—'; } catch { return '—'; } };
 
@@ -146,7 +147,7 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
         <select className={`${SELECT} mt-1 w-full`} value={filters.subProductId} onChange={event => setFilter('subProductId', event.target.value)}><option value="">Бүгд</option>{subOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
       </label>
       <label className="block text-xs font-semibold text-slate-600">Эх үүсвэр
-        <select className={`${SELECT} mt-1 w-full`} value={filters.source} onChange={event => setFilter('source', event.target.value)}><option value="all">Бүгд</option><option value="task">Шинэ маягт</option><option value="legacy">Хуучин</option></select>
+        <select className={`${SELECT} mt-1 w-full`} value={filters.source} onChange={event => setFilter('source', event.target.value)}><option value="all">Бүгд</option><option value="task">Шинэ маягт</option><option value="legacy">Хуучин</option><option value="messenger">Messenger</option></select>
       </label>
       <label className="block text-xs font-semibold text-slate-600">Эрэмбэ
         <select className={`${SELECT} mt-1 w-full`} value={filters.sort} onChange={event => setFilter('sort', event.target.value)}><option value="newest">Шинэ нь эхэнд</option><option value="oldest">Хуучин нь эхэнд</option></select>
@@ -171,7 +172,7 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
           <thead className="bg-slate-50 text-xs text-slate-600"><tr>{deletable.length > 0 && <th scope="col" className="w-10 px-4 py-3"><input type="checkbox" aria-label="Энэ хуудасны устгаж болох бүх хүсэлтийг сонгох" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-red-600" /></th>}{['Дугаар', 'Нэр', 'Бүтээгдэхүүн', 'Дүн', 'Төлөв', 'Хариуцагч', 'Огноо', ''].map(label => <th key={label} scope="col" className="px-4 py-3 font-semibold">{label}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">{list.items.map(item => <tr key={item._id} className={selected.has(item._id) ? 'bg-red-50/60' : 'hover:bg-slate-50'}>
             {deletable.length > 0 && <td className="px-4 py-3">{item.canDelete && <input type="checkbox" aria-label={`${item.applicationReference || 'Дугааргүй хүсэлт'} сонгох`} checked={selected.has(item._id)} onChange={() => toggleSelect(item._id)} className="h-4 w-4 accent-red-600" />}</td>}
-            <td className="px-4 py-3 font-mono text-xs">{item.applicationReference || '—'}</td>
+            <td className="px-4 py-3 font-mono text-xs">{item.applicationReference || '—'}{item.channel === 'messenger' && <MessengerBadge />}</td>
             <td className="px-4 py-3 font-medium">{item.displayName || '—'}<span className="block text-xs font-normal text-slate-500">{item.phone}</span></td>
             <td className="px-4 py-3">{item.productName || item.productKey || '—'}{item.subProductName && <span className="block text-xs text-slate-500">{item.subProductName}</span>}</td>
             <td className="px-4 py-3 tabular-nums">{money(item.amount)}</td>
@@ -183,7 +184,7 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
         </table>
       </div>
       <ul className="space-y-3 md:hidden">{list.items.map(item => <li key={item._id} className="rounded-2xl bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-2"><div>{item.canDelete && <label className="mb-1 flex min-h-9 items-center gap-2 text-xs text-red-700"><input type="checkbox" checked={selected.has(item._id)} onChange={() => toggleSelect(item._id)} className="h-4 w-4 accent-red-600" />Сонгох</label>}<p className="font-mono text-xs text-slate-500">{item.applicationReference || '—'}</p><p className="font-semibold">{item.displayName || '—'}</p></div><TaskStatusBadge status={item.taskStatus} outcome={item.outcome} legacy={item.taskStatusSource === 'legacy'} /></div>
+        <div className="flex items-start justify-between gap-2"><div>{item.canDelete && <label className="mb-1 flex min-h-9 items-center gap-2 text-xs text-red-700"><input type="checkbox" checked={selected.has(item._id)} onChange={() => toggleSelect(item._id)} className="h-4 w-4 accent-red-600" />Сонгох</label>}<p className="font-mono text-xs text-slate-500">{item.applicationReference || '—'}{item.channel === 'messenger' && <MessengerBadge />}</p><p className="font-semibold">{item.displayName || '—'}</p></div><TaskStatusBadge status={item.taskStatus} outcome={item.outcome} legacy={item.taskStatusSource === 'legacy'} /></div>
         <p className="mt-2 text-sm text-slate-600">{item.productName || item.productKey || '—'}{item.subProductName ? ` · ${item.subProductName}` : ''}</p>
         <p className="mt-1 text-sm tabular-nums">{money(item.amount)} · {date(item.createdAt)}</p>
         <p className="mt-1 text-xs text-slate-500">Хариуцагч: {item.assignee?.name || '—'}</p>

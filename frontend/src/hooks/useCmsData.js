@@ -3,6 +3,7 @@ import { Briefcase } from 'lucide-react';
 import { API_URL, PRODUCT_KEY_MAP } from '../data/constants';
 import { productsData } from '../data/products';
 import { hasProductTerms } from '../utils/productTerms.mjs';
+import { startMetaPixel } from '../utils/metaPixel';
 
 const hasBrokenEncoding = (value = '') => /[ÐÑÒÓ]|â|�/.test(String(value));
 
@@ -43,6 +44,7 @@ export function useCmsData() {
   const [promotions, setPromotions] = useState([]);
 
   useEffect(() => {
+    startMetaPixel(API_URL);
     fetch(`${API_URL}/api/config/flat`).then(r => r.json()).then(setCfg).catch((err) => {
       console.error('[useCmsData] Failed to fetch config:', err?.message || err);
     });

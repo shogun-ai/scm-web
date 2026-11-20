@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
 import TaskField, { Reveal } from './TaskField';
 import FileCategoryCards from './FileCategoryCards';
+import { trackLead } from '../../utils/metaPixel';
 import { API_URL, errorMessage, fetchPublicProduct, submitPublicRequest } from './api';
 import { allFields, checkFileSelection, errorFor, hiddenKeys, isFileField, isVisible, pruneHidden, stepIndexForErrors, validateSteps, visibleSteps } from './taskFormUtils';
 
@@ -114,6 +115,7 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
       payload.append('answers', JSON.stringify(result.value));
       payload.append('consent', 'true');
       payload.append('website', honeypot);
+      if (new URLSearchParams(window.location.search).get('source') === 'messenger') payload.append('channel', 'messenger');
       const hidden = hiddenKeys(allSteps, raw);
       for (const field of allFields(steps)) {
         if (isFileField(field) && !hidden.has(field.key)) (files[field.key] || []).forEach(file => payload.append(field.key, file));
@@ -121,6 +123,7 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
       const response = await submitPublicRequest(apiUrl, payload, ev => { if (ev.total) setProgress(Math.round(ev.loaded / ev.total * 100)); });
       if (!response?.applicationReference) throw new Error('missing reference');
       setReference(response.applicationReference);
+      trackLead(product.productKey);
       setFiles({});
     } catch (error) {
       const data = error.response?.data;

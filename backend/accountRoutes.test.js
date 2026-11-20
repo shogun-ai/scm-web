@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { registerAccountRoutes, createInviteToken, hashInviteToken, inviteTokenMatches, passwordPolicyError, validateTrustMessage, validateTrustSubmission, pickTrustUpdate, maskEmail, trustReference, recordLoginEvent, INVITE_TTL_MS, readDeleteFlag } from './accountRoutes.js';
+import { registerAccountRoutes, createInviteToken, hashInviteToken, inviteTokenMatches, passwordPolicyError, validateTrustMessage, validateTrustSubmission, pickTrustUpdate, maskEmail, trustReference, recordLoginEvent, INVITE_TTL_MS, readDeleteFlag, normalizePixelId, readMetaPixelId } from './accountRoutes.js';
 import { createPermissionService, registerPermissionRoutes } from './permissions.js';
 import * as emails from './accountEmails.js';
 
@@ -155,7 +155,7 @@ test('admin settings: admin only, strict boolean, logged', async () => {
   const h = harness({ flag: true });
   assert.equal((await h.invoke('get', '/api/admin/settings', { user: OFFICER })).code, 403);
   assert.equal((await h.invoke('put', '/api/admin/settings', { user: OFFICER, body: { loanRequestDeleteEnabled: true } })).code, 403);
-  assert.deepEqual((await h.invoke('get', '/api/admin/settings')).data, { loanRequestDeleteEnabled: true });
+  assert.deepEqual((await h.invoke('get', '/api/admin/settings')).data, { loanRequestDeleteEnabled: true, metaPixelId: '' });
   for (const body of [{ loanRequestDeleteEnabled: 'true' }, {}, { loanRequestDeleteEnabled: true, extra: 1 }, []]) assert.equal((await h.invoke('put', '/api/admin/settings', { body })).code, 400);
   const ok = await h.invoke('put', '/api/admin/settings', { body: { loanRequestDeleteEnabled: false } });
   assert.deepEqual(ok.data, { loanRequestDeleteEnabled: false });
@@ -309,4 +309,32 @@ test('permission catalog endpoints', async () => {
   assert.equal(catalog.data.effective.director['loan_requests.assign'], true);
   const mine = await h.invoke('get', '/api/me/permissions', { user: OFFICER });
   assert.ok(mine.data.keys.includes('loan_requests.view_assigned') && !mine.data.keys.includes('loan_requests.change_status') && !mine.data.keys.includes('loan_requests.delete'));
+});
+
+test('D18 admin settings: metaPixelId (10-20 digits, empty clears), subset updates, strict validation, logged without the value', async () => {
+  const h = harness({ flag: true });
+  const ok = await h.invoke('put', '/api/admin/settings', { body: { metaPixelId: ' 123456789012345 ' } });
+  assert.deepEqual([ok.code, ok.data], [200, { metaPixelId: '123456789012345' }]);
+  const saved = h.calls.siteConfig.at(-1);
+  assert.equal(saved.query.key, 'meta_pixel_id');
+  assert.equal(saved.update.$set.value, '123456789012345');
+  assert.equal(saved.update.$set.group, 'integrations');
+  assert.deepEqual(h.calls.logs.at(-1), { action: 'admin_settings_changed', details: 'metaPixelId=set' });
+  const cleared = await h.invoke('put', '/api/admin/settings', { body: { metaPixelId: '' } });
+  assert.deepEqual(cleared.data, { metaPixelId: '' });
+  assert.equal(h.calls.siteConfig.at(-1).update.$set.value, '');
+  assert.equal(h.calls.logs.at(-1).details, 'metaPixelId=cleared');
+  const both = await h.invoke('put', '/api/admin/settings', { body: { loanRequestDeleteEnabled: true, metaPixelId: '1234567890' } });
+  assert.deepEqual(both.data, { loanRequestDeleteEnabled: true, metaPixelId: '1234567890' });
+  for (const body of [{ metaPixelId: '12345' }, { metaPixelId: '1'.repeat(21) }, { metaPixelId: 'abc1234567890' }, { metaPixelId: 1234567890 }, { metaPixelId: null }, { metaPixelId: '1234567890', extra: 1 }, { metaPixelId: '1234567890', loanRequestDeleteEnabled: 'yes' }]) {
+    const before = h.calls.siteConfig.length;
+    assert.equal((await h.invoke('put', '/api/admin/settings', { body })).code, 400, JSON.stringify(body));
+    assert.equal(h.calls.siteConfig.length, before, 'nothing written on invalid input');
+  }
+  assert.equal((await h.invoke('put', '/api/admin/settings', { user: OFFICER, body: { metaPixelId: '1234567890' } })).code, 403);
+  assert.equal(normalizePixelId('1234567890'), '1234567890');
+  assert.equal(normalizePixelId(' 1234567890123456789012 '), '');
+  assert.equal(await readMetaPixelId({ findOne: () => thenable({ value: '1234567890' }) }), '1234567890');
+  assert.equal(await readMetaPixelId({ findOne: () => thenable({ value: true }) }), '');
+  assert.equal(await readMetaPixelId({ findOne: () => thenable(null) }), '');
 });

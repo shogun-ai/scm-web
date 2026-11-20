@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { trackLead } from '../utils/metaPixel';
 import PublicPageShell from './PublicPageShell';
 import { Send, CheckCircle, Loader, AlertCircle } from 'lucide-react';
 
@@ -81,6 +82,7 @@ const TrustRequest = ({ onBack }) => {
         await axios.post(`${API_BASE_URL}/api/trusts`, formData);
         // ==========================================
         setShowSuccess(true);
+        trackLead('trust');
     } catch (error) {
         console.error("API Error:", error);
         setError("Сервертэй холбогдож чадсангүй. Та сервер ажиллаж байгаа эсэхийг шалгана уу.");

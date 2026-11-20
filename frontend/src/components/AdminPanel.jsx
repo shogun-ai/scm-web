@@ -13,6 +13,7 @@ import TaskPermissionMatrix from './admin/TaskPermissionMatrix';
 import ProfilePage from './admin/ProfilePage';
 import ProfileMenu from './admin/ProfileMenu';
 import AdminSettingsPanel from './admin/AdminSettingsPanel';
+import FacebookStatusPanel from './admin/FacebookStatusPanel';
 import TrustMessagePanel from './admin/TrustMessagePanel';
 import InviteUserForm from './admin/InviteUserForm';
 import SafetyNoticesAdmin from './SafetyNoticesAdmin';
@@ -1147,6 +1148,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
               {navButton('permissions', <Shield size={18} />, 'Эрхийн матриц')}
               {navButton('logs', <Activity size={18} />, 'Үйлдлийн лог')}
               {navButton('deleteSettings', <Trash2 size={18} />, 'Устгах тохиргоо')}
+              {navButton('facebook', <MessageCircle size={18} />, 'Facebook холболт')}
             </div>
           )}
         </nav>
@@ -2983,6 +2985,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
 
         {activeTab === 'deleteSettings' && user?.role === 'admin' && (
           <AdminSettingsPanel apiUrl={API_URL} />
+        )}
+
+        {activeTab === 'facebook' && user?.role === 'admin' && (
+          <FacebookStatusPanel apiUrl={API_URL} />
         )}
 
         {activeTab === 'profile' && (

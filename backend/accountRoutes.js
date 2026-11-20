@@ -7,6 +7,8 @@ import { isValidEmailAddress } from './mailer.js';
 
 export const INVITE_TTL_MS = 48 * 3600 * 1000;
 export const DELETE_FLAG_KEY = 'loanRequestDeleteEnabled';
+export const META_PIXEL_KEY = 'meta_pixel_id';
+const SETTINGS_KEYS = ['loanRequestDeleteEnabled', 'metaPixelId'];
 const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/; // 32 random bytes, base64url
 const str = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
@@ -75,6 +77,13 @@ export function pickTrustUpdate(body) {
   return update;
 }
 
+// D18: Meta Pixel ID is digits only (10-20); anything else is treated as unset.
+export const normalizePixelId = value => (typeof value === 'string' && /^[0-9]{10,20}$/.test(value.trim()) ? value.trim() : '');
+export async function readMetaPixelId(SiteConfig) {
+  const doc = await SiteConfig.findOne({ key: META_PIXEL_KEY }).lean();
+  return normalizePixelId(doc?.value);
+}
+
 export async function readDeleteFlag(SiteConfig) {
   const doc = await SiteConfig.findOne({ key: DELETE_FLAG_KEY }).lean();
   return doc?.value === true;
@@ -136,21 +145,40 @@ export function registerAccountRoutes({
 
   // ----- Admin settings -----
   app.get('/api/admin/settings', authenticateUser, requireAdmin, async (_req, res) => {
-    try { res.json({ loanRequestDeleteEnabled: await readDeleteFlag(SiteConfig) }); } catch { generic500(res); }
+    try { res.json({ loanRequestDeleteEnabled: await readDeleteFlag(SiteConfig), metaPixelId: await readMetaPixelId(SiteConfig) }); } catch { generic500(res); }
   });
+  // PUT accepts any non-empty subset of { loanRequestDeleteEnabled:boolean, metaPixelId:string(10-20 digits) | '' (clears) }.
   app.put('/api/admin/settings', authenticateUser, requireAdmin, async (req, res) => {
     try {
       const body = req.body;
-      if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.loanRequestDeleteEnabled !== 'boolean' || Object.keys(body).some(key => key !== 'loanRequestDeleteEnabled')) {
-        return res.status(400).json({ message: 'Тохиргоо буруу байна.', errors: { loanRequestDeleteEnabled: 'true эсвэл false байна.' } });
+      const isObject = body && typeof body === 'object' && !Array.isArray(body);
+      const keys = isObject ? Object.keys(body) : [];
+      const errors = {};
+      if (!isObject || !keys.length || keys.some(key => !SETTINGS_KEYS.includes(key))) errors._form = 'Тохиргоо буруу байна.';
+      if (isObject && keys.includes('loanRequestDeleteEnabled') && typeof body.loanRequestDeleteEnabled !== 'boolean') errors.loanRequestDeleteEnabled = 'true эсвэл false байна.';
+      if (isObject && keys.includes('metaPixelId') && !(typeof body.metaPixelId === 'string' && (body.metaPixelId.trim() === '' || normalizePixelId(body.metaPixelId)))) errors.metaPixelId = 'Pixel ID нь 10–20 оронтой тоо байна.';
+      if (Object.keys(errors).length) return res.status(400).json({ message: 'Тохиргоо буруу байна.', errors });
+      const out = {};
+      if (keys.includes('loanRequestDeleteEnabled')) {
+        await SiteConfig.findOneAndUpdate(
+          { key: DELETE_FLAG_KEY },
+          { $set: { value: body.loanRequestDeleteEnabled, label: 'Хүсэлт устгах унтраалга', group: 'internal', updatedAt: now() } },
+          { upsert: true },
+        );
+        await createLog(req.user, 'admin_settings_changed', `${DELETE_FLAG_KEY}=${body.loanRequestDeleteEnabled}`);
+        out.loanRequestDeleteEnabled = body.loanRequestDeleteEnabled;
       }
-      await SiteConfig.findOneAndUpdate(
-        { key: DELETE_FLAG_KEY },
-        { $set: { value: body.loanRequestDeleteEnabled, label: 'Хүсэлт устгах унтраалга', group: 'internal', updatedAt: now() } },
-        { upsert: true },
-      );
-      await createLog(req.user, 'admin_settings_changed', `${DELETE_FLAG_KEY}=${body.loanRequestDeleteEnabled}`);
-      res.json({ loanRequestDeleteEnabled: body.loanRequestDeleteEnabled });
+      if (keys.includes('metaPixelId')) {
+        const pixelId = normalizePixelId(body.metaPixelId);
+        await SiteConfig.findOneAndUpdate(
+          { key: META_PIXEL_KEY },
+          { $set: { value: pixelId, label: 'Meta Pixel ID', group: 'integrations', updatedAt: now() } },
+          { upsert: true },
+        );
+        await createLog(req.user, 'admin_settings_changed', `metaPixelId=${pixelId ? 'set' : 'cleared'}`);
+        out.metaPixelId = pixelId;
+      }
+      res.json(out);
     } catch { generic500(res); }
   });
 
