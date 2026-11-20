@@ -80,3 +80,20 @@ export function staffApplicantUpload({ reference, productName, subProductName, c
     ], { link: clean(adminUrl), linkLabel: 'Админ хэсэгт нээх' }),
   };
 }
+
+// D15: free-text message typed by staff. Only that text, the request number and the footer are included.
+export function applicantMessage({ reference, message, companyPhone } = {}) {
+  const ref = clean(reference);
+  const lines = String(message ?? '').split(/\r?\n/).map(clean).filter(Boolean).slice(0, 40);
+  return {
+    template: 'applicant_message',
+    subject: `Таны зээлийн хүсэлт — ${ref}`,
+    ...layout([
+      'Сайн байна уу,',
+      `Таны ${ref} дугаартай зээлийн хүсэлтийн талаар ажилтнаас мессеж ирлээ:`,
+      '',
+      ...lines,
+      ...footer(companyPhone),
+    ]),
+  };
+}

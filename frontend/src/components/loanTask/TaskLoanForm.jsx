@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
 import TaskField, { Reveal } from './TaskField';
+import FileCategoryCards from './FileCategoryCards';
 import { API_URL, errorMessage, fetchPublicProduct, submitPublicRequest } from './api';
 import { allFields, checkFileSelection, errorFor, hiddenKeys, isFileField, isVisible, pruneHidden, stepIndexForErrors, validateSteps, visibleSteps } from './taskFormUtils';
 
@@ -143,6 +144,9 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
     } finally { submittingRef.current = false; setLoading(false); }
   };
 
+  const visibleFields = (currentStep?.fields || []).filter(field => isVisible(field, raw));
+  const renderField = field => <Reveal key={field.key} animate={interacted}><TaskField field={field} value={raw[field.key]} error={errorFor(errors, field.key)} disabled={loading} onChange={change} files={files[field.key] || []} onAddFiles={addFiles} onRemoveFile={removeFile} /></Reveal>;
+
   const Wrapper = embedded ? 'div' : 'main';
   const wrapperClass = embedded ? '' : 'sc-public-page min-h-screen bg-[#f7f8f6] pb-20 pt-28 text-[#102d43] md:pt-32';
 
@@ -175,7 +179,8 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
                 <p className="mb-6 text-xs text-slate-500"><span className="text-red-600" aria-hidden="true">*</span> — заавал бөглөх талбар</p>
                 {!isReview && <div className="space-y-5">
                   {currentStep?.description && <p className="text-sm leading-relaxed text-slate-600">{currentStep.description}</p>}
-                  {(currentStep?.fields || []).filter(field => isVisible(field, raw)).map(field => <Reveal key={field.key} animate={interacted}><TaskField field={field} value={raw[field.key]} error={errorFor(errors, field.key)} disabled={loading} onChange={change} files={files[field.key] || []} onAddFiles={addFiles} onRemoveFile={removeFile} /></Reveal>)}
+                  {visibleFields.filter(field => !isFileField(field)).map(renderField)}
+                  <FileCategoryCards fields={visibleFields.filter(isFileField)} files={files} renderField={renderField} />
                   {uploadError && <p role="alert" className="text-sm text-red-700">{uploadError}</p>}
                 </div>}
                 {isReview && <div className="space-y-6">

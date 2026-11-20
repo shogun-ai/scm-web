@@ -1,4 +1,4 @@
-import { FILE_FORMATS, LIMITS, isFieldVisible, validateAnswers } from '@shared/loanWidgets';
+import { FILE_CATEGORIES, FILE_FORMATS, LIMITS, isFieldVisible, validateAnswers } from '@shared/loanWidgets';
 
 export const MAX_FILE_BYTES = (LIMITS?.fileMaxMb || 10) * 1024 * 1024;
 export const DEFAULT_ACCEPT = ['pdf', 'jpg', 'png', 'webp'];
@@ -90,3 +90,22 @@ export const stepIndexForErrors = (steps, errors) => {
   const keys = Object.keys(errors || {});
   return (steps || []).findIndex(step => (step.fields || []).some(field => keys.some(path => path === field.key || path.startsWith(`${field.key}.`))));
 };
+
+// ---- file categories (D15) ----
+// FILE_CATEGORIES comes from shared; the preset-key fallback covers configs/snapshots without field.category.
+export { FILE_CATEGORIES };
+const CATEGORY_BY_KEY = {
+  id_reference: 'personal', address_reference: 'personal',
+  ndsh_reference: 'income', bank_statement: 'income', zms_reference: 'income', zms_scoring: 'income', income_other_file: 'income',
+  car_photos: 'collateral', property_docs: 'collateral',
+};
+export const categoryOf = field => {
+  if (FILE_CATEGORIES.some(item => item.key === field?.category)) return field.category;
+  const key = String(field?.key || '');
+  if (CATEGORY_BY_KEY[key]) return CATEGORY_BY_KEY[key];
+  return key.startsWith('collateral_') ? 'collateral' : 'other';
+};
+// -> [{ key, label, fields }] in FILE_CATEGORIES order; empty categories are dropped.
+export const groupFileFields = fields => FILE_CATEGORIES
+  .map(category => ({ ...category, fields: (fields || []).filter(field => categoryOf(field) === category.key) }))
+  .filter(group => group.fields.length > 0);

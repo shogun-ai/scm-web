@@ -40,7 +40,7 @@ import { registerLoanIntakeRoutes, canAccessRequest, isRequestManager, isRequest
 import nodemailer from 'nodemailer';
 import LoanFormConfig from './models/LoanFormConfig.js';
 import { applyLoanTaskSchema, registerLoanTaskRoutes, legacyLoanPostGone, taskLockBlocks, sanitizeLegacyLoanWrite } from './loanTasks.js';
-import { createMailer } from './mailer.js';
+import { createMailer, isValidEmailAddress } from './mailer.js';
 
 const ZentroCodeRuleSchema = new mongoose.Schema({
   keyword: { type: String, required: true, unique: true },
@@ -351,6 +351,7 @@ const UserSchema = new mongoose.Schema({
     role: { type: String, default: 'employee' },
     roles: { type: [String], default: [] },
     isActive: { type: Boolean, default: true },
+    notificationEmail: { type: String, trim: true, maxlength: 254 },
     twoFASecret: { type: Object, default: null }, isTwoFAEnabled: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now }
 });
@@ -6562,9 +6563,14 @@ app.post('/api/users', authenticateUser, requireAdmin, async (req, res) => {
 
 app.put('/api/users/:id', authenticateUser, requireAdmin, async (req, res) => {
   try {
-    const { roles } = req.body;
+    const { roles, notificationEmail } = req.body;
     const update = {};
     if (Array.isArray(roles)) update.roles = roles.slice(0, 2);
+    if (notificationEmail !== undefined) {
+      const value = typeof notificationEmail === 'string' ? notificationEmail.trim() : null;
+      if (value === null || (value !== '' && !isValidEmailAddress(value))) return res.status(400).json({ message: 'Мэдэгдлийн имэйл буруу байна.', errors: { notificationEmail: 'Имэйл хаяг буруу байна.' } });
+      if (value) update.notificationEmail = value; else update.$unset = { notificationEmail: 1 };
+    }
     const u = await User.findByIdAndUpdate(req.params.id, update, { new: true }).select('-password');
     if (!u) return res.status(404).json({ message: 'Хэрэглэгч олдсонгүй' });
     res.json(u);

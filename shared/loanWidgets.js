@@ -47,8 +47,16 @@ export const COLLATERAL_TYPES_OPTIONS = [
 const FIXED_OPTION_VALUE_PRESETS = ['borrower_type'];
 
 const MAX_AMOUNT = 1e12;
+export const FILE_CATEGORIES = Object.freeze([
+  { key: 'personal', label: 'Хувийн мэдээллийн баримт' },
+  { key: 'income', label: 'Орлогын баримт' },
+  { key: 'collateral', label: 'Барьцаа хөрөнгийн баримт' },
+  { key: 'other', label: 'Бусад баримт' },
+].map(item => Object.freeze(item)));
+const FILE_CATEGORY_KEYS = FILE_CATEGORIES.map(item => item.key);
 const DEFAULT_FILE = { accept: ['pdf', 'jpg', 'png', 'webp'], maxSizeMb: 10, maxFiles: 3 };
-const file = (key, label, storage, extra = {}) => ({ key, label, type: 'file', group: 'documents', storage, ...DEFAULT_FILE, ...extra });
+const FILE_CATEGORY_BY_PRESET = {'id_reference': 'personal', 'address_reference': 'personal', 'ndsh_reference': 'income', 'bank_statement': 'income', 'income_other_file': 'income', 'zms_reference': 'income', 'zms_scoring': 'income', 'car_photos': 'collateral', 'property_docs': 'collateral', 'collateral_property_certificate': 'collateral', 'collateral_cadastre': 'collateral', 'collateral_vehicle_certificate': 'collateral', 'collateral_deposit_statement': 'collateral', 'collateral_equipment_invoice': 'collateral', 'collateral_other_file': 'collateral'};
+const file = (key, label, storage, extra = {}) => ({ key, label, type: 'file', group: 'documents', storage, category: FILE_CATEGORY_BY_PRESET[key] || 'other', ...DEFAULT_FILE, ...extra });
 
 export const PRESET_WIDGETS = [
   { key: 'full_name', label: 'Овог нэр', type: 'composite', group: 'personal', maxLength: 100, storage: 'lastname,firstname' },
@@ -189,6 +197,7 @@ export function resolveField(ref) {
       else if (ref.showWhen !== null && preset.showWhen) def.showWhen = normalizeShowWhen(preset.showWhen);
     }
     if (preset.maxRows) def.maxRows = preset.maxRows;
+    if (preset.type === 'file') def.category = preset.category;
     return def;
   }
   if (ref.kind === 'custom' && CUSTOM_FIELD_TYPES.includes(ref.type)) {
@@ -201,6 +210,7 @@ export function resolveField(ref) {
       def.accept = Array.isArray(ref.accept) && ref.accept.length ? [...ref.accept] : [...DEFAULT_FILE.accept];
       def.maxSizeMb = Number.isInteger(ref.maxSizeMb) ? ref.maxSizeMb : DEFAULT_FILE.maxSizeMb;
       def.maxFiles = Number.isInteger(ref.maxFiles) ? ref.maxFiles : DEFAULT_FILE.maxFiles;
+      def.category = FILE_CATEGORY_KEYS.includes(ref.category) ? ref.category : 'other';
     }
     return def;
   }
@@ -361,6 +371,10 @@ function validateFieldRef(ref, path, errors) {
     const maxFiles = ref.maxFiles ?? DEFAULT_FILE.maxFiles;
     if (!Number.isInteger(maxFiles) || maxFiles < 1 || maxFiles > LIMITS.customFileMaxFiles) errors[`${path}.maxFiles`] = `1–${LIMITS.customFileMaxFiles} файл.`;
     else out.maxFiles = maxFiles;
+    if (ref.category !== undefined && ref.category !== null) {
+      if (!FILE_CATEGORY_KEYS.includes(ref.category)) errors[`${path}.category`] = 'Баримтын ангилал буруу.';
+      else out.category = ref.category;
+    }
   }
   return out;
 }

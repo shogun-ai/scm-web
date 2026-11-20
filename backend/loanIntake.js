@@ -252,7 +252,11 @@ export function registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest,
   });
   app.get('/api/loan-requests/assignees', authenticateUser, requireStaff, async (req, res) => {
     if (!isRequestManager(req.user)) return res.status(403).json({ message: 'Хуваарилах эрхгүй байна.' });
-    try { res.json(await User.find({ isActive: true, $or: [{ role: { $in: staffRoles } }, { roles: { $in: staffRoles } }] }).select('_id name role roles').limit(200).lean()); } catch (error) { fail(res, error); }
+    try {
+      const users = await User.find({ isActive: true, $or: [{ role: { $in: staffRoles } }, { roles: { $in: staffRoles } }] }).select('_id name role roles email notificationEmail').limit(200).lean();
+      // email/notificationEmail are never exposed raw: only the resolved notifyEmail (D15).
+      res.json(users.map(({ email, notificationEmail, ...user }) => ({ ...user, notifyEmail: (typeof notificationEmail === 'string' && notificationEmail.trim()) || (typeof email === 'string' && email) || null })));
+    } catch (error) { fail(res, error); }
   });
   app.get('/api/loan-requests', authenticateUser, requireStaff, async (req, res) => {
     try {

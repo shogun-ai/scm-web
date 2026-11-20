@@ -227,6 +227,51 @@ const getAdminRoleKeys = (adminUser = {}) => [
   ...new Set([adminUser.role, ...(Array.isArray(adminUser.roles) ? adminUser.roles : [])].filter(Boolean)),
 ];
 
+const NOTIFY_API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com');
+const NOTIFY_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Inline editor for User.notificationEmail (login email is unchanged).
+const NotifyEmailEditor = ({ userId, value, onSaved }) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const start = () => { setDraft(value || ''); setError(''); setEditing(true); };
+  const save = async () => {
+    const next = draft.trim();
+    if (next && (next.length > 254 || !NOTIFY_EMAIL_RE.test(next))) { setError('Имэйл хаяг буруу байна.'); return; }
+    setSaving(true); setError('');
+    try {
+      await axios.put(`${NOTIFY_API_URL}/api/users/${userId}`, { notificationEmail: next });
+      await onSaved();
+      setEditing(false);
+    } catch (e) { setError(e.response?.data?.message || 'Хадгалж чадсангүй.'); }
+    finally { setSaving(false); }
+  };
+  if (!editing) {
+    return (
+      <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+        <span>Мэдэгдэл: {value || <span className="text-amber-600">тохируулаагүй</span>}</span>
+        <button type="button" onClick={start} className="rounded p-1 text-[#003B5C] hover:bg-blue-50" title="Мэдэгдэл хүлээн авах имэйл засах" aria-label="Мэдэгдэл хүлээн авах имэйл засах"><Pencil size={12} /></button>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 space-y-1">
+      <label className="block text-xs font-bold text-slate-600">Мэдэгдэл хүлээн авах имэйл
+        <input type="email" value={draft} maxLength={254} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
+          className="mt-1 w-full min-w-[14rem] rounded-lg border border-slate-300 px-2 py-1 text-xs font-normal text-slate-800" placeholder="name@scm.mn" />
+      </label>
+      <p className="text-[11px] text-slate-500">Нэвтрэх имэйл өөрчлөгдөхгүй. Зээлийн хүсэлтийн мэдэгдэл энэ хаяг руу очно.</p>
+      {error && <p role="alert" className="text-[11px] text-red-600">{error}</p>}
+      <div className="flex gap-1">
+        <button type="button" disabled={saving} onClick={save} className="inline-flex items-center gap-1 rounded-lg bg-[#003B5C] px-2 py-1 text-xs font-bold text-white disabled:opacity-50"><Save size={12} />Хадгалах</button>
+        <button type="button" disabled={saving} onClick={() => setEditing(false)} className="rounded-lg px-2 py-1 text-xs text-slate-600 hover:bg-slate-100">Болих</button>
+      </div>
+    </div>
+  );
+};
+
 const AdminPanel = ({ user, token, onLogout }) => {
   const [activeTab, setActiveTab] = useState('los');
   const [requests, setRequests] = useState([]); 
@@ -1361,7 +1406,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                   {usersList.map(u => (
                     <tr key={u._id} className="hover:bg-slate-50">
                       <td className="p-4 font-bold text-[#003B5C]">{u.name}</td>
-                      <td className="p-4 text-gray-500">{u.email}</td>
+                      <td className="p-4 text-gray-500">{u.email}<NotifyEmailEditor userId={u._id} value={u.notificationEmail} onSaved={async () => { const userRes = await axios.get(`${NOTIFY_API_URL}/api/users`); setUsersList(userRes.data); }} /></td>
                       <td className="p-4">
                         <div className="flex flex-wrap gap-1">
                           {u.role === 'admin' && (

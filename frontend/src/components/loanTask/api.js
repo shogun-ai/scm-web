@@ -37,6 +37,7 @@ export const fetchTaskDetail = (apiUrl, id) => data(axios.get(`${base(apiUrl)}/$
 export const postTaskAction = (apiUrl, id, action) => data(axios.post(`${base(apiUrl)}/${id}/actions`, action, auth()));
 export const postTaskFiles = (apiUrl, id, formData) => data(axios.post(`${base(apiUrl)}/${id}/files`, formData, auth()));
 export const postDocRequest = (apiUrl, id, body) => data(axios.post(`${base(apiUrl)}/${id}/doc-request`, body, auth()));
+export const postTaskMessage = (apiUrl, id, body) => data(axios.post(`${base(apiUrl)}/${id}/message`, body, auth()));
 
 export const errorMessage = (error, fallback = 'Алдаа гарлаа. Дахин оролдоно уу.') => {
   if (error?.response?.status === 503 && error.response.data?.code === 'DISABLED') return 'Энэ боломж одоогоор идэвхгүй байна.';

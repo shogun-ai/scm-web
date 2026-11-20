@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PRESET_WIDGETS, PRESET_BY_KEY, resolveField, resolveSteps, validateConfig, validateAnswers, fileRulesFor, mirrorAnswers, buildDefaultConfig, isSubProductLive, subProductStatus, ubDate, slugify, presetFileRule, storageFieldToPresetKey, LIMITS, isFieldVisible, normalizeShowWhen, visibleFieldKeys } from './loanWidgets.js';
+import { PRESET_WIDGETS, PRESET_BY_KEY, resolveField, resolveSteps, validateConfig, validateAnswers, fileRulesFor, mirrorAnswers, buildDefaultConfig, isSubProductLive, subProductStatus, ubDate, slugify, presetFileRule, storageFieldToPresetKey, LIMITS, FILE_CATEGORIES, isFieldVisible, normalizeShowWhen, visibleFieldKeys } from './loanWidgets.js';
 
 const NOW = new Date('2026-11-20T03:00:00Z');
 const p = (key, required = false) => ({ kind: 'preset', key, required });
@@ -328,4 +328,32 @@ test('default configs are valid when activated and wire D11 conditions', () => {
   assert.ok(missing.errors.other_loans && missing.errors.address);
   assert.equal(mirrorAnswers(vi.value).regNo, 'УБ90050112');
   assert.equal(resolveSteps(buildDefaultConfig('cons_loan').steps).flatMap(step => step.fields).find(field => field.key === 'collateral_types').required, false);
+});
+
+test('D15 file categories: presets, FILE_CATEGORIES export, custom file category validation', () => {
+  assert.deepEqual(FILE_CATEGORIES.map(item => item.key), ['personal', 'income', 'collateral', 'other']);
+  assert.deepEqual(FILE_CATEGORIES.map(item => item.label), ['Хувийн мэдээллийн баримт', 'Орлогын баримт', 'Барьцаа хөрөнгийн баримт', 'Бусад баримт']);
+  const expected = { id_reference: 'personal', address_reference: 'personal', ndsh_reference: 'income', bank_statement: 'income', zms_reference: 'income', zms_scoring: 'income', income_other_file: 'income', car_photos: 'collateral', property_docs: 'collateral' };
+  for (const [key, category] of Object.entries(expected)) assert.equal(PRESET_BY_KEY[key].category, category, key);
+  for (const preset of PRESET_WIDGETS.filter(item => item.type === 'file')) {
+    assert.ok(FILE_CATEGORIES.some(item => item.key === preset.category), preset.key);
+    assert.equal(resolveField(p(preset.key)).category, preset.category);
+    if (preset.key.startsWith('collateral_')) assert.equal(preset.category, 'collateral', preset.key);
+  }
+  assert.equal(PRESET_WIDGETS.some(item => item.type !== 'file' && 'category' in item), false);
+  assert.equal('category' in resolveField(p('phone')), false);
+  const custom = { kind: 'custom', key: 'cf_doc', type: 'file', label: 'Баримт' };
+  assert.equal(resolveField(custom).category, 'other');
+  assert.equal(resolveField({ ...custom, category: 'income' }).category, 'income');
+  assert.equal(resolveField({ ...custom, category: 'bogus' }).category, 'other');
+  const config = category => { const c = { ...buildDefaultConfig('cons_loan'), isActive: true }; c.steps = structuredClone(c.steps); c.steps[0].fields.push({ ...custom, ...(category === undefined ? {} : { category }) }); return c; };
+  const index = buildDefaultConfig('cons_loan').steps[0].fields.length;
+  assert.equal(validateConfig(config()).ok, true);
+  for (const key of ['personal', 'income', 'collateral', 'other']) {
+    const result = validateConfig(config(key));
+    assert.equal(result.ok, true, key);
+    assert.equal(result.value.steps[0].fields[index].category, key);
+  }
+  const bad = validateConfig(config('bogus'));
+  assert.equal(bad.ok, false); assert.ok(bad.errors[`steps.0.fields.${index}.category`]);
 });

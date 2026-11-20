@@ -220,3 +220,15 @@ test('legacy PATCH: task lock for non-managers, task-v1 status/assignee go to th
   response = await legacy.invoke('patch', '/api/loan-requests/:id', { user: manager, body: { assigneeId: OTHER } });
   assert.equal(response.code, 200);
 });
+
+test('D15 assignees: notifyEmail = notificationEmail || email || null, raw emails never exposed, existing fields kept', async () => {
+  const resolve = async staff => (await harness({ staff }).invoke('get', '/api/loan-requests/assignees', { user: manager })).data[0];
+  const base = { _id: OTHER, name: 'Staff', role: 'employee', roles: ['loan_officer'] };
+  let row = await resolve({ ...base, email: 'staff@scm.mn', notificationEmail: 'notify@scm.mn' });
+  assert.deepEqual(row, { _id: OTHER, name: 'Staff', role: 'employee', roles: ['loan_officer'], notifyEmail: 'notify@scm.mn' });
+  assert.equal((await resolve({ ...base, email: 'staff@scm.mn' })).notifyEmail, 'staff@scm.mn');
+  assert.equal((await resolve({ ...base, email: 'staff@scm.mn', notificationEmail: '  ' })).notifyEmail, 'staff@scm.mn');
+  row = await resolve(base);
+  assert.equal(row.notifyEmail, null); assert.equal('email' in row, false);
+  assert.equal((await harness().invoke('get', '/api/loan-requests/assignees', { user: officer })).code, 403);
+});

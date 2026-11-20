@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readMailConfig, createMailer, sendInBackground, isValidEmailAddress } from './mailer.js';
-import { applicantAcknowledgement, staffAssignment, applicantDocumentRequest, staffApplicantUpload, escapeHtml } from './loanTaskEmails.js';
+import { applicantAcknowledgement, staffAssignment, applicantDocumentRequest, staffApplicantUpload, applicantMessage, escapeHtml } from './loanTaskEmails.js';
 
 const ENV = { MAIL_ENABLED: 'true', SMTP_HOST: 'smtp.itools.mn', SMTP_PORT: '465', SMTP_USER: 'no-reply@scm.mn', SMTP_PASS: 's3cret-pass', MAIL_FROM: '"SCM" <no-reply@scm.mn>' };
 const silent = () => { const lines = []; return { lines, info: line => lines.push(line), error: line => lines.push(line), warn: line => lines.push(line) }; };
@@ -95,4 +95,16 @@ test('templates are Mongolian, PII-free and HTML-escaped', () => {
   for (const template of [ack, staff, doc]) for (const forbidden of ['regNo', 'УБ9']) assert.equal(template.text.includes(forbidden), false);
   assert.equal(escapeHtml(`"'&<>`), '&quot;&#39;&amp;&lt;&gt;');
   assert.equal(applicantAcknowledgement({ reference: 'A\r\nBcc: x' }).subject.includes('\n'), false, 'no header injection via subject');
+});
+
+test('D15 applicantMessage: escapes HTML, cleans each line, only staff text + reference + footer', () => {
+  const mail = applicantMessage({ reference: 'SCM-2026-AB12CD', message: 'Сайн байна уу\r\n  <b>баримт</b>  \n\n\nХаалга & цонх', companyPhone: '7599-1919' });
+  assert.equal(mail.template, 'applicant_message');
+  assert.equal(mail.subject, 'Таны зээлийн хүсэлт — SCM-2026-AB12CD');
+  assert.ok(mail.text.includes('<b>баримт</b>\nХаалга & цонх'), 'blank lines dropped, lines trimmed');
+  assert.equal(mail.html.includes('<b>'), false); assert.ok(mail.html.includes('&lt;b&gt;баримт&lt;/b&gt;')); assert.ok(mail.html.includes('Хаалга &amp; цонх'));
+  assert.ok(mail.text.includes('7599-1919')); assert.ok(mail.text.includes('Асуух зүйл байвал'));
+  assert.equal(applicantMessage({ reference: 'A\r\nBcc: x', message: 'x' }).subject.includes('\n'), false);
+  assert.equal(applicantMessage({ reference: 'R', message: 'x' }).text.includes('Лавлах утас'), false);
+  assert.equal(applicantMessage({ reference: 'R', message: Array.from({ length: 80 }, (_, i) => `l${i}`).join('\n') }).text.includes('l41'), false, 'line cap');
 });

@@ -20,7 +20,7 @@ const Mixed = Schema.Types.Mixed;
 // ---------- Schema additions (no defaults: legacy docs must not materialize new values) ----------
 const TaskHistorySchema = new Schema({
   at: Date,
-  type: { type: String }, // created|assigned|unassigned|status|reopened|docs_requested|note|file_added|email
+  type: { type: String }, // created|assigned|unassigned|status|reopened|docs_requested|note|file_added|email|message
   from: String, to: String, outcome: String, note: String,
   items: { type: [String], default: undefined },
   assignee: { userId: String, name: String },
@@ -256,7 +256,7 @@ export function toTaskListItem(loan) {
   };
 }
 
-export function toTaskDetail(loan, user, { cloudinary, now = new Date() } = {}) {
+export function toTaskDetail(loan, user, { cloudinary, now = new Date(), assigneeNotifyEmail = '' } = {}) {
   const base = toTaskListItem(loan);
   const state = deriveTaskState(loan);
   const terminal = TERMINAL_TASK_STATUSES.includes(state.taskStatus);
@@ -281,8 +281,10 @@ export function toTaskDetail(loan, user, { cloudinary, now = new Date() } = {}) 
     : state.outcome;
   return {
     ...base,
+    ...(base.assignee && assigneeNotifyEmail ? { assignee: { ...base.assignee, notifyEmail: assigneeNotifyEmail } } : {}),
     outcome,
     applicant: {
+      name: loan.userType === 'organization' || (!loan.firstname && !loan.lastname && loan.orgName) ? String(loan.orgName || loan.contactName || '') : [loan.lastname, loan.firstname].filter(Boolean).join(' '),
       userType: loan.userType || 'individual', lastname: loan.lastname || '', firstname: loan.firstname || '', regNo: loan.regNo || '',
       phone: loan.phone || '', email: loan.email || '', address: loan.address || '', orgName: loan.orgName || '', contactName: loan.contactName || '',
     },
@@ -471,12 +473,14 @@ export function registerLoanTaskRoutes({
   const companyPhone = async () => { try { return String((await getCompanyPhone()) || ''); } catch { return ''; } };
   const staffEmail = async userId => {
     if (!OBJECT_ID_RE.test(userId || '')) return '';
-    const staff = await User.findById(userId).select('email isActive').lean();
-    return staff?.isActive && typeof staff.email === 'string' ? staff.email : '';
+    const staff = await User.findById(userId).select('email notificationEmail isActive').lean();
+    if (!staff?.isActive) return '';
+    const preferred = typeof staff.notificationEmail === 'string' ? staff.notificationEmail.trim() : '';
+    return preferred || (typeof staff.email === 'string' ? staff.email : '');
   };
   const findActiveStaff = async id => {
     if (!OBJECT_ID_RE.test(id || '')) return null;
-    const staff = await User.findById(id).select('_id name email role roles isActive').lean();
+    const staff = await User.findById(id).select('_id name email notificationEmail role roles isActive').lean();
     return staff?.isActive && isRequestStaff(staff) ? staff : null;
   };
 
@@ -827,12 +831,13 @@ export function registerLoanTaskRoutes({
     if (!loan) throw notFound();
     return loan;
   };
-  const detail = (loan, req) => toTaskDetail(loan, req.user, { cloudinary, now: now() });
+  const detail = (loan, req, assigneeNotifyEmail = '') => toTaskDetail(loan, req.user, { cloudinary, now: now(), assigneeNotifyEmail });
+  const detailWithEmail = async (loan, req) => detail(loan, req, loan?.assignee?.userId ? await staffEmail(String(loan.assignee.userId)).catch(() => '') : '');
 
   app.get('/api/loan-tasks/:id', ensureEnabled, authenticateUser, requireStaff, async (req, res) => {
     try {
       const loan = await loadScoped(req, validId(req.params.id));
-      res.json(detail(loan, req));
+      res.json(await detailWithEmail(loan, req));
     } catch (error) { fail(res, error); }
   });
 
@@ -896,7 +901,7 @@ export function registerLoanTaskRoutes({
       updated = await LoanRequest.findOneAndUpdate({ ...scope, ...revisionCondition(action.expectedRevision) }, update, { new: true, lean: true, runValidators: true });
       if (!updated) throw new HttpError('Өөр хэрэглэгч өөрчилсөн байна. Дахин ачаална уу.', 409, { code: 'REVISION_CONFLICT' });
       await createLog(user, `loan_task_${action.type}`, `${id}: ${action.from} -> ${action.to}`);
-      res.json(detail(updated, req));
+      res.json(await detailWithEmail(updated, req));
       if (newAssignee && newAssignee.userId !== String(user._id)) {
         const context = { reference: loan.applicationReference || '', productName: productNameOf(loan), subProductName: loan.taskForm?.subProductName || '' };
         deliver(id, async () => ({ to: await staffEmail(newAssignee.userId), reference: context.reference, ...emails.staffAssignment({ ...context, adminUrl: adminUrl() }) }));
@@ -999,6 +1004,40 @@ export function registerLoanTaskRoutes({
         const reference = loan.applicationReference || '';
         deliver(id, async () => ({ to: loan.email, reference, replyTo: await staffEmail(loan.assignee?.userId), ...emails.applicantDocumentRequest({ reference, productName: productNameOf(loan), subProductName: loan.taskForm?.subProductName || '', items: items.map(item => item.label), note, uploadUrl, expiresAt, companyPhone: await companyPhone() }) }));
       }
+    } catch (error) { fail(res, error); }
+  });
+
+  // D15: staff -> applicant email. Sent inline so the history entry and the response carry the real result.
+  app.post('/api/loan-tasks/:id/message', ensureEnabled, authenticateUser, requireStaff, async (req, res) => {
+    try {
+      const id = validId(req.params.id);
+      const loan = await loadScoped(req, id);
+      const user = req.user;
+      const body = req.body;
+      if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError('Хүсэлт буруу байна.', 400);
+      if (Object.keys(body).some(key => !['message', 'expectedRevision'].includes(key))) throw new HttpError('Зөвшөөрөгдөөгүй талбар байна.', 400);
+      const errors = {};
+      const message = typeof body.message === 'string' ? body.message.trim() : '';
+      if (!message || message.length > 2000) errors.message = 'Мессеж 1–2000 тэмдэгт байна.';
+      if (body.expectedRevision !== undefined && (!Number.isSafeInteger(body.expectedRevision) || body.expectedRevision < 0)) errors.expectedRevision = 'Буруу утга.';
+      if (Object.keys(errors).length) throw new HttpError('Мэдээллээ шалгана уу.', 400, { errors });
+      const to = typeof loan.email === 'string' ? loan.email.trim() : '';
+      if (!to) throw new HttpError('Харилцагчийн имэйл бүртгэлгүй байна.', 400, { code: 'NO_APPLICANT_EMAIL' });
+      const revision = loan.taskRevision || 0;
+      if (body.expectedRevision !== undefined && body.expectedRevision !== revision) throw new HttpError('Өөр хэрэглэгч өөрчилсөн байна. Дахин ачаална уу.', 409, { code: 'REVISION_CONFLICT' });
+      const reference = loan.applicationReference || '';
+      let result = 'failed';
+      try {
+        const mail = { to, reference, replyTo: (await staffEmail(loan.assignee?.userId)) || (await staffEmail(String(user._id))), ...emails.applicantMessage({ reference, message, companyPhone: await companyPhone() }) };
+        const outcome = mailer?.send ? await mailer.send(mail) : { result: 'skipped' };
+        result = outcome?.result || 'failed';
+      } catch { logger.error?.('[loan-tasks] applicant message failed'); }
+      const at = now();
+      const entry = { at, type: 'message', note: message, actor: actorOf(user), email: { template: 'applicant_message', result } };
+      const updated = await LoanRequest.findOneAndUpdate({ _id: id, ...requestScope(user), ...revisionCondition(revision) }, { $set: { taskUpdatedAt: at }, $inc: { taskRevision: 1 }, $push: { taskHistory: { $each: [entry] } } }, { new: true, lean: true });
+      if (!updated) throw new HttpError('Өөр хэрэглэгч өөрчилсөн байна. Дахин ачаална уу.', 409, { code: 'REVISION_CONFLICT' });
+      await createLog(user, 'loan_task_message', `${id}: ${result}`);
+      res.json({ ok: true, email: { result }, task: await detailWithEmail(updated, req) });
     } catch (error) { fail(res, error); }
   });
 

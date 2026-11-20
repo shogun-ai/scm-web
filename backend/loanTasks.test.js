@@ -733,3 +733,76 @@ test('§15 collateral_types multiselect: selected types show their files; detail
   response = await defaultSubmit(h2, { product: 'mortgage', answers: { income_source: 'salary', collateral_types: ['gold'] } });
   assert.equal(response.code, 400); assert.ok(response.data.errors.collateral_types);
 });
+
+test('D15 message to applicant: template, reply-to notificationEmail, history, revision, errors, scope', async () => {
+  const assigneeUser = { ...officer, email: 'saraa@scm.mn', notificationEmail: 'saraa.notify@scm.mn', isActive: true };
+  const h = harness({ loans: [legacyLoan({ status: 'studying', email: 'bold@example.mn' })], users: [otherOfficer, assigneeUser, { ...manager, isActive: true }] });
+  let response = await h.invoke('get', '/api/loan-tasks/:id', { params: { id: LOAN_ID } });
+  assert.equal(response.data.applicant.name, 'Бат Болд'); assert.equal(response.data.applicant.phone, '99001234'); assert.equal(response.data.applicant.email, 'bold@example.mn');
+  assert.equal(response.data.assignee.notifyEmail, 'saraa.notify@scm.mn');
+
+  for (const body of [{}, { message: '   ' }, { message: 'x'.repeat(2001) }, { message: 5 }, { message: 'ok', extra: 1 }, { message: 'ok', expectedRevision: -1 }]) {
+    response = await h.invoke('post', '/api/loan-tasks/:id/message', { params: { id: LOAN_ID }, body });
+    assert.equal(response.code, 400, JSON.stringify(body));
+  }
+  assert.equal(h.calls.sent.length, 0); assert.equal(h.store[0].taskRevision, undefined);
+
+  response = await h.invoke('post', '/api/loan-tasks/:id/message', { params: { id: LOAN_ID }, body: { message: 'Сайн байна уу\n<b>Баримтаа</b> илгээнэ үү', expectedRevision: 0 } });
+  assert.equal(response.code, 200, JSON.stringify(response.data));
+  assert.deepEqual([response.data.ok, response.data.email], [true, { result: 'sent' }]);
+  const mail = h.calls.sent[0];
+  assert.equal(mail.to, 'bold@example.mn'); assert.equal(mail.template, 'applicant_message'); assert.equal(mail.replyTo, 'saraa.notify@scm.mn');
+  assert.ok(mail.subject.endsWith('SCM-2025-AAAAAA')); assert.equal(mail.html.includes('<b>'), false);
+  assert.equal(JSON.stringify(mail).includes('УБ90050112'), false);
+  assert.equal(h.store[0].taskRevision, 1); assert.equal(h.store[0].status, 'studying', 'legacy status untouched'); assert.equal(h.store[0].workflowRevision, 5);
+  const entry = h.store[0].taskHistory.at(-1);
+  assert.equal(entry.type, 'message'); assert.equal(entry.note, 'Сайн байна уу\n<b>Баримтаа</b> илгээнэ үү'); assert.equal(entry.email.result, 'sent'); assert.equal(entry.actor.name, 'Сараа');
+  assert.equal(response.data.task.history.at(-1).type, 'message'); assert.equal(response.data.task.taskRevision, 1);
+  assert.ok(h.calls.logs.some(log => log.action === 'loan_task_message'));
+
+  response = await h.invoke('post', '/api/loan-tasks/:id/message', { params: { id: LOAN_ID }, body: { message: 'дахин', expectedRevision: 0 } });
+  assert.equal(response.code, 409); assert.equal(response.data.code, 'REVISION_CONFLICT'); assert.equal(h.calls.sent.length, 1);
+  // Manager sending: reply-to stays the assignee's address.
+  response = await h.invoke('post', '/api/loan-tasks/:id/message', { user: manager, params: { id: LOAN_ID }, body: { message: 'Менежерээс' } });
+  assert.equal(response.code, 200); assert.equal(h.calls.sent[1].replyTo, 'saraa.notify@scm.mn'); assert.equal(h.store[0].taskRevision, 2);
+  // Terminal tasks may still be messaged.
+  response = await h.invoke('post', '/api/loan-tasks/:id/actions', { params: { id: LOAN_ID }, body: { type: 'status', to: 'rejected', note: 'Шаардлага хангаагүй', expectedRevision: 2 } });
+  assert.equal(response.code, 200, JSON.stringify(response.data));
+  response = await h.invoke('post', '/api/loan-tasks/:id/message', { user: manager, params: { id: LOAN_ID }, body: { message: 'Шийдвэрийн тухай' } });
+  assert.equal(response.code, 200); assert.equal(h.calls.sent.length, 3);
+});
+
+test('D15 message: NO_APPLICANT_EMAIL, IDOR 404, failed/skipped results, flag gate', async () => {
+  const noEmail = harness({ loans: [legacyLoan({ status: 'studying' })] });
+  let response = await noEmail.invoke('post', '/api/loan-tasks/:id/message', { params: { id: LOAN_ID }, body: { message: 'Сайн уу' } });
+  assert.equal(response.code, 400); assert.equal(response.data.code, 'NO_APPLICANT_EMAIL'); assert.equal(noEmail.store[0].taskRevision, undefined); assert.equal(noEmail.store[0].taskHistory, undefined);
+
+  const h = harness({ loans: [legacyLoan({ status: 'studying', email: 'bold@example.mn', assignee: { userId: OTHER_ID, name: 'Дорж' } })] });
+  response = await h.invoke('post', '/api/loan-tasks/:id/message', { params: { id: LOAN_ID }, body: { message: 'Сайн уу' } });
+  assert.equal(response.code, 404, 'officer not assigned -> hidden'); assert.equal(h.calls.sent.length, 0);
+  assert.equal((await h.invoke('post', '/api/loan-tasks/:id/message', { params: { id: 'bad' }, body: { message: 'x' } })).code, 400);
+
+  const failing = harness({ loans: [legacyLoan({ status: 'studying', email: 'bold@example.mn' })], mailer: { send: async () => { throw new Error('smtp'); } } });
+  response = await failing.invoke('post', '/api/loan-tasks/:id/message', { params: { id: LOAN_ID }, body: { message: 'Сайн уу' } });
+  assert.equal(response.code, 200); assert.deepEqual(response.data.email, { result: 'failed' }); assert.equal(failing.store[0].taskHistory.at(-1).email.result, 'failed');
+  const skipped = harness({ loans: [legacyLoan({ status: 'studying', email: 'bold@example.mn' })], mailer: { send: async () => ({ result: 'skipped' }) } });
+  response = await skipped.invoke('post', '/api/loan-tasks/:id/message', { params: { id: LOAN_ID }, body: { message: 'Сайн уу' } });
+  assert.deepEqual(response.data.email, { result: 'skipped' });
+
+  const off = harness({ env: {}, loans: [legacyLoan({ email: 'bold@example.mn' })] });
+  response = await off.invoke('post', '/api/loan-tasks/:id/message', { params: { id: LOAN_ID }, body: { message: 'Сайн уу' } });
+  assert.equal(response.code, 503); assert.equal(response.data.code, 'DISABLED');
+});
+
+test('D15 staff notification email prefers notificationEmail over login email', async () => {
+  const h = harness({ configs: [activeConfig({ defaultAssigneeId: OTHER_ID })], users: [{ ...otherOfficer, notificationEmail: ' notify@scm.mn ' }] });
+  const response = await submit(h);
+  assert.equal(response.code, 201, JSON.stringify(response.data));
+  await h.flush();
+  assert.equal(h.calls.sent.find(message => message.template === 'staff_assignment').to, 'notify@scm.mn');
+  assert.equal(h.calls.sent.find(message => message.template === 'applicant_ack').replyTo, 'notify@scm.mn');
+  const plain = harness({ configs: [activeConfig({ defaultAssigneeId: OTHER_ID })], users: [otherOfficer] });
+  await submit(plain);
+  await plain.flush();
+  assert.equal(plain.calls.sent.find(message => message.template === 'staff_assignment').to, 'dorj@scm.mn');
+});
