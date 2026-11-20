@@ -902,7 +902,7 @@ export function registerLoanTaskRoutes({
       if (!updated) throw new HttpError('Өөр хэрэглэгч өөрчилсөн байна. Дахин ачаална уу.', 409, { code: 'REVISION_CONFLICT' });
       await createLog(user, `loan_task_${action.type}`, `${id}: ${action.from} -> ${action.to}`);
       res.json(await detailWithEmail(updated, req));
-      if (newAssignee && newAssignee.userId !== String(user._id)) {
+      if (newAssignee) {
         const context = { reference: loan.applicationReference || '', productName: productNameOf(loan), subProductName: loan.taskForm?.subProductName || '' };
         deliver(id, async () => ({ to: await staffEmail(newAssignee.userId), reference: context.reference, ...emails.staffAssignment({ ...context, adminUrl: adminUrl() }) }));
       }
@@ -999,7 +999,8 @@ export function registerLoanTaskRoutes({
       if (!updated) throw new HttpError('Өөр хэрэглэгч өөрчилсөн байна. Дахин ачаална уу.', 409, { code: 'REVISION_CONFLICT' });
       await createLog(user, 'loan_task_doc_request', `${id}: ${state.taskStatus} -> additional_docs items=${items.length}`);
       const uploadUrl = `${uploadBaseUrl()}?upload=${token}`;
-      res.json({ uploadUrl, expiresAt, task: detail(updated, req) });
+      // Email goes out in the background; tell the UI whether it was queued so it can hide the raw link.
+      res.json({ uploadUrl, expiresAt, email: { result: loan.email && mailer?.enabled !== false && mailer?.send ? 'queued' : 'skipped' }, task: detail(updated, req) });
       if (loan.email) {
         const reference = loan.applicationReference || '';
         deliver(id, async () => ({ to: loan.email, reference, replyTo: await staffEmail(loan.assignee?.userId), ...emails.applicantDocumentRequest({ reference, productName: productNameOf(loan), subProductName: loan.taskForm?.subProductName || '', items: items.map(item => item.label), note, uploadUrl, expiresAt, companyPhone: await companyPhone() }) }));

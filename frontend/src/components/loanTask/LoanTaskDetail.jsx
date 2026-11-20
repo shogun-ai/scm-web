@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, Check, Copy, ExternalLink, FileText, Link2, Loader2, Mail, MessageSquare, Phone, Plus, Send, Trash2, UserCheck, X } from 'lucide-react';
+import { Bell, Check, CheckCircle2, Copy, ExternalLink, FileText, Link2, Loader2, Mail, MessageSquare, Phone, Plus, Send, Trash2, UserCheck, X } from 'lucide-react';
 import { LEGACY_STATUS_LABELS, TASK_OUTCOMES, TASK_OUTCOME_LABELS, TASK_STATUS_LABELS } from '@shared/loanTaskStatus';
 import TaskField from './TaskField';
 import TaskStatusBadge from './TaskStatusBadge';
@@ -36,6 +36,8 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
   const [docExtra, setDocExtra] = useState(['']);
   const [docNote, setDocNote] = useState('');
   const [docLink, setDocLink] = useState(null);
+  const [showLink, setShowLink] = useState(false);
+  const docEmailed = ['sent', 'queued'].includes(docLink?.email?.result);
   const [copied, setCopied] = useState(false);
   const [uploadKey, setUploadKey] = useState('additional');
   const [uploadFiles, setUploadFiles] = useState([]);
@@ -97,6 +99,7 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
   const applicantPhone = String(detail?.applicant?.phone || '').trim();
   const applicantName = [detail?.applicant?.lastname, detail?.applicant?.firstname].filter(Boolean).join(' ') || detail?.applicant?.name || detail?.applicant?.contactName || detail?.displayName || '';
 
+  const docCount = docKeys.length + docExtra.filter(text => text.trim()).length;
   const doDocs = async () => {
     const items = [
       ...fileFields.filter(field => docKeys.includes(field.key)).map(field => ({ key: field.key, label: field.label })),
@@ -106,7 +109,7 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
     setBusy(true); setError(''); setMessage('');
     try {
       const result = await postDocRequest(apiUrl, id, { items, note: docNote.trim(), expiresInDays: 7, expectedRevision: revision });
-      setDocLink(result); setDocKeys([]); setDocExtra(['']); setDocNote('');
+      setDocLink(result); setShowLink(false); setDocKeys([]); setDocExtra(['']); setDocNote(''); setPanel(null);
       const state = result?.email?.result;
       setMessage(state === 'sent' || state === 'queued' ? `Файл оруулах холбоос ${applicantEmail || 'харилцагчийн'} хаяг руу имэйлээр илгээгдлээ.` : 'Нэмэлт баримтын холбоос үүслээ. Холбоосыг хуулж харилцагчид илгээнэ үү.');
       await load(); onChanged?.();
@@ -186,8 +189,8 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
 
       {detail && <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-3 backdrop-blur sm:px-7">
         <div className="flex flex-wrap gap-2" role="toolbar" aria-label="Үйлдлүүд">
-          <button type="button" className={BTN} disabled={busy || !applicantEmail || allowed.message === false} onClick={() => { setPanel(null); setEmailOpen(true); }}><Mail size={16} aria-hidden="true" />Харилцагчид имэйл илгээх</button>
           {allowed.requestDocs && barButton('docs', 'Нэмэлт материал хүсэх', <Link2 size={16} aria-hidden="true" />)}
+          <button type="button" className={BTN_LIGHT} disabled={busy || !applicantEmail || allowed.message === false} onClick={() => setEmailOpen(true)}><Mail size={16} aria-hidden="true" />Чөлөөт имэйл бичих</button>
           {(statusChoices.length > 0 || allowed.reopen) && barButton('status', 'Төлөв солих', <Check size={16} aria-hidden="true" />)}
           {allowed.assign && barButton('assign', 'Хуваарилах', <UserCheck size={16} aria-hidden="true" />)}
           {allowed.note && barButton('note', 'Тэмдэглэл', <MessageSquare size={16} aria-hidden="true" />)}
@@ -234,11 +237,13 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
                 {docExtra.length + docKeys.length < 10 && <button type="button" className="inline-flex min-h-10 items-center gap-1 text-xs font-semibold text-[#003B5C]" onClick={() => setDocExtra(previous => [...previous, ''])}><Plus size={14} aria-hidden="true" />Мөр нэмэх</button>}</div>
               <label className="block text-xs font-semibold text-slate-600">Тайлбар<textarea className={`${BOX} mt-1 w-full`} rows={2} maxLength={2000} value={docNote} aria-describedby="doc-note-help" onChange={event => setDocNote(event.target.value)} /></label>
               <p id="doc-note-help" className="text-xs text-amber-700">Тайлбар харилцагчийн холбоос болон имэйлд харагдана. Регистр, нэр, дүн зэрэг хувийн мэдээлэл бүү бичээрэй.</p>
-              <button type="button" className={BTN} disabled={busy} onClick={doDocs}><Link2 size={16} aria-hidden="true" />{applicantEmail ? 'Холбоос үүсгэж имэйлээр илгээх' : 'Холбоос үүсгэх'}</button>
+              {applicantEmail && <p className="text-xs text-slate-600">Имэйлд сонгосон материалын жагсаалт, тайлбар болон файл оруулах холбоос автоматаар орно. Дахин бичих шаардлагагүй.</p>}
+              <button type="button" className={BTN} disabled={busy || docCount === 0} onClick={doDocs}><Send size={16} aria-hidden="true" />{applicantEmail ? `Сонгосон ${docCount} материалыг имэйлээр хүсэх` : `Сонгосон ${docCount} материалын холбоос үүсгэх`}</button>
             </div>}
           </div>}
 
-          {docLink?.uploadUrl && <div className="mb-4 rounded-xl bg-slate-50 p-3 text-xs"><p className="mb-1 font-semibold">Харилцагчид илгээх холбоос{docLink.expiresAt ? ` · ${dt(docLink.expiresAt)} хүртэл` : ''}</p><div className="flex items-center gap-2"><input readOnly aria-label="Баримт оруулах холбоос" value={docLink.uploadUrl} onFocus={event => event.target.select()} className={`${BOX} min-w-0 flex-1 font-mono text-xs`} /><button type="button" onClick={copyLink} className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-slate-300 px-3 font-semibold">{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied ? 'Хуулсан' : 'Хуулах'}</button></div><p className="mt-2 text-slate-500">Холбоос зөвхөн одоо харагдана. Хаасны дараа дахин авах боломжгүй.</p></div>}
+          {docLink?.uploadUrl && docEmailed && !showLink && <div role="status" className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"><CheckCircle2 size={16} aria-hidden="true" /><span className="min-w-0 flex-1">Материалын жагсаалт, файл оруулах холбоос {applicantEmail} хаяг руу имэйлээр илгээгдлээ.</span><button type="button" onClick={() => setShowLink(true)} className="text-xs font-semibold underline">Холбоосыг харах</button></div>}
+          {docLink?.uploadUrl && (!docEmailed || showLink) && <div className="mb-4 rounded-xl bg-slate-50 p-3 text-xs"><p className="mb-1 font-semibold">{docEmailed ? 'Харилцагчид илгээсэн холбоос' : 'Имэйл илгээгдээгүй — энэ холбоосыг хуулж харилцагчид утсаар/мессежээр илгээнэ үү'}{docLink.expiresAt ? ` · ${dt(docLink.expiresAt)} хүртэл` : ''}</p><div className="flex items-center gap-2"><input readOnly aria-label="Баримт оруулах холбоос" value={docLink.uploadUrl} onFocus={event => event.target.select()} className={`${BOX} min-w-0 flex-1 font-mono text-xs`} /><button type="button" onClick={copyLink} className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-slate-300 px-3 font-semibold">{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied ? 'Хуулсан' : 'Хуулах'}</button></div><p className="mt-2 text-slate-500">Холбоос зөвхөн одоо харагдана. Хаасны дараа дахин авах боломжгүй.</p></div>}
 
           <Section title="Мэдээлэл">
             {detail.taskForm?.steps?.length ? <div className="space-y-5">{detail.taskForm.steps.map(step => <div key={step.id}><h4 className="mb-2 text-xs font-bold uppercase text-slate-500">{step.title}</h4><dl className="grid gap-4 sm:grid-cols-2">{(step.fields || []).filter(field => !isFileField(field) && isVisible(field, detail.answers)).map(field => <TaskField key={field.key} field={field} mode="readonly" value={detail.answers?.[field.key]} />)}</dl></div>)}</div>
@@ -264,8 +269,9 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
 
       {emailOpen && <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setEmailOpen(false); }}>
         <div role="dialog" aria-modal="true" aria-labelledby="email-dialog-title" className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); if (!busy) setEmailOpen(false); } }}>
-          <h3 id="email-dialog-title" className="text-lg font-bold text-[#003B5C]">Харилцагчид имэйл илгээх</h3>
+          <h3 id="email-dialog-title" className="text-lg font-bold text-[#003B5C]">Чөлөөт имэйл бичих</h3>
           <p className="mt-1 break-all text-sm text-slate-600">Хүлээн авагч: {applicantEmail}</p>
+          {docCount > 0 && <p role="note" className="mt-3 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">Нэмэлт материал хүсэх бол энэ цонхыг хаагаад "Нэмэлт материал хүсэх" хэсгийн "Сонгосон {docCount} материалыг имэйлээр хүсэх" товчийг дарна уу. Тэгвэл жагсаалт, холбоос автоматаар орно.</p>}
           <label className="mt-4 block text-xs font-semibold text-slate-600">Мессеж<textarea autoFocus className={`${BOX} mt-1 w-full`} rows={6} maxLength={2000} value={emailText} aria-describedby="email-help" onChange={event => setEmailText(event.target.value)} /></label>
           <div className="mt-1 flex justify-between gap-3 text-xs"><p id="email-help" className="text-amber-700">Хувийн мэдээлэл бүү бичнэ үү.</p><span className="text-slate-500">{emailText.length}/2000</span></div>
           <div className="mt-4 flex flex-wrap justify-end gap-2"><button type="button" className={BTN_LIGHT} disabled={busy} onClick={() => setEmailOpen(false)}>Болих</button><button type="button" className={BTN} disabled={busy || !emailText.trim()} onClick={doEmail}>{busy ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}Илгээх</button></div>
