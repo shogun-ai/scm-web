@@ -11,9 +11,15 @@ export const DEFAULT_WELCOME = 'Сайн байна уу! Солонго Кап�
 export const WELCOME_KEY = 'bot_welcome_text';
 export const PAYMENT_KEY = 'payment_accounts';
 export const LEGACY_PAYMENT_TEXT_KEY = 'chatbot_repayment_text'; // AdminPanel "Банк, дансны дугаар, дансны нэр" field (read-only fallback)
-export const GREETING_KEY = 'bot_greeting_text';
-export const DEFAULT_GREETING = 'Сайн байна уу! Солонго Капитал ББСБ. Зээл, итгэлцэл, төлөлтийн мэдээллийг доорх цэснээс аваарай.';
-export const MAX_GREETING = 160;
+export const CARDS_KEY = 'bot_cards'; // D21: { version, sections: { menu|loans|trust|payment|contact: [Card] } }
+export const DEFAULT_IMAGE_KEY = 'bot_default_image_url';
+export const FALLBACK_IMAGE_URL = `${SITE_URL}/bot/default-card.jpg`; // committed 1.91:1 logo card (frontend/public/bot), used when no admin default image is set
+export const CARDS_VERSION = 1;
+export const CARD_SECTIONS = ['menu', 'loans', 'trust', 'payment', 'contact'];
+export const BUTTON_TYPES = ['node', 'terms', 'apply', 'calculator', 'url', 'call', 'post'];
+export const MAX_BUTTON_TITLE = 20;
+export const MAX_CARD_TITLE = 80;
+export const TERMS_TEXT_MAX = 640;
 export const MAX_WELCOME = 500;
 export const MAX_ACCOUNTS = 10;
 export const MAX_CARDS = 10;
@@ -52,15 +58,28 @@ export const trustRequestUrl = ctx => withQuery(SITE_PATHS.trustRequest, { sourc
 
 const url = (title, href) => ({ kind: 'url', title, url: href });
 const postback = (title, payload) => ({ kind: 'postback', title, payload });
-const card = ({ title, subtitle, imageUrl, buttons }) => {
+// ctx.defaultImage (resolved once per buildNode) fills cards that have no (valid https) image (D21 #7).
+const card = ({ title, subtitle, imageUrl, text, buttons }, ctx) => {
   const out = { title: clean(title, 80) || 'Солонго Капитал' };
   const sub = clean(subtitle, 80);
   if (sub) out.subtitle = sub;
-  const image = httpsUrl(imageUrl);
-  if (image) out.imageUrl = image;
+  if (typeof text === 'string' && text) out.text = text;
+  else { const image = httpsUrl(imageUrl) || ctx?.defaultImage || ''; if (image) out.imageUrl = image; }
   out.buttons = (buttons || []).slice(0, 3).map(button => ({ ...button, title: clean(button.title, 20) }));
   return out;
 };
+async function resolveDefaultImage(ctx) {
+  try { return httpsUrl(await ctx.loadSetting?.(DEFAULT_IMAGE_KEY)) || FALLBACK_IMAGE_URL; } catch { return FALLBACK_IMAGE_URL; }
+}
+// scm.mn links without a `source` get the channel's source (so card buttons stay channel-correct).
+function withSource(href, ctx) {
+  try {
+    const parsed = new URL(href);
+    if (parsed.origin === SITE_URL && !parsed.searchParams.has('source')) { parsed.searchParams.set('source', sourceOf(ctx)); return parsed.href; }
+  } catch { /* keep as is */ }
+  return href;
+}
+const POST_ID_RE = /^[A-Za-z0-9_-]{1,100}$/;
 
 const isLoanProduct = product => product && product.productKey && product.productKey !== TRUST_KEY && product.isActive !== false;
 const byOrder = (a, b) => (Number(a.order) || 0) - (Number(b.order) || 0);
@@ -111,36 +130,245 @@ export function formatAccounts(accounts) {
   ].join('\n')).join('\n\n');
 }
 
+// ---------- bot cards (D21) ----------
+const bad = message => ({ ok: false, message });
+const str = (value, max) => (typeof value === 'string' && value.trim().length <= max ? value.trim() : null);
+
+// -> { ok:true, button } | { ok:false, message }. Button = { type, title<=20, value }.
+function checkButton(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad('Товч буруу байна.');
+  if (!BUTTON_TYPES.includes(raw.type)) return bad('Товчны төрөл буруу байна.');
+  const title = str(raw.title, MAX_BUTTON_TITLE);
+  if (!title) return bad(`Товчны гарчиг 1–${MAX_BUTTON_TITLE} тэмдэгт байна.`);
+  const value = str(raw.value ?? '', 500);
+  if (value === null) return bad('Товчны утга буруу байна.');
+  const out = { type: raw.type, title, value };
+  switch (raw.type) {
+    case 'node': if (!isNodeId(value)) return bad('Товчны цэсийн утга буруу байна.'); break;
+    case 'terms': case 'apply': if (!KEY_RE.test(value)) return bad('Бүтээгдэхүүн сонгоно уу.'); break;
+    case 'calculator': if (value && !KEY_RE.test(value)) return bad('Тооцоолуурын бүтээгдэхүүн буруу байна.'); break;
+    case 'url': { const href = httpsUrl(value); if (!href) return bad('Холбоос https:// хэлбэртэй байх ёстой.'); out.value = href; break; }
+    case 'call': if (!normalizePhone(value) || value.length > 40) return bad('Утасны дугаар буруу байна.'); break;
+    default: if (!POST_ID_RE.test(value)) return bad('Постын ID буруу байна.'); // post
+  }
+  return { ok: true, button: out };
+}
+
+// -> { ok:true, card } | { ok:false, message }. Card = { id, title<=80, subtitle<=80, imageUrl, productKey|null, active, buttons[<=3] }.
+export function checkCard(raw, fallbackId = '') {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad('Карт буруу байна.');
+  const id = raw.id === undefined || raw.id === '' ? fallbackId : raw.id;
+  if (typeof id !== 'string' || !KEY_RE.test(id)) return bad('Картын ID буруу байна.');
+  const title = str(raw.title, MAX_CARD_TITLE);
+  if (!title) return bad(`Картын гарчиг 1–${MAX_CARD_TITLE} тэмдэгт байна.`);
+  const subtitle = str(raw.subtitle ?? '', MAX_CARD_TITLE);
+  if (subtitle === null) return bad(`Картын тайлбар ${MAX_CARD_TITLE} тэмдэгтээс ихгүй байна.`);
+  const imageRaw = str(raw.imageUrl ?? '', 500);
+  if (imageRaw === null || (imageRaw && !httpsUrl(imageRaw))) return bad('Зургийн холбоос https:// хэлбэртэй байх ёстой.');
+  const productRaw = raw.productKey === undefined || raw.productKey === null || raw.productKey === '' ? null : raw.productKey;
+  if (productRaw !== null && (typeof productRaw !== 'string' || !KEY_RE.test(productRaw))) return bad('Картын бүтээгдэхүүн буруу байна.');
+  if (raw.active !== undefined && typeof raw.active !== 'boolean') return bad('Картын идэвхтэй төлөв буруу байна.');
+  const rawButtons = raw.buttons === undefined ? [] : raw.buttons;
+  if (!Array.isArray(rawButtons) || rawButtons.length > 3) return bad('Картад 3 хүртэл товч байна.');
+  const buttons = [];
+  for (const item of rawButtons) { const checked = checkButton(item); if (!checked.ok) return checked; buttons.push(checked.button); }
+  return { ok: true, card: { id, title, subtitle, imageUrl: imageRaw ? httpsUrl(imageRaw) : '', productKey: productRaw, active: raw.active !== false, buttons } };
+}
+
+const sectionList = value => (Array.isArray(value) ? value : (value && Array.isArray(value.cards) ? value.cards : null));
+
+// Validates a PUT /api/admin/bot-cards body: { sections?: { <section>: [Card] | { cards:[Card] } }, defaultImageUrl?: string }.
+// -> { ok:true, value:{ sections, defaultImageUrl|null } } | { ok:false, message }
+export function validateBotCards(body) {
+  const source = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  const sections = {};
+  if (source.sections !== undefined) {
+    if (!source.sections || typeof source.sections !== 'object' || Array.isArray(source.sections)) return bad('Хэсгүүд буруу байна.');
+    for (const [name, raw] of Object.entries(source.sections)) {
+      if (!CARD_SECTIONS.includes(name)) return bad('Үл мэдэгдэх хэсэг байна.');
+      const cards = sectionList(raw);
+      if (!cards || cards.length > MAX_CARDS) return bad(`Хэсэг бүрд ${MAX_CARDS} хүртэл карт байна.`);
+      const seen = new Set();
+      const out = [];
+      for (let index = 0; index < cards.length; index += 1) {
+        const checked = checkCard(cards[index], `${name}_${index + 1}`);
+        if (!checked.ok) return bad(`${index + 1}-р карт: ${checked.message}`);
+        if (seen.has(checked.card.id)) return bad('Картын ID давхардсан байна.');
+        seen.add(checked.card.id);
+        out.push(checked.card);
+      }
+      sections[name] = out;
+    }
+  }
+  let defaultImageUrl = null;
+  if (source.defaultImageUrl !== undefined) {
+    const value = typeof source.defaultImageUrl === 'string' ? source.defaultImageUrl.trim() : null;
+    if (value === null || value.length > 500 || (value && !httpsUrl(value))) return bad('Үндсэн зураг https:// холбоос байх ёстой.');
+    defaultImageUrl = value ? httpsUrl(value) : '';
+  }
+  if (!Object.keys(sections).length && defaultImageUrl === null) return bad('Хадгалах өгөгдөл алга.');
+  return { ok: true, value: { sections, defaultImageUrl } };
+}
+
+const readSection = (stored, section) => {
+  const raw = stored && typeof stored === 'object' && stored.sections && typeof stored.sections === 'object' ? stored.sections[section] : undefined;
+  const list = sectionList(raw);
+  if (!list) return null;
+  const cards = [];
+  const seen = new Set();
+  list.slice(0, MAX_CARDS).forEach((item, index) => {
+    const checked = checkCard(item, `${section}_${index + 1}`);
+    if (checked.ok && !seen.has(checked.card.id)) { seen.add(checked.card.id); cards.push(checked.card); }
+  });
+  return cards;
+};
+
+const btn = (type, title, value = '') => ({ type, title, value });
+const idOf = value => String(value).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 50) || 'card';
+
+// Defaults derived from current content (ProductContent incl. CMS-only products, current nodes). Never stored until an admin saves.
+export async function defaultCards(section, ctx) {
+  const read = async (key, limit) => { try { return clean(await ctx.loadSetting?.(key), limit); } catch { return ''; } };
+  if (section === 'menu') {
+    return [
+      { id: 'menu_loans', title: 'Зээл', subtitle: 'Зээлийн бүтээгдэхүүн, нөхцөл', node: 'loans' },
+      { id: 'menu_trust', title: 'Итгэлцэл', subtitle: 'Хөрөнгөө ашигтайгаар өсгөх', node: 'trust' },
+      { id: 'menu_ads', title: 'Идэвхтэй зээлийн зар', subtitle: 'Сүүлийн зар, мэдээ', node: 'ads' },
+      { id: 'menu_payment', title: 'Төлөлт хийх', subtitle: 'Төлбөрийн дансны мэдээлэл', node: 'payment' },
+      { id: 'menu_contact', title: 'Холбоо барих', subtitle: 'Утас, имэйл, хаяг, ажлын цаг', node: 'contact' },
+    ].map(item => ({ id: item.id, title: item.title, subtitle: item.subtitle, imageUrl: '', productKey: null, active: true, buttons: [btn('node', 'Нээх', item.node)] }));
+  }
+  if (section === 'loans') {
+    return (await activeLoans(ctx)).slice(0, MAX_CARDS).map(product => ({
+      id: idOf(`loan_${product.productKey}`), title: clean(product.title, MAX_CARD_TITLE) || product.productKey, subtitle: clean(product.shortDesc, MAX_CARD_TITLE),
+      imageUrl: httpsUrl(product.bgImageUrl) || httpsUrl(product.headerImageUrl) || '', productKey: product.productKey, active: true,
+      buttons: [btn('terms', 'Нөхцөл, шаардлага', product.productKey), btn('apply', 'Хүсэлт гаргах', product.productKey), btn('calculator', 'Тооцоолуур', product.productKey)],
+    }));
+  }
+  if (section === 'trust') {
+    const products = await ctx.loadProducts();
+    const trust = (Array.isArray(products) ? products : []).find(item => item?.productKey === TRUST_KEY && item.isActive !== false);
+    return [{
+      id: 'trust', title: clean(trust?.title, MAX_CARD_TITLE) || 'Итгэлцэл', subtitle: clean(trust?.shortDesc, MAX_CARD_TITLE) || 'Таны хөрөнгийг ашигтайгаар өсгөх үйлчилгээ',
+      imageUrl: httpsUrl(trust?.bgImageUrl) || httpsUrl(trust?.headerImageUrl) || '', productKey: trust ? TRUST_KEY : null, active: true,
+      buttons: [btn('url', 'Хүсэлт гаргах', `${SITE_URL}${SITE_PATHS.trustRequest}`), btn('calculator', 'Тооцоолуур', TRUST_KEY)],
+    }];
+  }
+  if (section === 'payment') return []; // the payment node is the accounts text; admin-added cards are appended below it
+  const phone = normalizePhone((await read(CONTACT_KEYS.phone, 100)) || CONTACT_PHONE); // invalid configured phone -> no call button
+  return [{
+    id: 'contact', title: 'Холбоо барих', subtitle: 'Утас, имэйл, хаяг, ажлын цаг', imageUrl: '', productKey: null, active: true,
+    buttons: [...(phone ? [btn('call', 'Залгах', phone)] : []), btn('url', 'Вэбсайт', SITE_URL), btn('node', 'Зээл', 'loans')],
+  }];
+}
+
+// { isDefault, cards:[Card] } for one section (stored, else defaults).
+export async function sectionCards(section, ctx) {
+  let stored;
+  try { stored = await ctx.loadSetting?.(CARDS_KEY); } catch { stored = undefined; }
+  const cards = readSection(stored, section);
+  return cards ? { isDefault: false, cards } : { isDefault: true, cards: await defaultCards(section, ctx) };
+}
+
+function resolveButton(button, ctx) {
+  const title = clean(button?.title, MAX_BUTTON_TITLE);
+  const value = String(button?.value ?? '').trim();
+  if (!title) return null;
+  switch (button?.type) {
+    case 'node': return isNodeId(value) ? postback(title, value) : null;
+    case 'terms': return KEY_RE.test(value) ? postback(title, `terms:${value}`) : null;
+    case 'apply': return KEY_RE.test(value) ? postback(title, `apply:${value}`) : null;
+    case 'calculator':
+      if (value === TRUST_KEY) return url(title, trustCalculatorUrl(ctx));
+      return !value || KEY_RE.test(value) ? url(title, calculatorUrl(value, ctx)) : null;
+    case 'url': { const href = httpsUrl(value); return href ? url(title, href === `${SITE_URL}/` ? SITE_URL : withSource(href, ctx)) : null; }
+    case 'call': { const phone = normalizePhone(value); return phone ? { kind: 'call', title, phone } : null; }
+    case 'post': return POST_ID_RE.test(value) ? postback(title, `post:${value}`) : null;
+    default: return null;
+  }
+}
+
+// Active cards -> node cards. A card linked to a product is hidden when that product is no longer active; blank image falls back to the product's.
+function renderCards(cards, products, ctx) {
+  const list = Array.isArray(products) ? products : [];
+  const out = [];
+  for (const item of cards) {
+    if (item.active === false) continue;
+    const product = item.productKey ? list.find(entry => entry?.productKey === item.productKey && entry.isActive !== false) : null;
+    if (item.productKey && !product) continue;
+    out.push(card({
+      title: item.title, subtitle: item.subtitle, imageUrl: item.imageUrl || product?.bgImageUrl || product?.headerImageUrl,
+      buttons: item.buttons.map(button => resolveButton(button, ctx)).filter(Boolean),
+    }, ctx));
+    if (out.length >= MAX_CARDS) break;
+  }
+  return out;
+}
+async function cardsFor(section, ctx) {
+  const [{ cards }, products] = await Promise.all([sectionCards(section, ctx), ctx.loadProducts()]);
+  return renderCards(cards, products, ctx);
+}
+
 // ---------- nodes ----------
 const mainReplies = () => MENU_REPLIES.map(reply => ({ ...reply }));
 const fallbackNode = () => ({ text: `Уучлаарай, энэ сонголтыг олсонгүй. Доорх цэснээс сонгоно уу эсвэл ${CONTACT_PHONE} дугаарт холбогдоно уу.`, quickReplies: mainReplies() });
 
+// restart = welcome text + menu cards carousel (D21 #3); with no active menu card the quick replies keep the menu reachable.
 async function restartNode(ctx) {
   let welcome = '';
   try { welcome = clean(await ctx.loadSetting(WELCOME_KEY), MAX_WELCOME); } catch { /* default */ }
-  return { text: welcome || DEFAULT_WELCOME, quickReplies: mainReplies() };
+  let cards = [];
+  try { cards = await cardsFor('menu', ctx); } catch { cards = []; }
+  return { text: welcome || DEFAULT_WELCOME, ...(cards.length ? { cards } : { quickReplies: mainReplies() }) };
 }
 
 async function loansNode(ctx) {
-  const loans = await activeLoans(ctx);
-  if (!loans.length) return { text: `Одоогоор идэвхтэй зээлийн бүтээгдэхүүн алга байна. Лавлах утас: ${CONTACT_PHONE}`, quickReplies: [MENU_REPLY] };
-  return {
-    cards: loans.slice(0, MAX_CARDS).map(product => card({
-      title: product.title, subtitle: product.shortDesc, imageUrl: product.bgImageUrl || product.headerImageUrl,
-      buttons: [postback('Нөхцөл, шаардлага', `terms:${product.productKey}`), postback('Хүсэлт гаргах', `apply:${product.productKey}`), url('Тооцоолуур', calculatorUrl(product.productKey, ctx))],
-    })),
-    quickReplies: [{ title: 'Итгэлцэл', payload: 'trust' }, MENU_REPLY],
-  };
+  const cards = await cardsFor('loans', ctx);
+  if (!cards.length) return { text: `Одоогоор идэвхтэй зээлийн бүтээгдэхүүн алга байна. Лавлах утас: ${CONTACT_PHONE}`, quickReplies: [MENU_REPLY] };
+  return { cards, quickReplies: [{ title: 'Итгэлцэл', payload: 'trust' }, MENU_REPLY] };
 }
 
+// Splits text on line boundaries into chunks <= max (over-long single lines are cut).
+export function chunkLines(text, max = TERMS_TEXT_MAX) {
+  const chunks = [];
+  let current = '';
+  for (const rawLine of String(text || '').split('\n')) {
+    let line = rawLine;
+    while (line.length > max) {
+      if (current) { chunks.push(current); current = ''; }
+      chunks.push(line.slice(0, max));
+      line = line.slice(max);
+    }
+    if (current && current.length + 1 + line.length > max) { chunks.push(current); current = ''; }
+    current = current ? `${current}\n${line}` : line;
+  }
+  if (current.trim()) chunks.push(current);
+  return chunks;
+}
+
+// terms:<key> -> one "card" per block (Иргэн / Байгууллага / car variants): { title, text<=640, buttons }; long blocks are split and the
+// buttons ride on the last part. Messenger sends each as a button template (plain text for parts without buttons).
 async function termsNode(key, ctx) {
   if (!KEY_RE.test(key)) return fallbackNode();
   const product = (await activeLoans(ctx)).find(item => item.productKey === key);
   if (!product) return { text: 'Энэ бүтээгдэхүүний мэдээлэл олдсонгүй.', quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY] };
-  return {
-    text: formatTerms(product),
-    quickReplies: [{ title: 'Хүсэлт гаргах', payload: `apply:${key}` }, { title: 'Тооцоолуур', payload: `calc:${key}` }, { title: 'Зээл', payload: 'loans' }, MENU_REPLY],
-  };
+  const buttons = [postback('Хүсэлт гаргах', `apply:${key}`), url('Тооцоолуур', calculatorUrl(key, ctx)), postback('Буцах', 'loans')];
+  const title = clean(product.title, MAX_CARD_TITLE);
+  const blocks = [];
+  if (product.purchase || product.collateral) {
+    if (product.purchase) blocks.push(...variantBlocks(clean(product.purchase.label, 60) || 'Худалдан авах', product.purchase));
+    if (product.collateral) blocks.push(...variantBlocks(clean(product.collateral.label, 60) || 'Барьцаалсан', product.collateral));
+  } else blocks.push(...variantBlocks('', product));
+  const filled = blocks.filter(Boolean);
+  const items = filled.length
+    ? filled.map((block, index) => ({ label: block.split('\n')[0], text: index === 0 ? `${title}\n\n${block}` : block }))
+    : [{ label: title, text: `${title}\n\nНөхцөл, шаардлагын мэдээлэл одоогоор оруулаагүй байна. Лавлах утас: ${CONTACT_PHONE}` }];
+  const cards = [];
+  for (const item of items) {
+    const parts = chunkLines(item.text, TERMS_TEXT_MAX);
+    parts.forEach((part, index) => cards.push(card({ title: index === 0 ? item.label : `${item.label} (${index + 1})`, text: part, buttons: index === parts.length - 1 ? buttons : [] }, ctx)));
+  }
+  return { cards: cards.slice(0, 20), quickReplies: [MENU_REPLY] };
 }
 
 // calc:<key> (quick-reply friendly): a single card holding the calculator url button.
@@ -149,21 +377,15 @@ async function calcNode(key, ctx) {
   const product = KEY_RE.test(key) ? loans.find(item => item.productKey === key) : null;
   return {
     cards: [card({ title: product ? `${product.title} — тооцоолуур` : 'Зээлийн тооцоолуур', subtitle: 'Сар бүрийн төлбөрөө тооцоолоорой', imageUrl: product?.bgImageUrl,
-      buttons: [url('Тооцоолуур нээх', calculatorUrl(product?.productKey, ctx))] })],
+      buttons: [url('Тооцоолуур нээх', calculatorUrl(product?.productKey, ctx))] }, ctx)],
     quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY],
   };
 }
 
 async function trustNode(ctx) {
-  const products = await ctx.loadProducts();
-  const trust = (Array.isArray(products) ? products : []).find(item => item?.productKey === TRUST_KEY);
-  return {
-    cards: [card({
-      title: trust?.title || 'Итгэлцэл', subtitle: trust?.shortDesc || 'Таны хөрөнгийг ашигтайгаар өсгөх үйлчилгээ', imageUrl: trust?.bgImageUrl || trust?.headerImageUrl,
-      buttons: [url('Хүсэлт гаргах', trustRequestUrl(ctx)), url('Тооцоолуур', trustCalculatorUrl(ctx))],
-    })],
-    quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY],
-  };
+  const cards = await cardsFor('trust', ctx);
+  if (!cards.length) return { text: `Итгэлцлийн мэдээлэл одоогоор алга байна. Лавлах утас: ${CONTACT_PHONE}`, quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY] };
+  return { cards, quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY] };
 }
 
 // ---------- post categories (D20) ----------
@@ -175,16 +397,22 @@ export function suggestCategory(message) {
   if (LOAN_WORDS.test(text)) return 'loan';
   return 'news';
 }
-const POST_ID_RE = /^[A-Za-z0-9_-]{1,100}$/;
 const sanitizeMeta = value => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
 
+// { category, productKey } for a post: admin meta wins over the keyword suggestion; productKey only for an active loan product.
+function postChoice(post, meta, loans) {
+  const category = POST_CATEGORIES.includes(meta?.category) ? meta.category : suggestCategory(post?.message);
+  const productKey = category === 'loan' && meta?.productKey && loans.some(item => item.productKey === meta.productKey) ? meta.productKey : '';
+  return { category, productKey };
+}
+
 // -> [{ kind, title, payload|url }] (<=3). `meta` = admin override | undefined; `loans` = active loan products.
+// "Пост үзэх" opens the post inside Messenger (postback post:<id>, D21 #6).
 export function postButtons(post, meta, loans, ctx) {
   const id = String(post?.id || '');
   const permalink = httpsUrl(post?.permalink_url);
-  const category = POST_CATEGORIES.includes(meta?.category) ? meta.category : suggestCategory(post?.message);
-  const productKey = category === 'loan' && meta?.productKey && loans.some(item => item.productKey === meta.productKey) ? meta.productKey : '';
-  const view = permalink ? [url('Пост үзэх', permalink)] : [];
+  const { category, productKey } = postChoice(post, meta, loans);
+  const view = POST_ID_RE.test(id) ? [postback('Пост үзэх', `post:${id}`)] : (permalink ? [url('Пост үзэх', permalink)] : []);
   const contact = postback('Холбоо барих', 'contact');
   if (category === 'loan' && productKey) {
     return [postback('Хүсэлт гаргах', `apply:${productKey}`), postback('Нөхцөл, шаардлага', `terms:${productKey}`), url('Тооцоолуур', calculatorUrl(productKey, ctx))];
@@ -203,10 +431,33 @@ async function adsNode(ctx) {
   const cards = (Array.isArray(posts) ? posts : []).filter(post => post?.id && (post.message || post.full_picture)).slice(0, MAX_POSTS).map(post => {
     const [first = '', ...rest] = String(post.message || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     const meta = Object.prototype.hasOwnProperty.call(metas, String(post.id)) ? metas[String(post.id)] : undefined;
-    return card({ title: first, subtitle: rest.join(' '), imageUrl: post.full_picture, buttons: postButtons(post, meta, loans, ctx) });
+    return card({ title: first, subtitle: rest.join(' '), imageUrl: post.full_picture, buttons: postButtons(post, meta, loans, ctx) }, ctx);
   });
   if (!cards.length) return { text: 'Одоогоор идэвхтэй зар алга байна.', quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY] };
   return { cards, quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY] };
+}
+
+// post:<id> -> the post inside Messenger: image + full text + buttons [apply/contact][Facebook-т нээх][Буцах -> ads] (D21 #6).
+async function postNode(id, ctx) {
+  if (!POST_ID_RE.test(id)) return fallbackNode();
+  let posts = [];
+  try { posts = ctx.getPosts ? await ctx.getPosts() : []; } catch { posts = []; }
+  const post = (Array.isArray(posts) ? posts : []).find(item => String(item?.id) === id);
+  if (!post) return { text: 'Энэ пост олдсонгүй.', quickReplies: [{ title: 'Зар', payload: 'ads' }, MENU_REPLY] };
+  let metas = {};
+  try { metas = sanitizeMeta(await ctx.loadSetting(POST_META_KEY)); } catch { metas = {}; }
+  let loans = [];
+  try { loans = await activeLoans(ctx); } catch { loans = []; }
+  const meta = Object.prototype.hasOwnProperty.call(metas, id) ? metas[id] : undefined;
+  const { category, productKey } = postChoice(post, meta, loans);
+  const permalink = httpsUrl(post.permalink_url);
+  const buttons = [
+    category === 'loan' ? postback('Хүсэлт гаргах', productKey ? `apply:${productKey}` : `apply:post:${id}`) : postback('Холбоо барих', 'contact'),
+    ...(permalink ? [url('Facebook-т нээх', permalink)] : []),
+    postback('Буцах', 'ads'),
+  ];
+  const image = httpsUrl(post.full_picture);
+  return { text: cleanLines(post.message, MAX_TEXT) || 'Зар', ...(image ? { imageUrl: image } : {}), buttons, quickReplies: [MENU_REPLY] };
 }
 
 // "75991919, 75999191" | "7599-1919" | "+976 7599 1919" -> "+97675991919" (first valid number) | ''
@@ -232,8 +483,17 @@ async function contactNode(ctx) {
   if (email) lines.push(`Имэйл: ${email}`);
   if (address) lines.push(`Хаяг: ${address}`);
   lines.push(`Ажлын цаг: ${hours || DEFAULT_HOURS}`);
-  const e164 = normalizePhone(phone || CONTACT_PHONE);
-  const buttons = [...(e164 ? [{ kind: 'call', title: 'Залгах', phone: e164 }] : []), url('Вэбсайт', SITE_URL), postback('Зээл', 'loans')];
+  // Buttons come from the first active card of the "contact" section (D21); the built-in set is the fallback.
+  let buttons = [];
+  try {
+    const { cards } = await sectionCards('contact', ctx);
+    const first = cards.find(item => item.active !== false);
+    buttons = (first?.buttons || []).map(button => resolveButton(button, ctx)).filter(Boolean).slice(0, 3);
+  } catch { buttons = []; }
+  if (!buttons.length) {
+    const e164 = normalizePhone(phone || CONTACT_PHONE);
+    buttons = [...(e164 ? [{ kind: 'call', title: 'Залгах', phone: e164 }] : []), url('Вэбсайт', SITE_URL), postback('Зээл', 'loans')];
+  }
   return { text: lines.join('\n'), buttons, quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY] };
 }
 
@@ -257,12 +517,15 @@ async function paymentNode(ctx) {
     try { legacy = cleanLines(await ctx.loadSetting(LEGACY_PAYMENT_TEXT_KEY), MAX_TEXT); } catch { /* none */ }
     text = legacy || `Төлбөрийн дансны мэдээлэл одоогоор тохируулаагүй байна. Лавлах утас: ${CONTACT_PHONE}`;
   }
-  return { text: text.slice(0, MAX_TEXT), quickReplies: [MENU_REPLY] };
+  let cards = [];
+  try { cards = await cardsFor('payment', ctx); } catch { cards = []; }
+  return { text: text.slice(0, MAX_TEXT), ...(cards.length ? { cards } : {}), quickReplies: [MENU_REPLY] };
 }
 
-export async function buildNode(nodeId, ctx = {}) {
+export async function buildNode(nodeId, rawCtx = {}) {
   const id = String(nodeId ?? '').trim();
   try {
+    const ctx = { ...rawCtx, defaultImage: await resolveDefaultImage(rawCtx) };
     if (id === 'restart' || id === 'menu') return await restartNode(ctx);
     if (id === 'loans') return await loansNode(ctx);
     if (id === 'trust') return await trustNode(ctx);
@@ -275,6 +538,7 @@ export async function buildNode(nodeId, ctx = {}) {
     if (id === 'calc') return await calcNode('', ctx);
     if (id.startsWith('terms:')) return await termsNode(id.slice(6), ctx);
     if (id.startsWith('calc:')) return await calcNode(id.slice(5), ctx);
+    if (id.startsWith('post:')) return await postNode(id.slice(5), ctx);
   } catch {
     return { text: `Уучлаарай, мэдээллийг ачаалж чадсангүй. Дахин оролдоно уу эсвэл ${CONTACT_PHONE} дугаарт холбогдоно уу.`, quickReplies: [MENU_REPLY] };
   }
@@ -282,7 +546,7 @@ export async function buildNode(nodeId, ctx = {}) {
 }
 
 export const NODE_IDS = ['restart', 'loans', 'trust', 'ads', 'payment', 'contact', 'language'];
-export const isNodeId = id => NODE_IDS.includes(id) || id === 'menu' || id === 'calc' || id === 'lang:mn' || id === 'lang:en' || /^(terms|calc):[A-Za-z0-9_-]{1,50}$/.test(String(id || ''));
+export const isNodeId = id => NODE_IDS.includes(id) || id === 'menu' || id === 'calc' || id === 'lang:mn' || id === 'lang:en' || /^(terms|calc):[A-Za-z0-9_-]{1,50}$/.test(String(id || '')) || /^post:[A-Za-z0-9_-]{1,100}$/.test(String(id || ''));
 
 // ---------- admin bot content validation ----------
 // -> { ok:true, value:{welcomeText, paymentAccounts} } | { ok:false, message }
@@ -303,13 +567,8 @@ export function validateBotContent(body) {
     if (!account.bank || !account.accountNumber || !account.accountName) return { ok: false, message: 'Банк, дансны дугаар, хүлээн авагч заавал бөглөнө.' };
     accounts.push(account);
   }
-  // greetingText (Messenger Get Started greeting) is optional for backward compatibility: absent -> left unchanged (null).
-  let greetingText = null;
-  if (body.greetingText !== undefined) {
-    if (typeof body.greetingText !== 'string' || body.greetingText.trim().length > MAX_GREETING) return { ok: false, message: `Messenger мэндчилгээ ${MAX_GREETING} тэмдэгтээс ихгүй байна.` };
-    greetingText = body.greetingText.trim();
-  }
-  return { ok: true, value: { welcomeText, paymentAccounts: accounts, greetingText } };
+  // greetingText was removed in D21 (Meta no longer supports the Messenger greeting API): old clients may still send it; it is ignored.
+  return { ok: true, value: { welcomeText, paymentAccounts: accounts } };
 }
 
 // ---------- cached content source (Mongo-backed in server.js, fakes in tests) ----------
@@ -336,7 +595,7 @@ export function createBotContentSource({ ProductContent, SiteConfig, now = Date.
 
 // ---------- routes ----------
 // `limiter` is an Express middleware (rate limit) for the public endpoint. Admin routes: authenticateUser + requireAdmin.
-export function registerBotRoutes({ app, authenticateUser, requireAdmin, source, getPosts, SiteConfig, configureProfile = async () => ({ ok: false, skipped: true }), limiter = (_req, _res, next) => next(), createLog = async () => {} }) {
+export function registerBotRoutes({ app, authenticateUser, requireAdmin, source, getPosts, SiteConfig, limiter = (_req, _res, next) => next(), createLog = async () => {} }) {
   app.get('/api/bot/node/:id', limiter, async (req, res) => {
     const id = String(req.params.id || '');
     if (id.length > 80 || !isNodeId(id)) return res.status(404).json({ message: 'Node олдсонгүй.' });
@@ -349,13 +608,12 @@ export function registerBotRoutes({ app, authenticateUser, requireAdmin, source,
 
   app.get('/api/admin/bot-content', authenticateUser, requireAdmin, async (_req, res) => {
     try {
-      const [welcome, accounts, legacy, greeting] = await Promise.all([
-        SiteConfig.findOne({ key: WELCOME_KEY }).lean(), SiteConfig.findOne({ key: PAYMENT_KEY }).lean(), SiteConfig.findOne({ key: LEGACY_PAYMENT_TEXT_KEY }).lean(), SiteConfig.findOne({ key: GREETING_KEY }).lean(),
+      const [welcome, accounts, legacy] = await Promise.all([
+        SiteConfig.findOne({ key: WELCOME_KEY }).lean(), SiteConfig.findOne({ key: PAYMENT_KEY }).lean(), SiteConfig.findOne({ key: LEGACY_PAYMENT_TEXT_KEY }).lean(),
       ]);
       res.set?.('Cache-Control', 'no-store');
       return res.json({
         welcomeText: typeof welcome?.value === 'string' ? welcome.value : '', defaultWelcomeText: DEFAULT_WELCOME,
-        greetingText: typeof greeting?.value === 'string' ? greeting.value.slice(0, MAX_GREETING) : '', defaultGreetingText: DEFAULT_GREETING,
         paymentAccounts: sanitizeAccounts(accounts?.value),
         legacyPaymentText: typeof legacy?.value === 'string' ? legacy.value.slice(0, MAX_TEXT) : '',
       });
@@ -366,16 +624,69 @@ export function registerBotRoutes({ app, authenticateUser, requireAdmin, source,
     const checked = validateBotContent(req.body);
     if (!checked.ok) return res.status(400).json({ message: checked.message });
     try {
-      const { welcomeText, paymentAccounts, greetingText } = checked.value;
+      const { welcomeText, paymentAccounts } = checked.value;
       await SiteConfig.findOneAndUpdate({ key: WELCOME_KEY }, { $set: { value: welcomeText, updatedAt: new Date() }, $setOnInsert: { label: 'Ботын мэндчилгээ', group: 'chatbot' } }, { upsert: true });
       await SiteConfig.findOneAndUpdate({ key: PAYMENT_KEY }, { $set: { value: paymentAccounts, updatedAt: new Date() }, $setOnInsert: { label: 'Төлбөр хүлээн авах данснууд', group: 'chatbot' } }, { upsert: true });
-      if (greetingText !== null) await SiteConfig.findOneAndUpdate({ key: GREETING_KEY }, { $set: { value: greetingText, updatedAt: new Date() }, $setOnInsert: { label: 'Messenger мэндчилгээ', group: 'chatbot' } }, { upsert: true });
       source.invalidate();
       await createLog(req.user, 'bot_content_update', `accounts:${paymentAccounts.length}`);
-      let profile = null;
-      if (greetingText !== null) { try { profile = await configureProfile(); } catch { profile = { ok: false }; } } // Messenger greeting refresh (best effort)
-      return res.json({ ok: true, welcomeText, paymentAccounts, ...(greetingText !== null ? { greetingText, profile: { ok: Boolean(profile?.ok) } } : {}) });
+      return res.json({ ok: true, welcomeText, paymentAccounts });
     } catch { return res.status(500).json({ message: 'Хадгалахад алдаа гарлаа.' }); }
+  });
+
+  // ---- D21: bot cards (admin only) ----
+  const cardCtx = () => ({ loadProducts: source.loadProducts, loadSetting: source.loadSetting, channel: 'web' });
+  const readStored = async () => { const value = (await SiteConfig.findOne({ key: CARDS_KEY }).lean())?.value; return value && typeof value === 'object' && !Array.isArray(value) ? value : { version: CARDS_VERSION, sections: {} }; };
+  const writeSetting = (key, value, label) => SiteConfig.findOneAndUpdate({ key }, { $set: { value, updatedAt: new Date() }, $setOnInsert: { label, group: 'chatbot' } }, { upsert: true });
+  const readDefaultImage = async () => { const value = (await SiteConfig.findOne({ key: DEFAULT_IMAGE_KEY }).lean())?.value; return httpsUrl(value) || ''; };
+
+  app.get('/api/admin/bot-cards', authenticateUser, requireAdmin, async (_req, res) => {
+    try {
+      const ctx = cardCtx();
+      const stored = await readStored();
+      const sections = {};
+      for (const name of CARD_SECTIONS) {
+        const readCards = readSection(stored, name);
+        sections[name] = readCards ? { isDefault: false, cards: readCards } : { isDefault: true, cards: await defaultCards(name, ctx) };
+      }
+      let products = [];
+      try { products = ((await source.loadProducts()) || []).filter(item => item?.productKey && item.isActive !== false).map(item => ({ productKey: item.productKey, title: clean(item.title, MAX_CARD_TITLE), isTrust: item.productKey === TRUST_KEY })); } catch { products = []; }
+      res.set?.('Cache-Control', 'no-store');
+      return res.json({ version: CARDS_VERSION, sections, defaultImageUrl: await readDefaultImage(), fallbackImageUrl: FALLBACK_IMAGE_URL, products });
+    } catch { return res.status(500).json({ message: 'Ботын картыг ачаалж чадсангүй.' }); }
+  });
+
+  app.put('/api/admin/bot-cards', authenticateUser, requireAdmin, async (req, res) => {
+    const checked = validateBotCards(req.body);
+    if (!checked.ok) return res.status(400).json({ message: checked.message });
+    try {
+      const { sections, defaultImageUrl } = checked.value;
+      const saved = Object.keys(sections);
+      if (saved.length) {
+        const stored = await readStored();
+        await writeSetting(CARDS_KEY, { version: CARDS_VERSION, sections: { ...(stored.sections && typeof stored.sections === 'object' ? stored.sections : {}), ...sections } }, 'Ботын картууд');
+      }
+      if (defaultImageUrl !== null) await writeSetting(DEFAULT_IMAGE_KEY, defaultImageUrl, 'Ботын үндсэн зураг');
+      source.invalidate();
+      await createLog(req.user, 'bot_cards_update', `sections:${saved.join(',') || '-'}${defaultImageUrl !== null ? ' default_image' : ''}`);
+      return res.json({
+        ok: true, version: CARDS_VERSION, saved, sections: Object.fromEntries(saved.map(name => [name, { isDefault: false, cards: sections[name] }])),
+        ...(defaultImageUrl !== null ? { defaultImageUrl } : {}),
+      });
+    } catch { return res.status(500).json({ message: 'Хадгалахад алдаа гарлаа.' }); }
+  });
+
+  app.post('/api/admin/bot-cards/reset/:section', authenticateUser, requireAdmin, async (req, res) => {
+    const section = String(req.params?.section || '');
+    if (!CARD_SECTIONS.includes(section)) return res.status(400).json({ message: 'Хэсэг буруу байна.' });
+    try {
+      const stored = await readStored();
+      const rest = { ...(stored.sections && typeof stored.sections === 'object' ? stored.sections : {}) };
+      delete rest[section];
+      await writeSetting(CARDS_KEY, { version: CARDS_VERSION, sections: rest }, 'Ботын картууд');
+      source.invalidate();
+      await createLog(req.user, 'bot_cards_reset', `section:${section}`);
+      return res.json({ ok: true, section, isDefault: true, cards: await defaultCards(section, cardCtx()) });
+    } catch { return res.status(500).json({ message: 'Анхны тохиргоонд буцаахад алдаа гарлаа.' }); }
   });
 
   // ---- D20: post categories (admin only) ----

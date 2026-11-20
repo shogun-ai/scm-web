@@ -4,7 +4,7 @@
 // Dependencies are injected (axios, session store, request creator, clock) so everything is testable without Meta/Mongo.
 import crypto from 'node:crypto';
 import { LOAN_PRODUCTS, PRODUCTS_MAP } from '../shared/loanFormConfig.js';
-import { buildNode, SITE_URL, CONTACT_PHONE, MENU_REPLY, GREETING_KEY, DEFAULT_GREETING, MAX_GREETING } from './botEngine.js';
+import { buildNode, SITE_URL, CONTACT_PHONE, MENU_REPLY } from './botEngine.js';
 
 export { SITE_URL, CONTACT_PHONE };
 export const LOAN_REQUEST_URL = `${SITE_URL}/loan-request`;
@@ -87,12 +87,11 @@ export function buildPostsCarousel(posts = []) {
   return (Array.isArray(posts) ? posts : []).filter(post => post?.id && (post.message || post.full_picture)).slice(0, 10).map(buildPostElement);
 }
 
-// Persistent menu + get started (§19). Messenger shows the first 3 items in the composer; the rest sit under "more".
-export function buildMessengerProfile(greetingText = '') {
-  const text = String(greetingText || '').replace(/\s+/g, ' ').trim().slice(0, MAX_GREETING) || DEFAULT_GREETING;
+// Persistent menu + get started (§19, §21 #2). Messenger shows the first 3 items in the composer; the rest sit under "more".
+// No greeting / ice_breakers: Meta no longer supports the greeting API (D21 #8).
+export function buildMessengerProfile() {
   return {
     get_started: { payload: 'restart' },
-    greeting: [{ locale: 'default', text }], // no ice_breakers (D20)
     persistent_menu: [{
       locale: 'default', composer_input_disabled: false,
       call_to_actions: [
@@ -101,6 +100,7 @@ export function buildMessengerProfile(greetingText = '') {
         { type: 'postback', title: 'Итгэлцэл', payload: 'trust' },
         { type: 'postback', title: 'Идэвхтэй зээлийн зар', payload: 'ads' },
         { type: 'postback', title: 'Төлөлт хийх', payload: 'payment' },
+        { type: 'postback', title: 'Холбоо барих', payload: 'contact' },
         { type: 'postback', title: 'Хэл / Language', payload: 'language' },
       ],
     }],
@@ -118,23 +118,41 @@ export function toMessengerButtons(list) {
   }).filter(Boolean);
 }
 
+const buttonTemplate = (text, buttons) => ({ attachment: { type: 'template', payload: { template_type: 'button', text: String(text).slice(0, 640), buttons } } });
+
 export function nodeToMessengerMessages(node = {}) {
   const messages = [];
+  // node.imageUrl (post view) -> an image attachment first.
+  const image = httpsUrl(node.imageUrl);
+  if (image) messages.push({ attachment: { type: 'image', payload: { url: image, is_reusable: true } } });
   const nodeButtons = toMessengerButtons(node.buttons);
-  // Node-level buttons (e.g. contact) -> a button template carrying the last text chunk (<=640 chars).
-  const chunks = splitText(node.text || '', nodeButtons.length ? 640 : 1900, 5);
-  const lastChunk = nodeButtons.length && chunks.length ? chunks.pop() : '';
+  // Node-level buttons (contact, post view) -> a button template. Its text is the last chunk when that fits 640 chars, else a short prompt.
+  const chunks = splitText(node.text || '', 1900, 5);
+  let buttonText = '';
+  if (nodeButtons.length) buttonText = chunks.length && chunks[chunks.length - 1].length <= 640 ? chunks.pop() : 'Доорх сонголтоос сонгоно уу.';
   for (const chunk of chunks) messages.push({ text: chunk });
-  if (lastChunk) messages.push({ attachment: { type: 'template', payload: { template_type: 'button', text: lastChunk, buttons: nodeButtons } } });
-  const elements = (Array.isArray(node.cards) ? node.cards : []).slice(0, 10).map(cardItem => {
+  if (nodeButtons.length) messages.push(buttonTemplate(buttonText, nodeButtons));
+  // Cards: consecutive element cards form one generic template (<=10); cards carrying `text` (terms) are button templates / plain text in order.
+  let elements = [];
+  const flush = () => {
+    if (elements.length) messages.push({ attachment: { type: 'template', payload: { template_type: 'generic', elements } } });
+    elements = [];
+  };
+  for (const cardItem of (Array.isArray(node.cards) ? node.cards : []).slice(0, 20)) {
     const buttons = toMessengerButtons(cardItem.buttons);
+    if (typeof cardItem.text === 'string' && cardItem.text) {
+      flush();
+      messages.push(buttons.length ? buttonTemplate(cardItem.text, buttons) : { text: cardItem.text.slice(0, 1900) });
+      continue;
+    }
+    if (elements.length >= 10) continue;
     const element = { title: String(cardItem.title || 'Солонго Капитал').slice(0, 80) };
     if (cardItem.subtitle) element.subtitle = String(cardItem.subtitle).slice(0, 80);
     if (cardItem.imageUrl) element.image_url = cardItem.imageUrl;
     if (buttons.length) element.buttons = buttons;
-    return element;
-  });
-  if (elements.length) messages.push({ attachment: { type: 'template', payload: { template_type: 'generic', elements } } });
+    elements.push(element);
+  }
+  flush();
   if (!messages.length) messages.push({ text: FALLBACK_REPLY });
   const replies = (Array.isArray(node.quickReplies) ? node.quickReplies : []).slice(0, 13);
   if (replies.length) messages[messages.length - 1].quick_replies = buildQuickReplies(replies);
@@ -187,6 +205,7 @@ const SHORT_PRODUCT_TITLES = {
 const CANCEL_REPLY = { title: 'Цуцлах', payload: 'cancel' };
 const money = value => Number(value).toLocaleString('en-US');
 
+const productLabel = draft => draft.productName || PRODUCTS_MAP[draft.productKey] || draft.productKey;
 const productReplies = () => [...LOAN_PRODUCTS.map(product => ({ title: SHORT_PRODUCT_TITLES[product.id] || product.name, payload: `product:${product.id}` })), CANCEL_REPLY];
 const prompts = {
   product: () => ({ text: 'Ямар зээл авах вэ? Доорх сонголтоос сонгоно уу.', quickReplies: productReplies() }),
@@ -197,7 +216,7 @@ const prompts = {
   confirm: draft => ({
     text: [
       'Хүсэлтээ шалгана уу:',
-      `Бүтээгдэхүүн: ${PRODUCTS_MAP[draft.productKey] || draft.productKey}`,
+      `Бүтээгдэхүүн: ${productLabel(draft)}`,
       `Нэр: ${[draft.lastname, draft.firstname].filter(Boolean).join(' ')}`,
       `Утас: ${draft.phone}`,
       `Дүн: ${money(draft.amount)}₮`,
@@ -222,15 +241,18 @@ const POST_ID_RE = /^[A-Za-z0-9_-]{1,100}$/;
 const PRODUCT_KEY_ALIASES = { car_loan: 'car_purchase_loan' };
 export const resolveProductKey = key => { const value = PRODUCT_KEY_ALIASES[key] || key; return PRODUCTS_MAP[value] ? value : ''; };
 
-// { postId?, productKey? }: a valid productKey skips the product step.
-export const startApplication = ({ postId = '', productKey = '' } = {}) => {
+// { postId?, productKey?, productName? }: a valid productKey skips the product step. `productName` marks a CMS-only product
+// (ProductContent key that is not in LOAN_PRODUCTS, D21 #4): the key is kept as is and the name comes from ProductContent.
+const CMS_KEY_RE = /^[A-Za-z0-9_-]{1,50}$/;
+export const startApplication = ({ postId = '', productKey = '', productName = '' } = {}) => {
   const session = { state: 'product', draft: {}, postId: POST_ID_RE.test(postId) ? postId : '' };
-  const key = resolveProductKey(productKey);
+  const name = String(productName || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const key = name && CMS_KEY_RE.test(productKey) ? productKey : resolveProductKey(productKey);
   const intro = { text: 'Зээлийн хүсэлтийг энд товч бөглөж болно. Баримтаа дараа нь сайт дээр нэмнэ.' };
   if (!key) return { session, messages: [intro, prompts.product()], action: null };
   session.state = 'name';
-  session.draft = { productKey: key };
-  return { session, messages: [intro, { text: `Бүтээгдэхүүн: ${PRODUCTS_MAP[key]}` }, prompts.name()], action: null };
+  session.draft = name && key === productKey ? { productKey: key, productName: name } : { productKey: key };
+  return { session, messages: [intro, { text: `Бүтээгдэхүүн: ${productLabel(session.draft)}` }, prompts.name()], action: null };
 };
 
 // advance(session, { payload?, text? }) -> { session|null, messages, action: null|'submit'|'cancel' }
@@ -242,7 +264,7 @@ export function advance(session, input = {}) {
   if (!STATES.includes(state)) return { session: null, messages: [], action: null };
   const draft = { ...(session.draft || {}) };
   const next = (to, patch = {}) => {
-    const merged = { ...draft, ...patch };
+    const merged = Object.fromEntries(Object.entries({ ...draft, ...patch }).filter(([, value]) => value !== undefined));
     return { session: { ...session, state: to, draft: merged }, messages: [prompts[to](merged)], action: null };
   };
   const retry = () => ({ session: { ...session, draft }, messages: [{ text: errorText[state], quickReplies: prompts[state](draft).quickReplies }], action: null });
@@ -260,7 +282,7 @@ export function advance(session, input = {}) {
   switch (state) {
     case 'product': {
       const key = payload.startsWith('product:') ? payload.slice(8) : (LOAN_PRODUCTS.find(product => product.name.toLowerCase() === lowered || (SHORT_PRODUCT_TITLES[product.id] || '').toLowerCase() === lowered)?.id || '');
-      return PRODUCTS_MAP[key] ? next('name', { productKey: key }) : retry();
+      return PRODUCTS_MAP[key] ? next('name', { productKey: key, productName: undefined }) : retry();
     }
     case 'name': { const name = payload ? null : parseName(text); return name ? next('phone', name) : retry(); }
     case 'phone': { const phone = payload ? null : parsePhone(text); return phone ? next('amount', { phone }) : retry(); }
@@ -268,7 +290,7 @@ export function advance(session, input = {}) {
     case 'term': { const term = payload ? null : parseTerm(text); return term ? next('confirm', { term }) : retry(); }
     default: { // confirm
       if (payload === 'confirm') return { session: { ...session, draft }, messages: [], action: 'submit' };
-      if (payload === 'edit' || payload === 'restart') return next('product', { productKey: undefined });
+      if (payload === 'edit' || payload === 'restart') return next('product', { productKey: undefined, productName: undefined });
       return retry();
     }
   }
@@ -345,6 +367,9 @@ export function createMongoSessionStore(mongoose) {
 const GLOBAL_LEGACY = new Set(['back']);
 const NODE_VALUES = new Set(['restart', 'menu', 'loans', 'trust', 'ads', 'payment', 'contact', 'language', 'lang:mn', 'lang:en']);
 // Typed text equal to a menu title behaves like the button (only outside the in-chat application).
+const IDLE_SESSION = { state: 'idle', draft: {}, postId: '' }; // "seen" marker: a PSID without any session is a first contact (D21 #1)
+const LABEL_RE = /^[a-z]+(?::[A-Za-z0-9_-]{1,100}){0,2}$/;
+const logLabel = value => (LABEL_RE.test(String(value)) ? String(value) : 'other'); // never log typed text
 const NODE_TEXTS = new Map([['зээл', 'loans'], ['итгэлцэл', 'trust'], ['идэвхтэй зээлийн зар', 'ads'], ['төлөлт хийх', 'payment'], ['дахин эхлүүлэх', 'restart'], ['цэс', 'restart'], ['start', 'restart']]);
 export const FREE_TEXT_MAX = 600;
 const FREE_TEXT_REPLIES = [{ title: 'Зээл', payload: 'loans' }, { title: 'Итгэлцэл', payload: 'trust' }, MENU_REPLY];
@@ -421,31 +446,46 @@ export function createScmMessenger({
   async function sendNode(psid, nodeId) {
     for (const message of nodeToMessengerMessages(await buildNode(nodeId, nodeCtx()))) await send(psid, message);
   }
+  // Ends any running application but keeps a "seen" marker so the next free text is not treated as a first contact.
+  const endFlow = psid => sessionStore.save(psid, IDLE_SESSION);
+
+  // ProductContent is the product source (D21 #4): CMS-only keys (not in LOAN_PRODUCTS) keep their key and take their name from ProductContent.
+  async function resolveApplyProduct(key) {
+    if (!key) return null;
+    const formKey = resolveProductKey(key);
+    if (formKey) return { productKey: formKey === key ? key : formKey };
+    if (!CMS_KEY_RE.test(key) || key === 'trust') return null;
+    let products = [];
+    try { products = (await content.loadProducts?.()) || []; } catch { products = []; }
+    const product = (Array.isArray(products) ? products : []).find(item => item?.productKey === key && item.isActive !== false);
+    const name = String(product?.title || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    return product && name ? { productKey: key, productName: name } : null;
+  }
 
   // --- in-chat application ---
   async function runApplicationStep(psid, session, input) {
     const result = advance(session, input);
     if (result.action === 'submit') return submitApplication(psid, result.session);
-    if (!result.session) await sessionStore.clear(psid);
+    if (!result.session) await endFlow(psid);
     else await sessionStore.save(psid, result.session);
     return deliver(psid, result.messages);
   }
 
   async function submitApplication(psid, session) {
     if (!rateLimiter.take(psid)) {
-      await sessionStore.clear(psid);
+      await endFlow(psid);
       return sendText(psid, `Нэг цагт илгээх хүсэлтийн хязгаарт хүрсэн байна. Түр хүлээгээд дахин оролдоно уу эсвэл ${CONTACT_PHONE} дугаарт холбогдоно уу.`, [{ title: 'Цэс', payload: 'menu' }]);
     }
     const { draft } = session;
     let result;
     try {
-      result = await createRequest({ productKey: draft.productKey, lastname: draft.lastname || '', firstname: draft.firstname, phone: draft.phone, amount: draft.amount, term: draft.term, psid, postId: session.postId || '' });
+      result = await createRequest({ productKey: draft.productKey, ...(draft.productName ? { productName: draft.productName } : {}), lastname: draft.lastname || '', firstname: draft.firstname, phone: draft.phone, amount: draft.amount, term: draft.term, psid, postId: session.postId || '' });
     } catch (error) {
       logger.error?.(`[scm-messenger] request creation failed code=${error?.code || error?.status || 'unknown'}`);
       await sessionStore.save(psid, { ...session, state: 'confirm' });
       return sendText(psid, `Хүсэлтийг бүртгэж чадсангүй. Дахин оролдох уу эсвэл ${LOAN_REQUEST_URL}?source=messenger хаягаар / ${CONTACT_PHONE} дугаараар хандана уу.`, [{ title: 'Баталгаажуулах', payload: 'confirm' }, CANCEL_REPLY]);
     }
-    await sessionStore.clear(psid);
+    await endFlow(psid);
     await sendText(psid, `Таны хүсэлтийг хүлээн авлаа. Хүсэлтийн дугаар: ${result.applicationReference}. Манай ажилтан тантай удахгүй холбогдоно.`);
     return sendButtons(psid, 'Шаардлагатай баримтаа сайт дээр нэмж оруулж болно.', [{
       type: 'web_url', title: 'Баримтаа нэмэх', url: `${LOAN_REQUEST_URL}?product=${encodeURIComponent(draft.productKey)}&source=messenger`, webview_height_ratio: 'full',
@@ -459,9 +499,15 @@ export function createScmMessenger({
   }
 
   // --- event routing ---
+  // Every handled event logs one PII-free line: kind (message|postback|referral|optin), node label (never typed text), result.
+  const logEvent = (kind, label, result) => (logger.info || logger.log)?.call(logger, `[scm-messenger] event kind=${kind} node=${logLabel(label)} result=${result}`);
+
   async function processEvent(event, ctx) {
     const psid = String(event?.sender?.id || '');
     if (!/^\d{5,30}$/.test(psid) || event.message?.is_echo) return;
+    const referral = Boolean(event.referral || event.postback?.referral);
+    const kind = event.optin ? 'optin' : (referral ? 'referral' : (event.postback ? 'postback' : (event.message ? 'message' : '')));
+    if (!kind) return;
     const mid = event.message?.mid || event.postback?.mid;
     if (mid) {
       const time = now();
@@ -472,36 +518,61 @@ export function createScmMessenger({
     const payload = event.message?.quick_reply?.payload || event.postback?.payload || '';
     const text = event.message?.text || '';
     const value = String(payload || text || '').trim();
-    if (!value) return;
+    let label = 'none';
     try {
+      // Standalone referral (m.me ref / button under a post) and opt-in -> restart: welcome + menu cards.
+      if (event.optin || (event.referral && !event.postback && !event.message)) {
+        label = 'restart';
+        await endFlow(psid);
+        await sendNode(psid, 'restart');
+        return logEvent(kind, label, 'sent');
+      }
+      if (!value) return;
       const session = await sessionStore.get(psid);
+      const firstContact = !session;
       const inFlow = Boolean(session && STATES.includes(session.state));
       const lowered = value.toLowerCase();
-      const nodeValue = NODE_VALUES.has(value) || /^(terms|calc):/.test(value) ? value : (!payload && !inFlow ? NODE_TEXTS.get(lowered) : '');
+      const nodeValue = NODE_VALUES.has(value) || /^(terms|calc|post):/.test(value) ? value : (!payload && !inFlow ? NODE_TEXTS.get(lowered) : '');
       const isApply = value === 'apply' || value.startsWith('apply:') || (!payload && !inFlow && APPLY_TEXTS.has(lowered));
+      // First contact (no session at all) with plain typed text -> restart, whatever was typed.
+      if (firstContact && !payload && !nodeValue && !isApply) {
+        label = 'restart';
+        await endFlow(psid);
+        await sendNode(psid, 'restart');
+        return logEvent(kind, label, 'sent');
+      }
+      if (firstContact) await endFlow(psid);
       // Menu / node / apply payloads interrupt a running application (e.g. persistent menu); anything else continues it.
       const interrupts = nodeValue || (payload && isApply);
-      if (inFlow && interrupts) await sessionStore.clear(psid);
-      else if (inFlow) return await runApplicationStep(psid, session, payload ? { payload } : { text });
+      if (inFlow && interrupts) await endFlow(psid);
+      else if (inFlow) { label = 'flow'; await runApplicationStep(psid, session, payload ? { payload } : { text }); return logEvent(kind, label, 'sent'); }
       if (nodeValue) {
-        if (nodeValue === 'restart' || nodeValue === 'menu' || nodeValue === 'lang:mn') await sessionStore.clear(psid);
-        return await sendNode(psid, nodeValue);
+        label = nodeValue;
+        if (nodeValue === 'restart' || nodeValue === 'menu' || nodeValue === 'lang:mn') await endFlow(psid);
+        await sendNode(psid, nodeValue);
+        return logEvent(kind, label, 'sent');
       }
-      if (GLOBAL_LEGACY.has(value)) return await legacyChat(psid, value, ctx);
-      if (value === 'posts') return await showPosts(psid);
-      if (value === 'site') return await sendButtons(psid, 'Сайт дээр дэлгэрэнгүй бөглөнө үү.', [{ type: 'web_url', title: 'Хүсэлт бөглөх', url: `${LOAN_REQUEST_URL}?source=messenger`, webview_height_ratio: 'full' }]);
-      if (value.startsWith('detail:')) return await showDetail(psid, value.slice(7));
+      if (GLOBAL_LEGACY.has(value)) { label = 'back'; await legacyChat(psid, value, ctx); return logEvent(kind, label, 'sent'); }
+      if (value === 'posts') { label = 'posts'; await showPosts(psid); return logEvent(kind, label, 'sent'); }
+      if (value === 'site') { label = 'site'; await sendButtons(psid, 'Сайт дээр дэлгэрэнгүй бөглөнө үү.', [{ type: 'web_url', title: 'Хүсэлт бөглөх', url: `${LOAN_REQUEST_URL}?source=messenger`, webview_height_ratio: 'full' }]); return logEvent(kind, label, 'sent'); }
+      if (value.startsWith('detail:')) { label = 'detail'; await showDetail(psid, value.slice(7)); return logEvent(kind, label, 'sent'); }
       if (isApply) {
+        label = 'apply';
         const arg = value.startsWith('apply:') ? value.slice(6) : '';
         const [productArg, ...ctxParts] = arg.split(':'); // apply:<productKey>[:post:<id>] (optional post context)
-        if (ctxParts[0] === 'post' && resolveProductKey(productArg)) return await startFlow(psid, { productKey: productArg, ...(ctxParts[1] ? { postId: ctxParts[1] } : {}) });
-        if (arg.startsWith('post:')) return await startFlow(psid, { postId: arg.slice(5) });
-        if (resolveProductKey(arg)) return await startFlow(psid, { productKey: arg });
-        return await startFlow(psid, { postId: arg }); // legacy apply:<postId>; invalid ids are dropped
+        if (arg.startsWith('post:')) await startFlow(psid, { postId: arg.slice(5) });
+        else {
+          const product = await resolveApplyProduct(productArg);
+          if (product) await startFlow(psid, { ...product, ...(ctxParts[0] === 'post' && ctxParts[1] ? { postId: ctxParts[1] } : {}) });
+          else await startFlow(psid, { postId: arg }); // legacy apply:<postId>; invalid ids are dropped
+        }
+        return logEvent(kind, label, 'sent');
       }
-      return await legacyChat(psid, value, ctx);
+      label = 'chat';
+      await legacyChat(psid, value, ctx);
+      return logEvent(kind, label, 'sent');
     } catch (error) {
-      logger.error?.(`[scm-messenger] event failed ${error?.name || 'Error'} code=${error?.fbCode || error?.status || 'n/a'}`);
+      logger.error?.(`[scm-messenger] event kind=${kind} node=${logLabel(label)} result=failed code=${error?.fbCode || error?.status || 'n/a'} (${error?.name || 'Error'})`);
       try { await sendText(psid, FALLBACK_REPLY); } catch { logger.error?.('[scm-messenger] fallback send failed'); }
     }
   }
@@ -524,9 +595,7 @@ export function createScmMessenger({
     let page;
     try { page = await getPage(); } catch { page = null; }
     if (guardPageId() && String(page?.id || '') === guardPageId()) return { ok: false, skipped: true, reason: 'ZENTRO_PAGE' };
-    let greeting = '';
-    try { greeting = await content.loadSetting?.(GREETING_KEY); } catch { greeting = ''; }
-    try { await graph.post('me/messenger_profile', buildMessengerProfile(typeof greeting === 'string' ? greeting : '')); return { ok: true }; } catch (error) { return { ok: false, reason: 'GRAPH_ERROR', fbCode: error.fbCode || 0 }; }
+    try { await graph.post('me/messenger_profile', buildMessengerProfile()); return { ok: true }; } catch (error) { return { ok: false, reason: 'GRAPH_ERROR', fbCode: error.fbCode || 0 }; }
   }
 
   async function status() {
@@ -561,7 +630,8 @@ export function createScmMessenger({
     if (profileResult.status === 'fulfilled') {
       const profile = Array.isArray(profileResult.value?.data) ? profileResult.value.data[0] : null;
       const first = profile?.persistent_menu?.[0]?.call_to_actions?.[0];
-      out.messengerProfileOk = Boolean(profile?.get_started?.payload === 'restart' && first?.type === 'postback' && first.payload === 'restart');
+      const items = Array.isArray(profile?.persistent_menu?.[0]?.call_to_actions) ? profile.persistent_menu[0].call_to_actions : [];
+      out.messengerProfileOk = Boolean(profile?.get_started?.payload === 'restart' && first?.type === 'postback' && first.payload === 'restart' && items.some(item => item?.payload === 'contact'));
     }
     return out;
   }

@@ -61,13 +61,15 @@ const CONTENT = {
   },
   async loadSetting(key) { return key === 'payment_accounts' ? [{ bank: 'Хаан банк', accountNumber: '5000123456', accountName: 'Солонго Капитал ББСБ' }] : undefined; },
 };
-function makeMessenger({ env = {}, content, axios = fakeAxios(), createRequest, limiter, clock = { t: NOW.getTime() } } = {}) {
+// seen = true: the PSID already has a (idle) session, so typed text is not treated as a first contact (D21 #1).
+function makeMessenger({ env = {}, content, axios = fakeAxios(), createRequest, limiter, clock = { t: NOW.getTime() }, seen = true, logger = { error() {}, warn() {} } } = {}) {
   const store = memoryStore();
+  if (seen) store.map.set(PSID, { state: 'idle', draft: {}, postId: '' });
   const requests = [];
   const messenger = createScmMessenger({
     content, axios, env: { FB_PAGE_ACCESS_TOKEN: TOKEN, FB_VERIFY_TOKEN: VERIFY, PUBLIC_API_BASE_URL: 'http://api.test', ...env }, sessionStore: store,
     createRequest: createRequest || (async input => { requests.push(input); return { applicationReference: 'SCM-2026-ABC123', productKey: input.productKey, productName: 'Хэрэглээний зээл', assigned: true }; }),
-    rateLimiter: limiter, now: () => clock.t, logger: { error() {}, warn() {} },
+    rateLimiter: limiter, now: () => clock.t, logger,
   });
   return { messenger, axios, store, requests, clock };
 }
@@ -115,26 +117,25 @@ test('splitText chunks long posts at boundaries, max 5 chunks', () => {
   assert.deepEqual(splitText(''), []);
 });
 
-test('messenger profile greeting: default Mongolian text <=160, custom text trimmed to 160, no ice_breakers; configureProfile reads bot_greeting_text', async () => {
+test('messenger profile has no greeting / ice_breakers (D21 #8); configureProfile posts only get_started + persistent_menu', async () => {
   const profile = buildMessengerProfile();
-  assert.equal(profile.greeting[0].locale, 'default');
-  assert.match(profile.greeting[0].text, /^Сайн байна уу! Солонго Капитал ББСБ\./);
-  assert.ok(profile.greeting[0].text.length <= 160);
-  assert.equal('ice_breakers' in profile, false);
-  assert.equal(buildMessengerProfile('я'.repeat(300)).greeting[0].text.length, 160);
-  assert.equal(buildMessengerProfile('  Шинэ   мэндчилгээ ').greeting[0].text, 'Шинэ мэндчилгээ');
-  const custom = makeMessenger({ content: { ...CONTENT, loadSetting: async key => (key === 'bot_greeting_text' ? 'Тусгай мэндчилгээ' : undefined) } });
-  await custom.messenger.configureProfile();
-  assert.equal(custom.axios.calls.post.find(item => item.url.endsWith('/me/messenger_profile')).data.greeting[0].text, 'Тусгай мэндчилгээ');
+  assert.deepEqual(Object.keys(profile).sort(), ['get_started', 'persistent_menu']);
+  const custom = makeMessenger({ content: { ...CONTENT, loadSetting: async key => (key === 'bot_greeting_text' ? 'Хуучин мэндчилгээ' : undefined) } });
+  assert.deepEqual(await custom.messenger.configureProfile(), { ok: true });
+  const posted = custom.axios.calls.post.find(item => item.url.endsWith('/me/messenger_profile')).data;
+  assert.equal(posted.greeting, undefined);
+  assert.equal(posted.ice_breakers, undefined);
+  assert.equal(posted.persistent_menu[0].call_to_actions.length, 7);
+  assert.equal(JSON.stringify(posted).includes('Хуучин'), false, 'a stored greeting is ignored');
 });
 
-test('persistent menu per §19: restart, loans, trust, ads, payment postbacks; get started = restart', () => {
+test('persistent menu per §21: 7 postbacks incl. Холбоо барих; get started = restart', () => {
   const profile = buildMessengerProfile();
   assert.deepEqual(profile.get_started, { payload: 'restart' });
   const items = profile.persistent_menu[0].call_to_actions;
   assert.deepEqual(items.map(item => [item.type, item.title, item.payload]), [
     ['postback', 'Дахин эхлүүлэх', 'restart'], ['postback', 'Зээл', 'loans'], ['postback', 'Итгэлцэл', 'trust'],
-    ['postback', 'Идэвхтэй зээлийн зар', 'ads'], ['postback', 'Төлөлт хийх', 'payment'], ['postback', 'Хэл / Language', 'language'],
+    ['postback', 'Идэвхтэй зээлийн зар', 'ads'], ['postback', 'Төлөлт хийх', 'payment'], ['postback', 'Холбоо барих', 'contact'], ['postback', 'Хэл / Language', 'language'],
   ]);
   assert.ok(items.every(item => item.title.length <= 30));
 });
@@ -296,7 +297,7 @@ test('in-chat application over Messenger events creates exactly one request and 
   for (const e of [postback('apply:123_456'), quick('product:cons_loan'), say('Бат Болд'), say('99001234'), say('5 сая'), say('12'), quick('confirm')]) await messenger.handleEntry({ id: '111', messaging: [e] });
   assert.equal(requests.length, 1);
   assert.deepEqual(requests[0], { productKey: 'cons_loan', lastname: 'Бат', firstname: 'Болд', phone: '99001234', amount: 5000000, term: 12, psid: PSID, postId: '123_456' });
-  assert.equal(store.map.size, 0, 'session cleared');
+  assert.equal(store.map.get(PSID).state, 'idle', 'flow ended');
   assert.ok(texts(axios).some(text => text.includes('SCM-2026-ABC123')));
   const last = sent(axios).at(-1).attachment.payload;
   assert.equal(last.template_type, 'button');
@@ -335,7 +336,7 @@ test('request creation failure keeps the draft at confirm and shows a fallback; 
   fail = false;
   await messenger.handleEntry({ id: '111', messaging: [quick('confirm')] });
   assert.equal(requests.length, 1);
-  assert.equal(await store.get(PSID), null);
+  assert.equal((await store.get(PSID))?.state, 'idle');
 });
 
 test('restart/menu abort the flow and show the welcome node; contact shows the contact node; back goes one step inside the flow', async () => {
@@ -345,11 +346,13 @@ test('restart/menu abort the flow and show the welcome node; contact shows the c
   await messenger.handleEntry({ id: '111', messaging: [postback('back')] });
   assert.equal((await store.get(PSID)).state, 'name');
   await messenger.handleEntry({ id: '111', messaging: [postback('restart')] });
-  assert.equal(await store.get(PSID), null, 'restart clears the session');
+  assert.equal((await store.get(PSID))?.state, 'idle', 'restart clears the session');
   assert.equal(axios.calls.post.filter(call => call.url.endsWith('/api/chat')).length, 0);
-  const welcome = sent(axios).at(-1);
+  const welcome = sent(axios).at(-2);
   assert.match(welcome.text, /Солонго Капитал/);
-  assert.deepEqual(welcome.quick_replies.map(reply => reply.payload), ['loans', 'trust', 'ads', 'payment']);
+  const menuCards = sent(axios).at(-1).attachment.payload;
+  assert.equal(menuCards.template_type, 'generic', 'restart = welcome text + menu cards carousel');
+  assert.deepEqual(menuCards.elements.map(element => element.buttons[0].payload), ['loans', 'trust', 'ads', 'payment', 'contact']);
   await messenger.handleEntry({ id: '111', messaging: [postback('contact')] });
   assert.equal(axios.calls.post.filter(call => call.url.endsWith('/api/chat')).length, 0, 'contact no longer uses legacy chat');
   const contactMsg = sent(axios).at(-1);
@@ -419,15 +422,18 @@ test('menu payloads send nodes: loans carousel, terms text, trust, payment, ads;
   assert.deepEqual(loans.map(el => el.title), ['Хэрэглээний зээл']);
   assert.deepEqual(loans[0].buttons.map(b => b.payload || b.url), ['terms:cons_loan', 'apply:cons_loan', 'https://www.scm.mn/calculator?product=cons_loan&source=messenger']);
   await messenger.handleEntry({ id: '111', messaging: [quick('terms:cons_loan')] });
-  assert.match(texts(axios).at(-1), /Иргэн/);
+  const termsMessage = sent(axios).at(-1).attachment.payload;
+  assert.equal(termsMessage.template_type, 'button', 'terms are button templates');
+  assert.match(termsMessage.text, /Иргэн/);
+  assert.deepEqual(termsMessage.buttons.map(b => b.payload || b.url), ['apply:cons_loan', 'https://www.scm.mn/calculator?product=cons_loan&source=messenger', 'loans']);
   await messenger.handleEntry({ id: '111', messaging: [postback('trust')] });
   assert.deepEqual(sent(axios).at(-1).attachment.payload.elements[0].buttons.map(b => b.url), ['https://www.scm.mn/trust-request?source=messenger', 'https://www.scm.mn/trust-calculator?source=messenger']);
   await messenger.handleEntry({ id: '111', messaging: [postback('ads')] });
-  assert.deepEqual(sent(axios).at(-1).attachment.payload.elements[0].buttons.map(b => b.payload || b.url), ['https://www.facebook.com/p/1', 'contact']);
+  assert.deepEqual(sent(axios).at(-1).attachment.payload.elements[0].buttons.map(b => b.payload || b.url), ['post:p_1', 'contact']);
   await messenger.handleEntry({ id: '111', messaging: [postback('payment')] });
   assert.match(texts(axios).at(-1), /Хаан банк/);
   await messenger.handleEntry({ id: '111', messaging: [postback('apply:cons_loan'), postback('loans')] });
-  assert.equal(await store.get(PSID), null, 'a menu node interrupts the in-chat application');
+  assert.equal((await store.get(PSID))?.state, 'idle', 'a menu node interrupts the in-chat application');
   assert.ok(axios.calls.post.every(call => /\/me\/messages$/.test(call.url)), 'read-only toward the Page');
 });
 
@@ -730,7 +736,207 @@ test('language menu: language node, lang:en placeholder, lang:mn restarts and cl
   assert.match(texts(axios).at(-1), /English version is coming soon[\s\S]*Англи хувилбар/);
   assert.deepEqual(sent(axios).at(-1).quick_replies.map(reply => reply.payload), ['restart']);
   await messenger.handleEntry({ id: '111', messaging: [postback('apply:cons_loan'), quick('lang:mn')] });
-  assert.equal(await store.get(PSID), null, 'lang:mn restarts');
+  assert.equal((await store.get(PSID))?.state, 'idle', 'lang:mn restarts');
   assert.match(texts(axios).at(-1), /Солонго Капитал/);
   assert.equal(axios.calls.post.filter(call => call.url.endsWith('/api/chat')).length, 0);
+});
+
+// ---------- D21 ----------
+const CMS_CONTENT = {
+  async loadProducts() {
+    return [
+      { productKey: 'cons_loan', title: 'Хэрэглээний зээл', isActive: true, order: 1, individual: { conditions: ['Хүү 2%'], requirements: ['18 нас'] } },
+      { productKey: 'heated_parking', title: 'Дулаан зогсоолын зээл', shortDesc: 'Дулаан зогсоол', isActive: true, order: 2, individual: { conditions: ['Хүү 1.9%'], requirements: ['Иргэний үнэмлэх'] } },
+      { productKey: 'old_cms', title: 'Хаагдсан', isActive: false, order: 3 },
+      { productKey: 'trust', title: 'Итгэлцэл', isActive: true, order: 4 },
+    ];
+  },
+  async loadSetting() { return undefined; },
+};
+
+test('referral, opt-in and first contact restart: welcome text + menu cards carousel; no menu quick replies', async () => {
+  for (const trigger of [event({ referral: { ref: 'post_cta', source: 'SHORTLINK', type: 'OPEN_THREAD' } }), event({ optin: { ref: 'x' } }), event({ postback: { payload: 'restart', referral: { ref: 'r' } } }), say('Сайн байна уу'), say('hello там')]) {
+    const { messenger, axios, store } = makeMessenger({ content: CONTENT, seen: false });
+    await messenger.handleEntry({ id: '111', messaging: [trigger] });
+    const messages = sent(axios);
+    assert.equal(messages.length, 2, JSON.stringify(trigger));
+    assert.match(messages[0].text, /Солонго Капитал/);
+    const cards = messages[1].attachment.payload;
+    assert.equal(cards.template_type, 'generic');
+    assert.deepEqual(cards.elements.map(element => element.buttons[0].payload), ['loans', 'trust', 'ads', 'payment', 'contact']);
+    assert.ok(cards.elements.every(element => /^https:\/\//.test(element.image_url)), 'default image on imageless cards');
+    assert.equal(axios.calls.post.filter(call => call.url.endsWith('/api/chat')).length, 0, 'no legacy chat');
+    assert.equal((await store.get(PSID)).state, 'idle', 'seen marker saved');
+  }
+});
+
+test('after the first contact, free text goes to the chatbot again; a seen PSID is never restarted by typed text', async () => {
+  const { messenger, axios } = makeMessenger({ content: CONTENT, seen: false });
+  await messenger.handleEntry({ id: '111', messaging: [say('Сайн уу')] });
+  assert.equal(axios.calls.post.filter(call => call.url.endsWith('/api/chat')).length, 0);
+  await messenger.handleEntry({ id: '111', messaging: [say('Хүү хэд вэ?')] });
+  assert.equal(axios.calls.post.filter(call => call.url.endsWith('/api/chat')).length, 1);
+  // first contact with a payload / known menu text is handled as that action, not as a restart
+  const fresh = makeMessenger({ content: CONTENT, seen: false });
+  await fresh.messenger.handleEntry({ id: '111', messaging: [postback('payment')] });
+  assert.match(texts(fresh.axios).at(-1), /Хаан банк/);
+  const typed = makeMessenger({ content: CONTENT, seen: false });
+  await typed.messenger.handleEntry({ id: '111', messaging: [say('Төлөлт хийх')] });
+  assert.match(texts(typed.axios).at(-1), /Хаан банк/);
+  assert.equal((await typed.store.get(PSID)).state, 'idle');
+  // a pending application is not a first contact
+  const flow = makeMessenger({ content: CONTENT, seen: false });
+  await flow.messenger.handleEntry({ id: '111', messaging: [postback('apply:cons_loan'), say('Бат Болд')] });
+  assert.equal((await flow.store.get(PSID)).state, 'phone');
+});
+
+test('diagnostic logs: one PII-free line per event (kind, node, result); typed text and payload values are never logged; failures carry the code only', async () => {
+  const lines = [];
+  const logger = { info: line => lines.push(line), error: line => lines.push(line), warn() {} };
+  const { messenger } = makeMessenger({ content: CONTENT, logger, seen: false });
+  for (const e of [event({ referral: { ref: 'secret-ref-value' } }), say('Миний утас 99001234'), postback('loans'), quick('terms:cons_loan'), postback('apply:cons_loan'), say('Бат Болд'), say('99001234')]) {
+    await messenger.handleEntry({ id: '111', messaging: [e] });
+  }
+  assert.deepEqual(lines, [
+    '[scm-messenger] event kind=referral node=restart result=sent',
+    '[scm-messenger] event kind=message node=chat result=sent',
+    '[scm-messenger] event kind=postback node=loans result=sent',
+    '[scm-messenger] event kind=message node=terms:cons_loan result=sent',
+    '[scm-messenger] event kind=postback node=apply result=sent',
+    '[scm-messenger] event kind=message node=flow result=sent',
+    '[scm-messenger] event kind=message node=flow result=sent',
+  ]);
+  const everything = lines.join('\n');
+  for (const secret of ['99001234', 'Бат', 'secret-ref-value', PSID, TOKEN, 'утас']) assert.equal(everything.includes(secret), false, secret);
+  // failure: Graph rejects the send
+  const failLines = [];
+  const failing = makeMessenger({ content: CONTENT, logger: { info: line => failLines.push(line), error: line => failLines.push(line), warn() {} } });
+  failing.axios.post = async (url, data) => { failing.axios.calls.post.push({ url, data }); throw Object.assign(new Error(`bad ${TOKEN}`), { response: { status: 400, data: { error: { code: 200 } } } }); };
+  await failing.messenger.handleEntry({ id: '111', messaging: [postback('payment')] });
+  assert.match(failLines[0], /^\[scm-messenger\] event kind=postback node=payment result=failed code=200/);
+  assert.equal(failLines.join('\n').includes(TOKEN), false);
+});
+
+test('adapter: terms cards -> one button template per block (plain text for parts without buttons); post view -> image + text + button template; long text keeps a button template', () => {
+  const buttons = [{ kind: 'postback', title: 'Хүсэлт гаргах', payload: 'apply:k' }, { kind: 'url', title: 'Тооцоолуур', url: 'https://www.scm.mn/calculator?product=k' }, { kind: 'postback', title: 'Буцах', payload: 'loans' }];
+  const terms = nodeToMessengerMessages({ cards: [
+    { title: 'Иргэн', text: 'Иргэн\nНөхцөл:\n• Хүү', buttons: [] }, { title: 'Иргэн (2)', text: 'үргэлжлэл', buttons },
+    { title: 'Байгууллага', text: 'Байгууллага\n• Хүү', buttons },
+  ], quickReplies: [{ title: 'Цэс', payload: 'restart' }] });
+  assert.equal(terms.length, 3);
+  assert.deepEqual(terms[0], { text: 'Иргэн\nНөхцөл:\n• Хүү' });
+  assert.equal(terms[1].attachment.payload.template_type, 'button');
+  assert.deepEqual(terms[1].attachment.payload.buttons.map(button => button.type), ['postback', 'web_url', 'postback']);
+  assert.equal(terms[2].attachment.payload.text, 'Байгууллага\n• Хүү');
+  assert.deepEqual(terms[2].quick_replies.map(reply => reply.payload), ['restart']);
+  const long = 'Урт текст '.repeat(300);
+  const post = nodeToMessengerMessages({ text: long, imageUrl: 'https://fb/img.jpg', buttons: buttons.slice(0, 2), quickReplies: [{ title: 'Цэс', payload: 'restart' }] });
+  assert.deepEqual(post[0], { attachment: { type: 'image', payload: { url: 'https://fb/img.jpg', is_reusable: true } } });
+  const textParts = post.filter(message => message.text);
+  assert.ok(textParts.length >= 2 && textParts.every(message => message.text.length <= 1900));
+  const last = post.at(-1).attachment.payload;
+  assert.equal(last.template_type, 'button');
+  assert.ok(last.text.length <= 640);
+  assert.equal(post.at(-1).quick_replies.length, 1);
+  const rebuilt = [...textParts.map(message => message.text), last.text === 'Доорх сонголтоос сонгоно уу.' ? '' : last.text].join(' ').replace(/\s+/g, ' ').trim();
+  assert.equal(rebuilt, long.replace(/\s+/g, ' ').trim(), 'no text lost');
+  const short = nodeToMessengerMessages({ text: 'Богино пост', buttons: buttons.slice(0, 1) });
+  assert.equal(short.length, 1);
+  assert.equal(short[0].attachment.payload.text, 'Богино пост');
+  assert.equal(nodeToMessengerMessages({ imageUrl: 'http://insecure/x.png', text: 'x' })[0].text, 'x', 'non-https image skipped');
+});
+
+test('Messenger terms for a CMS-only product are button templates with [Хүсэлт гаргах][Тооцоолуур][Буцах]', async () => {
+  const { messenger, axios } = makeMessenger({ content: CMS_CONTENT });
+  await messenger.handleEntry({ id: '111', messaging: [quick('terms:heated_parking')] });
+  const message = sent(axios).at(-1).attachment.payload;
+  assert.equal(message.template_type, 'button');
+  assert.match(message.text, /^Дулаан зогсоолын зээл\n\nИргэн/);
+  assert.deepEqual(message.buttons.map(button => button.payload || button.url), ['apply:heated_parking', 'https://www.scm.mn/calculator?product=heated_parking&source=messenger', 'loans']);
+  assert.ok(message.text.length <= 640);
+  await messenger.handleEntry({ id: '111', messaging: [quick('terms:old_cms')] });
+  assert.match(texts(axios).at(-1), /олдсонгүй/);
+  await messenger.handleEntry({ id: '111', messaging: [postback('loans')] });
+  const loans = sent(axios).at(-1).attachment.payload.elements;
+  assert.deepEqual(loans.map(element => element.title), ['Хэрэглээний зээл', 'Дулаан зогсоолын зээл']);
+  assert.ok(loans.every(element => element.image_url), 'default image fills imageless product cards');
+});
+
+test('apply for a CMS-only product starts the in-chat application, keeps the key and name, and creates the request with them', async () => {
+  const { messenger, axios, store, requests } = makeMessenger({ content: CMS_CONTENT });
+  await messenger.handleEntry({ id: '111', messaging: [postback('apply:heated_parking')] });
+  assert.deepEqual(await store.get(PSID), { state: 'name', draft: { productKey: 'heated_parking', productName: 'Дулаан зогсоолын зээл' }, postId: '' });
+  assert.match(texts(axios).join('\n'), /Бүтээгдэхүүн: Дулаан зогсоолын зээл/);
+  assert.doesNotMatch(texts(axios).join('\n'), /олдсонгүй/);
+  for (const e of [say('Бат Болд'), say('99001234'), say('5 сая')]) await messenger.handleEntry({ id: '111', messaging: [e] });
+  await messenger.handleEntry({ id: '111', messaging: [say('12')] });
+  assert.match(texts(axios).at(-1), /Бүтээгдэхүүн: Дулаан зогсоолын зээл/);
+  await messenger.handleEntry({ id: '111', messaging: [quick('confirm')] });
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0], { productKey: 'heated_parking', productName: 'Дулаан зогсоолын зээл', lastname: 'Бат', firstname: 'Болд', phone: '99001234', amount: 5000000, term: 12, psid: PSID, postId: '' });
+  assert.equal(sent(axios).at(-1).attachment.payload.buttons[0].url, 'https://www.scm.mn/loan-request?product=heated_parking&source=messenger');
+  // post context, and keys that are not active ProductContent products fall back to the product step
+  await messenger.handleEntry({ id: '111', messaging: [postback('apply:heated_parking:post:p_5')] });
+  assert.deepEqual((await store.get(PSID)).draft, { productKey: 'heated_parking', productName: 'Дулаан зогсоолын зээл' });
+  assert.equal((await store.get(PSID)).postId, 'p_5');
+  for (const key of ['old_cms', 'trust', 'nope']) {
+    await messenger.handleEntry({ id: '111', messaging: [postback(`apply:${key}`)] });
+    assert.equal((await store.get(PSID)).state, 'product', key);
+  }
+  // "edit" drops the CMS name together with the key
+  const session = { state: 'confirm', draft: { productKey: 'heated_parking', productName: 'Дулаан зогсоолын зээл', firstname: 'Б', lastname: 'Б', phone: '99001234', amount: 100000, term: 3 }, postId: '' };
+  assert.equal(advance(session, { payload: 'edit' }).session.draft.productName, undefined);
+  assert.equal(startApplication({ productKey: 'heated_parking', productName: 'Дулаан' }).session.draft.productName, 'Дулаан');
+  assert.equal(startApplication({ productKey: 'heated_parking' }).session.state, 'product', 'a CMS key needs its name');
+  assert.equal(startApplication({ productKey: 'bad key!', productName: 'X' }).session.state, 'product');
+  assert.ok(axios.calls.post.every(call => /\/me\/messages$/.test(call.url)));
+});
+
+test('post:<id> in Messenger: image attachment, full text, button template with [apply][Facebook-т нээх][Буцах]; ads cards use the postback', async () => {
+  const posts = [{ id: '1_1', message: `Зээл олгож байна\n${'Дэлгэрэнгүй '.repeat(200)}`, full_picture: 'https://fb/img.jpg', permalink_url: 'https://www.facebook.com/p/1' }];
+  const { messenger, axios, store } = makeMessenger({ content: CMS_CONTENT, axios: fakeAxios({ posts }) });
+  await messenger.handleEntry({ id: '111', messaging: [postback('ads')] });
+  assert.deepEqual(sent(axios).at(-1).attachment.payload.elements[0].buttons.map(button => button.payload || button.url), ['apply:post:1_1', 'post:1_1', 'contact']);
+  const before = sent(axios).length;
+  await messenger.handleEntry({ id: '111', messaging: [postback('post:1_1')] });
+  const messages = sent(axios).slice(before);
+  assert.deepEqual(messages[0], { attachment: { type: 'image', payload: { url: 'https://fb/img.jpg', is_reusable: true } } });
+  const template = messages.at(-1).attachment.payload;
+  const fullText = [...messages.filter(message => message.text).map(message => message.text), template.text].join(' ');
+  assert.ok(fullText.length > 2300 && fullText.startsWith('Зээл олгож байна'), 'full post text, split in several messages');
+  assert.ok(messages.filter(message => message.text).length >= 1 && template.text.length <= 640);
+  assert.equal(template.template_type, 'button');
+  assert.deepEqual(template.buttons.map(button => [button.title, button.payload || button.url]), [['Хүсэлт гаргах', 'apply:post:1_1'], ['Facebook-т нээх', 'https://www.facebook.com/p/1'], ['Буцах', 'ads']]);
+  assert.equal(template.buttons[1].type, 'web_url');
+  assert.equal(messages.at(-1).quick_replies[0].payload, 'restart');
+  await messenger.handleEntry({ id: '111', messaging: [postback('post:missing')] });
+  assert.match(texts(axios).at(-1), /олдсонгүй/);
+  assert.ok(axios.calls.post.every(call => /\/me\/messages$/.test(call.url)), 'read-only toward the Page');
+  // the post view interrupts a running application
+  await messenger.handleEntry({ id: '111', messaging: [postback('apply:cons_loan'), postback('post:1_1')] });
+  assert.equal((await store.get(PSID)).state, 'idle');
+});
+
+test('default image comes from bot_default_image_url in Messenger cards', async () => {
+  const content = { ...CMS_CONTENT, loadSetting: async key => (key === 'bot_default_image_url' ? 'https://cdn.scm.mn/default.png' : undefined) };
+  const { messenger, axios } = makeMessenger({ content });
+  await messenger.handleEntry({ id: '111', messaging: [postback('restart')] });
+  assert.ok(sent(axios).at(-1).attachment.payload.elements.every(element => element.image_url === 'https://cdn.scm.mn/default.png'));
+});
+
+test('status.messengerProfileOk requires the new menu (Холбоо барих present)', async () => {
+  const old = { get_started: { payload: 'restart' }, persistent_menu: [{ call_to_actions: [{ type: 'postback', payload: 'restart' }, { type: 'postback', payload: 'loans' }] }] };
+  const fresh = { get_started: { payload: 'restart' }, persistent_menu: [{ call_to_actions: buildMessengerProfile().persistent_menu[0].call_to_actions }] };
+  assert.equal((await makeMessenger({ axios: fakeAxios({ profile: old }) }).messenger.status()).messengerProfileOk, false);
+  assert.equal((await makeMessenger({ axios: fakeAxios({ profile: fresh }) }).messenger.status()).messengerProfileOk, true);
+});
+
+test('loanTasks.validateMessengerInput accepts a CMS-only key only together with its name', () => {
+  const base = { productKey: 'heated_parking', productName: ' Дулаан  зогсоолын зээл ', lastname: 'Бат', firstname: 'Болд', phone: '99001234', amount: 5000000, term: 12, psid: PSID, postId: '' };
+  const ok = validateMessengerInput(base);
+  assert.equal(ok.productKey, 'heated_parking');
+  assert.equal(ok.productName, 'Дулаан зогсоолын зээл');
+  assert.throws(() => validateMessengerInput({ ...base, productName: '' }), error => error.status === 400);
+  assert.throws(() => validateMessengerInput({ ...base, productKey: 'bad key!' }), error => error.status === 400);
+  assert.equal('productName' in validateMessengerInput({ ...base, productKey: 'cons_loan' }), false, 'built-in products keep their own names');
 });

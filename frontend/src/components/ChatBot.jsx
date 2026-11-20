@@ -180,6 +180,8 @@ const ChatBot = () => {
         throw new Error('empty node');
       }
       const cards = (Array.isArray(node.cards) ? node.cards : []).map((card) => ({ ...card, nodeCard: true }));
+      // D21: post view sends a node-level image; show it as a leading image card.
+      if (node.imageUrl && !cards.length) cards.push({ id: 'node-image', title: '', imageUrl: node.imageUrl, buttons: [], nodeCard: true });
       const quickReplies = (Array.isArray(node.quickReplies) ? node.quickReplies : []).filter((q) => q && q.title && q.payload);
       const nodeButtons = (Array.isArray(node.buttons) ? node.buttons : []).filter((b) => b && b.title && (b.kind === 'call' ? /^\+976\d{8}$/.test(String(b.phone || '')) : (b.payload || b.url))).slice(0, 3);
       const next = { role: 'ai', text: String(node.text || ''), options: [], cards, quickReplies, nodeButtons, fromNode: true };
@@ -492,10 +494,15 @@ const ChatBot = () => {
                           <div className="space-y-3 p-3">
                             {card.nodeCard ? (
                               <div>
-                                <h4 className="text-[13px] font-bold text-[#003B5C]">{card.title}</h4>
+                                {card.title && <h4 className="text-[13px] font-bold text-[#003B5C]">{card.title}</h4>}
                                 {card.subtitle && (
                                   <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-slate-600">
                                     {String(card.subtitle).replace(/\*\*/g, '')}
+                                  </p>
+                                )}
+                                {card.text && (
+                                  <p className="mt-1 whitespace-pre-line text-[11px] leading-relaxed text-slate-700">
+                                    {String(card.text).replace(/\*\*/g, '')}
                                   </p>
                                 )}
                               </div>

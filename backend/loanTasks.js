@@ -448,7 +448,10 @@ export function validateMessengerInput(input) {
   const phone = typeof value.phone === 'string' ? value.phone.trim() : '';
   const psid = typeof value.psid === 'string' ? value.psid : '';
   const postId = typeof value.postId === 'string' && value.postId ? value.postId : '';
-  if (!PRODUCT_KEYS.has(value.productKey)) errors.productKey = 'Бүтээгдэхүүн буруу байна.';
+  // D21: a CMS-only ProductContent key (not in LOAN_PRODUCTS) is accepted together with its name (the caller is scmMessenger, never a public route).
+  const productName = typeof value.productName === 'string' ? value.productName.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+  const cmsProduct = !PRODUCT_KEYS.has(value.productKey) && typeof value.productKey === 'string' && /^[A-Za-z0-9_-]{1,50}$/.test(value.productKey) && Boolean(productName);
+  if (!PRODUCT_KEYS.has(value.productKey) && !cmsProduct) errors.productKey = 'Бүтээгдэхүүн буруу байна.';
   if (!firstname) errors.firstname = 'Нэрээ оруулна уу.';
   if (!/^\d{8}$/.test(phone)) errors.phone = 'Утасны дугаар 8 оронтой байна.';
   if (!Number.isSafeInteger(value.amount) || value.amount < 1 || value.amount > 1e12) errors.amount = 'Дүн буруу байна.';
@@ -456,7 +459,7 @@ export function validateMessengerInput(input) {
   if (!MESSENGER_PSID_RE.test(psid)) errors.psid = 'Messenger хэрэглэгч буруу байна.';
   if (postId && !MESSENGER_POST_RE.test(postId)) errors.postId = 'Пост буруу байна.';
   if (Object.keys(errors).length) throw new HttpError('Мэдээллээ шалгана уу.', 400, { code: 'INVALID_INPUT', errors });
-  return { productKey: value.productKey, lastname, firstname, phone, amount: value.amount, term: value.term, psid, postId };
+  return { productKey: value.productKey, ...(cmsProduct ? { productName } : {}), lastname, firstname, phone, amount: value.amount, term: value.term, psid, postId };
 }
 
 // Pure: the LoanRequest constructor payload for an in-chat application (task-v1, channel 'messenger').
@@ -1189,7 +1192,7 @@ export function registerLoanTaskRoutes({
     const config = effectiveConfig(await loadConfigs(), input.productKey, env);
     if (!config?.isActive || config.baseProductEnabled === false) throw new HttpError('Энэ бүтээгдэхүүнд одоогоор хүсэлт авахгүй байна.', 404, { code: 'PRODUCT_UNAVAILABLE' });
     const { assignee, history } = await resolveDefaultAssignee(config.defaultAssigneeId || '', input.productKey, at);
-    const productName = PRODUCTS_MAP[input.productKey] || input.productKey;
+    const productName = PRODUCTS_MAP[input.productKey] || input.productName || input.productKey;
     const loan = new LoanRequest(buildMessengerTaskDoc({ input, config, assignee, history, at, productName }));
     loan.applicationReference = `SCM-${ubDate(at).slice(0, 4)}-${String(loan._id).slice(-6).toUpperCase()}`;
     await loan.save();

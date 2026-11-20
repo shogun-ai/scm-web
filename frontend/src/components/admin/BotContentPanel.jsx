@@ -2,10 +2,10 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { ArrowDown, ArrowUp, Bot, Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import { getAuthHeaders } from '../loanTask/api';
+import BotCardsEditor from './BotCardsEditor';
 
 const MAX_ACCOUNTS = 10;
 const MAX_WELCOME = 500;
-const MAX_GREETING = 160;
 const CATEGORY_LABELS = { loan: 'Зээлийн пост', safety: 'Аюулгүй байдал', news: 'Мэдээ мэдээлэл' };
 const CATEGORY_OPTIONS = [['auto', 'Автомат'], ['loan', 'Зээлийн пост'], ['safety', 'Аюулгүй байдал'], ['news', 'Мэдээ мэдээлэл']];
 const emptyAccount = () => ({ bank: '', accountNumber: '', accountName: '', iban: '', note: '' });
@@ -101,10 +101,18 @@ function PostCategories({ apiUrl }) {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const res = await axios.get(`${apiUrl}/api/admin/bot-posts`, { headers: getAuthHeaders(), timeout: 30000 });
+      const [res, prodRes] = await Promise.all([
+        axios.get(`${apiUrl}/api/admin/bot-posts`, { headers: getAuthHeaders(), timeout: 30000 }),
+        axios.get(`${apiUrl}/api/products/content`, { timeout: 20000 }).catch(() => ({ data: null })),
+      ]);
       const d = res.data && typeof res.data === 'object' ? res.data : {};
       setPosts(Array.isArray(d.posts) ? d.posts : []);
-      setProducts(Array.isArray(d.products) ? d.products.filter((p) => p && p.productKey) : []);
+      // Product keys come from ProductContent (same source the backend validates against).
+      const fromContent = Array.isArray(prodRes.data)
+        ? prodRes.data.filter((p) => p && p.productKey && p.isActive !== false && p.productKey !== 'trust')
+        : null;
+      const fallback = Array.isArray(d.products) ? d.products.filter((p) => p && p.productKey) : [];
+      setProducts(fromContent && fromContent.length ? fromContent : fallback);
     } catch (err) { setError(err.response?.data?.message || 'Постын жагсаалтыг ачаалж чадсангүй.'); }
     finally { setLoading(false); }
   }, [apiUrl]);
@@ -134,8 +142,6 @@ function PostCategories({ apiUrl }) {
 // Ботын агуулга: GET/PUT /api/admin/bot-content { welcomeText, paymentAccounts[] }
 export default function BotContentPanel({ apiUrl }) {
   const [welcomeText, setWelcomeText] = useState('');
-  const [greetingText, setGreetingText] = useState('');
-  const [defaultGreeting, setDefaultGreeting] = useState('');
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -148,8 +154,6 @@ export default function BotContentPanel({ apiUrl }) {
       const res = await axios.get(`${apiUrl}/api/admin/bot-content`, { headers: getAuthHeaders(), timeout: 20000 });
       const d = res.data && typeof res.data === 'object' ? res.data : {};
       setWelcomeText(str(d.welcomeText));
-      setGreetingText(str(d.greetingText));
-      setDefaultGreeting(str(d.defaultGreetingText));
       setAccounts(Array.isArray(d.paymentAccounts) ? d.paymentAccounts.slice(0, MAX_ACCOUNTS).map(normalizeAccount) : []);
     } catch (err) { setError(err.response?.data?.message || 'Ботын агуулгыг ачаалж чадсангүй.'); }
     finally { setLoading(false); }
@@ -170,7 +174,6 @@ export default function BotContentPanel({ apiUrl }) {
 
   const validate = () => {
     if (welcomeText.length > MAX_WELCOME) return `Мэндчилгээ ${MAX_WELCOME} тэмдэгтээс хэтрэхгүй байх ёстой.`;
-    if (greetingText.length > MAX_GREETING) return `Messenger мэндчилгээ ${MAX_GREETING} тэмдэгтээс хэтрэхгүй байх ёстой.`;
     for (let i = 0; i < accounts.length; i += 1) {
       const a = accounts[i];
       if (!a.bank.trim() || !a.accountNumber.trim() || !a.accountName.trim()) return `Данс #${i + 1}: банк, дансны дугаар, хүлээн авагчийн нэр заавал.`;
@@ -187,7 +190,6 @@ export default function BotContentPanel({ apiUrl }) {
     try {
       const payload = {
         welcomeText: welcomeText.trim(),
-        greetingText: greetingText.trim(),
         paymentAccounts: accounts.map((a) => ({
           bank: a.bank.trim(), accountNumber: a.accountNumber.trim(), accountName: a.accountName.trim(), iban: a.iban.trim(), note: a.note.trim(),
         })),
@@ -195,16 +197,15 @@ export default function BotContentPanel({ apiUrl }) {
       const res = await axios.put(`${apiUrl}/api/admin/bot-content`, payload, { headers: getAuthHeaders(), timeout: 20000 });
       const d = res.data && typeof res.data === 'object' ? res.data : {};
       if (typeof d.welcomeText === 'string') setWelcomeText(d.welcomeText);
-      if (typeof d.greetingText === 'string') setGreetingText(d.greetingText);
       if (Array.isArray(d.paymentAccounts)) setAccounts(d.paymentAccounts.slice(0, MAX_ACCOUNTS).map(normalizeAccount));
-      setMessage(d.profile && d.profile.ok === false ? 'Хадгалагдлаа. Messenger мэндчилгээг шинэчилж чадсангүй (Facebook статусыг шалгана уу).' : 'Хадгалагдлаа.');
+      setMessage('Хадгалагдлаа.');
     } catch (err) { setError(err.response?.data?.message || 'Хадгалж чадсангүй.'); }
     finally { setSaving(false); }
   };
 
   const filled = accounts.filter((a) => a.bank.trim() || a.accountNumber.trim() || a.accountName.trim());
 
-  return <div className="max-w-4xl space-y-6 animate-fade-in">
+  return <div className="max-w-6xl space-y-6 animate-fade-in">
     <h2 className="flex items-center gap-2 text-2xl font-bold text-[#003B5C]"><Bot size={24} aria-hidden="true" />Ботын агуулга</h2>
     <p className="text-sm text-slate-600">Сайтын чатбот болон Messenger бот нэг агуулга ашиглана.</p>
     {loading ? <p role="status" className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={14} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p> : (
@@ -213,12 +214,6 @@ export default function BotContentPanel({ apiUrl }) {
           <label htmlFor="bot-welcome" className="mb-1 block text-sm font-semibold text-slate-800">Мэндчилгээний текст</label>
           <textarea id="bot-welcome" value={welcomeText} onChange={(e) => setWelcomeText(e.target.value)} maxLength={MAX_WELCOME} rows={3} placeholder="Сайн байна уу! Солонго Капитал ББСБ. Танд юугаар туслах вэ?" className="w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-[#003B5C] focus:outline-none focus:ring-2 focus:ring-[#003B5C]/20" />
           <p className="mt-1 text-right text-xs text-slate-500">{welcomeText.length}/{MAX_WELCOME}</p>
-        </section>
-
-        <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <label htmlFor="bot-greeting" className="mb-1 block text-sm font-semibold text-slate-800">Messenger мэндчилгээ (Эхлэх дэлгэц)</label>
-          <textarea id="bot-greeting" value={greetingText} onChange={(e) => setGreetingText(e.target.value)} maxLength={MAX_GREETING} rows={2} placeholder={defaultGreeting} className="w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-[#003B5C] focus:outline-none focus:ring-2 focus:ring-[#003B5C]/20" />
-          <p className="mt-1 text-right text-xs text-slate-500">{greetingText.length}/{MAX_GREETING} · Хоосон бол үндсэн текст ашиглана</p>
         </section>
 
         <section className="rounded-2xl border bg-white p-6 shadow-sm">
@@ -271,6 +266,7 @@ export default function BotContentPanel({ apiUrl }) {
         </div>
       </form>
     )}
+    <div className="max-w-none"><BotCardsEditor apiUrl={apiUrl} /></div>
     <PostCategories apiUrl={apiUrl} />
     {loading === false && error && !message && accounts.length === 0 && !welcomeText && (
       <button type="button" onClick={load} className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700">Дахин ачаалах</button>
