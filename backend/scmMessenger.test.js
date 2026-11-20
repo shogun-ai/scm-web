@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {
   verifySignature, buildPostElement, buildPostsCarousel, splitText, buildMessengerProfile, parsePhone, parseAmount, parseTerm, parseName,
-  startApplication, advance, createPsidLimiter, createGraphClient, createScmMessenger, registerScmMessengerRoutes, partitionEntries,
+  startApplication, advance, nodeToMessengerMessages, createPsidLimiter, createGraphClient, createScmMessenger, registerScmMessengerRoutes, partitionEntries,
   createSharedWebhookForwarder, GraphError, stripChatControlTokens,
 } from './scmMessenger.js';
 import { buildMessengerTaskDoc, validateMessengerInput, toTaskListItem, LOAN_TASK_SCHEMA_FIELDS, sanitizeLegacyLoanWrite, CHANNELS } from './loanTasks.js';
@@ -52,11 +52,20 @@ const quick = payload => event({ message: { text: payload, quick_reply: { payloa
 const say = text => event({ message: { text } });
 const postback = payload => event({ postback: { payload } });
 
-function makeMessenger({ env = {}, axios = fakeAxios(), createRequest, limiter, clock = { t: NOW.getTime() } } = {}) {
+const CONTENT = {
+  async loadProducts() {
+    return [
+      { productKey: 'cons_loan', title: 'Хэрэглээний зээл', shortDesc: 'Богино', isActive: true, order: 1, individual: { conditions: ['Хүү 2%'], requirements: ['18 нас'] } },
+      { productKey: 'trust', title: 'Итгэлцэл', isActive: true, order: 4 },
+    ];
+  },
+  async loadSetting(key) { return key === 'payment_accounts' ? [{ bank: 'Хаан банк', accountNumber: '5000123456', accountName: 'Солонго Капитал ББСБ' }] : undefined; },
+};
+function makeMessenger({ env = {}, content, axios = fakeAxios(), createRequest, limiter, clock = { t: NOW.getTime() } } = {}) {
   const store = memoryStore();
   const requests = [];
   const messenger = createScmMessenger({
-    axios, env: { FB_PAGE_ACCESS_TOKEN: TOKEN, FB_VERIFY_TOKEN: VERIFY, PUBLIC_API_BASE_URL: 'http://api.test', ...env }, sessionStore: store,
+    content, axios, env: { FB_PAGE_ACCESS_TOKEN: TOKEN, FB_VERIFY_TOKEN: VERIFY, PUBLIC_API_BASE_URL: 'http://api.test', ...env }, sessionStore: store,
     createRequest: createRequest || (async input => { requests.push(input); return { applicationReference: 'SCM-2026-ABC123', productKey: input.productKey, productName: 'Хэрэглээний зээл', assigned: true }; }),
     rateLimiter: limiter, now: () => clock.t, logger: { error() {}, warn() {} },
   });
@@ -106,12 +115,14 @@ test('splitText chunks long posts at boundaries, max 5 chunks', () => {
   assert.deepEqual(splitText(''), []);
 });
 
-test('persistent menu per §18: loan web_url first, then posts, menu, contact', () => {
+test('persistent menu per §19: restart, loans, trust, ads, payment postbacks; get started = restart', () => {
   const profile = buildMessengerProfile();
-  assert.deepEqual(profile.get_started, { payload: 'menu' });
+  assert.deepEqual(profile.get_started, { payload: 'restart' });
   const items = profile.persistent_menu[0].call_to_actions;
-  assert.deepEqual(items[0], { type: 'web_url', title: 'Зээлийн хүсэлт', url: 'https://www.scm.mn/loan-request?source=messenger', webview_height_ratio: 'full' });
-  assert.deepEqual(items.slice(1).map(item => [item.title, item.payload]), [['Сүүлийн мэдээ', 'posts'], ['Үндсэн цэс', 'menu'], ['Холбоо барих', 'contact']]);
+  assert.deepEqual(items.map(item => [item.type, item.title, item.payload]), [
+    ['postback', 'Дахин эхлүүлэх', 'restart'], ['postback', 'Зээл', 'loans'], ['postback', 'Итгэлцэл', 'trust'],
+    ['postback', 'Идэвхтэй зээлийн зар', 'ads'], ['postback', 'Төлөлт хийх', 'payment'],
+  ]);
   assert.ok(items.every(item => item.title.length <= 30));
 });
 
@@ -314,23 +325,28 @@ test('request creation failure keeps the draft at confirm and shows a fallback; 
   assert.equal(await store.get(PSID), null);
 });
 
-test('menu/contact abort the flow and go to the legacy chatbot; back goes one step inside the flow; legacy postbacks preserved', async () => {
-  const { messenger, axios, store } = makeMessenger();
+test('restart/menu abort the flow and show the welcome node; contact goes to legacy chat; back goes one step inside the flow', async () => {
+  const { messenger, axios, store } = makeMessenger({ content: CONTENT });
   await messenger.handleEntry({ id: '111', messaging: [postback('apply'), quick('product:cons_loan'), say('Бат Болд')] });
   assert.equal((await store.get(PSID)).state, 'phone');
   await messenger.handleEntry({ id: '111', messaging: [postback('back')] });
   assert.equal((await store.get(PSID)).state, 'name');
-  await messenger.handleEntry({ id: '111', messaging: [postback('menu')] });
-  assert.equal(await store.get(PSID), null);
-  const chats = axios.calls.post.filter(call => call.url === 'http://api.test/api/chat');
-  assert.deepEqual(chats.map(call => call.data.message), ['menu']);
-  assert.equal(chats[0].data.sessionId, `fb_${PSID}`);
+  await messenger.handleEntry({ id: '111', messaging: [postback('restart')] });
+  assert.equal(await store.get(PSID), null, 'restart clears the session');
+  assert.equal(axios.calls.post.filter(call => call.url.endsWith('/api/chat')).length, 0);
+  const welcome = sent(axios).at(-1);
+  assert.match(welcome.text, /Солонго Капитал/);
+  assert.deepEqual(welcome.quick_replies.map(reply => reply.payload), ['loans', 'trust', 'ads', 'payment']);
   await messenger.handleEntry({ id: '111', messaging: [postback('contact'), postback('back'), say('Хүү хэд вэ?')] });
-  assert.deepEqual(axios.calls.post.filter(call => call.url.endsWith('/api/chat')).map(call => call.data.message), ['menu', 'contact', 'back', 'Хүү хэд вэ?']);
+  const chats = axios.calls.post.filter(call => call.url.endsWith('/api/chat'));
+  assert.deepEqual(chats.map(call => call.data.message), ['contact', 'back', 'Хүү хэд вэ?']);
+  assert.equal(chats[0].data.sessionId, `fb_${PSID}`);
   assert.ok(texts(axios).includes('Сайн байна уу'));
+  await messenger.handleEntry({ id: '111', messaging: [say('Төлөлт хийх')] });
+  assert.match(texts(axios).at(-1), /Хаан банк/, 'typed menu titles behave like the buttons');
 });
 
-test('legacy chat cards, product card, ACTION token and failures behave as before', async () => {
+test('free text: legacy reply truncated to 600 chars, followed by [Зээл][Итгэлцэл][Цэс]; no carousels; ACTION token and failures handled', async () => {
   let reply = { reply: 'Тооцоолол [ACTION: loan_request]' };
   const ax = fakeAxios();
   const originalPost = ax.post.bind(ax);
@@ -338,20 +354,81 @@ test('legacy chat cards, product card, ACTION token and failures behave as befor
   const { messenger } = makeMessenger({ axios: ax });
   await messenger.handleEntry({ id: '111', messaging: [say('a')] });
   assert.match(texts(ax).at(-1), /Зээлийн хүсэлт: https:\/\/www\.scm\.mn\/loan-request/);
-  reply = { reply: 'Сонго', cards: [{ title: 'Бизнес', productUrl: '/loans/biz', imageUrl: '/img/a.png' }, { noTitle: true }] };
+  assert.deepEqual(sent(ax).at(-1).quick_replies.map(item => [item.title, item.payload]), [['Зээл', 'loans'], ['Итгэлцэл', 'trust'], ['Цэс', 'restart']]);
+  reply = { reply: 'Сонго', cards: [{ title: 'Бизнес', productUrl: '/loans/biz' }], productCard: { title: 'Карт' } };
   await messenger.handleEntry({ id: '111', messaging: [say('b')] });
-  const carousel = sent(ax).at(-1).attachment.payload.elements;
-  assert.equal(carousel.length, 1);
-  assert.equal(carousel[0].image_url, 'https://www.scm.mn/img/a.png');
-  reply = { reply: 'Карт', productCard: { title: 'Карт', productUrl: '/p', hasUserTypeDocs: true } };
+  assert.equal(sent(ax).at(-1).text, 'Сонго');
+  assert.ok(sent(ax).every(message => !message.attachment), 'no long product carousels');
+  reply = { reply: `${'я'.repeat(2000)} [ACTION: loan_request]` };
   await messenger.handleEntry({ id: '111', messaging: [say('c')] });
-  assert.equal(sent(ax).at(-1).attachment.payload.elements[0].buttons[0].payload, 'documents');
+  const long = sent(ax).at(-1).text;
+  assert.ok(long.length <= 600);
+  assert.match(long, /loan-request$/, 'link kept inside the limit');
   assert.deepEqual(stripChatControlTokens('Х [OPTIONS: а, б] [ACTION: loan_request]'), { cleanText: 'Х', options: ['а', 'б'], action: 'loan_request' });
   const broken = fakeAxios();
   broken.post = async url => { if (url.endsWith('/api/chat')) throw new Error('chat down'); broken.calls.post.push({ url }); return { data: {} }; };
   const failing = makeMessenger({ axios: broken });
   await failing.messenger.handleEntry({ id: '111', messaging: [say('x')] });
   assert.equal(broken.calls.post.length, 1, 'fallback apology sent');
+});
+
+test('node adapter: generic template <=10 cards, <=3 buttons, title/subtitle <=80; quick replies <=13, title <=20, on the last message', () => {
+  const cards = Array.from({ length: 12 }, (_, i) => ({ title: 'я'.repeat(120), subtitle: 'ю'.repeat(120), imageUrl: 'https://x/y.png', buttons: [
+    { kind: 'postback', title: 'Нэг '.repeat(10), payload: `terms:k${i}` }, { kind: 'url', title: 'Хоёр', url: 'https://www.scm.mn/calculator' },
+    { kind: 'postback', title: 'Гурав', payload: 'a' }, { kind: 'postback', title: 'Дөрөв', payload: 'b' }] }));
+  const replies = Array.from({ length: 20 }, (_, i) => ({ title: 'ы'.repeat(30), payload: `p${i}` }));
+  const messages = nodeToMessengerMessages({ text: 'Мэндчилгээ', cards, quickReplies: replies });
+  assert.equal(messages.length, 2, 'text and template are separate messages');
+  assert.equal(messages[0].quick_replies, undefined);
+  const elements = messages[1].attachment.payload.elements;
+  assert.equal(messages[1].attachment.payload.template_type, 'generic');
+  assert.equal(elements.length, 10);
+  assert.ok(elements.every(el => el.title.length <= 80 && el.subtitle.length <= 80 && el.buttons.length === 3 && el.buttons.every(b => b.title.length <= 20)));
+  assert.deepEqual(elements[0].buttons.map(b => b.type), ['postback', 'web_url', 'postback']);
+  assert.equal(elements[0].buttons[1].url, 'https://www.scm.mn/calculator');
+  assert.equal(messages[1].quick_replies.length, 13);
+  assert.ok(messages[1].quick_replies.every(reply => reply.title.length <= 20 && reply.content_type === 'text'));
+  assert.deepEqual(nodeToMessengerMessages({ text: 'x', quickReplies: [{ title: 'А', payload: 'a' }] }), [{ text: 'x', quick_replies: [{ content_type: 'text', title: 'А', payload: 'a' }] }]);
+  assert.equal(nodeToMessengerMessages({}).length, 1, 'empty node still yields a fallback text');
+  assert.ok(nodeToMessengerMessages({ text: 'я'.repeat(5000) }).every(message => message.text.length <= 1900));
+});
+
+test('menu payloads send nodes: loans carousel, terms text, trust, payment, ads; a node interrupts the application', async () => {
+  const posts = [{ id: 'p_1', message: 'Зар\nдэлгэрэнгүй', permalink_url: 'https://www.facebook.com/p/1' }];
+  const { messenger, axios, store } = makeMessenger({ content: CONTENT, axios: fakeAxios({ posts }) });
+  await messenger.handleEntry({ id: '111', messaging: [postback('loans')] });
+  const loans = sent(axios).at(-1).attachment.payload.elements;
+  assert.deepEqual(loans.map(el => el.title), ['Хэрэглээний зээл']);
+  assert.deepEqual(loans[0].buttons.map(b => b.payload || b.url), ['terms:cons_loan', 'apply:cons_loan', 'https://www.scm.mn/calculator?product=cons_loan&source=messenger']);
+  await messenger.handleEntry({ id: '111', messaging: [quick('terms:cons_loan')] });
+  assert.match(texts(axios).at(-1), /Иргэн/);
+  await messenger.handleEntry({ id: '111', messaging: [postback('trust')] });
+  assert.deepEqual(sent(axios).at(-1).attachment.payload.elements[0].buttons.map(b => b.url), ['https://www.scm.mn/trust-request?source=messenger', 'https://www.scm.mn/trust-calculator?source=messenger']);
+  await messenger.handleEntry({ id: '111', messaging: [postback('ads')] });
+  assert.deepEqual(sent(axios).at(-1).attachment.payload.elements[0].buttons.map(b => b.payload || b.url), ['https://www.facebook.com/p/1', 'apply:post:p_1']);
+  await messenger.handleEntry({ id: '111', messaging: [postback('payment')] });
+  assert.match(texts(axios).at(-1), /Хаан банк/);
+  await messenger.handleEntry({ id: '111', messaging: [postback('apply:cons_loan'), postback('loans')] });
+  assert.equal(await store.get(PSID), null, 'a menu node interrupts the in-chat application');
+  assert.ok(axios.calls.post.every(call => /\/me\/messages$/.test(call.url)), 'read-only toward the Page');
+});
+
+test('apply:<productKey> starts the in-chat application with the product preselected; apply:post:<id> keeps the post', async () => {
+  const { messenger, axios, store, requests } = makeMessenger({ content: CONTENT });
+  await messenger.handleEntry({ id: '111', messaging: [postback('apply:cons_loan')] });
+  assert.deepEqual(await store.get(PSID), { state: 'name', draft: { productKey: 'cons_loan' }, postId: '' });
+  assert.match(texts(axios).join('\n'), /Хэрэглээний зээл/);
+  for (const e of [say('Бат Болд'), say('99001234'), say('5 сая'), say('12'), quick('confirm')]) await messenger.handleEntry({ id: '111', messaging: [e] });
+  assert.equal(requests[0].productKey, 'cons_loan');
+  assert.equal(requests[0].postId, '');
+  await messenger.handleEntry({ id: '111', messaging: [postback('apply:post:p_9')] });
+  assert.deepEqual(await store.get(PSID), { state: 'product', draft: {}, postId: 'p_9' });
+  await messenger.handleEntry({ id: '111', messaging: [postback('apply:car_loan')] });
+  assert.equal((await store.get(PSID)).draft.productKey, 'car_purchase_loan', 'car_loan content key maps to the purchase product');
+  await messenger.handleEntry({ id: '111', messaging: [postback('apply:unknown_key')] });
+  assert.equal((await store.get(PSID)).state, 'product', 'unknown key falls back to the product step');
+  assert.equal(startApplication({ productKey: 'cons_loan' }).session.state, 'name');
+  assert.equal(startApplication({ productKey: 'nope' }).session.state, 'product');
 });
 
 test('Zentro page guard, echoes, duplicate mids and bad senders are ignored', async () => {
@@ -410,7 +487,7 @@ test('graph client blocks every write path except me/messages and me/messenger_p
 
 // ---------- status / profile ----------
 test('status reports page match, webhook subscription, profile and shared callback expectation without leaking secrets', async () => {
-  const profile = { get_started: { payload: 'menu' }, persistent_menu: buildMessengerProfile().persistent_menu };
+  const profile = { get_started: { payload: 'restart' }, persistent_menu: buildMessengerProfile().persistent_menu };
   const { messenger } = makeMessenger({
     axios: fakeAxios({ profile }),
     env: { FB_APP_SECRET: APP_SECRET, ZENTRO_META_APP_SECRET: 'zentro-secret-value', ZENTRO_FB_PAGE_ID: '999', PUBLIC_API_BASE_URL: 'https://api.scm.mn' },
@@ -517,7 +594,7 @@ test('webhook POST: signature enforced when FB_APP_SECRET is set; legacy unsigne
 });
 
 test('admin endpoints: admin only; status never leaks token; profile reconfigure is logged', async () => {
-  const profile = { get_started: { payload: 'menu' }, persistent_menu: buildMessengerProfile().persistent_menu };
+  const profile = { get_started: { payload: 'restart' }, persistent_menu: buildMessengerProfile().persistent_menu };
   const h = routeHarness({ env: { FB_APP_SECRET: APP_SECRET }, axios: fakeAxios({ profile }) });
   const employee = { role: 'employee' };
   assert.equal((await h.invoke('get', '/api/admin/facebook/status', { user: employee })).code, 403);

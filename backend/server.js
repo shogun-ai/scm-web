@@ -39,6 +39,7 @@ import { classifyTransaction as classifyStatementTransaction, DEFAULT_INCOME_WEI
 import { registerLoanIntakeRoutes, canAccessRequest, isRequestManager, isRequestStaff, requestScope, isAllowedLoanRemoteUrl, automationWriteQuery, researchVisibilityStages, assertLinkedResearchAccess, TRUST_PROXY_HOPS, stripTaskSecrets } from './loanIntake.js';
 import nodemailer from 'nodemailer';
 import LoanFormConfig from './models/LoanFormConfig.js';
+import { createBotContentSource, registerBotRoutes } from './botEngine.js';
 import { createScmMessenger, registerScmMessengerRoutes, createMongoSessionStore, createSharedWebhookForwarder } from './scmMessenger.js';
 import { applyLoanTaskSchema, registerLoanTaskRoutes, legacyLoanPostGone, taskLockBlocks, sanitizeLegacyLoanWrite } from './loanTasks.js';
 import { createMailer, isValidEmailAddress } from './mailer.js';
@@ -2961,10 +2962,14 @@ const loanTasks = registerLoanTaskRoutes({
 });
 
 // D18: SCM Messenger (Page posts carousel, in-chat application, admin status/profile). Read-only toward the Page.
+// D19: one bot content source for Messenger and the website chatbot (cached 60s, invalidated on admin PUT).
+const botContent = createBotContentSource({ ProductContent, SiteConfig });
 const scmMessenger = createScmMessenger({
     axios, env: process.env, sessionStore: createMongoSessionStore(mongoose), createRequest: input => loanTasks.createMessengerTask(input),
+    content: { loadProducts: botContent.loadProducts, loadSetting: botContent.loadSetting },
 });
 registerScmMessengerRoutes({ app, authenticateUser, requireAdmin, createLog, messenger: scmMessenger });
+registerBotRoutes({ app, authenticateUser, requireAdmin, source: botContent, getPosts: () => scmMessenger.getPosts(), SiteConfig, createLog, limiter: createSafetyNoticeGuard({ max: 120 }) });
 sharedWebhookForwarder = createSharedWebhookForwarder({ messenger: scmMessenger });
 
 // D9: legacy unprotected public submission is closed (registered first, so the handler below is unreachable).

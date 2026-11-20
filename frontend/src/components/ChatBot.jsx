@@ -96,6 +96,7 @@ const ChatBot = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState([createInitialMessage()]);
+  const [hasNodes, setHasNodes] = useState(false);
   const sessionIdRef = useRef(null);
   const messagesEndRef = useRef(null);
 
@@ -118,6 +119,7 @@ const ChatBot = () => {
   useEffect(() => {
     if (!isOpen) return;
     const loadCards = async () => {
+      if (await loadNode('restart', null, { replace: true, silent: true })) return;
       try {
         const sid = ensureSessionId();
         const res = await axios.post(
@@ -136,6 +138,7 @@ const ChatBot = () => {
       }
     };
     if (messages.length === 1 && messages[0]?.cards?.length) loadCards();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   useEffect(() => {
@@ -144,18 +147,91 @@ const ChatBot = () => {
     }
   }, [isOpen, messages]);
 
-  const resetChat = () => {
+  const resetChat = async () => {
     ensureSessionId(true);
     setMessages([createInitialMessage()]);
     setInput('');
     setIsLoading(false);
+    await loadNode('restart', null, { replace: true, silent: true });
   };
 
-  const navigateToLoanRequest = () => {
-    const path = '/loan-request';
-    window.history.pushState({ view: 'loan_request', path }, '', path);
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { view: 'loan_request', path } }));
+  const navigateInternal = (path) => {
+    window.history.pushState({ path }, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { path } }));
     setIsOpen(false);
+  };
+
+  const navigateToLoanRequest = (productKey) => {
+    const path = productKey && typeof productKey === 'string'
+      ? `/loan-request?product=${encodeURIComponent(productKey)}`
+      : '/loan-request';
+    navigateInternal(path);
+  };
+
+  // Backend node (D19): {text, cards:[{title, subtitle, imageUrl, buttons}], quickReplies:[{title, payload}]}
+  const loadNode = async (nodeId, displayTitle, { replace = false, silent = false } = {}) => {
+    if (!replace && isLoading) return false;
+    if (displayTitle) setMessages((prev) => [...prev, { role: 'user', text: displayTitle }]);
+    if (!silent) setIsLoading(true);
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/bot/node/${encodeURIComponent(nodeId)}`, { timeout: 15000 });
+      const node = res.data?.node && typeof res.data.node === 'object' ? res.data.node : res.data;
+      if (!node || typeof node !== 'object' || (!node.text && !Array.isArray(node.cards) && !Array.isArray(node.quickReplies))) {
+        throw new Error('empty node');
+      }
+      const cards = (Array.isArray(node.cards) ? node.cards : []).map((card) => ({ ...card, nodeCard: true }));
+      const quickReplies = (Array.isArray(node.quickReplies) ? node.quickReplies : []).filter((q) => q && q.title && q.payload);
+      const next = { role: 'ai', text: String(node.text || ''), options: [], cards, quickReplies, fromNode: true };
+      setMessages((prev) => (replace ? [next] : [...prev, next]));
+      setHasNodes(true);
+      return true;
+    } catch (error) {
+      console.warn('ChatBot node load failed:', error?.message);
+      if (!silent) {
+        setMessages((prev) => [...prev, {
+          role: 'ai',
+          text: 'Уучлаарай, мэдээллийг ачаалж чадсангүй. Дахин оролдоно уу.',
+          options: ['Үндсэн цэс']
+        }]);
+      }
+      return false;
+    } finally {
+      if (!silent) setIsLoading(false);
+    }
+  };
+
+  const handlePayload = (payload, title) => {
+    const value = String(payload || '');
+    if (value.startsWith('apply:post:')) {
+      navigateToLoanRequest();
+      return;
+    }
+    if (value.startsWith('apply:')) {
+      navigateToLoanRequest(value.slice('apply:'.length));
+      return;
+    }
+    loadNode(value, title);
+  };
+
+  const handleBotButton = (button) => {
+    if (!button) return;
+    if (button.kind === 'url' || (button.url && !button.payload)) {
+      const raw = String(button.url || '').trim();
+      if (!raw) return;
+      try {
+        const parsed = new URL(raw, WEB_BASE_URL);
+        const sameSite = ['www.scm.mn', 'scm.mn'].includes(parsed.hostname) || parsed.origin === WEB_BASE_URL;
+        if (sameSite && /^https?:$/.test(parsed.protocol)) {
+          navigateInternal(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+          return;
+        }
+        if (/^https?:$/.test(parsed.protocol)) window.open(parsed.href, '_blank', 'noopener,noreferrer');
+      } catch {
+        // Invalid URL: ignore.
+      }
+      return;
+    }
+    handlePayload(button.payload, button.title);
   };
 
   const navigateToProduct = (productUrl) => {
@@ -306,32 +382,42 @@ const ChatBot = () => {
                 </div>
               </div>
 
-              <button onClick={() => setIsOpen(false)} className="text-white/70 transition-colors hover:text-white">
-                <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <button onClick={() => setIsOpen(false)} aria-label="Чатыг хаах" className="rounded text-white/70 transition-colors hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white">
+                <svg aria-hidden="true" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                onClick={() => sendMessage('menu', 'Үндсэн цэс')}
-                disabled={isLoading}
-                className="rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/25 disabled:opacity-60"
+              {!hasNodes && (
+                <button
+                  onClick={() => sendMessage('menu', 'Үндсэн цэс')}
+                  disabled={isLoading}
+                  className="rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-60"
+                >
+                  Үндсэн цэс
+                </button>
+              )}
+              <a
+                href="https://m.me/Solongo.Capital"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
               >
-                Үндсэн цэс
-              </button>
+                Messenger-ээр үргэлжлүүлэх
+              </a>
               <button
                 onClick={resetChat}
                 disabled={isLoading}
-                className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-[#003B5C] transition hover:bg-slate-100 disabled:opacity-60"
+                className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-[#003B5C] transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-60"
               >
-                Шинэ чат
+                Дахин эхлүүлэх
               </button>
             </div>
           </div>
 
-          <div className="flex-1 space-y-6 overflow-y-auto bg-slate-50/50 p-5">
+          <div role="log" aria-live="polite" aria-relevant="additions" aria-label="Чатын харилцан яриа" className="flex-1 space-y-6 overflow-y-auto bg-slate-50/50 p-5">
             {messages.map((message, index) => (
               <div
                 key={index}
@@ -345,7 +431,7 @@ const ChatBot = () => {
                         : 'rounded-tl-none border border-gray-100 bg-white text-gray-700'
                     }`}
                   >
-                    {message.text.split('\n').map((line, lineIndex) => (
+                    {String(message.text || '').split('\n').map((line, lineIndex) => (
                       <p
                         key={lineIndex}
                         className={`mb-1 ${line.includes(':') && message.role !== 'user' ? 'font-bold text-[#003B5C]' : ''}`}
@@ -362,6 +448,16 @@ const ChatBot = () => {
                           key={card.id || `${card.title}-${cardIndex}`}
                           className="min-w-[185px] overflow-hidden rounded-2xl border border-gray-100 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
                         >
+                          {card.nodeCard ? (
+                            card.imageUrl && (
+                              <img
+                                src={toAbsoluteUrl(card.imageUrl)}
+                                alt=""
+                                className="h-24 w-full object-cover"
+                                loading="lazy"
+                              />
+                            )
+                          ) : (
                           <button onClick={() => handleCardClick(card)} className="w-full text-left">
                             {card.imageUrl && (
                               <img
@@ -372,7 +468,18 @@ const ChatBot = () => {
                               />
                             )}
                           </button>
+                          )}
                           <div className="space-y-3 p-3">
+                            {card.nodeCard ? (
+                              <div>
+                                <h4 className="text-[13px] font-bold text-[#003B5C]">{card.title}</h4>
+                                {card.subtitle && (
+                                  <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-slate-600">
+                                    {String(card.subtitle).replace(/\*\*/g, '')}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
                             <button onClick={() => handleCardClick(card)} className="w-full text-left">
                             <h4 className="text-[13px] font-bold text-[#003B5C]">{card.title}</h4>
                             {card.subtitle && (
@@ -381,13 +488,14 @@ const ChatBot = () => {
                               </p>
                             )}
                             </button>
-                            {card.buttons?.length > 0 && (
+                            )}
+                            {Array.isArray(card.buttons) && card.buttons.length > 0 && (
                               <div className="grid gap-2">
                                 {card.buttons.slice(0, 3).map((button, buttonIndex) => (
                                   <button
                                     key={`${button.title}-${buttonIndex}`}
-                                    onClick={() => handleCardClick({ ...button, title: button.title })}
-                                    className="rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-bold text-[#003B5C] transition hover:bg-[#003B5C] hover:text-white"
+                                    onClick={() => (card.nodeCard ? handleBotButton(button) : handleCardClick({ ...button, title: button.title }))}
+                                    className="rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-bold text-[#003B5C] transition hover:bg-[#003B5C] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#003B5C]"
                                   >
                                     {button.title}
                                   </button>
@@ -443,6 +551,21 @@ const ChatBot = () => {
                     </div>
                   )}
 
+                  {message.role === 'ai' && message.quickReplies?.length > 0 && (
+                    <div className="mt-3 ml-1 flex flex-wrap gap-2">
+                      {message.quickReplies.map((q, qIndex) => (
+                        <button
+                          key={`${q.payload}-${qIndex}`}
+                          onClick={() => handlePayload(q.payload, q.title)}
+                          disabled={isLoading}
+                          className="rounded-full border border-[#00A651] bg-white px-4 py-2 text-[11px] font-bold text-[#007A3D] shadow-sm transition-all hover:bg-[#00A651] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00A651] active:scale-95 disabled:opacity-60"
+                        >
+                          {q.title}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {message.role === 'ai' && !message.cards?.length && message.options?.length > 0 && (
                     <div className="mt-3 ml-1 flex flex-wrap gap-2">
                       {message.options.map((option, optionIndex) => (
@@ -482,10 +605,12 @@ const ChatBot = () => {
                 disabled={isLoading}
                 className="flex-1 bg-transparent py-3 text-sm outline-none disabled:opacity-50"
                 placeholder="Асуултаа бичнэ үү..."
+                aria-label="Асуултаа бичнэ үү"
               />
               <button
                 onClick={() => sendMessage()}
                 disabled={isLoading}
+                aria-label="Илгээх"
                 className="p-2 text-[#003B5C] transition-transform hover:scale-110 disabled:opacity-30"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -500,6 +625,8 @@ const ChatBot = () => {
 
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-label={isOpen ? 'Чатыг хаах' : 'Чатыг нээх'}
+        aria-expanded={isOpen}
         className="group rounded-full border-2 border-white/20 bg-gradient-to-tr from-[#003B5C] to-[#00A651] p-5 text-white shadow-[0_20px_50px_rgba(0,166,81,0.3)] transition-all hover:scale-110 active:scale-90"
       >
         {isOpen ? (

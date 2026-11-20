@@ -4,14 +4,14 @@
 // Dependencies are injected (axios, session store, request creator, clock) so everything is testable without Meta/Mongo.
 import crypto from 'node:crypto';
 import { LOAN_PRODUCTS, PRODUCTS_MAP } from '../shared/loanFormConfig.js';
+import { buildNode, SITE_URL, CONTACT_PHONE, MENU_REPLY } from './botEngine.js';
 
-export const SITE_URL = 'https://www.scm.mn';
+export { SITE_URL, CONTACT_PHONE };
 export const LOAN_REQUEST_URL = `${SITE_URL}/loan-request`;
 export const DEFAULT_EXPECTED_PAGE = 'Solongo.Capital';
 export const POSTS_CACHE_MS = 5 * 60 * 1000;
 export const SESSION_TTL_SECONDS = 24 * 3600;
 export const REQUESTS_PER_HOUR = 3;
-export const CONTACT_PHONE = '7599-1919';
 export const SHARED_WEBHOOK_PATH = '/api/zentro/facebook/webhook';
 export const LEGACY_WEBHOOK_PATH = '/api/messenger/webhook';
 const MAX_AMOUNT = 1e10;
@@ -46,7 +46,7 @@ export function stripChatControlTokens(reply = '') {
   return { cleanText, options, action: actionMatch?.[1]?.trim() || '' };
 }
 
-export const buildQuickReplies = (items = []) => items.slice(0, 11).map(item => ({
+export const buildQuickReplies = (items = []) => items.slice(0, 13).map(item => ({
   content_type: 'text', title: String(item.title).slice(0, 20), payload: String(item.payload ?? item.title).slice(0, 1000),
 }));
 
@@ -87,20 +87,43 @@ export function buildPostsCarousel(posts = []) {
   return (Array.isArray(posts) ? posts : []).filter(post => post?.id && (post.message || post.full_picture)).slice(0, 10).map(buildPostElement);
 }
 
-// Persistent menu + get started (§18). Messenger shows the first 3 items in the composer; the rest sit under "more".
+// Persistent menu + get started (§19). Messenger shows the first 3 items in the composer; the rest sit under "more".
 export function buildMessengerProfile() {
   return {
-    get_started: { payload: 'menu' },
+    get_started: { payload: 'restart' },
     persistent_menu: [{
       locale: 'default', composer_input_disabled: false,
       call_to_actions: [
-        { type: 'web_url', title: 'Зээлийн хүсэлт', url: `${LOAN_REQUEST_URL}?source=messenger`, webview_height_ratio: 'full' },
-        { type: 'postback', title: 'Сүүлийн мэдээ', payload: 'posts' },
-        { type: 'postback', title: 'Үндсэн цэс', payload: 'menu' },
-        { type: 'postback', title: 'Холбоо барих', payload: 'contact' },
+        { type: 'postback', title: 'Дахин эхлүүлэх', payload: 'restart' },
+        { type: 'postback', title: 'Зээл', payload: 'loans' },
+        { type: 'postback', title: 'Итгэлцэл', payload: 'trust' },
+        { type: 'postback', title: 'Идэвхтэй зээлийн зар', payload: 'ads' },
+        { type: 'postback', title: 'Төлөлт хийх', payload: 'payment' },
       ],
     }],
   };
+}
+
+// Node (botEngine) -> ordered Messenger messages: text chunks, one generic template (<=10 cards, <=3 buttons, title/subtitle <=80),
+// quick replies (<=13, title <=20) attached to the last message. Messenger forbids text + template in one message.
+export function nodeToMessengerMessages(node = {}) {
+  const messages = [];
+  for (const chunk of splitText(node.text || '', 1900, 5)) messages.push({ text: chunk });
+  const elements = (Array.isArray(node.cards) ? node.cards : []).slice(0, 10).map(cardItem => {
+    const buttons = (Array.isArray(cardItem.buttons) ? cardItem.buttons : []).slice(0, 3).map(button => (button.kind === 'url'
+      ? { type: 'web_url', title: String(button.title).slice(0, 20), url: String(button.url), webview_height_ratio: 'full' }
+      : { type: 'postback', title: String(button.title).slice(0, 20), payload: String(button.payload).slice(0, 1000) }));
+    const element = { title: String(cardItem.title || 'Солонго Капитал').slice(0, 80) };
+    if (cardItem.subtitle) element.subtitle = String(cardItem.subtitle).slice(0, 80);
+    if (cardItem.imageUrl) element.image_url = cardItem.imageUrl;
+    if (buttons.length) element.buttons = buttons;
+    return element;
+  });
+  if (elements.length) messages.push({ attachment: { type: 'template', payload: { template_type: 'generic', elements } } });
+  if (!messages.length) messages.push({ text: FALLBACK_REPLY });
+  const replies = (Array.isArray(node.quickReplies) ? node.quickReplies : []).slice(0, 13);
+  if (replies.length) messages[messages.length - 1].quick_replies = buildQuickReplies(replies);
+  return messages;
 }
 
 // ---------- In-chat application: validation ----------
@@ -167,7 +190,7 @@ const prompts = {
       '',
       'Баталгаажуулснаар таны мэдээллийг зээлийн хүсэлт хянан шийдвэрлэх зорилгоор боловсруулахыг зөвшөөрч байна.',
     ].join('\n'),
-    quickReplies: [{ title: 'Баталгаажуулах', payload: 'confirm' }, { title: 'Засах', payload: 'restart' }, CANCEL_REPLY],
+    quickReplies: [{ title: 'Баталгаажуулах', payload: 'confirm' }, { title: 'Засах', payload: 'edit' }, CANCEL_REPLY],
   }),
 };
 const errorText = {
@@ -179,11 +202,21 @@ const errorText = {
   confirm: 'Доорх товчоор баталгаажуулах, засах эсвэл цуцлах сонголтоо хийнэ үү.',
 };
 
-export const startApplication = ({ postId = '' } = {}) => ({
-  session: { state: 'product', draft: {}, postId: /^[A-Za-z0-9_-]{1,100}$/.test(postId) ? postId : '' },
-  messages: [{ text: 'Зээлийн хүсэлтийг энд товч бөглөж болно. Баримтаа дараа нь сайт дээр нэмнэ.' }, prompts.product()],
-  action: null,
-});
+const POST_ID_RE = /^[A-Za-z0-9_-]{1,100}$/;
+// ProductContent keys differ from the in-chat product ids for car_loan (purchase/collateral variants): default to purchase.
+const PRODUCT_KEY_ALIASES = { car_loan: 'car_purchase_loan' };
+export const resolveProductKey = key => { const value = PRODUCT_KEY_ALIASES[key] || key; return PRODUCTS_MAP[value] ? value : ''; };
+
+// { postId?, productKey? }: a valid productKey skips the product step.
+export const startApplication = ({ postId = '', productKey = '' } = {}) => {
+  const session = { state: 'product', draft: {}, postId: POST_ID_RE.test(postId) ? postId : '' };
+  const key = resolveProductKey(productKey);
+  const intro = { text: 'Зээлийн хүсэлтийг энд товч бөглөж болно. Баримтаа дараа нь сайт дээр нэмнэ.' };
+  if (!key) return { session, messages: [intro, prompts.product()], action: null };
+  session.state = 'name';
+  session.draft = { productKey: key };
+  return { session, messages: [intro, { text: `Бүтээгдэхүүн: ${PRODUCTS_MAP[key]}` }, prompts.name()], action: null };
+};
 
 // advance(session, { payload?, text? }) -> { session|null, messages, action: null|'submit'|'cancel' }
 // Never mutates the input session. A null session means the conversation ended.
@@ -201,11 +234,11 @@ export function advance(session, input = {}) {
 
   const lowered = (payload || text).toLowerCase();
   if (payload === 'cancel' || ['цуцлах', 'cancel'].includes(lowered)) {
-    return { session: null, messages: [{ text: 'Хүсэлтийг цуцаллаа. Дахин хүсвэл "Зээлийн хүсэлт" гэж бичнэ үү.', quickReplies: [{ title: 'Цэс', payload: 'menu' }] }], action: 'cancel' };
+    return { session: null, messages: [{ text: 'Хүсэлтийг цуцаллаа. Дахин хүсвэл "Зээлийн хүсэлт" гэж бичнэ үү.', quickReplies: [MENU_REPLY] }], action: 'cancel' };
   }
   if (payload === 'back' || lowered === 'буцах') {
     const index = STATES.indexOf(state);
-    if (index <= 0) return { session: null, messages: [{ text: 'Хүсэлтийг цуцаллаа.', quickReplies: [{ title: 'Цэс', payload: 'menu' }] }], action: 'cancel' };
+    if (index <= 0) return { session: null, messages: [{ text: 'Хүсэлтийг цуцаллаа.', quickReplies: [MENU_REPLY] }], action: 'cancel' };
     return next(STATES[index - 1]);
   }
 
@@ -220,7 +253,7 @@ export function advance(session, input = {}) {
     case 'term': { const term = payload ? null : parseTerm(text); return term ? next('confirm', { term }) : retry(); }
     default: { // confirm
       if (payload === 'confirm') return { session: { ...session, draft }, messages: [], action: 'submit' };
-      if (payload === 'restart') return next('product', { productKey: undefined });
+      if (payload === 'edit' || payload === 'restart') return next('product', { productKey: undefined });
       return retry();
     }
   }
@@ -294,11 +327,16 @@ export function createMongoSessionStore(mongoose) {
 }
 
 // ---------- Messenger service ----------
-const GLOBAL_LEGACY = new Set(['menu', 'back', 'contact']);
+const GLOBAL_LEGACY = new Set(['back', 'contact']);
+const NODE_VALUES = new Set(['restart', 'menu', 'loans', 'trust', 'ads', 'payment']);
+// Typed text equal to a menu title behaves like the button (only outside the in-chat application).
+const NODE_TEXTS = new Map([['зээл', 'loans'], ['итгэлцэл', 'trust'], ['идэвхтэй зээлийн зар', 'ads'], ['төлөлт хийх', 'payment'], ['дахин эхлүүлэх', 'restart'], ['цэс', 'restart'], ['start', 'restart']]);
+export const FREE_TEXT_MAX = 600;
+const FREE_TEXT_REPLIES = [{ title: 'Зээл', payload: 'loans' }, { title: 'Итгэлцэл', payload: 'trust' }, MENU_REPLY];
 const APPLY_TEXTS = new Set(['зээлийн хүсэлт', 'зээлийн хүсэлт өгөх', 'apply', 'хүсэлт өгөх']);
 
 export function createScmMessenger({
-  axios, env = process.env, sessionStore, createRequest, rateLimiter = createPsidLimiter(), now = Date.now, logger = console,
+  axios, env = process.env, sessionStore, createRequest, content = {}, rateLimiter = createPsidLimiter(), now = Date.now, logger = console,
 } = {}) {
   const graph = createGraphClient({ axios, env });
   // ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD: events of the Zentro Page are never handled by SCM logic.
@@ -334,7 +372,7 @@ export function createScmMessenger({
 
   async function showPosts(psid) {
     const elements = buildPostsCarousel(await getPosts());
-    if (!elements.length) return sendText(psid, 'Одоогоор шинэ мэдээ алга байна.', [{ title: 'Зээлийн хүсэлт', payload: 'apply' }, { title: 'Цэс', payload: 'menu' }]);
+    if (!elements.length) return sendText(psid, 'Одоогоор шинэ мэдээ алга байна.', [{ title: 'Зээлийн хүсэлт', payload: 'apply' }, MENU_REPLY]);
     return sendGeneric(psid, elements);
   }
 
@@ -350,17 +388,23 @@ export function createScmMessenger({
   }
 
   // --- legacy chatbot (/api/chat) path, unchanged behaviour ---
+  // Free text goes to the legacy chatbot, but only its short text is relayed (<=600 chars) + quick replies; no product carousels (§19).
   async function legacyChat(psid, text, ctx) {
     const response = await axios.post(`${baseUrlOf(ctx)}/api/chat`, { sessionId: `fb_${psid}`, message: text, history: [] }, { headers: { 'x-session-id': `fb_${psid}` }, timeout: 30000 });
     const chat = response.data || { reply: '' };
     const { cleanText, action } = stripChatControlTokens(chat.reply || '');
-    if (chat.productCard) return sendGeneric(psid, [legacyProductElement(chat.productCard, cleanText)]);
-    if (Array.isArray(chat.cards) && chat.cards.length) {
-      if (cleanText) await sendText(psid, cleanText);
-      const elements = chat.cards.filter(card => card?.title && (card.command || card.productUrl || card.linkUrl || card.buttons?.length)).slice(0, 10).map(card => legacyCardElement(card, cleanText));
-      return elements.length ? sendGeneric(psid, elements) : sendText(psid, cleanText || 'Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.');
-    }
-    return sendText(psid, `${cleanText}${action === 'loan_request' ? `\n\nЗээлийн хүсэлт: ${LOAN_REQUEST_URL}` : ''}`.trim());
+    const suffix = action === 'loan_request' ? `
+
+Зээлийн хүсэлт: ${LOAN_REQUEST_URL}` : '';
+    const base = String(cleanText || chat.productCard?.title || '').trim();
+    const body = `${base.length + suffix.length > FREE_TEXT_MAX ? `${base.slice(0, Math.max(0, FREE_TEXT_MAX - suffix.length - 1)).trimEnd()}…` : base}${suffix}`.trim();
+    return sendText(psid, body || 'Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.', FREE_TEXT_REPLIES);
+  }
+
+  // --- bot nodes (botEngine, §19) ---
+  const nodeCtx = () => ({ loadProducts: content.loadProducts || (async () => []), loadSetting: content.loadSetting || (async () => undefined), getPosts: () => getPosts(), channel: 'messenger' });
+  async function sendNode(psid, nodeId) {
+    for (const message of nodeToMessengerMessages(await buildNode(nodeId, nodeCtx()))) await send(psid, message);
   }
 
   // --- in-chat application ---
@@ -393,8 +437,8 @@ export function createScmMessenger({
     }]);
   }
 
-  async function startFlow(psid, postId) {
-    const started = startApplication({ postId });
+  async function startFlow(psid, options = {}) {
+    const started = startApplication(options);
     await sessionStore.save(psid, started.session);
     return deliver(psid, started.messages);
   }
@@ -418,13 +462,26 @@ export function createScmMessenger({
       const session = await sessionStore.get(psid);
       const inFlow = Boolean(session && STATES.includes(session.state));
       const lowered = value.toLowerCase();
-      if (inFlow && (value === 'menu' || value === 'contact')) await sessionStore.clear(psid);
+      const nodeValue = NODE_VALUES.has(value) || /^(terms|calc):/.test(value) ? value : (!payload && !inFlow ? NODE_TEXTS.get(lowered) : '');
+      const isApply = value === 'apply' || value.startsWith('apply:') || (!payload && !inFlow && APPLY_TEXTS.has(lowered));
+      // Menu / node / apply payloads interrupt a running application (e.g. persistent menu); anything else continues it.
+      const interrupts = nodeValue || value === 'contact' || (payload && isApply);
+      if (inFlow && interrupts) await sessionStore.clear(psid);
       else if (inFlow) return await runApplicationStep(psid, session, payload ? { payload } : { text });
+      if (nodeValue) {
+        if (nodeValue === 'restart' || nodeValue === 'menu') await sessionStore.clear(psid);
+        return await sendNode(psid, nodeValue);
+      }
       if (GLOBAL_LEGACY.has(value)) return await legacyChat(psid, value, ctx);
       if (value === 'posts') return await showPosts(psid);
       if (value === 'site') return await sendButtons(psid, 'Сайт дээр дэлгэрэнгүй бөглөнө үү.', [{ type: 'web_url', title: 'Хүсэлт бөглөх', url: `${LOAN_REQUEST_URL}?source=messenger`, webview_height_ratio: 'full' }]);
       if (value.startsWith('detail:')) return await showDetail(psid, value.slice(7));
-      if (value === 'apply' || value.startsWith('apply:') || (!payload && APPLY_TEXTS.has(lowered))) return await startFlow(psid, value.startsWith('apply:') ? value.slice(6) : '');
+      if (isApply) {
+        const arg = value.startsWith('apply:') ? value.slice(6) : '';
+        if (arg.startsWith('post:')) return await startFlow(psid, { postId: arg.slice(5) });
+        if (resolveProductKey(arg)) return await startFlow(psid, { productKey: arg });
+        return await startFlow(psid, { postId: arg }); // legacy apply:<postId>; invalid ids are dropped
+      }
       return await legacyChat(psid, value, ctx);
     } catch (error) {
       logger.error?.(`[scm-messenger] event failed ${error?.name || 'Error'} code=${error?.fbCode || error?.status || 'n/a'}`);
@@ -485,7 +542,7 @@ export function createScmMessenger({
     if (profileResult.status === 'fulfilled') {
       const profile = Array.isArray(profileResult.value?.data) ? profileResult.value.data[0] : null;
       const first = profile?.persistent_menu?.[0]?.call_to_actions?.[0];
-      out.messengerProfileOk = Boolean(profile?.get_started?.payload === 'menu' && first?.type === 'web_url' && String(first.url || '').includes('/loan-request'));
+      out.messengerProfileOk = Boolean(profile?.get_started?.payload === 'restart' && first?.type === 'postback' && first.payload === 'restart');
     }
     return out;
   }

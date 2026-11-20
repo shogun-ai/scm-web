@@ -14,6 +14,7 @@ import ProfilePage from './admin/ProfilePage';
 import ProfileMenu from './admin/ProfileMenu';
 import AdminSettingsPanel from './admin/AdminSettingsPanel';
 import FacebookStatusPanel from './admin/FacebookStatusPanel';
+import BotContentPanel from './admin/BotContentPanel';
 import TrustMessagePanel from './admin/TrustMessagePanel';
 import InviteUserForm from './admin/InviteUserForm';
 import SafetyNoticesAdmin from './SafetyNoticesAdmin';
@@ -1138,6 +1139,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
                 {navButton('finance', <Activity size={18} />, 'Файл засах')}
                 <button onClick={() => { setActiveTab('cms'); setCmsSubTab(prev => (prev === 'chatbot' ? 'hero' : prev)); }} className={navClass(activeTab === 'cms' && cmsSubTab !== 'chatbot')}><Globe size={18} /> Контент засах</button>
                 <button onClick={() => { setActiveTab('cms'); setCmsSubTab('chatbot'); }} className={navClass(activeTab === 'cms' && cmsSubTab === 'chatbot')}><MessageCircle size={18} /> Чатбот</button>
+                {navButton('botContent', <Settings size={18} />, 'Ботын агуулга')}
               </>)}
             </div>
           )}
@@ -2989,6 +2991,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
 
         {activeTab === 'facebook' && user?.role === 'admin' && (
           <FacebookStatusPanel apiUrl={API_URL} />
+        )}
+
+        {activeTab === 'botContent' && user?.role === 'admin' && (
+          <BotContentPanel apiUrl={API_URL} />
         )}
 
         {activeTab === 'profile' && (
