@@ -39,6 +39,10 @@ export function pathToState(pathname, hash, prods, promos, govItems) {
     if (gov?.isLink) return { view: gov.linkType, item: null, governance: null, scrollTo: null };
     return { view: gov ? 'governance_detail' : 'home', item: null, governance: gov || null, scrollTo: null };
   }
+  // Урилгын холбоос: /admin?setPassword=<token> → нэвтрэх хуудас (Login нууц үг үүсгэх маягтыг үзүүлнэ)
+  if (pathname === '/admin' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('setPassword')) {
+    return { view: 'login', item: null, governance: null, scrollTo: null };
+  }
   const entry = Object.entries(VIEW_PATHS).find(([, p]) => p === pathname);
   if (entry) return { view: entry[0], item: null, governance: null, scrollTo: null };
   return { view: 'not_found', item: null, governance: null, scrollTo: null };

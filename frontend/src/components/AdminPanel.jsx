@@ -9,7 +9,12 @@ import LoanOrigination from './LoanOrigination';
 import LoanTaskBoard from './loanTask/LoanTaskBoard';
 import LoanTaskConfigEditor from './loanTask/LoanTaskConfigEditor';
 import { fetchLoanTaskAvailability } from './loanTask/api';
-import PermissionMatrix from './PermissionMatrix';
+import TaskPermissionMatrix from './admin/TaskPermissionMatrix';
+import ProfilePage from './admin/ProfilePage';
+import ProfileMenu from './admin/ProfileMenu';
+import AdminSettingsPanel from './admin/AdminSettingsPanel';
+import TrustMessagePanel from './admin/TrustMessagePanel';
+import InviteUserForm from './admin/InviteUserForm';
 import SafetyNoticesAdmin from './SafetyNoticesAdmin';
 import HeroSliderSettings from './HeroSliderSettings';
 import ProductTermsEditor from './ProductTermsEditor';
@@ -272,6 +277,8 @@ const NotifyEmailEditor = ({ userId, value, onSaved }) => {
   );
 };
 
+const SHOW_ONBOARDING_NAV = false; // D16: Харилцагч бүртгэл цэсийг түр нууж, код хэвээр хадгална.
+
 const AdminPanel = ({ user, token, onLogout }) => {
   const [activeTab, setActiveTab] = useState('los');
   const [requests, setRequests] = useState([]); 
@@ -293,7 +300,8 @@ const AdminPanel = ({ user, token, onLogout }) => {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'employee', roles: [] });
+  const [inviteNotice, setInviteNotice] = useState(null);
+  const [myPerms, setMyPerms] = useState(null); // null = ачаалаагүй/алдаа → хуучин дүрмээр харуулна
   const [editingUserRoles, setEditingUserRoles] = useState(null); // { userId, roles }
 
   const SCM_ROLES = [
@@ -302,11 +310,6 @@ const AdminPanel = ({ user, token, onLogout }) => {
     { key: 'loan_officer',    label: 'Зээлийн ажилтан' },
     { key: 'finance_manager', label: 'Санхүүгийн менежер' },
   ];
-  const toggleNewRole = (rk) => setNewUser(p => {
-    const has = p.roles.includes(rk);
-    const updated = has ? p.roles.filter(r => r !== rk) : [...p.roles, rk].slice(0, 2);
-    return { ...p, roles: updated };
-  });
   const toggleEditRole = (rk) => setEditingUserRoles(p => {
     if (!p) return p;
     const has = p.roles.includes(rk);
@@ -512,6 +515,25 @@ const AdminPanel = ({ user, token, onLogout }) => {
           setRequests(loanRes.data);
           setSelectedRequest(null);
       } catch (error) { alert("Алдаа гарлаа"); }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    axios.get(`${API_URL}/api/me/permissions`, { timeout: 10000 })
+      .then(res => { if (alive && Array.isArray(res.data?.keys)) setMyPerms(res.data.keys); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [API_URL]);
+
+  const resendInvite = async (target) => {
+    setInviteNotice(null);
+    try {
+      const res = await axios.post(`${API_URL}/api/users/${target._id}/invite`);
+      const state = res.data?.invite?.email?.result || res.data?.email?.result;
+      setInviteNotice(state === 'failed' || state === 'skipped'
+        ? { ok: false, text: `Урилга ${target.email} руу илгээж чадсангүй.` }
+        : { ok: true, text: `Урилга ${target.email} руу илгээгдлээ` });
+    } catch (e) { setInviteNotice({ ok: false, text: e.response?.data?.message || `Урилга ${target.email} руу илгээж чадсангүй.` }); }
   };
 
   const saveContactNote = async () => {
@@ -1084,6 +1106,15 @@ const AdminPanel = ({ user, token, onLogout }) => {
     setChatbotCards(prev => prev.filter(card => card.id !== cardId));
   };
 
+  const navClass = (active) => `w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${active ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`;
+  const navButton = (key, icon, label) => (
+    <button onClick={() => setActiveTab(key)} aria-current={activeTab === key ? 'page' : undefined} className={navClass(activeTab === key)}>{icon} {label}</button>
+  );
+  // D17: backend эрхийн каталог өгвөл (user.permissions) харуулна, үгүй бол хуучнаар зөвшөөрнө.
+  const can = (key) => user?.role === 'admin' || !myPerms || myPerms.includes(key);
+  const trustCanMessage = can('trusts.message');
+  const showEditGroup = user?.role === 'admin' || (loanTasksEnabled && isLoanTaskAdmin);
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex font-sans [color-scheme:light] [forced-color-adjust:none]">
       <style>{` @media print { @page { margin: 1cm; size: auto; } body * { visibility: hidden; } #printable-content, #printable-content * { visibility: visible; } #printable-content { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; background: white; } .no-print { display: none !important; } } `}</style>
@@ -1091,31 +1122,38 @@ const AdminPanel = ({ user, token, onLogout }) => {
       {/* SIDEBAR */}
       <aside className="w-64 bg-[#003B5C] text-white flex flex-col fixed h-full z-20 no-print">
         <div className="p-6 border-b border-white/10 font-bold text-[#D4AF37] text-xl">SCM ADMIN</div>
-        <nav className="flex-1 py-6 px-3 space-y-1 text-sm">
-          <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'dashboard' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><LayoutDashboard size={18} /> Хянах самбар</button>
-          <button onClick={() => setActiveTab('los')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'los' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><ClipboardList size={18} /> {loanTasksEnabled ? 'Зээлийн хүсэлт' : 'Зээлийн үйл явц'}</button>
-          <button onClick={() => setActiveTab('documentAnalysis')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'documentAnalysis' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><FileText size={18} /> Баримт AI уншилт</button>
-          {canAccessOnboarding && (
-            <button onClick={() => setActiveTab('onboarding')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'onboarding' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><UserCheck size={18} /> Харилцагч бүртгэл</button>
+        <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1 text-sm" aria-label="Админ цэс">
+          {navButton('dashboard', <LayoutDashboard size={18} />, 'Хянах самбар')}
+          {navButton('los', <ClipboardList size={18} />, loanTasksEnabled ? 'Зээлийн хүсэлт' : 'Зээлийн үйл явц')}
+          {can('trusts.view') && navButton('trusts', <Handshake size={18} />, 'Итгэлцлийн хүсэлт')}
+          {can('document_ai.use') && navButton('documentAnalysis', <FileText size={18} />, 'Баримт AI уншилт')}
+          {SHOW_ONBOARDING_NAV && canAccessOnboarding && navButton('onboarding', <UserCheck size={18} />, 'Харилцагч бүртгэл')}
+          {showEditGroup && (
+            <div role="group" aria-labelledby="nav-edit-heading" className="pt-4">
+              <p id="nav-edit-heading" className="px-4 pb-1 text-[11px] font-bold uppercase tracking-widest text-white/40">Админ панел засвар</p>
+              {loanTasksEnabled && isLoanTaskAdmin && navButton('loanTaskConfig', <Settings size={18} />, 'Хүсэлтийн маягт')}
+              {user?.role === 'admin' && (<>
+                {navButton('finance', <Activity size={18} />, 'Файл засах')}
+                <button onClick={() => { setActiveTab('cms'); setCmsSubTab(prev => (prev === 'chatbot' ? 'hero' : prev)); }} className={navClass(activeTab === 'cms' && cmsSubTab !== 'chatbot')}><Globe size={18} /> Контент засах</button>
+                <button onClick={() => { setActiveTab('cms'); setCmsSubTab('chatbot'); }} className={navClass(activeTab === 'cms' && cmsSubTab === 'chatbot')}><MessageCircle size={18} /> Чатбот</button>
+              </>)}
+            </div>
           )}
-          <button onClick={() => setActiveTab('trusts')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'trusts' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Handshake size={18} /> Итгэлцэл</button>
-          {loanTasksEnabled && isLoanTaskAdmin && (
-            <button onClick={() => setActiveTab('loanTaskConfig')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'loanTaskConfig' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Settings size={18} /> Хүсэлтийн маягт</button>
+          {user?.role === 'admin' && (
+            <div role="group" aria-labelledby="nav-settings-heading" className="pt-4">
+              <p id="nav-settings-heading" className="px-4 pb-1 text-[11px] font-bold uppercase tracking-widest text-white/40">Тохиргоо</p>
+              {navButton('users', <Users size={18} />, 'Хэрэглэгчид')}
+              {navButton('permissions', <Shield size={18} />, 'Эрхийн матриц')}
+              {navButton('logs', <Activity size={18} />, 'Үйлдлийн лог')}
+              {navButton('deleteSettings', <Trash2 size={18} />, 'Устгах тохиргоо')}
+            </div>
           )}
-          {user?.role === 'admin' && (<>
-            <button onClick={() => setActiveTab('finance')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'finance' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Activity size={18} /> Файл засах</button>
-            <button onClick={() => setActiveTab('cms')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'cms' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Globe size={18} /> Контент засах</button>
-            <button onClick={() => { setActiveTab('cms'); setCmsSubTab('chatbot'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'cms' && cmsSubTab === 'chatbot' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><MessageCircle size={18} /> Чатбот</button>
-            <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'users' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Users size={18} /> Хэрэглэгчид</button>
-            <button onClick={() => setActiveTab('permissions')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'permissions' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Shield size={18} /> Эрхийн матриц</button>
-            <button onClick={() => setActiveTab('logs')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'logs' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Activity size={18} /> Үйлдлийн лог</button>
-          </>)}
-          <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'settings' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Settings size={18} /> Тохиргоо</button>
         </nav>
-        <div className="p-6 border-t border-white/10"><button onClick={onLogout} className="w-full py-2 bg-red-500/10 text-red-400 rounded-lg font-bold text-xs hover:bg-red-500 hover:text-white transition">Гарах</button></div>
       </aside>
 
-      <main className="flex-1 ml-64 p-8 no-print">
+      <ProfileMenu user={user} onOpenProfile={() => setActiveTab('profile')} onLogout={onLogout} />
+
+      <main className="flex-1 ml-64 p-8 pt-20 no-print">
         {activeTab === 'los' && loanTasksEnabled && !showLegacyLos && (
           <LoanTaskBoard apiUrl={API_URL} user={user} onOpenLegacy={() => setShowLegacyLos(true)} />
         )}
@@ -1337,57 +1375,11 @@ const AdminPanel = ({ user, token, onLogout }) => {
               </div>
             )}
 
-            {/* Create new user */}
-            <div className="bg-white rounded-2xl border shadow-sm p-6 space-y-4">
-              <h3 className="font-black text-[#003B5C]">Шинэ хэрэглэгч нэмэх</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input placeholder="Нэр" value={newUser.name}
-                  onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))}
-                  className="p-3 border rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C]" />
-                <input placeholder="И-мэйл" value={newUser.email}
-                  onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))}
-                  className="p-3 border rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C]" />
-                <input type="password" placeholder="Нууц үг" value={newUser.password}
-                  onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))}
-                  className="p-3 border rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-[#003B5C]" />
-              </div>
-              {/* Role checkboxes */}
-              <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
-                  Эрх (хамгийн ихдээ 2 сонгоно)
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {SCM_ROLES.map(r => {
-                    const sel = newUser.roles.includes(r.key);
-                    const maxed = !sel && newUser.roles.length >= 2;
-                    return (
-                      <label key={r.key}
-                        className={`flex items-center gap-2 px-3 py-2 border-2 rounded-xl cursor-pointer text-sm font-bold transition-all ${
-                          sel ? 'bg-[#003B5C] text-white border-[#003B5C]' : maxed ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400' : 'border-slate-200 text-slate-600 hover:border-[#003B5C] hover:text-[#003B5C]'
-                        }`}>
-                        <input type="checkbox" checked={sel} disabled={maxed && !sel}
-                          onChange={() => !maxed || sel ? toggleNewRole(r.key) : null}
-                          className="sr-only" />
-                        {r.label}
-                      </label>
-                    );
-                  })}
-                </div>
-                {newUser.roles.length > 0 && (
-                  <p className="text-xs text-slate-400 mt-1.5">Сонгогдсон: {newUser.roles.map(rk => SCM_ROLES.find(r => r.key === rk)?.label).join(', ')}</p>
-                )}
-              </div>
-              <button onClick={async () => {
-                try {
-                  await axios.post(`${API_URL}/api/users`, { ...newUser, role: newUser.roles.includes('admin') ? 'admin' : 'employee' });
-                  setNewUser({ name: '', email: '', password: '', role: 'employee', roles: [] });
-                  const userRes = await axios.get(`${API_URL}/api/users`);
-                  setUsersList(userRes.data);
-                } catch (e) { alert(e.response?.data?.message || 'Алдаа гарлаа'); }
-              }} className="inline-flex items-center gap-2 bg-[#003B5C] text-white px-6 py-2.5 rounded-xl font-bold text-sm">
-                <UserPlus size={15} /> Нэмэх
-              </button>
-            </div>
+            {/* Invite new user */}
+            <InviteUserForm apiUrl={API_URL} roles={SCM_ROLES} onCreated={async () => {
+              try { const userRes = await axios.get(`${API_URL}/api/users`); setUsersList(userRes.data); } catch { /* жагсаалт дараа шинэчлэгдэнэ */ }
+            }} />
+            {inviteNotice && <p role={inviteNotice.ok ? 'status' : 'alert'} className={`rounded-lg p-3 text-sm ${inviteNotice.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{inviteNotice.text}</p>}
 
             {/* Users table */}
             <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
@@ -1436,8 +1428,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
                               <Shield size={14} />
                             </button>
                           )}
+                          <button onClick={() => resendInvite(u)} title="Урилга дахин илгээх" aria-label={`${u.email} — урилга дахин илгээх`}
+                            className="p-2 text-[#003B5C] bg-blue-50 rounded-lg hover:bg-blue-100 text-xs font-bold">Урилга дахин илгээх</button>
                           {u._id !== (user?.id || user?._id) && (
-                            <button onClick={() => deleteUser(u._id)}
+                            <button onClick={() => deleteUser(u._id)} aria-label={`${u.email} — устгах`}
                               className="p-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100">
                               <Trash2 size={14} />
                             </button>
@@ -1456,7 +1450,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
         )}
 
         {activeTab === 'permissions' && user?.role === 'admin' && (
-          <PermissionMatrix apiUrl={API_URL} />
+          <TaskPermissionMatrix apiUrl={API_URL} />
         )}
 
         {activeTab === 'logs' && user?.role === 'admin' && (
@@ -2976,8 +2970,17 @@ const AdminPanel = ({ user, token, onLogout }) => {
           </div>
         )}
 
-        {activeTab === 'settings' && (
-          <div className="space-y-6 animate-fade-in max-w-2xl">
+        {activeTab === 'deleteSettings' && user?.role === 'admin' && (
+          <AdminSettingsPanel apiUrl={API_URL} />
+        )}
+
+        {activeTab === 'profile' && (
+          <ProfilePage apiUrl={API_URL} user={user} />
+        )}
+
+        {activeTab === 'profile' && (
+          <div className="space-y-6 animate-fade-in max-w-4xl mt-6">
+            <h3 className="text-xl font-bold text-[#003B5C]">Нууц үг ба 2FA тохиргоо</h3>
             {/* Нууц үг солих */}
             <div className="bg-white p-8 rounded-2xl border shadow-sm">
               <h3 className="text-lg font-bold mb-6 text-[#003B5C] uppercase tracking-wider flex items-center gap-2">
@@ -3334,7 +3337,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
               <p>Дүн: <b>{selectedTrust.amount}</b></p>
               <p>Огноо: <b>{formatDate(selectedTrust.createdAt)}</b></p>
             </div>
-            <div className="space-y-2">
+            <TrustMessagePanel key={selectedTrust._id} apiUrl={API_URL} trust={selectedTrust} canSend={trustCanMessage} onSent={async () => {
+              try { const trustRes = await axios.get(`${API_URL}/api/trusts`); setTrusts(trustRes.data); } catch { /* түүх дараагийн нээлтээр шинэчлэгдэнэ */ }
+            }} />
+            <div className="space-y-2 mt-4">
               <label className="text-xs font-bold text-gray-400 uppercase">Тэмдэглэл</label>
               <textarea rows={3} value={contactNote} onChange={e => setContactNote(e.target.value)}
                 className="w-full p-3 border rounded-xl text-sm bg-slate-50 resize-none focus:outline-none focus:border-[#003B5C]"

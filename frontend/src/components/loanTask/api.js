@@ -44,3 +44,6 @@ export const errorMessage = (error, fallback = 'Алдаа гарлаа. Дах�
   if (error?.response?.status === 429) return 'Хүсэлт илгээх давтамжийн хязгаарт хүрлээ. Түр хүлээгээд дахин оролдоно уу.';
   return error?.response?.data?.message || fallback;
 };
+
+// ---- D16: delete (admin + setting) ----
+export const deleteLoanRequest = (apiUrl, id) => data(axios.delete(`${apiUrl || API_URL}/api/loan-requests/${id}`, auth()));

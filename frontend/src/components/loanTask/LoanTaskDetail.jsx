@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, Check, CheckCircle2, Copy, ExternalLink, FileText, Link2, Loader2, Mail, MessageSquare, Phone, Plus, Send, Trash2, UserCheck, X } from 'lucide-react';
 import { LEGACY_STATUS_LABELS, TASK_OUTCOMES, TASK_OUTCOME_LABELS, TASK_STATUS_LABELS } from '@shared/loanTaskStatus';
+import { PRESET_WIDGETS } from '@shared/loanWidgets';
 import TaskField from './TaskField';
 import TaskStatusBadge from './TaskStatusBadge';
-import { errorMessage, fetchTaskDetail, postDocRequest, postTaskAction, postTaskFiles, postTaskMessage } from './api';
+import ConfirmDeleteDialog from '../admin/ConfirmDeleteDialog';
+import { deleteLoanRequest, errorMessage, fetchTaskDetail, postDocRequest, postTaskAction, postTaskFiles, postTaskMessage } from './api';
 import { FILE_CATEGORIES, categoryOf, formatMoney, isFileField, isVisible, maskRegister } from './taskFormUtils';
 
 const BOX = 'rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#003B5C] focus:outline-none focus:ring-2 focus:ring-[#003B5C]/20 disabled:opacity-60';
@@ -19,7 +21,7 @@ function Section({ title, children }) {
   return <section className="border-t border-slate-200 py-5"><h3 className="mb-3 text-sm font-bold text-[#003B5C]">{title}</h3>{children}</section>;
 }
 
-export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, onChanged }) {
+export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, onChanged, onDeleted }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -45,6 +47,9 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
   const [emailOpen, setEmailOpen] = useState(false);
   const [emailText, setEmailText] = useState('');
   const [emailCopied, setEmailCopied] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const drawerRef = useRef(null);
   const previousFocus = useRef(null);
 
@@ -59,13 +64,16 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
   useEffect(() => {
     previousFocus.current = document.activeElement;
     drawerRef.current?.focus();
-    const onKey = event => { if (event.key === 'Escape') onClose(); };
+    const onKey = event => { if (event.key === 'Escape' && !document.querySelector('[role="alertdialog"]')) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('keydown', onKey); previousFocus.current?.focus?.(); };
   }, [onClose]);
 
+  // Backend allowedActions нь эрхийн матрицыг (D17) аль хэдийн тооцсон байдаг.
   const allowed = detail?.allowedActions || {};
   const fileFields = useMemo(() => (detail?.taskForm?.steps || []).flatMap(step => step.fields || []).filter(isFileField), [detail]);
+  // Legacy requests have no form snapshot: offer every preset document type (the backend accepts preset keys for them).
+  const docChoices = useMemo(() => (fileFields.length ? fileFields : PRESET_WIDGETS.filter(widget => widget.type === 'file' && widget.key !== 'property_docs')), [fileFields]);
   const revision = detail?.taskRevision || 0;
 
   const run = async (fn, success) => {
@@ -93,6 +101,12 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
     if (!reopenNote.trim()) { setError('Дахин нээх шалтгаанаа бичнэ үү.'); return; }
     if (await run(() => postTaskAction(apiUrl, id, { type: 'reopen', note: reopenNote.trim(), expectedRevision: revision }), 'Хүсэлтийг дахин нээлээ.')) setReopenNote('');
   };
+  const doDelete = async () => {
+    setDeleteBusy(true); setDeleteError('');
+    try { await deleteLoanRequest(apiUrl, id); setDeleteOpen(false); onChanged?.(); (onDeleted || onClose)(); }
+    catch (err) { setDeleteError(err.response?.data?.code === 'DELETE_DISABLED' ? 'Устгах тохиргоо унтраалттай байна.' : errorMessage(err, 'Устгаж чадсангүй.')); }
+    finally { setDeleteBusy(false); }
+  };
   const doNote = async () => { if (!note.trim()) return; if (await run(() => postTaskAction(apiUrl, id, { type: 'note', note: note.trim() }), 'Тэмдэглэл нэмлээ.')) setNote(''); };
 
   const applicantEmail = String(detail?.applicant?.email || '').trim();
@@ -102,7 +116,7 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
   const docCount = docKeys.length + docExtra.filter(text => text.trim()).length;
   const doDocs = async () => {
     const items = [
-      ...fileFields.filter(field => docKeys.includes(field.key)).map(field => ({ key: field.key, label: field.label })),
+      ...docChoices.filter(field => docKeys.includes(field.key)).map(field => ({ key: field.key, label: field.label })),
       ...docExtra.map(text => text.trim()).filter(Boolean).map((label, index) => ({ key: `extra_${index + 1}`, label })),
     ];
     if (!items.length) { setError('Хүсэх баримтаа сонгох эсвэл бичнэ үү.'); return; }
@@ -194,6 +208,7 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
           {(statusChoices.length > 0 || allowed.reopen) && barButton('status', 'Төлөв солих', <Check size={16} aria-hidden="true" />)}
           {allowed.assign && barButton('assign', 'Хуваарилах', <UserCheck size={16} aria-hidden="true" />)}
           {allowed.note && barButton('note', 'Тэмдэглэл', <MessageSquare size={16} aria-hidden="true" />)}
+          {detail.canDelete && <button type="button" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-red-300 bg-white px-3 text-sm font-semibold text-red-700 hover:bg-red-50" onClick={() => { setDeleteError(''); setDeleteOpen(true); }}><Trash2 size={16} aria-hidden="true" />Устгах</button>}
         </div>
         {!applicantEmail && <p className="mt-2 text-xs text-amber-700">Харилцагчийн имэйл бүртгэлгүй тул имэйл илгээх боломжгүй. Утсаар холбогдоно уу.</p>}
       </div>}
@@ -232,7 +247,7 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
 
             {panel === 'docs' && allowed.requestDocs && <div className="space-y-3">
               <p role="note" className={`rounded-lg p-2 text-xs ${applicantEmail ? 'bg-sky-50 text-sky-900' : 'bg-amber-50 text-amber-800'}`}>{applicantEmail ? `Харилцагчийн ${applicantEmail} хаяг руу файл оруулах холбоос имэйлээр илгээнэ.` : 'Имэйл байхгүй — холбоосыг хуулж утсаар/мессежээр илгээнэ.'}</p>
-              {fileFields.length > 0 && <div className="space-y-1">{fileFields.map(field => <label key={field.key} className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-[#003B5C]" checked={docKeys.includes(field.key)} onChange={event => setDocKeys(previous => (event.target.checked ? [...previous, field.key] : previous.filter(key => key !== field.key)))} />{field.label}</label>)}</div>}
+              {docChoices.length > 0 && <div className="space-y-3">{FILE_CATEGORIES.map(category => { const list = docChoices.filter(field => categoryOf(field) === category.key); return list.length ? <fieldset key={category.key} className="space-y-1"><legend className="text-xs font-bold text-slate-500">{category.label}</legend>{list.map(field => <label key={field.key} className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-[#003B5C]" checked={docKeys.includes(field.key)} onChange={event => setDocKeys(previous => (event.target.checked ? [...previous, field.key] : previous.filter(key => key !== field.key)))} />{field.label}</label>)}</fieldset> : null; })}</div>}
               <div className="space-y-2">{docExtra.map((text, index) => <div key={index} className="flex gap-2"><input className={`${BOX} min-h-11 flex-1`} maxLength={120} value={text} placeholder="Өөр баримт (чөлөөт бичих)" aria-label={`Өөр баримт ${index + 1}`} onChange={event => setDocExtra(previous => previous.map((value, position) => (position === index ? event.target.value : value)))} />{docExtra.length > 1 && <button type="button" className="grid h-11 w-11 place-items-center rounded-xl text-slate-600 hover:bg-red-50" aria-label="Мөр хасах" onClick={() => setDocExtra(previous => previous.filter((_, position) => position !== index))}><Trash2 size={16} aria-hidden="true" /></button>}</div>)}
                 {docExtra.length + docKeys.length < 10 && <button type="button" className="inline-flex min-h-10 items-center gap-1 text-xs font-semibold text-[#003B5C]" onClick={() => setDocExtra(previous => [...previous, ''])}><Plus size={14} aria-hidden="true" />Мөр нэмэх</button>}</div>
               <label className="block text-xs font-semibold text-slate-600">Тайлбар<textarea className={`${BOX} mt-1 w-full`} rows={2} maxLength={2000} value={docNote} aria-describedby="doc-note-help" onChange={event => setDocNote(event.target.value)} /></label>
@@ -266,6 +281,8 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
           </Section>
         </>}
       </div>
+
+      {deleteOpen && <ConfirmDeleteDialog reference={detail?.applicationReference} busy={deleteBusy} error={deleteError} onCancel={() => setDeleteOpen(false)} onConfirm={doDelete} />}
 
       {emailOpen && <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setEmailOpen(false); }}>
         <div role="dialog" aria-modal="true" aria-labelledby="email-dialog-title" className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); if (!busy) setEmailOpen(false); } }}>

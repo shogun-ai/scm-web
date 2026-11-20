@@ -56,7 +56,7 @@ function applyUpdate(doc, update) {
   return doc;
 }
 
-function harness({ env = { LOAN_TASKS_ENABLED: 'true' }, configs = [], loans = [], users = [otherOfficer], uploadFailAt = 0, mailer } = {}) {
+function harness({ env = { LOAN_TASKS_ENABLED: 'true' }, configs = [], loans = [], users = [otherOfficer], uploadFailAt = 0, mailer, extraDeps = {}, destroy } = {}) {
   const routes = new Map();
   const store = loans.map(loan => structuredClone(loan));
   const configStore = configs.map(config => structuredClone(config));
@@ -81,6 +81,7 @@ function harness({ env = { LOAN_TASKS_ENABLED: 'true' }, configs = [], loans = [
       if (!doc) return null;
       return structuredClone(applyUpdate(doc, update));
     }
+    static async deleteOne(query) { const index = store.findIndex(item => matches(item, query)); if (index >= 0) store.splice(index, 1); calls.deleted = (calls.deleted || 0) + (index >= 0 ? 1 : 0); return { deletedCount: index >= 0 ? 1 : 0 }; }
     static async updateOne(query, update) { const doc = store.find(item => matches(item, query)); if (doc) applyUpdate(doc, update); return { acknowledged: true }; }
   }
   const LoanFormConfig = {
@@ -92,7 +93,7 @@ function harness({ env = { LOAN_TASKS_ENABLED: 'true' }, configs = [], loans = [
     findById: id => chain(users.find(user => String(user._id) === String(id)) || null),
     find: query => chain(users.filter(user => query._id.$in.includes(String(user._id)))),
   };
-  const app = Object.fromEntries(['get', 'post', 'put', 'patch'].map(method => [method, (path, ...handlers) => routes.set(`${method}:${path}`, handlers)]));
+  const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map(method => [method, (path, ...handlers) => routes.set(`${method}:${path}`, handlers)]));
   const multer = () => ({ any: () => (req, _res, callback) => callback(req.uploadError) });
   multer.memoryStorage = () => ({});
   const cloudinary = {
@@ -100,7 +101,7 @@ function harness({ env = { LOAN_TASKS_ENABLED: 'true' }, configs = [], loans = [
     utils: { private_download_url: (id, format, options) => `https://api.cloudinary.com/v1_1/demo/${options.resource_type}/download?public_id=${encodeURIComponent(id)}&format=${format}&type=${options.type}&expires_at=${options.expires_at}&signature=sig` },
     uploader: {
       upload_stream: (_options, callback) => ({ end: () => { calls.uploads++; if (uploadFailAt && calls.uploads === uploadFailAt) callback(new Error('cloud down')); else callback(null, { public_id: `scm_loan_private/doc${calls.uploads}` }); } }),
-      destroy: async () => { calls.destroys++; },
+      destroy: async (publicId, options) => { calls.destroys++; (calls.destroyed ||= []).push({ publicId, options }); if (destroy) return destroy(publicId); return { result: 'ok' }; },
     },
   };
   const fakeMailer = mailer || { send: async message => { calls.sent.push(message); return { result: 'sent' }; } };
@@ -110,7 +111,7 @@ function harness({ env = { LOAN_TASKS_ENABLED: 'true' }, configs = [], loans = [
     authenticateUser: (_req, _res, next) => next(), requireAdmin,
     createLog: async (user, action, details) => { calls.logs.push({ action, details }); },
     mailer: fakeMailer, automate: () => { calls.automation++; }, env, now: () => clock,
-    getCompanyPhone: async () => '7599-1919', schedule: fn => tasks.push(fn), logger: { error() {}, warn() {}, info() {} },
+    getCompanyPhone: async () => '7599-1919', schedule: fn => tasks.push(fn), logger: { error() {}, warn() {}, info() {} }, ...extraDeps,
   });
   const invoke = async (method, path, req = {}) => {
     let finish;
@@ -805,4 +806,84 @@ test('D15 staff notification email prefers notificationEmail over login email', 
   await submit(plain);
   await plain.flush();
   assert.equal(plain.calls.sent.find(message => message.template === 'staff_assignment').to, 'dorj@scm.mn');
+});
+
+// ---------- D16 delete + D17 permissions ----------
+const DELETE_PATH = '/api/loan-requests/:id';
+const taskLoan = (extra = {}) => legacyLoan({ taskFiles: [{ _id: 't1', publicId: 'scm_loan_private/doc1', deliveryType: 'authenticated', fileName: 'a.pdf' }, { _id: 't2', publicId: 'scm_loan_private/p1', deliveryType: 'authenticated' }, { _id: 't3', publicId: 'other/public1' }], ...extra });
+
+test('D16 delete: non-admin 403, flag off 403 DELETE_DISABLED, admin+flag removes files then doc and logs', async () => {
+  let enabled = false;
+  const h = harness({ loans: [taskLoan()], extraDeps: { getDeleteEnabled: async () => enabled } });
+  let response = await h.invoke('delete', DELETE_PATH, { user: officer, params: { id: LOAN_ID } });
+  assert.equal(response.code, 403); assert.equal(response.data.code, 'FORBIDDEN');
+  response = await h.invoke('delete', DELETE_PATH, { user: manager, params: { id: LOAN_ID } });
+  assert.equal(response.code, 403); // director holds view_all but not loan_requests.delete
+  response = await h.invoke('delete', DELETE_PATH, { user: admin, params: { id: LOAN_ID } });
+  assert.equal(response.code, 403); assert.equal(response.data.code, 'DELETE_DISABLED');
+  assert.equal(h.calls.destroys, 0); assert.equal(h.store.length, 1);
+  enabled = true;
+  assert.equal((await h.invoke('delete', DELETE_PATH, { user: admin, params: { id: 'bad' } })).code, 400);
+  assert.equal((await h.invoke('delete', DELETE_PATH, { user: admin, params: { id: 'cccccccccccccccccccccccc' } })).code, 404);
+  response = await h.invoke('delete', DELETE_PATH, { user: admin, params: { id: LOAN_ID } });
+  assert.deepEqual(response.data, { ok: true });
+  assert.deepEqual(h.calls.destroyed.map(item => item.publicId).sort(), ['scm_loan_private/doc1', 'scm_loan_private/p1']); // de-duplicated, public ids untouched
+  assert.ok(h.calls.destroyed.every(item => item.options.resource_type === 'raw' && item.options.type === 'authenticated'));
+  assert.equal(h.store.length, 0);
+  assert.equal(h.calls.logs.at(-1).action, 'loan_request_deleted');
+  assert.ok(!h.calls.logs.at(-1).details.includes('Бат'));
+});
+
+test('D16 delete: a failing Cloudinary destroy keeps the document (retryable)', async () => {
+  const h = harness({ loans: [taskLoan()], extraDeps: { getDeleteEnabled: async () => true }, destroy: async () => { throw new Error('cloud down'); } });
+  const response = await h.invoke('delete', DELETE_PATH, { user: admin, params: { id: LOAN_ID } });
+  assert.equal(response.code, 502); assert.equal(response.data.code, 'FILE_DELETE_FAILED');
+  assert.equal(h.store.length, 1);
+});
+
+test('D16 canDelete in list and detail follows permission AND flag', async () => {
+  for (const [user, flag, expected] of [[admin, true, true], [admin, false, false], [manager, true, false], [officer, true, false]]) {
+    const h = harness({ loans: [legacyLoan()], extraDeps: { getDeleteEnabled: async () => flag } });
+    const list = await h.invoke('get', '/api/loan-tasks', { user, query: {} });
+    assert.equal(list.data.items[0].canDelete, expected);
+    const one = await h.invoke('get', '/api/loan-tasks/:id', { user, params: { id: LOAN_ID } });
+    assert.equal(one.data.canDelete, expected);
+  }
+});
+
+test('D17 permissions gate task actions; defaults keep officer behaviour', async () => {
+  let h = harness({ loans: [legacyLoan({ email: 'b@example.mn' })] });
+  let detailResponse = await h.invoke('get', '/api/loan-tasks/:id', { user: officer, params: { id: LOAN_ID } });
+  assert.equal(detailResponse.data.allowedActions.assign, false);
+  assert.equal(detailResponse.data.allowedActions.note, true);
+  assert.equal(detailResponse.data.allowedActions.message, true);
+  let response = await h.invoke('post', '/api/loan-tasks/:id/actions', { user: officer, params: { id: LOAN_ID }, body: { type: 'assign', assigneeId: OTHER_ID, expectedRevision: 0 } });
+  assert.equal(response.code, 403);
+  // matrix denies officer notes, messages, doc requests and files
+  const deny = new Set(['loan_requests.view_assigned', 'loan_requests.change_status']);
+  h = harness({ loans: [legacyLoan({ email: 'b@example.mn' })], extraDeps: { getPermissions: async () => deny } });
+  assert.equal((await h.invoke('post', '/api/loan-tasks/:id/actions', { user: officer, params: { id: LOAN_ID }, body: { type: 'note', note: 'hello' } })).code, 403);
+  assert.equal((await h.invoke('post', '/api/loan-tasks/:id/message', { user: officer, params: { id: LOAN_ID }, body: { message: 'hi' } })).code, 403);
+  assert.equal((await h.invoke('post', '/api/loan-tasks/:id/doc-request', { user: officer, params: { id: LOAN_ID }, body: { items: [{ key: 'id_reference' }] } })).code, 403);
+  assert.equal((await h.invoke('post', '/api/loan-tasks/:id/files', { user: officer, params: { id: LOAN_ID }, body: {} })).code, 403);
+  detailResponse = await h.invoke('get', '/api/loan-tasks/:id', { user: officer, params: { id: LOAN_ID } });
+  const allowed = detailResponse.data.allowedActions;
+  assert.deepEqual([allowed.note, allowed.message, allowed.requestDocs, allowed.uploadFiles], [false, false, false, false]);
+  // no view permission at all -> 403
+  h = harness({ loans: [legacyLoan()], extraDeps: { getPermissions: async () => new Set() } });
+  assert.equal((await h.invoke('get', '/api/loan-tasks', { user: officer })).code, 403);
+  // permission lookup failure falls back to role defaults
+  h = harness({ loans: [legacyLoan()], extraDeps: { getPermissions: async () => { throw new Error('db'); } } });
+  assert.equal((await h.invoke('get', '/api/loan-tasks', { user: officer })).code, 200);
+});
+
+test('D17 view_all widens scope; granting assign to an officer allows assign on own request', async () => {
+  const other = legacyLoan({ _id: 'cccccccccccccccccccccccc', assignee: { userId: OTHER_ID, name: 'Дорж' } });
+  let h = harness({ loans: [legacyLoan(), other] });
+  assert.equal((await h.invoke('get', '/api/loan-tasks', { user: officer, query: {} })).data.items.length, 1);
+  h = harness({ loans: [legacyLoan(), other], extraDeps: { getPermissions: async () => new Set(['loan_requests.view_all']) } });
+  assert.equal((await h.invoke('get', '/api/loan-tasks', { user: officer, query: {} })).data.items.length, 2);
+  h = harness({ loans: [legacyLoan()], users: [otherOfficer], extraDeps: { getPermissions: async () => new Set(['loan_requests.view_assigned', 'loan_requests.assign']) } });
+  const response = await h.invoke('post', '/api/loan-tasks/:id/actions', { user: officer, params: { id: LOAN_ID }, body: { type: 'assign', assigneeId: OTHER_ID, expectedRevision: 0 } });
+  assert.equal(response.code, 200);
 });

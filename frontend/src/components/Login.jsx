@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { ShieldCheck, Lock, Mail, ArrowRight } from 'lucide-react';
 import logoColored from '../assets/logo-colored.png';
+import SetPasswordForm from './admin/SetPasswordForm';
+import { readInviteToken } from './admin/inviteUtils';
 
 const Login = ({ onLogin, onBack }) => {
   const [step, setStep] = useState(1); // 1: Email/Pass, 2: 2FA Code
@@ -9,6 +11,8 @@ const Login = ({ onLogin, onBack }) => {
   const [userId, setUserId] = useState(null); // 2FA үед хэрэг болно
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [inviteToken, setInviteToken] = useState(readInviteToken);
+  const [notice, setNotice] = useState('');
 
   // ==========================================
   // ✅ 1. ЭНД НЭМЭГДЭЖ БАЙНА:
@@ -52,6 +56,10 @@ const Login = ({ onLogin, onBack }) => {
     }
   };
 
+  if (inviteToken) {
+    return <SetPasswordForm token={inviteToken} onDone={() => { setInviteToken(''); setNotice('Нууц үг үүслээ — нэвтэрнэ үү'); }} onCancel={() => setInviteToken('')} />;
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4 [color-scheme:light] [forced-color-adjust:none]">
       <div className="bg-white rounded-3xl shadow-2xl p-8 md:p-12 w-full max-w-md animate-fade-in relative">
@@ -67,6 +75,7 @@ const Login = ({ onLogin, onBack }) => {
             </p>
         </div>
 
+        {notice && <div role="status" className="bg-green-50 text-green-700 p-3 rounded-lg text-sm text-center mb-6 font-bold">{notice}</div>}
         {error && <div className="bg-red-50 text-red-500 p-3 rounded-lg text-sm text-center mb-6 font-bold">{error}</div>}
 
         <form onSubmit={handleSubmit} className="space-y-4">

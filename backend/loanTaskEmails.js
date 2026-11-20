@@ -2,15 +2,15 @@
 // Privacy: only the request number, product names, document labels and links. Never names, register numbers, amounts or files.
 
 export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-const clean = value => String(value ?? '').replace(/[\r\n]+/g, ' ').trim();
+export const clean = value => String(value ?? '').replace(/[\r\n]+/g, ' ').trim();
 const productLine = (productName, subProductName) => [clean(productName), clean(subProductName)].filter(Boolean).join(' — ');
-const ubDateTime = value => {
+export const ubDateTime = value => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return new Date(date.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ');
 };
 
-function layout(lines, { link, linkLabel } = {}) {
+export function layout(lines, { link, linkLabel } = {}) {
   const text = [...lines, ...(link ? ['', `${linkLabel}: ${link}`] : [])].join('\n');
   const htmlBody = lines.map(line => (line ? `<p style="margin:0 0 12px">${escapeHtml(line)}</p>` : '')).join('');
   const button = link ? `<p style="margin:16px 0"><a href="${escapeHtml(link)}" style="background:#003B5C;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">${escapeHtml(linkLabel)}</a></p>` : '';
@@ -18,7 +18,7 @@ function layout(lines, { link, linkLabel } = {}) {
   return { text, html };
 }
 
-const footer = companyPhone => ['', 'Асуух зүйл байвал энэ имэйлд хариу бичнэ үү.', ...(clean(companyPhone) ? [`Лавлах утас: ${clean(companyPhone)}`] : []), 'SCM — Солонго Капитал ББСБ'];
+export const footer = companyPhone => ['', 'Асуух зүйл байвал энэ имэйлд хариу бичнэ үү.', ...(clean(companyPhone) ? [`Лавлах утас: ${clean(companyPhone)}`] : []), 'SCM — Солонго Капитал ББСБ'];
 
 export function applicantAcknowledgement({ reference, productName, subProductName, companyPhone } = {}) {
   const ref = clean(reference);

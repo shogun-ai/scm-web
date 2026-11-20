@@ -11,8 +11,9 @@ import {
 import {
   TASK_STATUSES, TERMINAL_TASK_STATUSES, deriveTaskState, taskStatusFilter, allowedTaskActions, validateTaskAction, TaskActionError, DOC_REQUEST_ONLY_MESSAGE,
 } from '../shared/loanTaskStatus.js';
-import { IntakeError, createIntakeLimiter, isRequestManager, isRequestStaff, requestScope, rejectOversizedBody, taskLockBlocks } from './loanIntake.js';
+import { IntakeError, createIntakeLimiter, isRequestManager, isRequestStaff, rejectOversizedBody, taskLockBlocks } from './loanIntake.js';
 import * as emails from './loanTaskEmails.js';
+import { resolvePermissions } from '../shared/permissions.js';
 
 const { Schema } = mongoose;
 const Mixed = Schema.Types.Mixed;
@@ -166,6 +167,11 @@ const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
 const SUB_ID_RE = /^[a-z0-9-]{2,40}$/;
 const CUSTOM_KEY_RE = /^cf_[a-z0-9_]{1,40}$/;
 const PRODUCT_KEYS = new Set(LOAN_PRODUCTS.map(product => product.id));
+// Cloudinary authenticated raw files referenced by a loan (applicant fileDetails + staff/link taskFiles), de-duplicated.
+export function deletablePublicIds(loan) {
+  const all = [...(Array.isArray(loan?.fileDetails) ? loan.fileDetails : []), ...(Array.isArray(loan?.taskFiles) ? loan.taskFiles : [])];
+  return [...new Set(all.filter(file => typeof file?.publicId === 'string' && file.publicId && (isPrivateLoanPublicId(file.publicId) || file.deliveryType === 'authenticated')).map(file => file.publicId))];
+}
 const str = (value, max = 300) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
 const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const MB = 1024 * 1024;
@@ -226,7 +232,7 @@ function fieldLabel(loan, fieldKey, fieldName) {
   return (fieldName && STORAGE_FIELD_LABELS[fieldName]) || fieldName || '';
 }
 
-export function toTaskListItem(loan) {
+export function toTaskListItem(loan, { canDelete = false } = {}) {
   const state = deriveTaskState(loan);
   const isTaskForm = loan.formVersion === 'task-v1';
   const productKey = (isTaskForm && loan.taskForm?.productKey) || loan.selectedProduct || null;
@@ -253,11 +259,28 @@ export function toTaskListItem(loan) {
     createdAt: loan.createdAt || null,
     taskUpdatedAt: loan.taskUpdatedAt || null,
     taskRevision: loan.taskRevision || 0,
+    canDelete: Boolean(canDelete),
   };
 }
 
-export function toTaskDetail(loan, user, { cloudinary, now = new Date(), assigneeNotifyEmail = '' } = {}) {
-  const base = toTaskListItem(loan);
+// D17: overlay fine-grained permissions on the role-derived action set. perms = Set of granted keys.
+export function allowedActionsWithPermissions(loan, user, perms) {
+  const isAssignee = isAssigneeOf(user, loan);
+  const worker = allowedTaskActions(loan, { manager: perms.has('loan_requests.view_all'), isAssignee });
+  const full = allowedTaskActions(loan, { manager: true, isAssignee });
+  return {
+    assign: perms.has('loan_requests.assign'),
+    transitions: perms.has('loan_requests.change_status') ? worker.transitions : [],
+    reopen: perms.has('loan_requests.reopen') && full.reopen,
+    note: worker.note && perms.has('loan_requests.notes_files'),
+    requestDocs: worker.requestDocs && perms.has('loan_requests.request_docs'),
+    uploadFiles: worker.uploadFiles && perms.has('loan_requests.notes_files'),
+    message: worker.note && perms.has('loan_requests.message'),
+  };
+}
+
+export function toTaskDetail(loan, user, { cloudinary, now = new Date(), assigneeNotifyEmail = '', perms = null, canDelete = false } = {}) {
+  const base = toTaskListItem(loan, { canDelete });
   const state = deriveTaskState(loan);
   const terminal = TERMINAL_TASK_STATUSES.includes(state.taskStatus);
   const links = Array.isArray(loan.taskUploadLinks) ? loan.taskUploadLinks : [];
@@ -312,7 +335,7 @@ export function toTaskDetail(loan, user, { cloudinary, now = new Date(), assigne
       active: !link.revokedAt && new Date(link.expiresAt).getTime() > now.getTime() && !terminal,
     })),
     taskRevision: loan.taskRevision || 0,
-    allowedActions: allowedTaskActions(loan, { manager: isRequestManager(user), isAssignee: isAssigneeOf(user, loan) }),
+    allowedActions: perms ? allowedActionsWithPermissions(loan, user, perms) : allowedTaskActions(loan, { manager: isRequestManager(user), isAssignee: isAssigneeOf(user, loan) }),
   };
 }
 
@@ -409,10 +432,27 @@ export function registerLoanTaskRoutes({
   app, multer, cloudinary, LoanRequest, LoanFormConfig, User, authenticateUser, requireAdmin, createLog = async () => {},
   mailer, automate, env = process.env, now = () => new Date(), getCompanyPhone = async () => '',
   schedule = setImmediate, randomBytes = crypto.randomBytes, logger = console,
+  getPermissions = async user => resolvePermissions(user), getDeleteEnabled = async () => false,
 }) {
   const enabled = () => env.LOAN_TASKS_ENABLED === 'true';
   const ensureEnabled = (_req, res, next) => (enabled() ? next() : res.status(503).json({ message: 'Энэ үйлчилгээ түр идэвхгүй байна.', code: 'DISABLED' }));
-  const requireStaff = (req, res, next) => (isRequestStaff(req.user) ? next() : res.status(403).json({ message: 'Хүсэлт харах эрхгүй байна.' }));
+  // D17: permissions are resolved once per request into req.perms (role defaults + saved matrix); failures fall back to role defaults.
+  const loadPerms = async req => {
+    if (req.perms) return req.perms;
+    try { req.perms = await getPermissions(req.user); } catch { req.perms = resolvePermissions(req.user); }
+    return req.perms;
+  };
+  const requireStaff = async (req, res, next) => {
+    const perms = await loadPerms(req);
+    return perms.has('loan_requests.view_all') || perms.has('loan_requests.view_assigned') ? next() : res.status(403).json({ message: 'Хүсэлт харах эрхгүй байна.' });
+  };
+  const requirePerm = (req, key, message = 'Энэ үйлдлийг хийх эрхгүй байна.') => {
+    if (!req.perms?.has(key)) throw new HttpError(message, 403, { code: 'FORBIDDEN' });
+  };
+  const viewsAll = req => Boolean(req.perms?.has('loan_requests.view_all'));
+  const scopeOf = req => (viewsAll(req) ? {} : { 'assignee.userId': String(req.user?._id || '') });
+  const deleteEnabled = async () => { try { return (await getDeleteEnabled()) === true; } catch { return false; } };
+  const canDeleteFor = async req => Boolean(req.perms?.has('loan_requests.delete')) && (await deleteEnabled());
   const submitLimiter = createIntakeLimiter({ max: Number.parseInt(env.LOAN_TASK_SUBMIT_MAX, 10) || 5 });
   const linkUploadLimiter = createIntakeLimiter({ max: Number.parseInt(env.LOAN_TASK_UPLOAD_MAX, 10) || 20 });
   const linkReadLimiter = createIntakeLimiter({ max: 300 });
@@ -765,13 +805,12 @@ export function registerLoanTaskRoutes({
 
   // ----- Staff -----
   const staffBaseFilters = (req, { allowStatus = true } = {}) => {
-    const user = req.user;
-    const manager = isRequestManager(user);
+    const manager = viewsAll(req);
     const query = req.query || {};
-    const filters = [requestScope(user)];
+    const filters = [scopeOf(req)];
     const assignee = typeof query.assignee === 'string' && query.assignee ? query.assignee : (manager ? 'all' : 'me');
     if (assignee !== 'me' && !manager) throw new HttpError('Зөвхөн өөрт хуваарилсан хүсэлтийг харна.', 403);
-    if (assignee === 'me') filters.push({ 'assignee.userId': String(user._id) });
+    if (assignee === 'me') filters.push({ 'assignee.userId': String(req.user._id) });
     else if (assignee === 'unassigned') filters.push({ 'assignee.userId': { $in: [null, ''] } });
     else if (assignee !== 'all') {
       if (!OBJECT_ID_RE.test(assignee)) throw new HttpError('Хариуцагч буруу байна.', 400);
@@ -813,7 +852,8 @@ export function registerLoanTaskRoutes({
         LoanRequest.find(query).select(LIST_FIELDS).sort(sort).skip((page - 1) * limit).limit(limit).lean(),
         LoanRequest.countDocuments(query),
       ]);
-      res.json({ items: (items || []).map(toTaskListItem), total, page, limit, pages: Math.ceil(total / limit) });
+      const canDelete = await canDeleteFor(req);
+      res.json({ items: (items || []).map(loan => toTaskListItem(loan, { canDelete })), total, page, limit, pages: Math.ceil(total / limit) });
     } catch (error) { fail(res, error); }
   });
 
@@ -827,12 +867,12 @@ export function registerLoanTaskRoutes({
   });
 
   const loadScoped = async (req, id) => {
-    const loan = await LoanRequest.findOne({ _id: id, ...requestScope(req.user) }).lean();
+    const loan = await LoanRequest.findOne({ _id: id, ...scopeOf(req) }).lean();
     if (!loan) throw notFound();
     return loan;
   };
-  const detail = (loan, req, assigneeNotifyEmail = '') => toTaskDetail(loan, req.user, { cloudinary, now: now(), assigneeNotifyEmail });
-  const detailWithEmail = async (loan, req) => detail(loan, req, loan?.assignee?.userId ? await staffEmail(String(loan.assignee.userId)).catch(() => '') : '');
+  const detail = (loan, req, assigneeNotifyEmail = '', canDelete = false) => toTaskDetail(loan, req.user, { cloudinary, now: now(), assigneeNotifyEmail, perms: req.perms, canDelete });
+  const detailWithEmail = async (loan, req) => detail(loan, req, loan?.assignee?.userId ? await staffEmail(String(loan.assignee.userId)).catch(() => '') : '', await canDeleteFor(req));
 
   app.get('/api/loan-tasks/:id', ensureEnabled, authenticateUser, requireStaff, async (req, res) => {
     try {
@@ -848,14 +888,16 @@ export function registerLoanTaskRoutes({
       const id = validId(req.params.id);
       const loan = await loadScoped(req, id);
       const user = req.user;
-      const manager = isRequestManager(user);
+      const needed = { assign: 'loan_requests.assign', status: 'loan_requests.change_status', note: 'loan_requests.notes_files', reopen: 'loan_requests.reopen' }[req.body?.type];
+      if (needed) requirePerm(req, needed);
+      const manager = viewsAll(req) || (['assign', 'reopen'].includes(req.body?.type) && Boolean(needed));
       // Additional documents always go through /doc-request (upload link + applicant email), never a bare status change.
       if (req.body?.type === 'request_docs') throw new HttpError(DOC_REQUEST_ONLY_MESSAGE, 400, { code: 'USE_DOC_REQUEST', errors: { type: DOC_REQUEST_ONLY_MESSAGE } });
       const action = validateTaskAction(req.body, loan, { manager, isAssignee: isAssigneeOf(user, loan) });
       const at = now();
       const actor = actorOf(user);
       const entry = { at, type: action.type, from: action.from, to: action.to, actor, ...(action.note ? { note: action.note } : {}) };
-      const scope = { _id: id, ...requestScope(user) };
+      const scope = { _id: id, ...scopeOf(req) };
       let updated;
       if (action.type === 'note') {
         updated = await LoanRequest.findOneAndUpdate(scope, { $push: { taskHistory: entry }, $set: { taskUpdatedAt: at } }, { new: true, lean: true });
@@ -913,7 +955,8 @@ export function registerLoanTaskRoutes({
     let loan;
     try {
       loan = await loadScoped(req, validId(req.params.id));
-      if (!allowedTaskActions(loan, { manager: isRequestManager(req.user), isAssignee: isAssigneeOf(req.user, loan) }).uploadFiles) throw new HttpError('Шийдвэрлэсэн хүсэлтэд файл нэмэх эрхгүй байна.', 403);
+      requirePerm(req, 'loan_requests.notes_files');
+      if (!allowedTaskActions(loan, { manager: viewsAll(req), isAssignee: isAssigneeOf(req.user, loan) }).uploadFiles) throw new HttpError('Шийдвэрлэсэн хүсэлтэд файл нэмэх эрхгүй байна.', 403);
     } catch (error) { return fail(res, error); }
     parseStaffFiles(req, res, async parseError => {
       const persisted = [];
@@ -935,7 +978,7 @@ export function registerLoanTaskRoutes({
           persisted.push(stored);
           entries.push({ ...stored, fieldKey, label: base.label, source: 'staff', uploadedBy: { userId: actor.userId, name: actor.name }, uploadedAt: at });
         }
-        const query = { _id: loan._id, ...requestScope(req.user), ...(isRequestManager(req.user) ? {} : { taskStatus: { $nin: TERMINAL_TASK_STATUSES } }) };
+        const query = { _id: loan._id, ...scopeOf(req), ...(viewsAll(req) ? {} : { taskStatus: { $nin: TERMINAL_TASK_STATUSES } }) };
         const updated = await LoanRequest.findOneAndUpdate(query, {
           $push: { taskFiles: { $each: entries }, taskHistory: { at, type: 'file_added', note: `${entries.length} файл нэмэв.`, items: [base.label], actor } },
           $set: { taskUpdatedAt: at },
@@ -957,7 +1000,8 @@ export function registerLoanTaskRoutes({
       const loan = await loadScoped(req, id);
       const user = req.user;
       const state = deriveTaskState(loan);
-      const allowed = allowedTaskActions(loan, { manager: isRequestManager(user), isAssignee: isAssigneeOf(user, loan) });
+      requirePerm(req, 'loan_requests.request_docs');
+      const allowed = allowedTaskActions(loan, { manager: viewsAll(req), isAssignee: isAssigneeOf(user, loan) });
       if (TERMINAL_TASK_STATUSES.includes(state.taskStatus)) throw new HttpError('Шийдвэрлэсэн хүсэлтэд баримт хүсэх боломжгүй.', 403, { code: 'TERMINAL' });
       if (!allowed.requestDocs) throw new HttpError('Эхлээд хүсэлтийг хуваарилах эсвэл хянаж эхэлнэ үү.', 400);
       const body = req.body;
@@ -995,7 +1039,7 @@ export function registerLoanTaskRoutes({
       const set = { taskUploadLinks: [...(revokeLinks(loan.taskUploadLinks, at) || []), link], taskUpdatedAt: at };
       if (state.taskStatus !== 'additional_docs') set.taskStatus = 'additional_docs';
       const entry = { at, type: 'docs_requested', from: state.taskStatus, to: 'additional_docs', items: items.map(item => item.label), actor, ...(note ? { note } : {}) };
-      const updated = await LoanRequest.findOneAndUpdate({ _id: id, ...requestScope(user), ...revisionCondition(revision) }, { $set: set, $inc: { taskRevision: 1 }, $push: { taskHistory: { $each: [entry] } } }, { new: true, lean: true, runValidators: true });
+      const updated = await LoanRequest.findOneAndUpdate({ _id: id, ...scopeOf(req), ...revisionCondition(revision) }, { $set: set, $inc: { taskRevision: 1 }, $push: { taskHistory: { $each: [entry] } } }, { new: true, lean: true, runValidators: true });
       if (!updated) throw new HttpError('Өөр хэрэглэгч өөрчилсөн байна. Дахин ачаална уу.', 409, { code: 'REVISION_CONFLICT' });
       await createLog(user, 'loan_task_doc_request', `${id}: ${state.taskStatus} -> additional_docs items=${items.length}`);
       const uploadUrl = `${uploadBaseUrl()}?upload=${token}`;
@@ -1013,6 +1057,7 @@ export function registerLoanTaskRoutes({
     try {
       const id = validId(req.params.id);
       const loan = await loadScoped(req, id);
+      requirePerm(req, 'loan_requests.message');
       const user = req.user;
       const body = req.body;
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError('Хүсэлт буруу байна.', 400);
@@ -1035,10 +1080,29 @@ export function registerLoanTaskRoutes({
       } catch { logger.error?.('[loan-tasks] applicant message failed'); }
       const at = now();
       const entry = { at, type: 'message', note: message, actor: actorOf(user), email: { template: 'applicant_message', result } };
-      const updated = await LoanRequest.findOneAndUpdate({ _id: id, ...requestScope(user), ...revisionCondition(revision) }, { $set: { taskUpdatedAt: at }, $inc: { taskRevision: 1 }, $push: { taskHistory: { $each: [entry] } } }, { new: true, lean: true });
+      const updated = await LoanRequest.findOneAndUpdate({ _id: id, ...scopeOf(req), ...revisionCondition(revision) }, { $set: { taskUpdatedAt: at }, $inc: { taskRevision: 1 }, $push: { taskHistory: { $each: [entry] } } }, { new: true, lean: true });
       if (!updated) throw new HttpError('Өөр хэрэглэгч өөрчилсөн байна. Дахин ачаална уу.', 409, { code: 'REVISION_CONFLICT' });
       await createLog(user, 'loan_task_message', `${id}: ${result}`);
       res.json({ ok: true, email: { result }, task: await detailWithEmail(updated, req) });
+    } catch (error) { fail(res, error); }
+  });
+
+  // D16: hard delete, gated by loan_requests.delete (admin only) AND the SiteConfig flag. Files first (authenticated raw), then the document.
+  app.delete('/api/loan-requests/:id', authenticateUser, async (req, res) => {
+    try {
+      await loadPerms(req);
+      if (!req.perms.has('loan_requests.delete')) return res.status(403).json({ message: 'Хүсэлт устгах эрхгүй байна.', code: 'FORBIDDEN' });
+      if (!(await deleteEnabled())) return res.status(403).json({ message: 'Хүсэлт устгах тохиргоо унтраалттай байна.', code: 'DELETE_DISABLED' });
+      const id = validId(req.params.id);
+      const loan = await LoanRequest.findOne({ _id: id }).lean();
+      if (!loan) throw notFound();
+      const ids = deletablePublicIds(loan);
+      const results = await Promise.allSettled(ids.map(publicId => cloudinary.uploader.destroy(publicId, { resource_type: 'raw', type: 'authenticated' })));
+      const failed = results.filter(item => item.status === 'rejected' || (item.value && item.value.result && !['ok', 'not found'].includes(item.value.result))).length;
+      if (failed) throw new HttpError('Файлыг устгаж чадсангүй. Хүсэлт устгагдаагүй, дахин оролдоно уу.', 502, { code: 'FILE_DELETE_FAILED' });
+      await LoanRequest.deleteOne({ _id: id });
+      await createLog(req.user, 'loan_request_deleted', `${id} ref=${loan.applicationReference || '-'} files=${ids.length}`);
+      res.json({ ok: true });
     } catch (error) { fail(res, error); }
   });
 

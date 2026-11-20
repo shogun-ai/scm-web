@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ClipboardList, History, Loader2, RefreshCw, Search } from 'lucide-react';
+import { ClipboardList, History, Loader2, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { TASK_STATUSES, TASK_STATUS_LABELS } from '@shared/loanTaskStatus';
 import { LOAN_PRODUCTS } from '@shared/loanFormConfig';
 import TaskStatusBadge from './TaskStatusBadge';
 import { isManagerUser } from './configHelpers';
 import LoanTaskDetail from './LoanTaskDetail';
-import { errorMessage, fetchAssignees, fetchTaskList, fetchTaskSummary, postTaskAction } from './api';
+import ConfirmDeleteDialog from '../admin/ConfirmDeleteDialog';
+import { deleteLoanRequest, errorMessage, fetchAssignees, fetchTaskList, fetchTaskSummary, postTaskAction } from './api';
 
 const SELECT = 'min-h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#003B5C] focus:outline-none focus:ring-2 focus:ring-[#003B5C]/20';
 const money = value => (Number(value) > 0 ? `${Number(value).toLocaleString('mn-MN')} ₮` : '—');
@@ -22,6 +23,10 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
   const [assignees, setAssignees] = useState([]);
   const [openId, setOpenId] = useState(null);
   const [rowError, setRowError] = useState('');
+  const [deleting, setDeleting] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [flash, setFlash] = useState('');
 
   useEffect(() => { const timer = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); }, 300); return () => clearTimeout(timer); }, [searchInput]);
   useEffect(() => {
@@ -74,6 +79,19 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
     }
   };
 
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    setDeleteBusy(true); setDeleteError('');
+    try {
+      await deleteLoanRequest(apiUrl, deleting._id);
+      setFlash(`Хүсэлт ${deleting.applicationReference || ''} устгагдлаа.`);
+      setDeleting(null); load();
+    } catch (err) {
+      setDeleteError(err.response?.data?.code === 'DELETE_DISABLED' ? 'Устгах тохиргоо унтраалттай байна. Тохиргоо → Устгах тохиргоо хэсгээс асаана уу.' : errorMessage(err, 'Устгаж чадсангүй.'));
+    } finally { setDeleteBusy(false); }
+  };
+  const deleteButton = (item, mobile) => (item.canDelete ? <button type="button" onClick={() => { setDeleteError(''); setDeleting(item); }} aria-label={`${item.applicationReference || 'Хүсэлт'} — устгах`} className={`inline-flex items-center justify-center gap-1 border border-red-300 bg-white font-semibold text-red-700 hover:bg-red-50 ${mobile ? 'mt-2 min-h-11 w-full rounded-xl text-sm' : 'ml-2 min-h-10 rounded-lg px-3 text-xs'}`}><Trash2 size={14} aria-hidden="true" />Устгах</button> : null);
+
   const chips = [['all', 'Бүгд', counts?.total], ...TASK_STATUSES.map(code => [code, TASK_STATUS_LABELS[code], counts?.counts?.[code]])];
 
   return <div className="space-y-5">
@@ -116,6 +134,7 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
       </label>
     </div>
 
+    {flash && <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{flash}</p>}
     {rowError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{rowError}</p>}
     {status === 'error' && <div role="alert" className="rounded-2xl bg-red-50 p-5 text-sm text-red-700">{error} <button type="button" onClick={load} className="ml-2 font-semibold underline">Дахин оролдох</button></div>}
     {status === 'loading' && list.items.length === 0 && <p role="status" className="flex items-center gap-2 p-6 text-slate-600"><Loader2 size={18} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p>}
@@ -134,7 +153,7 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
             <td className="px-4 py-3"><TaskStatusBadge status={item.taskStatus} outcome={item.outcome} legacy={item.taskStatusSource === 'legacy'} /></td>
             <td className="px-4 py-3">{manager ? <select aria-label={`${item.applicationReference || 'Хүсэлт'} — хариуцагч`} className={`${SELECT} max-w-[11rem]`} value={item.assignee?.userId || ''} onChange={event => quickAssign(item, event.target.value)}><option value="">Хуваарилаагүй</option>{item.assignee?.userId && !assignees.some(person => person._id === item.assignee.userId) && <option value={item.assignee.userId}>{item.assignee.name}</option>}{assignees.map(person => <option key={person._id} value={person._id}>{person.name}</option>)}</select> : (item.assignee?.name || '—')}</td>
             <td className="px-4 py-3 text-xs text-slate-600">{date(item.createdAt)}</td>
-            <td className="px-4 py-3"><button type="button" onClick={() => setOpenId(item._id)} className="min-h-10 rounded-lg bg-[#003B5C] px-3 text-xs font-semibold text-white">Нээх</button></td>
+            <td className="px-4 py-3"><button type="button" onClick={() => setOpenId(item._id)} className="min-h-10 rounded-lg bg-[#003B5C] px-3 text-xs font-semibold text-white">Нээх</button>{deleteButton(item, false)}</td>
           </tr>)}</tbody>
         </table>
       </div>
@@ -144,6 +163,7 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
         <p className="mt-1 text-sm tabular-nums">{money(item.amount)} · {date(item.createdAt)}</p>
         <p className="mt-1 text-xs text-slate-500">Хариуцагч: {item.assignee?.name || '—'}</p>
         <button type="button" onClick={() => setOpenId(item._id)} className="mt-3 min-h-11 w-full rounded-xl bg-[#003B5C] text-sm font-semibold text-white">Нээх</button>
+        {deleteButton(item, true)}
       </li>)}</ul>
       <nav className="flex items-center justify-between gap-3 text-sm" aria-label="Хуудаслалт">
         <button type="button" disabled={page <= 1 || status === 'loading'} onClick={() => setPage(page - 1)} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 disabled:opacity-40">Өмнөх</button>
@@ -152,6 +172,7 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
       </nav>
     </>}
 
-    {openId && <LoanTaskDetail apiUrl={apiUrl} id={openId} user={user} assignees={assignees} onClose={() => setOpenId(null)} onChanged={load} />}
+    {openId && <LoanTaskDetail apiUrl={apiUrl} id={openId} user={user} assignees={assignees} onClose={() => setOpenId(null)} onChanged={load} onDeleted={() => { setOpenId(null); setFlash('Хүсэлт устгагдлаа.'); load(); }} />}
+    {deleting && <ConfirmDeleteDialog reference={deleting.applicationReference} busy={deleteBusy} error={deleteError} onCancel={() => setDeleting(null)} onConfirm={confirmDelete} />}
   </div>;
 }

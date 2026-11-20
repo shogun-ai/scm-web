@@ -41,6 +41,9 @@ import nodemailer from 'nodemailer';
 import LoanFormConfig from './models/LoanFormConfig.js';
 import { applyLoanTaskSchema, registerLoanTaskRoutes, legacyLoanPostGone, taskLockBlocks, sanitizeLegacyLoanWrite } from './loanTasks.js';
 import { createMailer, isValidEmailAddress } from './mailer.js';
+import { registerAccountRoutes, readDeleteFlag, recordLoginEvent } from './accountRoutes.js';
+import { createPermissionService, registerPermissionRoutes, parseMatrix } from './permissions.js';
+import { sanitizeMatrix } from '../shared/permissions.js';
 
 const ZentroCodeRuleSchema = new mongoose.Schema({
   keyword: { type: String, required: true, unique: true },
@@ -352,6 +355,7 @@ const UserSchema = new mongoose.Schema({
     roles: { type: [String], default: [] },
     isActive: { type: Boolean, default: true },
     notificationEmail: { type: String, trim: true, maxlength: 254 },
+    inviteTokenHash: { type: String, select: false }, inviteExpiresAt: { type: Date },
     twoFASecret: { type: Object, default: null }, isTwoFAEnabled: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now }
 });
@@ -1645,20 +1649,27 @@ async function updateComplianceReview(loanOrId) {
 const TrustRequestSchema = new mongoose.Schema({ 
     lastname: String, firstname: String, phone: String, email: String, amount: String, 
     status: { type: String, default: 'pending' }, contactNote: String, 
+    reference: String,
+    messages: { type: [{ _id: false, at: Date, message: String, actor: { userId: String, name: String }, email: { template: String, result: String } }], default: undefined },
+    history: { type: [{ _id: false, at: Date, type: String, email: { template: String, result: String } }], default: undefined },
     createdAt: { type: Date, default: Date.now } 
 });
 const TrustRequest = mongoose.models.TrustRequest || mongoose.model('TrustRequest', TrustRequestSchema);
 
 const LogSchema = new mongoose.Schema({ 
-    userName: String, userRole: String, action: String, details: String, 
+    userId: String, userName: String, userRole: String, action: String, details: String, 
     date: { type: Date, default: Date.now } 
 });
 const Log = mongoose.models.Log || mongoose.model('Log', LogSchema);
+
+const LoginEventSchema = new mongoose.Schema({ userId: { type: String, index: true }, at: { type: Date, default: Date.now }, ip: String, userAgent: String, success: { type: Boolean, default: true } });
+const LoginEvent = mongoose.models.LoginEvent || mongoose.model('LoginEvent', LoginEventSchema);
 
 const createLog = async (user, action, details) => {
     try {
         if (!user) return;
         await new Log({
+            ...(user._id ? { userId: String(user._id) } : {}),
             userName: user.name || user.email || 'Unknown',
             userRole: [user.role, ...(Array.isArray(user.roles) ? user.roles : [])].filter(Boolean).join(', ') || 'unknown',
             action,
@@ -1709,6 +1720,7 @@ const authenticateUser = async (req, res, next) => {
         if (!user || !user.isActive) return res.status(401).json({ message: 'Unauthorized' });
 
         req.user = user;
+        req.auth = payload;
         next();
     } catch (e) {
         console.warn('[AUTH] Error:', e.message, 'Path:', req.path);
@@ -1791,6 +1803,9 @@ const userHasPermission = async (user, sectionKey, action, minimum = 'full') => 
         return (PERMISSION_RANK[level] || 0) >= requiredRank;
     });
 };
+
+// D17: task-management permission catalog; resolved from role defaults + legacy/new cells of the saved matrix.
+const permissionService = createPermissionService({ loadMatrix: async () => parseMatrix((await SiteConfig.findOne({ key: 'permissions_matrix' }).lean())?.value) });
 
 const getCommitteeDecisionAction = (nextStatus, currentStatus) => {
     if (nextStatus === 'approved') return 'Зөвшөөрөх';
@@ -3173,7 +3188,8 @@ app.post('/api/auth/login', async (req, res) => {
             console.log('2FA verified:', verified);
             if (!verified) return res.status(401).json({ message: '2FA error' });
         }
-        const token = jwt.sign({ id: user._id, role: user.role, roles: user.roles || [] }, JWT_SECRET, { expiresIn: '1d' });
+        const lid = await recordLoginEvent({ LoginEvent, user, req });
+        const token = jwt.sign({ id: user._id, role: user.role, roles: user.roles || [], ...(lid ? { lid } : {}) }, JWT_SECRET, { expiresIn: '1d' });
         await createLog(user, 'loan_login', `User logged in to Zentro Prime Capital (${email})`);
         res.json({ token, user: { id: user._id, name: user.name, role: user.role, roles: user.roles || [] } });
     } catch (e) { res.status(500).send("Error"); }
@@ -3249,9 +3265,13 @@ app.use('/api/loans/:id', (req, res, next) => {
 });
 
 registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest, User, authenticateUser, committeeAction: getCommitteeDecisionAction, userHasPermission, automate: runPostSubmissionAutomationInBackground, createLog });
+const appMailer = createMailer({ createTransport: nodemailer.createTransport });
+const getCompanyPhoneConfig = async () => { const doc = await SiteConfig.findOne({ key: 'contact_phone' }).lean(); return typeof doc?.value === 'string' ? doc.value : ''; };
 registerLoanTaskRoutes({
     app, multer, cloudinary, LoanRequest, LoanFormConfig, User, authenticateUser, requireAdmin, createLog,
-    mailer: createMailer({ createTransport: nodemailer.createTransport }),
+    mailer: appMailer,
+    getPermissions: user => permissionService.permissionsFor(user),
+    getDeleteEnabled: () => readDeleteFlag(SiteConfig),
     automate: runPostSubmissionAutomationInBackground,
     getCompanyPhone: async () => { const doc = await SiteConfig.findOne({ key: 'contact_phone' }).lean(); return typeof doc?.value === 'string' ? doc.value : ''; },
 });
@@ -6540,26 +6560,15 @@ app.post('/api/loan-research', authenticateUser, (req, res) => {
     });
 });
 
-app.post('/api/trusts', async (req, res) => { try { await new TrustRequest(req.body).save(); res.status(201).json({ message: 'Success' }); } catch (e) { res.status(500).send("Error"); } });
+// D16/D17: /api/me*, /api/admin/settings, trust requests (+message), user invites, permission catalog.
+registerAccountRoutes({ app, User, SiteConfig, Log, LoginEvent, TrustRequest, authenticateUser, requireAdmin, permissions: permissionService, createLog, mailer: appMailer, bcrypt, getCompanyPhone: getCompanyPhoneConfig });
+registerPermissionRoutes({ app, authenticateUser, requireAdmin, service: permissionService });
 
-app.get('/api/trusts', authenticateUser, async (req, res) => { try { res.json(await TrustRequest.find().sort({ createdAt: -1 })); } catch (e) { res.status(500).send("Error"); } });
-
-app.get('/api/users', authenticateUser, requireAdmin, async (req, res) => { try { res.json(await User.find().select('-password')); } catch (e) { res.status(500).send("Error"); } });
+app.get('/api/users', authenticateUser, requireAdmin, async (req, res) => { try { res.json(await User.find().select('-password -inviteTokenHash')); } catch (e) { res.status(500).send("Error"); } });
 // Бүх ажилтанд хариуцагч сонгох жагсаалт (нэр + ID л харагдана)
 app.get('/api/users/list', authenticateUser, async (req, res) => { try { res.json(await User.find({ isActive: { $ne: false } }).select('_id name role')); } catch (e) { res.status(500).send("Error"); } });
 
-app.post('/api/users', authenticateUser, requireAdmin, async (req, res) => {
-  try {
-    const { name, email, password, role, roles } = req.body;
-    if (!name || !email || !password) return res.status(400).json({ message: 'Бүх талбарыг бөглөнө үү' });
-    const exists = await User.findOne({ email });
-    if (exists) return res.status(400).json({ message: 'И-мэйл бүртгэлтэй байна' });
-    const hashed = await bcrypt.hash(password, 10);
-    const assignedRoles = Array.isArray(roles) && roles.length ? roles.slice(0, 2) : [];
-    const u = await new User({ name, email, password: hashed, role: role || 'employee', roles: assignedRoles }).save();
-    res.json({ message: 'Амжилттай', user: { _id: u._id, name: u.name, email: u.email, role: u.role, roles: u.roles } });
-  } catch (e) { res.status(500).json({ message: 'Алдаа гарлаа' }); }
-});
+// POST /api/users and POST /api/users/:id/invite live in accountRoutes.js (invite flow, legacy password mode kept).
 
 app.put('/api/users/:id', authenticateUser, requireAdmin, async (req, res) => {
   try {
@@ -6571,15 +6580,13 @@ app.put('/api/users/:id', authenticateUser, requireAdmin, async (req, res) => {
       if (value === null || (value !== '' && !isValidEmailAddress(value))) return res.status(400).json({ message: 'Мэдэгдлийн имэйл буруу байна.', errors: { notificationEmail: 'Имэйл хаяг буруу байна.' } });
       if (value) update.notificationEmail = value; else update.$unset = { notificationEmail: 1 };
     }
-    const u = await User.findByIdAndUpdate(req.params.id, update, { new: true }).select('-password');
+    const u = await User.findByIdAndUpdate(req.params.id, update, { new: true }).select('-password -inviteTokenHash');
     if (!u) return res.status(404).json({ message: 'Хэрэглэгч олдсонгүй' });
     res.json(u);
   } catch (e) { res.status(500).json({ message: 'Алдаа гарлаа' }); }
 });
 
 app.delete('/api/users/:id', authenticateUser, requireAdmin, async (req, res) => { try { await User.findByIdAndDelete(req.params.id); res.json({ message: 'Ð£ÑÑ‚Ð³Ð°Ð³Ð´Ð»Ð°Ð°' }); } catch (e) { res.status(500).send("Error"); } });
-
-app.put('/api/trusts/:id', authenticateUser, async (req, res) => { try { const t = await TrustRequest.findByIdAndUpdate(req.params.id, req.body, { new: true }); res.json(t); } catch (e) { res.status(500).send("Error"); } });
 
 app.get('/api/logs', authenticateUser, requireAdmin, async (req, res) => { try { res.json(await Log.find().sort({ date: -1 }).limit(100)); } catch (e) { res.status(500).send("Error"); } });
 
@@ -7449,9 +7456,11 @@ app.get('/api/config/permissions', authenticateUser, async (req, res) => {
 
 app.put('/api/config/permissions', authenticateUser, requireAdmin, async (req, res) => {
   try {
+    const matrix = sanitizeMatrix(req.body);
+    if (!matrix) return res.status(400).json({ message: 'Эрхийн матриц буруу байна.' });
     await SiteConfig.findOneAndUpdate(
       { key: 'permissions_matrix' },
-      { key: 'permissions_matrix', value: JSON.stringify(req.body) },
+      { key: 'permissions_matrix', value: JSON.stringify(matrix) },
       { upsert: true }
     );
     res.json({ ok: true });
