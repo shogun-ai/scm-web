@@ -162,9 +162,14 @@ test('feature flag off: public GET reports disabled, everything else 503, quick 
 });
 
 test('public products expose only active configs and live sub products without internal fields', async () => {
-  const h = harness({ configs: [activeConfig(), { ...buildDefaultConfig('biz_loan'), isActive: false, version: 1 }] });
+  let h = harness({ env: { LOAN_TASKS_ENABLED: 'true', LOAN_TASKS_DEFAULT_CONFIG: 'false' }, configs: [activeConfig(), { ...buildDefaultConfig('biz_loan'), isActive: false, version: 1 }] });
   let response = await h.invoke('get', '/api/loan-tasks/public/products');
-  assert.deepEqual(response.data, { enabled: true, products: [{ productKey: 'cons_loan', name: 'Хэрэглээний зээл', hasLiveSubProducts: true }] });
+  assert.deepEqual(response.data, { enabled: true, products: [{ productKey: 'cons_loan', name: 'Хэрэглээний зээл', hasLiveSubProducts: true }] }, 'D12 rollback: unsaved products stay legacy');
+  // D12 default on: unsaved products are listed with the default form; saved isActive:false stays hidden.
+  h = harness({ configs: [activeConfig(), { ...buildDefaultConfig('biz_loan'), isActive: false, version: 1 }] });
+  response = await h.invoke('get', '/api/loan-tasks/public/products');
+  assert.deepEqual(response.data.products.map(item => item.productKey), ['car_purchase_loan', 'car_coll_loan', 'cons_loan', 'credit_card', 're_loan', 'line_loan', 'mortgage']);
+  assert.equal(response.data.products.find(item => item.productKey === 'mortgage').hasLiveSubProducts, false);
   assert.equal(response.headers['Cache-Control'], 'public, max-age=60');
   response = await h.invoke('get', '/api/loan-tasks/public/products/:productKey', { params: { productKey: 'cons_loan' } });
   const product = response.data.product;
@@ -241,7 +246,7 @@ test('product availability, config version, honeypot and multer limits', async (
   response = await submit(h, { body: { subProductId: 'expired' } });
   assert.equal(response.code, 404); assert.equal(response.data.code, 'PRODUCT_UNAVAILABLE');
   response = await submit(h, { body: { productKey: 'biz_loan' } });
-  assert.equal(response.code, 404);
+  assert.equal(response.code, 409, 'D12: unsaved product serves default version 0'); assert.equal(response.data.code, 'CONFIG_CHANGED');
   response = await submit(h, { body: { website: 'spam' } });
   assert.equal(response.code, 400); assert.equal(h.records.length, 0);
   response = await submit(h, { uploadError: new Error('LIMIT_FILE_SIZE') });
@@ -299,7 +304,8 @@ test('admin config CRUD: admin only, validation, optimistic version, cache inval
   const cons = response.data.products.find(item => item.productKey === 'cons_loan');
   assert.equal(cons.saved, true); assert.deepEqual(cons.config.subProducts.map(sub => sub.status), ['live', 'expired', 'scheduled', 'inactive']);
   const biz = response.data.products.find(item => item.productKey === 'biz_loan');
-  assert.equal(biz.saved, false); assert.equal(biz.config.version, 0); assert.equal(biz.config.isActive, false);
+  assert.equal(biz.saved, false); assert.equal(biz.config.version, 0); assert.equal(biz.config.isActive, true); assert.equal(biz.config.isDefault, true);
+  assert.equal(cons.config.isDefault, false);
   assert.ok(response.data.presets.length > 10);
 
   await h.invoke('get', '/api/loan-tasks/public/products/:productKey', { params: { productKey: 'cons_loan' } });
@@ -601,4 +607,129 @@ test('review fixes: list revision, closed product, size guard, doc-request only,
   const linkFile = response.data.files.find(file => file.source === 'applicant_link');
   assert.equal(linkFile.label, 'Банкны хуулга (Хаан)');
   assert.equal(JSON.stringify(response.data).includes('tokenHash'), false);
+});
+
+// ---------- D11 conditional fields (§15) + D12 default configs (§15.2) ----------
+const defaultAnswers = (extra = {}) => ({ borrower_type: 'individual', full_name: { lastName: 'Бат', firstName: 'Болд' }, phone: '99001234', email: 'bold@example.mn', loan_amount: 5000000, loan_term: 12, repayment_source: 'Цалин', ...extra });
+const defaultSubmit = (h, { product = 'cons_loan', answers: extra = {}, files = [], configVersion = '0' } = {}) => h.invoke('post', '/api/loan-tasks/public/submit', {
+  user: undefined, files, body: { productKey: product, subProductId: '', configVersion, answers: JSON.stringify(defaultAnswers(extra)), consent: 'true', website: '' },
+});
+
+test('D12: unsaved product serves the default form (version 0) and accepts submissions until an admin saves', async () => {
+  const h = harness();
+  let response = await h.invoke('get', '/api/loan-tasks/public/products/:productKey', { user: undefined, params: { productKey: 'cons_loan' } });
+  const product = response.data.product;
+  assert.equal(product.configVersion, 0); assert.equal(product.source, 'default');
+  const fields = product.steps.flatMap(step => step.fields);
+  const income = fields.find(field => field.key === 'income_source');
+  assert.deepEqual(income.options.map(option => option.value), ['salary', 'business', 'salary_business', 'other']);
+  assert.deepEqual(fields.find(field => field.key === 'ndsh_reference').showWhen, { key: 'income_source', op: 'in', value: ['salary', 'salary_business'] });
+  assert.equal(fields.find(field => field.key === 'bank_statement').maxFiles, 5);
+  assert.equal(fields.find(field => field.key === 'collateral_types').type, 'multiselect');
+
+  response = await defaultSubmit(h, { answers: { income_source: 'salary' }, files: [pdfFile('ndsh_reference')] });
+  assert.equal(response.code, 201, JSON.stringify(response.data));
+  const loan = h.records[0];
+  assert.equal(loan.taskForm.configVersion, 0); assert.equal(loan.assignee, undefined, 'default config has no assignee');
+  assert.ok(loan.taskForm.steps.flatMap(step => step.fields).some(field => field.key === 'income_source'), 'default form snapshotted');
+
+  response = await h.invoke('get', '/api/loan-tasks/admin/configs', { user: admin });
+  const cons = response.data.products.find(item => item.productKey === 'cons_loan');
+  assert.equal(cons.saved, false); assert.equal(cons.config.isDefault, true); assert.equal(cons.config.version, 0); assert.equal(cons.config.isActive, true);
+  const { isDefault: _d, version: _v, updatedAt: _u, updatedBy: _b, name: _n, ...draft } = cons.config;
+  response = await h.invoke('put', '/api/loan-tasks/admin/configs/:productKey', { user: admin, params: { productKey: 'cons_loan' }, body: { ...draft, expectedVersion: 0 } });
+  assert.equal(response.code, 200, JSON.stringify(response.data)); assert.equal(response.data.version, 1); assert.equal(response.data.isDefault, false);
+  response = await defaultSubmit(h, { answers: { income_source: 'salary' } });
+  assert.equal(response.code, 409); assert.equal(response.data.code, 'CONFIG_CHANGED');
+  assert.equal((await defaultSubmit(h, { answers: { income_source: 'salary' }, configVersion: '1' })).code, 201);
+});
+
+test('D12 rollback: LOAN_TASKS_DEFAULT_CONFIG=false keeps unsaved products on the legacy form', async () => {
+  const h = harness({ env: { LOAN_TASKS_ENABLED: 'true', LOAN_TASKS_DEFAULT_CONFIG: 'false' } });
+  let response = await h.invoke('get', '/api/loan-tasks/public/products/:productKey', { user: undefined, params: { productKey: 'cons_loan' } });
+  assert.deepEqual(response.data, { enabled: true, product: null });
+  response = await h.invoke('get', '/api/loan-tasks/public/products');
+  assert.deepEqual(response.data, { enabled: true, products: [] });
+  response = await defaultSubmit(h, { answers: { income_source: 'salary' } });
+  assert.equal(response.code, 404); assert.equal(response.data.code, 'PRODUCT_UNAVAILABLE');
+  response = await h.invoke('get', '/api/loan-tasks/admin/configs', { user: admin });
+  const cons = response.data.products.find(item => item.productKey === 'cons_loan');
+  assert.equal(cons.config.isActive, false); assert.equal(cons.config.isDefault, true);
+});
+
+test('D12 default assignee comes only from env', async () => {
+  const h = harness({ env: { LOAN_TASKS_ENABLED: 'true', LOAN_TASKS_DEFAULT_ASSIGNEE_ID: OTHER_ID } });
+  const response = await defaultSubmit(h, { answers: { income_source: 'salary' } });
+  assert.equal(response.code, 201, JSON.stringify(response.data));
+  assert.deepEqual(h.records[0].assignee, { userId: OTHER_ID, name: 'Дорж' });
+  const json = JSON.stringify((await h.invoke('get', '/api/loan-tasks/public/products/:productKey', { user: undefined, params: { productKey: 'cons_loan' } })).data);
+  assert.equal(json.includes(OTHER_ID), false, 'assignee never public');
+});
+
+test('§15 income_source: hidden file fields are never uploaded; visible ones keep their limits', async () => {
+  // salary -> only НДШ; a bank statement sent anyway is discarded before Cloudinary.
+  let h = harness();
+  let response = await defaultSubmit(h, { answers: { income_source: 'salary', income_other_note: 'ignored' }, files: [pdfFile('ndsh_reference'), pdfFile('bank_statement'), pdfFile('income_other_file')] });
+  assert.equal(response.code, 201, JSON.stringify(response.data));
+  assert.equal(h.calls.uploads, 1);
+  assert.deepEqual(h.records[0].fileDetails.map(file => file.fieldName), ['file_social']);
+  assert.deepEqual(Object.keys(h.records[0].taskAnswers).filter(key => ['ndsh_reference', 'bank_statement', 'income_other_file', 'income_other_note'].includes(key)), ['ndsh_reference']);
+  // salary_business -> НДШ + bank statement, up to 5 files.
+  h = harness();
+  response = await defaultSubmit(h, { answers: { income_source: 'salary_business' }, files: [pdfFile('ndsh_reference'), ...Array.from({ length: 5 }, () => pdfFile('bank_statement'))] });
+  assert.equal(response.code, 201, JSON.stringify(response.data)); assert.equal(h.calls.uploads, 6);
+  h = harness();
+  response = await defaultSubmit(h, { answers: { income_source: 'salary_business' }, files: Array.from({ length: 6 }, () => pdfFile('bank_statement')) });
+  assert.equal(response.code, 400); assert.ok(response.data.errors.bank_statement); assert.equal(h.calls.uploads, 0);
+  // other -> note required + file allowed; НДШ discarded.
+  h = harness();
+  response = await defaultSubmit(h, { answers: { income_source: 'other' }, files: [pdfFile('income_other_file')] });
+  assert.equal(response.code, 400); assert.ok(response.data.errors.income_other_note); assert.equal(h.calls.uploads, 0);
+  response = await defaultSubmit(h, { answers: { income_source: 'other', income_other_note: 'Түрээсийн орлого' }, files: [pdfFile('income_other_file'), pdfFile('ndsh_reference')] });
+  assert.equal(response.code, 201, JSON.stringify(response.data));
+  assert.deepEqual(h.records[0].fileDetails.map(file => file.fieldName), ['file_income_other']);
+  assert.equal(h.records[0].taskAnswers.income_other_note, 'Түрээсийн орлого');
+  // income_source itself is required in the default form.
+  h = harness();
+  response = await defaultSubmit(h, {});
+  assert.equal(response.code, 400); assert.ok(response.data.errors.income_source);
+});
+
+test('§15 required hidden file is not required; required visible file still is', async () => {
+  const config = activeConfig({ subProducts: [], steps: [
+    { id: 'contact', title: 'Холбоо', fields: [{ kind: 'preset', key: 'full_name', required: true }, { kind: 'preset', key: 'phone', required: true }, { kind: 'preset', key: 'income_source', required: true }] },
+    { id: 'docs', title: 'Баримт', fields: [{ kind: 'preset', key: 'ndsh_reference', required: true }, { kind: 'preset', key: 'bank_statement', required: true }] },
+  ] });
+  const body = income => ({ answers: JSON.stringify({ full_name: { lastName: 'Бат', firstName: 'Болд' }, phone: '99001234', income_source: income }) });
+  let h = harness({ configs: [config] });
+  let response = await submit(h, { body: body('salary'), files: [pdfFile('ndsh_reference')] });
+  assert.equal(response.code, 201, JSON.stringify(response.data));
+  h = harness({ configs: [config] });
+  response = await submit(h, { body: body('business'), files: [pdfFile('ndsh_reference')] });
+  assert.equal(response.code, 400); assert.ok(response.data.errors.bank_statement); assert.equal(response.data.errors.ndsh_reference, undefined);
+  assert.equal(h.calls.uploads, 0);
+});
+
+test('§15 collateral_types multiselect: selected types show their files; detail returns choice labels', async () => {
+  const h = harness();
+  const files = [pdfFile('collateral_property_certificate'), pdfFile('collateral_vehicle_certificate'), pdfFile('collateral_deposit_statement')];
+  let response = await defaultSubmit(h, { product: 'mortgage', answers: { income_source: 'salary', collateral_types: ['real_estate', 'vehicle', 'real_estate'] }, files });
+  assert.equal(response.code, 201, JSON.stringify(response.data));
+  const loan = h.records[0];
+  assert.deepEqual(loan.fileDetails.map(file => file.fieldName), ['file_prop_cert', 'file_car_cert'], 'deposit statement hidden -> discarded');
+  assert.equal(h.calls.uploads, 2);
+  assert.deepEqual(loan.taskAnswers.collateral_types, ['real_estate', 'vehicle']);
+  assert.equal(loan.applicationData.loanRequest.collateralType, 'real_estate');
+  assert.deepEqual(loan.applicationData.collaterals.map(item => item.type), ['vehicle', 'real_estate']);
+  response = await h.invoke('get', '/api/loan-tasks/:id', { user: manager, params: { id: LOAN_ID } });
+  assert.equal(response.code, 200);
+  assert.equal(response.data.answerLabels.collateral_types, 'Үл хөдлөх хөрөнгө, Автомашин');
+  assert.equal(response.data.answerLabels.income_source, 'Цалин');
+  assert.equal(response.data.files.find(file => file.fieldName === 'file_car_cert').label, 'Тээврийн хэрэгслийн гэрчилгээ');
+  // collateral required for collateral products; invalid option rejected.
+  const h2 = harness();
+  response = await defaultSubmit(h2, { product: 'mortgage', answers: { income_source: 'salary' } });
+  assert.equal(response.code, 400); assert.ok(response.data.errors.collateral_types);
+  response = await defaultSubmit(h2, { product: 'mortgage', answers: { income_source: 'salary', collateral_types: ['gold'] } });
+  assert.equal(response.code, 400); assert.ok(response.data.errors.collateral_types);
 });

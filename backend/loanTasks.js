@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import { LOAN_PRODUCTS, PRODUCTS_MAP } from '../shared/loanFormConfig.js';
 import {
   LOAN_WIDGETS_VERSION, PRESET_WIDGETS, WIDGET_GROUPS, LIMITS, FILE_FORMATS, STORAGE_FIELD_LABELS,
-  resolveSteps, validateConfig, validateAnswers, fileRulesFor, presetFileRule, mirrorAnswers, buildDefaultConfig,
+  resolveSteps, validateConfig, validateAnswers, fileRulesFor, presetFileRule, mirrorAnswers, buildDefaultConfig, YESNO_OPTIONS,
   isSubProductLive, subProductStatus, ubDate, storageFieldToPresetKey,
 } from '../shared/loanWidgets.js';
 import {
@@ -196,6 +196,24 @@ export function fileRuleForLoan(loan, key) {
   return presetFileRule(key);
 }
 
+// Human labels for choice answers (select / multiselect / yesno) of a task-v1 snapshot: { [fieldKey]: string }.
+export function answerLabelsFor(steps, answers) {
+  const out = {};
+  if (!Array.isArray(steps) || !answers || typeof answers !== 'object') return out;
+  for (const step of steps) {
+    for (const field of Array.isArray(step?.fields) ? step.fields : []) {
+      if (!field?.key || !Object.hasOwn(answers, field.key)) continue;
+      const answer = answers[field.key];
+      const options = field.type === 'yesno' ? YESNO_OPTIONS : (Array.isArray(field.options) ? field.options : null);
+      if (!options || !['select', 'multiselect', 'yesno'].includes(field.type)) continue;
+      const labelOf = item => options.find(option => option.value === String(item))?.label || String(item);
+      if (field.type === 'multiselect') { if (Array.isArray(answer)) out[field.key] = answer.map(labelOf).join(', '); }
+      else if (answer !== undefined && answer !== null && answer !== '') out[field.key] = labelOf(answer);
+    }
+  }
+  return out;
+}
+
 function fieldLabel(loan, fieldKey, fieldName) {
   const steps = snapshotSteps(loan);
   if (steps && fieldKey) {
@@ -274,6 +292,7 @@ export function toTaskDetail(loan, user, { cloudinary, now = new Date() } = {}) 
       subProductName: loan.taskForm.subProductName || null, configVersion: loan.taskForm.configVersion ?? null, steps,
     } : null,
     answers: steps ? (loan.taskAnswers || {}) : null,
+    answerLabels: steps ? answerLabelsFor(steps, loan.taskAnswers || {}) : null,
     files: [
       ...(Array.isArray(loan.fileDetails) ? loan.fileDetails : []).map(file => fileOut(file, 'applicant')),
       ...(Array.isArray(loan.taskFiles) ? loan.taskFiles : []).map(file => fileOut(file, file.source === 'applicant_link' ? 'applicant_link' : 'staff')),
@@ -297,10 +316,13 @@ export function toTaskDetail(loan, user, { cloudinary, now = new Date() } = {}) 
 
 function taskApplicationData(mirror, value, fileDetails, { productKey, subProductId, at }) {
   const collaterals = [];
-  for (const [type, fieldName] of [['vehicle', 'file_car_photos'], ['real_estate', 'file_prop_map']]) {
-    const files = fileDetails.filter(file => file.fieldName === fieldName);
+  for (const [type, fieldNames] of [['vehicle', ['file_car_photos', 'file_car_cert']], ['real_estate', ['file_prop_map', 'file_prop_cert', 'file_cadastre']]]) {
+    const files = fileDetails.filter(file => fieldNames.includes(file.fieldName));
     if (files.length) collaterals.push({ type, files, fields: {}, valuation: {}, notes: '', auditLog: [] });
   }
+  // D11: collateral_types (multiselect) feeds the legacy single collateralType when collateral_type is absent.
+  const collateralTypes = Array.isArray(value.collateral_types) ? value.collateral_types : [];
+  const collateralType = value.collateral_type || ['real_estate', 'vehicle'].find(type => collateralTypes.includes(type)) || 'none';
   return {
     borrowerType: mirror.userType,
     borrower: {
@@ -312,7 +334,7 @@ function taskApplicationData(mirror, value, fileDetails, { productKey, subProduc
     org: { orgName: mirror.orgName || '', contactName: mirror.contactName || '', contactPhone: mirror.contactPhone || '', email: mirror.email || '' },
     loanRequest: {
       product: productKey, amount: mirror.amount !== undefined ? String(mirror.amount) : '', term: mirror.term !== undefined ? String(mirror.term) : '',
-      purpose: mirror.purpose || '', repaymentSource: mirror.repaymentSource || '', collateralType: value.collateral_type || 'none',
+      purpose: mirror.purpose || '', repaymentSource: mirror.repaymentSource || '', collateralType,
     },
     collaterals,
     guarantors: [],
@@ -324,10 +346,25 @@ function taskApplicationData(mirror, value, fileDetails, { productKey, subProduc
   };
 }
 
-function toAdminConfig(doc, productKey, now) {
-  const source = doc || { ...buildDefaultConfig(productKey), version: 0 };
+// D12: products without a saved LoanFormConfig use the default form as an active, unsaved config (version 0)
+// unless LOAN_TASKS_DEFAULT_CONFIG='false' (rollback: unsaved products fall back to the legacy form).
+export const defaultConfigsEnabled = env => env?.LOAN_TASKS_DEFAULT_CONFIG !== 'false';
+export function defaultActiveConfig(productKey, env = {}) {
+  const assignee = typeof env.LOAN_TASKS_DEFAULT_ASSIGNEE_ID === 'string' && OBJECT_ID_RE.test(env.LOAN_TASKS_DEFAULT_ASSIGNEE_ID) ? env.LOAN_TASKS_DEFAULT_ASSIGNEE_ID : '';
+  return { ...buildDefaultConfig(productKey), isActive: true, defaultAssigneeId: assignee, version: 0, isDefault: true };
+}
+// Saved config wins (even isActive:false); otherwise the D12 default when enabled; otherwise undefined.
+export function effectiveConfig(configs, productKey, env = {}) {
+  const saved = (Array.isArray(configs) ? configs : []).find(item => item.productKey === productKey);
+  if (saved) return saved;
+  return defaultConfigsEnabled(env) ? defaultActiveConfig(productKey, env) : undefined;
+}
+
+function toAdminConfig(doc, productKey, now, env = {}) {
+  const source = doc || (defaultConfigsEnabled(env) ? defaultActiveConfig(productKey, env) : { ...buildDefaultConfig(productKey), version: 0 });
   return {
     productKey,
+    isDefault: !doc,
     name: PRODUCTS_MAP[productKey] || productKey,
     isActive: Boolean(source.isActive),
     baseProductEnabled: source.baseProductEnabled !== false,
@@ -359,7 +396,8 @@ function toPublicProduct(config, now) {
   const baseProductEnabled = config.baseProductEnabled !== false;
   if (!baseProductEnabled && !subProducts.length) return null;
   return {
-    productKey: config.productKey, name: PRODUCTS_MAP[config.productKey] || config.productKey, configVersion: config.version,
+    productKey: config.productKey, name: PRODUCTS_MAP[config.productKey] || config.productKey, configVersion: config.version ?? 0,
+    source: config.isDefault ? 'default' : 'saved',
     baseProductEnabled, steps: baseProductEnabled ? resolveSteps(config.steps) : [], subProducts,
   };
 }
@@ -461,7 +499,7 @@ export function registerLoanTaskRoutes({
       const at = now();
       const configs = await loadConfigs();
       const products = LOAN_PRODUCTS.map(product => {
-        const publicProduct = toPublicProduct(configs.find(config => config.productKey === product.id), at);
+        const publicProduct = toPublicProduct(effectiveConfig(configs, product.id, env), at);
         return publicProduct ? { productKey: product.id, name: product.name, hasLiveSubProducts: publicProduct.subProducts.length > 0 } : null;
       }).filter(Boolean);
       res.json({ enabled: true, products });
@@ -474,7 +512,7 @@ export function registerLoanTaskRoutes({
       if (!PRODUCT_KEYS.has(req.params.productKey)) throw new HttpError('Бүтээгдэхүүн олдсонгүй.', 404);
       if (!enabled()) return res.json({ enabled: false, product: null });
       const productKey = req.params.productKey;
-      const config = (await loadConfigs()).find(item => item.productKey === productKey);
+      const config = effectiveConfig(await loadConfigs(), productKey, env);
       const at = now();
       if (isPublicProductClosed(config, at)) return res.json({ enabled: true, closed: true, product: null, productKey, name: PRODUCTS_MAP[productKey] || productKey, message: PRODUCT_CLOSED_MESSAGE });
       res.json({ enabled: true, product: toPublicProduct(config, at) });
@@ -493,7 +531,7 @@ export function registerLoanTaskRoutes({
         const productKey = str(body.productKey, 60);
         if (!PRODUCT_KEYS.has(productKey)) throw unavailable();
         const at = now();
-        const config = (await loadConfigs()).find(item => item.productKey === productKey);
+        const config = effectiveConfig(await loadConfigs(), productKey, env);
         if (!config?.isActive) throw unavailable();
         const subProductId = str(body.subProductId, 60);
         let sub = null;
@@ -501,7 +539,7 @@ export function registerLoanTaskRoutes({
           sub = SUB_ID_RE.test(subProductId) ? (config.subProducts || []).find(item => item.id === subProductId) : null;
           if (!sub || !isSubProductLive(sub, at)) throw unavailable();
         } else if (config.baseProductEnabled === false) throw unavailable();
-        if (!/^\d{1,9}$/.test(String(body.configVersion ?? '')) || Number(body.configVersion) !== config.version) throw new HttpError('Маягт шинэчлэгдсэн байна. Дахин ачаална уу.', 409, { code: 'CONFIG_CHANGED' });
+        if (!/^\d{1,9}$/.test(String(body.configVersion ?? '')) || Number(body.configVersion) !== (config.version ?? 0)) throw new HttpError('Маягт шинэчлэгдсэн байна. Дахин ачаална уу.', 409, { code: 'CONFIG_CHANGED' });
 
         const errors = {};
         if (body.consent !== 'true' && body.consent !== true) errors.consent = 'Мэдээлэл боловсруулах зөвшөөрөл шаардлагатай.';
@@ -511,8 +549,12 @@ export function registerLoanTaskRoutes({
         const steps = resolveSteps(sub && sub.inheritSteps === false ? sub.steps : config.steps);
         const answers = rawAnswers ? validateAnswers(steps, rawAnswers, { now: at }) : { ok: false, errors: {}, value: {} };
         Object.assign(errors, answers.errors);
-        const rules = fileRulesFor(steps);
-        const fileCheck = validateTaskFiles(req.files, rules);
+        // §15: files sent for fields hidden by the answers are discarded before upload (never stored).
+        const rules = fileRulesFor(steps, { answers: answers.value });
+        for (const [key, rule] of Object.entries(rules)) if (rule.hidden) delete rules[key];
+        const hiddenFileKeys = new Set(Object.keys(fileRulesFor(steps)).filter(key => !Object.hasOwn(rules, key)));
+        const submittedFiles = (Array.isArray(req.files) ? req.files : []).filter(file => !hiddenFileKeys.has(file?.fieldname));
+        const fileCheck = validateTaskFiles(submittedFiles, rules);
         Object.assign(errors, fileCheck.errors);
         if (Object.keys(errors).length) throw new HttpError('Мэдээллээ шалгана уу.', 400, { errors });
 
@@ -673,7 +715,7 @@ export function registerLoanTaskRoutes({
         widgetGroups: WIDGET_GROUPS,
         limits: LIMITS,
         fileFormats: Object.keys(FILE_FORMATS),
-        products: LOAN_PRODUCTS.map(product => ({ productKey: product.id, name: product.name, saved: byKey.has(product.id), config: toAdminConfig(byKey.get(product.id), product.id, at) })),
+        products: LOAN_PRODUCTS.map(product => ({ productKey: product.id, name: product.name, saved: byKey.has(product.id), config: toAdminConfig(byKey.get(product.id), product.id, at, env) })),
       });
     } catch (error) { fail(res, error); }
   });
@@ -713,7 +755,7 @@ export function registerLoanTaskRoutes({
       }
       invalidateConfigs();
       await createLog(req.user, 'loan_task_config_saved', `${productKey} v${saved.version} active=${saved.isActive ? 1 : 0}`);
-      res.json(toAdminConfig(saved, productKey, at));
+      res.json(toAdminConfig(saved, productKey, at, env));
     } catch (error) { fail(res, error); }
   });
 

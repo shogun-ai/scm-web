@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Paperclip, Plus, Trash2 } from 'lucide-react';
 import { acceptLabel, acceptMimes, formatMoney, maskRegister, maxFilesOf, maxMbOf } from './taskFormUtils';
 
@@ -25,6 +25,17 @@ function Shell({ field, error, children, group = false }) {
   </div>;
 }
 
+// Smooth reveal for fields that appear after the user changes an earlier answer (no layout jump).
+export function Reveal({ animate, children }) {
+  const [open, setOpen] = useState(!animate);
+  useEffect(() => {
+    if (open) return undefined;
+    const frame = requestAnimationFrame(() => setOpen(true));
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+  return <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}><div className="-m-1 min-h-0 overflow-hidden p-1">{children}</div></div>;
+}
+
 const describe = (field, error) => [error ? `tf-${field.key}-error` : '', field.helpText ? `tf-${field.key}-help` : ''].filter(Boolean).join(' ') || undefined;
 
 function RegisterValue({ value }) {
@@ -41,6 +52,7 @@ function Display({ field, value }) {
     return <ul className="space-y-1">{(value.loans || []).map((row, index) => <li key={index}>{row.lender || '—'} · үлдэгдэл {formatMoney(row.balance)} ₮ · сарын төлбөр {formatMoney(row.monthlyPayment)} ₮</li>)}</ul>;
   }
   if (field.type === 'yesno') return <>{value === true ? 'Тийм' : 'Үгүй'}</>;
+  if (field.type === 'multiselect') return <>{(Array.isArray(value) ? value : [value]).map(item => field.options?.find(option => option.value === item)?.label || String(item)).join(', ')}</>;
   if (field.type === 'select') return <>{field.options?.find(option => option.value === value)?.label || String(value)}</>;
   if (field.type === 'number') return <span className="tabular-nums">{formatMoney(value)}</span>;
   if (field.type === 'file' && Array.isArray(value)) return <>{value.map(file => file.fileName).join(', ')}</>;
@@ -90,6 +102,11 @@ export default function TaskField({ field, value, onChange, error, disabled = fa
   }
   if (field.widget === 'other_loans') return <OtherLoans field={field} value={value} onChange={onChange} error={error} disabled={disabled} />;
   if (field.type === 'yesno') return <Shell field={field} error={error} group><YesNoButtons name={id} value={value} disabled={disabled} onPick={flag => onChange(field.key, flag)} /></Shell>;
+  if (field.type === 'multiselect') {
+    const chosen = Array.isArray(value) ? value : [];
+    const toggle = (optionValue, on) => onChange(field.key, (field.options || []).map(option => option.value).filter(item => (item === optionValue ? on : chosen.includes(item))));
+    return <Shell field={field} error={error} group><div className="grid gap-2 sm:grid-cols-2">{(field.options || []).map(option => <label key={option.value} className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[#102d43]/40 ${chosen.includes(option.value) ? 'border-[#102d43] bg-[#102d43]/5 text-[#102d43]' : 'border-slate-200 text-slate-700'}`}><input type="checkbox" name={`${field.key}[]`} value={option.value} checked={chosen.includes(option.value)} disabled={disabled} aria-invalid={Boolean(error)} onChange={event => toggle(option.value, event.target.checked)} className="h-5 w-5 shrink-0 accent-[#102d43]" />{option.label}</label>)}</div></Shell>;
+  }
   if (field.type === 'select') {
     return <Shell field={field} error={error}><select {...common} value={value ?? ''} onChange={event => onChange(field.key, event.target.value)}><option value="">{field.placeholder || 'Сонгох'}</option>{(field.options || []).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Shell>;
   }

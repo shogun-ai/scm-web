@@ -4,7 +4,7 @@ import { LEGACY_STATUS_LABELS, TASK_OUTCOMES, TASK_OUTCOME_LABELS, TASK_STATUS_L
 import TaskField from './TaskField';
 import TaskStatusBadge from './TaskStatusBadge';
 import { errorMessage, fetchTaskDetail, postDocRequest, postTaskAction, postTaskFiles } from './api';
-import { formatMoney, isFileField, maskRegister } from './taskFormUtils';
+import { formatMoney, isFileField, isVisible, maskRegister } from './taskFormUtils';
 
 const BOX = 'rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#003B5C] focus:outline-none focus:ring-2 focus:ring-[#003B5C]/20 disabled:opacity-60';
 const BTN = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#003B5C] px-4 text-sm font-semibold text-white disabled:opacity-50';
@@ -175,7 +175,7 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
         </Section>
 
         <Section title="Мэдээлэл">
-          {detail.taskForm?.steps?.length ? <div className="space-y-5">{detail.taskForm.steps.map(step => <div key={step.id}><h4 className="mb-2 text-xs font-bold uppercase text-slate-500">{step.title}</h4><dl className="grid gap-4 sm:grid-cols-2">{(step.fields || []).filter(field => !isFileField(field)).map(field => <TaskField key={field.key} field={field} mode="readonly" value={detail.answers?.[field.key]} />)}</dl></div>)}</div>
+          {detail.taskForm?.steps?.length ? <div className="space-y-5">{detail.taskForm.steps.map(step => <div key={step.id}><h4 className="mb-2 text-xs font-bold uppercase text-slate-500">{step.title}</h4><dl className="grid gap-4 sm:grid-cols-2">{(step.fields || []).filter(field => !isFileField(field) && isVisible(field, detail.answers)).map(field => <TaskField key={field.key} field={field} mode="readonly" value={detail.answers?.[field.key]} />)}</dl></div>)}</div>
             : <dl className="grid gap-4 text-sm sm:grid-cols-2">
               {[['Хүсэгч', [detail.applicant?.lastname, detail.applicant?.firstname].filter(Boolean).join(' ') || detail.applicant?.contactName], ['Байгууллага', detail.applicant?.orgName], ['Утас', detail.applicant?.phone], ['Имэйл', detail.applicant?.email], ['Хаяг', detail.applicant?.address], ['Зээлийн дүн', detail.request?.amount ? `${formatMoney(detail.request.amount)} ₮` : ''], ['Хугацаа', detail.request?.term ? `${detail.request.term} сар` : ''], ['Зориулалт', detail.request?.purpose], ['Эргэн төлөх эх үүсвэр', detail.request?.repaymentSource]].map(([label, value]) => <div key={label}><dt className="mb-1 text-xs font-semibold text-slate-500">{label}</dt><dd className="whitespace-pre-wrap break-words text-slate-800">{value || <span className="text-slate-400">—</span>}</dd></div>)}
               {detail.applicant?.regNo && <MaskedRegister value={detail.applicant.regNo} />}

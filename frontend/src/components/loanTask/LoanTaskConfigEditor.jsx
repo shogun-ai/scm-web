@@ -13,8 +13,8 @@ const TABS = [['form', 'Маягт'], ['subs', 'Дэд бүтээгдэхүүн'
 const clone = value => JSON.parse(JSON.stringify(value));
 // Client-only helper props must never reach the API.
 const toPayload = config => {
-  const { updatedAt, updatedBy, expectedVersion, ...rest } = config; // eslint-disable-line no-unused-vars
-  return { ...rest, expectedVersion: config.version, subProducts: (config.subProducts || []).map(({ status, slugTouched, saved, ...sub }) => sub) }; // eslint-disable-line no-unused-vars
+  const { updatedAt, updatedBy, expectedVersion, isDefault, source, ...rest } = config; // eslint-disable-line no-unused-vars
+  return { ...rest, expectedVersion: config.version ?? 0, subProducts: (config.subProducts || []).map(({ status, slugTouched, saved, ...sub }) => sub) }; // eslint-disable-line no-unused-vars
 };
 const prepare = config => ({ ...clone(config), subProducts: (config.subProducts || []).map(sub => ({ ...sub, saved: true })) });
 
@@ -50,6 +50,8 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
   useEffect(() => { fetchAssignees(apiUrl).then(rows => setAssignees(Array.isArray(rows) ? rows : [])).catch(() => setAssignees([])); }, [apiUrl]);
 
   const entryFor = key => products.find(item => item.productKey === key);
+  // D12: product without a saved config -> backend serves the default draft (version 0).
+  const isDefaultEntry = item => Boolean(item && (item.isDefault || item.config?.isDefault || item.source === 'default'));
   const selectProduct = key => {
     if (key === selectedKey) return;
     if (dirty) { setPendingKey(key); return; }
@@ -71,7 +73,7 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
     setErrors({}); setSaving(true); setMessage({ type: '', text: '' });
     try {
       const saved = await saveAdminConfig(apiUrl, selectedKey, payload);
-      setProducts(previous => previous.map(item => (item.productKey === selectedKey ? { ...item, saved: true, config: saved } : item)));
+      setProducts(previous => previous.map(item => (item.productKey === selectedKey ? { ...item, saved: true, isDefault: false, source: undefined, config: { ...saved, isDefault: false } } : item)));
       setDraft(prepare(saved)); setDirty(false); setConfirmActive(false);
       setMessage({ type: 'ok', text: 'Хадгаллаа.' });
     } catch (err) {
@@ -96,6 +98,8 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
     };
   }, [draft, selectedKey]);
 
+  const currentIsDefault = isDefaultEntry(entryFor(selectedKey));
+
   if (status === 'loading' && !draft) return <p role="status" className="flex items-center gap-2 p-6 text-slate-600"><Loader2 size={18} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p>;
   if (status === 'error') return <div role="alert" className="rounded-2xl bg-red-50 p-5 text-sm text-red-700">{loadError} <button type="button" onClick={() => load()} className="ml-2 font-semibold underline">Дахин оролдох</button></div>;
   if (!draft) return null;
@@ -103,8 +107,9 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
   const badge = item => {
     const config = item.config || {};
     const live = (config.subProducts || []).filter(sub => sub.status === 'live').length;
-    const label = !item.saved ? 'Тохируулаагүй' : config.isActive ? 'Идэвхтэй' : 'Идэвхгүй';
-    const color = !item.saved ? 'bg-slate-100 text-slate-600' : config.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800';
+    const isDefault = isDefaultEntry(item);
+    const label = isDefault ? 'Анхны тохиргоо' : !item.saved ? 'Тохируулаагүй' : config.isActive ? 'Идэвхтэй' : 'Идэвхгүй';
+    const color = isDefault ? 'bg-sky-100 text-sky-800' : !item.saved ? 'bg-slate-100 text-slate-600' : config.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800';
     return <><span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${color}`}>{label}</span>{live > 0 && <span className="text-[11px] text-slate-500">{live} дэд</span>}</>;
   };
 
@@ -116,6 +121,7 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
       </nav>
 
       <div className="min-w-0 space-y-5 rounded-2xl bg-white p-5 shadow-sm">
+        {currentIsDefault && <p role="status" className="rounded-xl bg-sky-50 p-3 text-sm text-sky-900">Анхны тохиргоо ашиглагдаж байна — хадгалбал энэ бүтээгдэхүүнд тусгай тохиргоо үүснэ.</p>}
         {pendingKey && <div role="alertdialog" aria-label="Хадгалаагүй өөрчлөлт" className="flex flex-wrap items-center gap-3 rounded-xl bg-amber-50 p-4 text-sm text-amber-900"><AlertTriangle size={18} aria-hidden="true" />Хадгалаагүй өөрчлөлт алдагдана.<button type="button" onClick={discardAndSwitch} className="min-h-10 rounded-lg bg-amber-600 px-3 font-semibold text-white">Хаяад солих</button><button type="button" onClick={() => setPendingKey(null)} className="min-h-10 rounded-lg border border-amber-400 px-3">Үлдэх</button></div>}
 
         <div role="tablist" aria-label="Тохиргооны хэсэг" className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
@@ -143,7 +149,7 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
 
         <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
           <p className="text-xs text-slate-500">Хувилбар {draft.version ?? 0}{dirty ? ' · хадгалаагүй өөрчлөлттэй' : ''}</p>
-          <button type="button" onClick={save} disabled={saving || !dirty} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#003B5C] px-5 text-sm font-semibold text-white disabled:opacity-50">{saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}Хадгалах</button>
+          <button type="button" onClick={save} disabled={saving || (!dirty && !currentIsDefault)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#003B5C] px-5 text-sm font-semibold text-white disabled:opacity-50">{saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}Хадгалах</button>
         </div>
       </div>
     </div>

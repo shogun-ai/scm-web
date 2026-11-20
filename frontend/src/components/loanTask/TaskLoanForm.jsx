@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
-import TaskField from './TaskField';
+import TaskField, { Reveal } from './TaskField';
 import { API_URL, errorMessage, fetchPublicProduct, submitPublicRequest } from './api';
-import { allFields, checkFileSelection, errorFor, isFileField, isVisible, stepIndexForErrors, validateSteps } from './taskFormUtils';
+import { allFields, checkFileSelection, errorFor, hiddenKeys, isFileField, isVisible, pruneHidden, stepIndexForErrors, validateSteps, visibleSteps } from './taskFormUtils';
 
 const REVIEW_TITLE = 'Хянах ба илгээх';
 
@@ -20,7 +20,8 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
   const autoSelect = requestedSub ?? (subs.length === 0 ? '' : (!baseEnabled && subs.length === 1 ? subs[0].id : null));
   const [selected, setSelected] = useState(autoSelect);
   const [step, setStep] = useState(0);
-  const [raw, setRaw] = useState(() => initialRaw(initialProduct.productKey));
+  const [rawState, setRaw] = useState(() => initialRaw(initialProduct.productKey));
+  const [interacted, setInteracted] = useState(false);
   const [files, setFiles] = useState({});
   const [errors, setErrors] = useState({});
   const [consent, setConsent] = useState(false);
@@ -37,11 +38,14 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
 
   const canChangeSub = subs.length > 0 && !requestedSub && !(!baseEnabled && subs.length === 1);
   const activeSub = selected ? subs.find(sub => sub.id === selected) : null;
-  const steps = useMemo(() => (selected === null ? [] : ((activeSub ? activeSub.steps : product.steps) || [])), [selected, activeSub, product]);
+  const allSteps = useMemo(() => (selected === null ? [] : ((activeSub ? activeSub.steps : product.steps) || [])), [selected, activeSub, product]);
+  // Answers of hidden fields never count; steps without visible fields are skipped.
+  const raw = useMemo(() => pruneHidden(allSteps, rawState), [allSteps, rawState]);
+  const steps = useMemo(() => visibleSteps(allSteps, raw), [allSteps, raw]);
   const reviewIndex = steps.length;
-  const isReview = step === reviewIndex;
+  const isReview = step >= reviewIndex;
   const titles = [...steps.map(item => item.title), REVIEW_TITLE];
-  const currentStep = steps[step];
+  const currentStep = steps[Math.min(step, reviewIndex)];
   const allFileList = Object.values(files).flat();
 
   useEffect(() => { if (reference) successRef.current?.focus(); }, [reference]);
@@ -49,12 +53,18 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
   const focusFirstInvalid = () => requestAnimationFrame(() => formRef.current?.querySelector('[aria-invalid="true"]')?.focus());
   const move = next => {
     setStep(next);
+    setInteracted(false);
     setErrors({});
     setNotice('');
     requestAnimationFrame(() => { formRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }); formRef.current?.querySelector('input, select, textarea')?.focus({ preventScroll: true }); });
   };
   const change = (key, value) => {
-    setRaw(previous => ({ ...previous, [key]: value }));
+    setInteracted(true);
+    setRaw(previous => pruneHidden(allSteps, { ...previous, [key]: value }));
+    setFiles(previous => {
+      const hidden = hiddenKeys(allSteps, { ...raw, [key]: value });
+      return Object.keys(previous).some(name => hidden.has(name) && previous[name]?.length) ? Object.fromEntries(Object.entries(previous).filter(([name]) => !hidden.has(name))) : previous;
+    });
     setErrors(previous => { const next = { ...previous }; Object.keys(next).forEach(path => { if (path === key || path.startsWith(`${key}.`)) delete next[path]; }); return next; });
     setSubmitError('');
   };
@@ -75,7 +85,7 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
   };
 
   const next = () => {
-    const result = validateSteps([currentStep], raw, files);
+    const result = validateSteps([currentStep], raw, files, allSteps);
     setErrors(result.errors);
     if (!result.ok) { focusFirstInvalid(); return; }
     move(step + 1);
@@ -85,7 +95,7 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
     event.preventDefault();
     if (!isReview) { next(); return; }
     if (preview || submittingRef.current) return;
-    const result = validateSteps(steps, raw, files);
+    const result = validateSteps(steps, raw, files, allSteps);
     if (!result.ok) {
       setErrors(result.errors);
       const index = stepIndexForErrors(steps, result.errors);
@@ -103,8 +113,9 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
       payload.append('answers', JSON.stringify(result.value));
       payload.append('consent', 'true');
       payload.append('website', honeypot);
+      const hidden = hiddenKeys(allSteps, raw);
       for (const field of allFields(steps)) {
-        if (isFileField(field) && isVisible(field, raw)) (files[field.key] || []).forEach(file => payload.append(field.key, file));
+        if (isFileField(field) && !hidden.has(field.key)) (files[field.key] || []).forEach(file => payload.append(field.key, file));
       }
       const response = await submitPublicRequest(apiUrl, payload, ev => { if (ev.total) setProgress(Math.round(ev.loaded / ev.total * 100)); });
       if (!response?.applicationReference) throw new Error('missing reference');
@@ -164,7 +175,7 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
                 <p className="mb-6 text-xs text-slate-500"><span className="text-red-600" aria-hidden="true">*</span> — заавал бөглөх талбар</p>
                 {!isReview && <div className="space-y-5">
                   {currentStep?.description && <p className="text-sm leading-relaxed text-slate-600">{currentStep.description}</p>}
-                  {(currentStep?.fields || []).filter(field => isVisible(field, raw)).map(field => <TaskField key={field.key} field={field} value={raw[field.key]} error={errorFor(errors, field.key)} disabled={loading} onChange={change} files={files[field.key] || []} onAddFiles={addFiles} onRemoveFile={removeFile} />)}
+                  {(currentStep?.fields || []).filter(field => isVisible(field, raw)).map(field => <Reveal key={field.key} animate={interacted}><TaskField field={field} value={raw[field.key]} error={errorFor(errors, field.key)} disabled={loading} onChange={change} files={files[field.key] || []} onAddFiles={addFiles} onRemoveFile={removeFile} /></Reveal>)}
                   {uploadError && <p role="alert" className="text-sm text-red-700">{uploadError}</p>}
                 </div>}
                 {isReview && <div className="space-y-6">

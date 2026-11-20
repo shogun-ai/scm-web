@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react';
 import { PRESET_BY_KEY, PRESET_WIDGETS, WIDGET_GROUPS } from '@shared/loanWidgets';
 import CustomFieldDialog from './CustomFieldDialog';
-import { collectKeys, fieldLabel, fieldType, newStepId, presetLabel } from './configHelpers';
+import OptionsEditor from './OptionsEditor';
+import ShowWhenEditor from './ShowWhenEditor';
+import { OPTION_TYPES, collectKeys, effectiveField, fieldLabel, fieldType, newStepId, presetLabel, showWhenSummary } from './configHelpers';
 
 const BOX = 'rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#003B5C] focus:outline-none focus:ring-2 focus:ring-[#003B5C]/20';
 const ICON_BTN = 'grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-30';
-const TYPE_LABELS = { text: 'Текст', textarea: 'Урт текст', number: 'Тоо', date: 'Огноо', select: 'Сонголт', yesno: 'Тийм/Үгүй', file: 'Файл', composite: 'Нийлмэл' };
+const TYPE_LABELS = { text: 'Текст', textarea: 'Урт текст', number: 'Тоо', date: 'Огноо', select: 'Сонголт', multiselect: 'Олон сонголт', yesno: 'Тийм/Үгүй', file: 'Файл', composite: 'Нийлмэл' };
 
 const move = (list, index, delta) => { const target = index + delta; if (target < 0 || target >= list.length) return list; const next = [...list]; [next[index], next[target]] = [next[target], next[index]]; return next; };
 
@@ -27,6 +29,14 @@ export default function StepsEditor({ steps, onChange, errors = {}, pathPrefix =
   };
   const addPreset = (stepIndex, key) => { if (key) patchStep(stepIndex, { fields: [...steps[stepIndex].fields, { kind: 'preset', key, required: key === 'phone' || key === 'full_name' }] }); };
   const errorAt = path => errors[path];
+  // Resolved defs (with admin overrides) in form order; a field may only depend on earlier ones.
+  const defsByStep = useMemo(() => steps.map(step => step.fields.map(effectiveField)), [steps]);
+  const flatDefs = useMemo(() => defsByStep.flat(), [defsByStep]);
+  const setShowWhen = (stepIndex, fieldIndex, showWhen) => {
+    const field = steps[stepIndex].fields[fieldIndex];
+    if (showWhen) patchField(stepIndex, fieldIndex, { showWhen });
+    else patchField(stepIndex, fieldIndex, { showWhen: field.kind === 'preset' && PRESET_BY_KEY?.[field.key]?.showWhen ? null : undefined });
+  };
 
   return <div className="space-y-5">
     {steps.map((step, stepIndex) => <section key={step.id} className="rounded-2xl border border-slate-200 bg-white p-4" aria-label={`Алхам ${stepIndex + 1}`}>
@@ -66,6 +76,22 @@ export default function StepsEditor({ steps, onChange, errors = {}, pathPrefix =
               </div>
             </div>
             {error && <p role="alert" className="mt-1 text-xs text-red-700">{error}</p>}
+            {(() => {
+              const def = defsByStep[stepIndex][fieldIndex];
+              const before = flatDefs.slice(0, steps.slice(0, stepIndex).reduce((sum, item) => sum + item.fields.length, 0) + fieldIndex);
+              const summary = showWhenSummary(def.showWhen, before);
+              const editableOptions = field.key !== 'borrower_type' && OPTION_TYPES.includes(def.type) && field.kind === 'preset';
+              return <details className="mt-2 text-xs">
+                <summary className="flex min-h-9 cursor-pointer flex-wrap items-center gap-2 font-semibold text-[#003B5C]">
+                  Харагдах нөхцөл{editableOptions ? ' ба сонголт' : ''}
+                  {summary ? <span className={`rounded-full px-2 py-0.5 font-medium ${summary.broken ? 'bg-red-100 text-red-800' : 'bg-[#003B5C]/10 text-[#003B5C]'}`}>Харагдах: {summary.text}{summary.broken ? ' (буруу)' : ''}</span> : <span className="font-normal text-slate-500">үргэлж харагдана</span>}
+                </summary>
+                <div className="mt-2 space-y-3">
+                  <ShowWhenEditor idPrefix={`${step.id}-${field.key}`} showWhen={def.showWhen} candidates={before} onChange={showWhen => setShowWhen(stepIndex, fieldIndex, showWhen)} />
+                  {editableOptions && <OptionsEditor options={def.options} onChange={options => patchField(stepIndex, fieldIndex, { options })} />}
+                </div>
+              </details>;
+            })()}
           </li>;
         })}
         {step.fields.length === 0 && <li className="rounded-xl border border-dashed border-slate-300 p-4 text-center text-xs text-slate-500">Талбар алга.</li>}

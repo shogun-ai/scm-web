@@ -1,11 +1,30 @@
-import { FILE_FORMATS, LIMITS, validateAnswers } from '@shared/loanWidgets';
+import { FILE_FORMATS, LIMITS, isFieldVisible, validateAnswers } from '@shared/loanWidgets';
 
 export const MAX_FILE_BYTES = (LIMITS?.fileMaxMb || 10) * 1024 * 1024;
 export const DEFAULT_ACCEPT = ['pdf', 'jpg', 'png', 'webp'];
 
 export const isFileField = field => field?.type === 'file';
-export const isVisible = (field, raw) => !field?.showWhen || raw?.[field.showWhen.key] === field.showWhen.equals;
+export const isVisible = (field, raw) => isFieldVisible(field, raw || {});
 export const allFields = steps => (steps || []).flatMap(step => step.fields || []);
+
+// Keys of fields hidden by their showWhen. Evaluated in order against the answers of
+// still-visible fields, so a field whose target is itself hidden is hidden too.
+export function hiddenKeys(steps, raw) {
+  const working = { ...(raw || {}) };
+  const hidden = new Set();
+  for (const field of allFields(steps)) {
+    if (!isVisible(field, working)) { hidden.add(field.key); delete working[field.key]; }
+  }
+  return hidden;
+}
+// raw without answers of hidden fields.
+export function pruneHidden(steps, raw) {
+  const hidden = hiddenKeys(steps, raw);
+  if (![...hidden].some(key => raw && Object.hasOwn(raw, key))) return raw;
+  return Object.fromEntries(Object.entries(raw).filter(([key]) => !hidden.has(key)));
+}
+// Steps that still have at least one visible field (steps with no fields at all are kept).
+export const visibleSteps = (steps, raw) => (steps || []).filter(step => !(step.fields || []).length || (step.fields || []).some(field => isVisible(field, raw)));
 export const acceptMimes = field => (field.accept?.length ? field.accept : DEFAULT_ACCEPT).map(format => FILE_FORMATS[format]).filter(Boolean);
 export const acceptLabel = field => (field.accept?.length ? field.accept : DEFAULT_ACCEPT).map(format => format.toUpperCase()).join(', ');
 export const maxFilesOf = field => field.maxFiles || 3;
@@ -31,6 +50,7 @@ export function prepareAnswers(steps, raw) {
     }
     if (field.type === 'number') { const n = num(value); if (n !== undefined) out[field.key] = n; continue; }
     if (field.type === 'yesno') { if (typeof value === 'boolean') out[field.key] = value; continue; }
+    if (field.type === 'multiselect') { if (Array.isArray(value)) { const list = [...new Set(value.filter(item => typeof item === 'string'))]; if (list.length) out[field.key] = list; } continue; }
     if (field.type === 'composite') { if (value && typeof value === 'object') out[field.key] = { lastName: String(value.lastName || '').trim(), firstName: String(value.firstName || '').trim() }; continue; }
     if (typeof value === 'string' && value.trim() !== '') out[field.key] = value.trim();
   }
@@ -50,14 +70,16 @@ export function checkFileSelection(field, existing, additions, allCount, allByte
 }
 
 // Validate visible fields of the given steps. Returns { ok, errors, value }.
-export function validateSteps(stepsToCheck, raw, files) {
-  const visibleSteps = stepsToCheck.map(step => ({ ...step, fields: (step.fields || []).filter(field => isVisible(field, raw)) }));
-  const answers = prepareAnswers(visibleSteps, raw);
-  const nonFile = visibleSteps.map(step => ({ ...step, fields: step.fields.filter(field => !isFileField(field)) }));
+export function validateSteps(stepsToCheck, raw, files, allStepsForVisibility) {
+  const hidden = hiddenKeys(allStepsForVisibility || stepsToCheck, raw);
+  // Visibility is already resolved here (targets may live in earlier steps), so showWhen is dropped for the shared validator.
+  const shown = stepsToCheck.map(step => ({ ...step, fields: (step.fields || []).filter(field => !hidden.has(field.key)).map(field => ({ ...field, showWhen: null })) }));
+  const answers = prepareAnswers(shown, raw);
+  const nonFile = shown.map(step => ({ ...step, fields: step.fields.filter(field => !isFileField(field)) }));
   let result = { ok: true, errors: {}, value: answers };
   try { result = validateAnswers(nonFile, answers); } catch { /* keep client-side tolerant; server is authoritative */ }
   const errors = { ...(result.errors || {}) };
-  for (const field of allFields(visibleSteps)) {
+  for (const field of allFields(shown)) {
     if (isFileField(field) && field.required && !(files?.[field.key]?.length)) errors[field.key] = 'Энэ баримтыг хавсаргана уу.';
   }
   return { ok: Object.keys(errors).length === 0, errors, value: result.value || answers };
