@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Loader2, Paperclip, ShieldCheck, Trash2 } from 'lucide-react';
 import { LOAN_PRODUCTS } from '@shared/loanFormConfig';
+import TaskLoanForm from './loanTask/TaskLoanForm';
+import TaskUploadForm from './loanTask/TaskUploadForm';
+import { fetchPublicProduct } from './loanTask/api';
 
 const PRODUCT_IDS = { 1: 'biz_loan', 2: 'car_purchase_loan', 3: 'cons_loan', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' };
 const DOCUMENTS = [
@@ -26,7 +29,7 @@ function Field({ label, error, children, optional = false }) {
   </label>;
 }
 
-export default function QuickLoanRequest({ onBack, initialProduct }) {
+function LegacyQuickLoanRequest({ onBack, initialProduct }) {
   const queryProduct = new URLSearchParams(window.location.search).get('product');
   const productKey = queryProduct || PRODUCT_IDS[initialProduct?.id] || initialProduct?.productKey || '';
   const loanType = productKey === 'car_loan' ? 'car_purchase_loan' : productKey;
@@ -169,4 +172,32 @@ export default function QuickLoanRequest({ onBack, initialProduct }) {
       </>}
     </div>
   </main>;
+}
+
+const PUBLIC_API_URL = import.meta.env.VITE_API_URL || (['localhost', '127.0.0.1'].includes(window.location.hostname) ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com');
+
+// Wrapper: ?upload=<token> -> applicant upload page; otherwise the dynamic task form
+// when the feature is enabled for the product. Any failure falls back to the legacy quick form.
+export default function QuickLoanRequest({ onBack, initialProduct }) {
+  const params = new URLSearchParams(window.location.search);
+  const uploadToken = params.get('upload');
+  const queryProduct = params.get('product');
+  const subProductId = params.get('sub') || '';
+  const rawKey = queryProduct || PRODUCT_IDS[initialProduct?.id] || initialProduct?.productKey || '';
+  const productKey = rawKey === 'car_loan' ? 'car_purchase_loan' : rawKey;
+  const [state, setState] = useState({ status: uploadToken || !productKey ? 'done' : 'loading', product: null });
+
+  useEffect(() => {
+    if (uploadToken || !productKey) return undefined;
+    let cancelled = false;
+    fetchPublicProduct(PUBLIC_API_URL, productKey, 5000)
+      .then(data => { if (!cancelled) setState({ status: 'done', product: data?.enabled && data.product?.productKey && Array.isArray(data.product.steps) ? data.product : null }); })
+      .catch(() => { if (!cancelled) setState({ status: 'done', product: null }); });
+    return () => { cancelled = true; };
+  }, [uploadToken, productKey]);
+
+  if (uploadToken) return <TaskUploadForm token={uploadToken} onBack={onBack} apiUrl={PUBLIC_API_URL} />;
+  if (state.status === 'loading') return <main className="sc-public-page min-h-screen bg-[#f7f8f6] pb-20 pt-28 text-[#102d43] md:pt-32"><div className="mx-auto max-w-6xl px-5 md:px-8"><p role="status" className="inline-flex items-center gap-3 text-slate-600"><Loader2 size={20} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p><div className="mt-8 h-72 animate-pulse rounded-2xl bg-white" aria-hidden="true" /></div></main>;
+  if (state.product) return <TaskLoanForm product={state.product} subProductId={subProductId} onBack={onBack} apiUrl={PUBLIC_API_URL} />;
+  return <LegacyQuickLoanRequest onBack={onBack} initialProduct={initialProduct} />;
 }

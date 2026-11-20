@@ -37,6 +37,10 @@ import ZentroImportBatch from './models/ZentroImportBatch.js';
 import { createZentroFacebookIntegration } from './zentroFacebook.js';
 import { classifyTransaction as classifyStatementTransaction, DEFAULT_INCOME_WEIGHTS } from '../shared/statementWorkbenchUtils.js';
 import { registerLoanIntakeRoutes, canAccessRequest, isRequestManager, isRequestStaff, requestScope, isAllowedLoanRemoteUrl, automationWriteQuery, researchVisibilityStages, assertLinkedResearchAccess } from './loanIntake.js';
+import nodemailer from 'nodemailer';
+import LoanFormConfig from './models/LoanFormConfig.js';
+import { applyLoanTaskSchema, registerLoanTaskRoutes, legacyLoanPostGone, taskLockBlocks } from './loanTasks.js';
+import { createMailer } from './mailer.js';
 
 const ZentroCodeRuleSchema = new mongoose.Schema({
   keyword: { type: String, required: true, unique: true },
@@ -403,6 +407,8 @@ const LoanRequestSchema = new mongoose.Schema({
     complianceReview: { type: mongoose.Schema.Types.Mixed, default: null },
     createdAt: { type: Date, default: Date.now }
 });
+// Task management fields (no defaults; legacy docs untouched) + indexes.
+applyLoanTaskSchema(LoanRequestSchema);
 const LoanRequest = mongoose.models.LoanRequest || mongoose.model('LoanRequest', LoanRequestSchema);
 
 const ONBOARDING_CUSTOMER_TYPES = ['personal', 'business'];
@@ -3221,7 +3227,8 @@ app.use('/api/loans/:id', (req, res, next) => {
     if (!/^[a-f\d]{24}$/i.test(req.params.id || '')) return next();
     authenticateUser(req, res, async () => {
         try {
-            const loan = await LoanRequest.findById(req.params.id).select('intakeVersion assignee status').lean();
+            const loan = await LoanRequest.findById(req.params.id).select('intakeVersion assignee status taskStatus').lean();
+            if (loan && taskLockBlocks(req.user, loan, req.method)) return res.status(403).json({ message: 'Шийдвэрлэсэн хүсэлтийг өөрчлөх эрхгүй байна.' });
             if (!loan || loan.intakeVersion !== 'quick-v1') return next();
             if (!canAccessRequest(req.user, loan)) return res.status(404).json({ message: 'Хүсэлт олдсонгүй.' });
             req.quickLoan = loan;
@@ -3237,7 +3244,15 @@ app.use('/api/loans/:id', (req, res, next) => {
 });
 
 registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest, User, authenticateUser, committeeAction: getCommitteeDecisionAction, userHasPermission, automate: runPostSubmissionAutomationInBackground, createLog });
+registerLoanTaskRoutes({
+    app, multer, cloudinary, LoanRequest, LoanFormConfig, User, authenticateUser, requireAdmin, createLog,
+    mailer: createMailer({ createTransport: nodemailer.createTransport }),
+    automate: runPostSubmissionAutomationInBackground,
+    getCompanyPhone: async () => { const doc = await SiteConfig.findOne({ key: 'contact_phone' }).lean(); return typeof doc?.value === 'string' ? doc.value : ''; },
+});
 
+// D9: legacy unprotected public submission is closed (registered first, so the handler below is unreachable).
+app.post('/api/loans', legacyLoanPostGone);
 app.post('/api/loans', (req, res) => {
     upload(req, res, async (err) => {
         try {

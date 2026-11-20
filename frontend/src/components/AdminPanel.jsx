@@ -6,6 +6,9 @@ import {
 import logoColored from '../assets/logo-colored.png'; 
 import LoanResearch from './LoanResearch';
 import LoanOrigination from './LoanOrigination';
+import LoanTaskBoard from './loanTask/LoanTaskBoard';
+import LoanTaskConfigEditor from './loanTask/LoanTaskConfigEditor';
+import { fetchLoanTaskAvailability } from './loanTask/api';
 import PermissionMatrix from './PermissionMatrix';
 import SafetyNoticesAdmin from './SafetyNoticesAdmin';
 import HeroSliderSettings from './HeroSliderSettings';
@@ -307,6 +310,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
 
   // API URL
   const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com');
+  const [loanTasksEnabled, setLoanTasksEnabled] = useState(false);
+  const [showLegacyLos, setShowLegacyLos] = useState(false);
+  useEffect(() => { let cancelled = false; fetchLoanTaskAvailability(API_URL).then(enabled => { if (!cancelled) setLoanTasksEnabled(enabled); }); return () => { cancelled = true; }; }, [API_URL]);
+  const isLoanTaskAdmin = user?.role === 'admin' || (Array.isArray(user?.roles) && user.roles.includes('admin'));
   const canAccessOnboarding = getAdminRoleKeys(user).some(role => ONBOARDING_ACCESS_ROLES.includes(role));
 
   const fetchOnboardingSubmissions = useCallback(async () => {
@@ -1041,12 +1048,15 @@ const AdminPanel = ({ user, token, onLogout }) => {
         <div className="p-6 border-b border-white/10 font-bold text-[#D4AF37] text-xl">SCM ADMIN</div>
         <nav className="flex-1 py-6 px-3 space-y-1 text-sm">
           <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'dashboard' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><LayoutDashboard size={18} /> Хянах самбар</button>
-          <button onClick={() => setActiveTab('los')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'los' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><ClipboardList size={18} /> Зээлийн үйл явц</button>
+          <button onClick={() => setActiveTab('los')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'los' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><ClipboardList size={18} /> {loanTasksEnabled ? 'Зээлийн хүсэлт' : 'Зээлийн үйл явц'}</button>
           <button onClick={() => setActiveTab('documentAnalysis')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'documentAnalysis' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><FileText size={18} /> Баримт AI уншилт</button>
           {canAccessOnboarding && (
             <button onClick={() => setActiveTab('onboarding')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'onboarding' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><UserCheck size={18} /> Харилцагч бүртгэл</button>
           )}
           <button onClick={() => setActiveTab('trusts')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'trusts' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Handshake size={18} /> Итгэлцэл</button>
+          {loanTasksEnabled && isLoanTaskAdmin && (
+            <button onClick={() => setActiveTab('loanTaskConfig')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'loanTaskConfig' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Settings size={18} /> Хүсэлтийн маягт</button>
+          )}
           {user?.role === 'admin' && (<>
             <button onClick={() => setActiveTab('finance')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'finance' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Activity size={18} /> Файл засах</button>
             <button onClick={() => setActiveTab('cms')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'cms' ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`}><Globe size={18} /> Контент засах</button>
@@ -1061,7 +1071,19 @@ const AdminPanel = ({ user, token, onLogout }) => {
       </aside>
 
       <main className="flex-1 ml-64 p-8 no-print">
-        {activeTab === 'los' && (
+        {activeTab === 'los' && loanTasksEnabled && !showLegacyLos && (
+          <LoanTaskBoard apiUrl={API_URL} user={user} onOpenLegacy={() => setShowLegacyLos(true)} />
+        )}
+
+        {activeTab === 'loanTaskConfig' && loanTasksEnabled && isLoanTaskAdmin && (
+          <LoanTaskConfigEditor apiUrl={API_URL} />
+        )}
+
+        {activeTab === 'los' && loanTasksEnabled && showLegacyLos && (
+          <button type="button" onClick={() => setShowLegacyLos(false)} className="mb-4 rounded-xl bg-white px-4 py-2 text-sm font-bold text-[#003B5C] shadow-sm">← Шинэ хүсэлтийн самбар руу буцах</button>
+        )}
+
+        {activeTab === 'los' && (!loanTasksEnabled || showLegacyLos) && (
           <LoanOrigination
             apiUrl={API_URL}
             user={user}

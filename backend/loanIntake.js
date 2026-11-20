@@ -193,7 +193,8 @@ export function registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest,
         const loan = await LoanRequest.findOneAndUpdate(updateQuery, { $push: { fileDetails: { $each: persisted }, fileNames: { $each: persisted.map(file => file.fileUrl) } }, $inc: { workflowRevision: 1 } }, { new: true });
         if (!loan) throw new IntakeError('Хүсэлт олдсонгүй.', 404);
         saved = true;
-        automate(loan._id);
+        // D6: task-form requests skip AI automation unless explicitly enabled (manual retry still works).
+        if (loan.formVersion !== 'task-v1' || process.env.LOAN_TASKS_AI_AUTOMATION === 'true') automate(loan._id);
         res.json(loan);
       } catch (error) {
         if (!saved) await Promise.allSettled(persisted.map(file => cloudinary.uploader.destroy(file.publicId, { resource_type: 'raw', type: 'authenticated' })));
