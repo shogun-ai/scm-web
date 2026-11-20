@@ -113,9 +113,9 @@ test('validateConfig rules', () => {
     assert.equal(result.ok, false); assert.ok(Object.keys(result.errors).some(key => key.startsWith(path)), `${path} in ${JSON.stringify(result.errors)}`);
   };
   check(c => { c.productKey = 'nope'; }, 'productKey');
-  check(c => { c.steps[0].fields.push(p('phone')); }, 'steps.0.fields.5.key');
-  check(c => { c.steps[0].fields.push({ kind: 'custom', key: 'bad key', type: 'text', label: 'x' }); }, 'steps.0.fields.5.key');
-  check(c => { c.steps[0].fields.push({ kind: 'custom', key: 'cf_a', type: 'text', label: 'x' }, { kind: 'custom', key: 'cf_a', type: 'text', label: 'y' }); }, 'steps.0.fields.6.key');
+  check(c => { c.steps[0].fields.push(p('phone')); }, 'steps.0.fields.8.key');
+  check(c => { c.steps[0].fields.push({ kind: 'custom', key: 'bad key', type: 'text', label: 'x' }); }, 'steps.0.fields.8.key');
+  check(c => { c.steps[0].fields.push({ kind: 'custom', key: 'cf_a', type: 'text', label: 'x' }, { kind: 'custom', key: 'cf_a', type: 'text', label: 'y' }); }, 'steps.0.fields.9.key');
   check(c => { c.steps[0].fields = c.steps[0].fields.filter(f => f.key !== 'phone'); }, 'steps.phone');
   check(c => { c.steps[0].fields = c.steps[0].fields.filter(f => f.key !== 'full_name'); }, 'steps.full_name');
   check(c => { c.steps = []; }, 'steps');
@@ -123,9 +123,9 @@ test('validateConfig rules', () => {
   check(c => { c.subProducts = [{ id: 'promo', name: 'Promo', startDate: '2027-02-01', endDate: '2027-01-01' }]; }, 'subProducts.0.endDate');
   check(c => { c.subProducts = [{ id: 'promo', name: 'A' }, { id: 'promo', name: 'B' }]; }, 'subProducts.1.id');
   check(c => { c.steps = Array.from({ length: 9 }, (_, i) => ({ id: `s${i}`, title: 'x', fields: [p('phone', true)] })); }, 'steps');
-  check(c => { c.steps[0].fields.push({ kind: 'custom', key: 'cf_f', type: 'file', label: 'F', maxSizeMb: 11 }); }, 'steps.0.fields.5.maxSizeMb');
-  check(c => { c.steps[0].fields.push({ kind: 'custom', key: 'cf_f', type: 'file', label: 'F', accept: ['exe'] }); }, 'steps.0.fields.5.accept');
-  check(c => { c.steps[0].fields.push({ kind: 'custom', key: 'cf_s', type: 'select', label: 'S', options: [] }); }, 'steps.0.fields.5.options');
+  check(c => { c.steps[0].fields.push({ kind: 'custom', key: 'cf_f', type: 'file', label: 'F', maxSizeMb: 11 }); }, 'steps.0.fields.8.maxSizeMb');
+  check(c => { c.steps[0].fields.push({ kind: 'custom', key: 'cf_f', type: 'file', label: 'F', accept: ['exe'] }); }, 'steps.0.fields.8.accept');
+  check(c => { c.steps[0].fields.push({ kind: 'custom', key: 'cf_s', type: 'select', label: 'S', options: [] }); }, 'steps.0.fields.8.options');
   check(c => { c.defaultAssigneeId = 'abc'; }, 'defaultAssigneeId');
   check(c => { c.subProducts = [{ id: 'own', name: 'Own', isActive: true, inheritSteps: false, steps: [{ id: 'a', title: 'A', fields: [p('email')] }] }]; }, 'subProducts.0.steps.phone');
   // Inactive draft may omit required presets.
@@ -149,7 +149,7 @@ test('sub product live window uses Ulaanbaatar date', () => {
 test('default config mirrors quick form and mirrorAnswers maps storage fields', () => {
   const config = buildDefaultConfig('line_loan');
   const required = config.steps.flatMap(s => s.fields).filter(f => f.required).map(f => f.key);
-  assert.deepEqual(required, ['borrower_type', 'full_name', 'org_name', 'phone', 'email', 'loan_amount', 'loan_term', 'repayment_source', 'income_source', 'collateral_types', 'income_other_note', 'collateral_other_note']);
+  assert.deepEqual(required, ['borrower_type', 'full_name', 'org_name', 'phone', 'email', 'birth_date', 'register_number', 'address', 'loan_amount', 'loan_term', 'income_source', 'other_loans', 'collateral_types', 'income_other_note', 'collateral_other_note']);
   assert.equal(config.isActive, false);
   const org = mirrorAnswers({ borrower_type: 'organization', full_name: { lastName: 'Бат', firstName: 'Болд' }, org_name: 'Тест ХХК', phone: '99001234', register_number: 'УБ90050112', loan_amount: 10, loan_term: 2 }, { productKey: 'line_loan' });
   assert.deepEqual(org, { userType: 'organization', contactName: 'Бат Болд', orgName: 'Тест ХХК', regNo: 'УБ90050112', phone: '99001234', contactPhone: '99001234', amount: 10, term: 2, selectedProduct: 'line_loan' });
@@ -298,6 +298,7 @@ test('validateConfig showWhen and option override rules', () => {
   pass(c => { c.steps[1].fields.push({ kind: 'custom', key: 'cf_m', type: 'multiselect', label: 'M', options: [{ value: 'a', label: 'A' }], showWhen: { key: 'collateral_types', op: 'includes', value: ['deposit', 'other'] } }); });
 });
 
+const mortgageSteps = () => resolveSteps(buildDefaultConfig('mortgage').steps);
 test('default configs are valid when activated and wire D11 conditions', () => {
   for (const product of ['biz_loan', 'car_purchase_loan', 'car_coll_loan', 'cons_loan', 'credit_card', 're_loan', 'line_loan', 'mortgage']) {
     const result = validateConfig({ ...buildDefaultConfig(product), isActive: true });
@@ -310,5 +311,21 @@ test('default configs are valid when activated and wire D11 conditions', () => {
   assert.deepEqual(byKey.collateral_cadastre.showWhen, { key: 'collateral_types', op: 'includes', value: ['real_estate'] });
   assert.deepEqual(byKey.car_photos.showWhen, { key: 'collateral_types', op: 'includes', value: ['vehicle'] });
   assert.equal(byKey.collateral_types.required, true);
+  // D13
+  assert.equal(byKey.repayment_source, undefined);
+  assert.equal(byKey.income_source.label, 'Эргэн төлөгдөх орлогын эх үүсвэр');
+  for (const key of ['birth_date', 'register_number', 'address', 'other_loans']) assert.equal(byKey[key].required, true, key);
+  assert.deepEqual(byKey.birth_date.showWhen, { key: 'borrower_type', op: 'equals', value: 'individual' });
+  assert.ok(!byKey.address.showWhen);
+  assert.ok(PRESET_BY_KEY.repayment_source, 'preset kept for legacy configs');
+  const ind = { borrower_type: 'individual', full_name: { lastName: 'Бат', firstName: 'Болд' }, phone: '99001234', email: 'a@b.mn', birth_date: '1990-05-01', register_number: 'уб90050112', address: 'УБ', loan_amount: 1000000, loan_term: 12, income_source: 'other', income_other_note: 'x', other_loans: { hasActiveLoans: false }, collateral_types: ['other'], collateral_other_note: 'y' };
+  const vi = validateAnswers(mortgageSteps(), ind);
+  assert.equal(vi.ok, true, JSON.stringify(vi.errors));
+  const org = { ...ind, borrower_type: 'organization', org_name: 'ХК' }; delete org.birth_date; delete org.register_number;
+  const vo = validateAnswers(mortgageSteps(), org);
+  assert.equal(vo.ok, true, JSON.stringify(vo.errors));
+  const missing = validateAnswers(mortgageSteps(), { ...ind, other_loans: undefined, address: '' });
+  assert.ok(missing.errors.other_loans && missing.errors.address);
+  assert.equal(mirrorAnswers(vi.value).regNo, 'УБ90050112');
   assert.equal(resolveSteps(buildDefaultConfig('cons_loan').steps).flatMap(step => step.fields).find(field => field.key === 'collateral_types').required, false);
 });

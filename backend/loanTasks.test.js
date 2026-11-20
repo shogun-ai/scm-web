@@ -610,7 +610,7 @@ test('review fixes: list revision, closed product, size guard, doc-request only,
 });
 
 // ---------- D11 conditional fields (§15) + D12 default configs (§15.2) ----------
-const defaultAnswers = (extra = {}) => ({ borrower_type: 'individual', full_name: { lastName: 'Бат', firstName: 'Болд' }, phone: '99001234', email: 'bold@example.mn', loan_amount: 5000000, loan_term: 12, repayment_source: 'Цалин', ...extra });
+const defaultAnswers = (extra = {}) => ({ borrower_type: 'individual', full_name: { lastName: 'Бат', firstName: 'Болд' }, phone: '99001234', email: 'bold@example.mn', loan_amount: 5000000, loan_term: 12, birth_date: '1990-05-01', register_number: 'УБ90050112', address: 'БЗД, УБ', other_loans: { hasActiveLoans: false }, ...extra });
 const defaultSubmit = (h, { product = 'cons_loan', answers: extra = {}, files = [], configVersion = '0' } = {}) => h.invoke('post', '/api/loan-tasks/public/submit', {
   user: undefined, files, body: { productKey: product, subProductId: '', configVersion, answers: JSON.stringify(defaultAnswers(extra)), consent: 'true', website: '' },
 });

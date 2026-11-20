@@ -632,3 +632,8 @@ UI түвшин: одоогийн AdminPanel (`#003B5C`, `#D4AF37`, rounded-xl, 
 - **A1** `GET /admin/configs`: хадгалаагүй бүтээгдэхүүнд `config.isDefault:true, version:0, isActive:true` (rollback үед `isActive:false`) — засварлагч default-аас эхэлнэ; `expectedVersion:0`-оор хадгалахад жинхэнэ config үүснэ. Хадгалсан config-д `isDefault:false`.
 - Default хариуцагч: байхгүй (unassigned). Сонголттой env `LOAN_TASKS_DEFAULT_ASSIGNEE_ID` (24 hex, идэвхтэй staff биш бол одоогийн дүрмээр system note-тойгоор unassigned).
 - **Rollback:** `LOAN_TASKS_DEFAULT_CONFIG=false` → хадгалаагүй бүтээгдэхүүн өмнөх шигээ `product:null` (легаси маягт), submit 404, admin draft `isActive:false`. Flag off (`LOAN_TASKS_ENABLED`) үеийн зан төлөв өөрчлөгдөөгүй.
+
+### 15.3 D13 (2026-11-20) — default маягтын өөрчлөлт
+- `buildDefaultConfig`-оос чөлөөт текст `repayment_source` хасав (preset registry-д хэвээр — хадгалсан config/snapshot хэвээр ажиллана; `mirrorAnswers` `repaymentSource`-ийг хуучин ёсоор дэмжинэ). `income_source`-ийн шошго: "Эргэн төлөгдөх орлогын эх үүсвэр".
+- Бүх бүтээгдэхүүний default-д нэмэв: `birth_date`, `register_number`, `address` (contact алхам, email-ийн дараа; бүгд required) ба `other_loans` (loan алхам, required: тийм/үгүй хариулт).
+- `birth_date`, `register_number` нь зөвхөн `borrower_type = individual`-д харагдана (хүний регистр/насны дүрэм; байгууллагын регистрийн preset байхгүй тул байгууллагад нуугдаж required биш). `address` иргэн/байгууллага хоёуланд required.

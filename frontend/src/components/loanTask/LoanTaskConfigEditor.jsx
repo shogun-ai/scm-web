@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Loader2, Save, Settings2 } from 'lucide-re
 import { LOAN_PRODUCTS } from '@shared/loanFormConfig';
 import { resolveSteps, validateConfig } from '@shared/loanWidgets';
 import StepsEditor from './StepsEditor';
+import CopyStepsPanel from './CopyStepsPanel';
 import SubProductEditor from './SubProductEditor';
 import TaskLoanForm from './TaskLoanForm';
 import { errorMessage, fetchAdminConfigs, fetchAssignees, saveAdminConfig } from './api';
@@ -32,6 +33,7 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [assignees, setAssignees] = useState([]);
   const [confirmActive, setConfirmActive] = useState(false);
+  const [copySource, setCopySource] = useState(null);
 
   const load = useCallback(async (keepKey) => {
     setStatus('loading'); setLoadError('');
@@ -56,11 +58,11 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
     if (key === selectedKey) return;
     if (dirty) { setPendingKey(key); return; }
     const entry = entryFor(key);
-    if (entry) { setSelectedKey(key); setDraft(prepare(entry.config)); setErrors({}); setMessage({ type: '', text: '' }); setConfirmActive(false); }
+    if (entry) { setSelectedKey(key); setDraft(prepare(entry.config)); setErrors({}); setMessage({ type: '', text: '' }); setConfirmActive(false); setCopySource(null); }
   };
   const discardAndSwitch = () => {
     const entry = entryFor(pendingKey);
-    if (entry) { setSelectedKey(pendingKey); setDraft(prepare(entry.config)); setDirty(false); setErrors({}); setMessage({ type: '', text: '' }); }
+    if (entry) { setSelectedKey(pendingKey); setDraft(prepare(entry.config)); setDirty(false); setErrors({}); setMessage({ type: '', text: '' }); setCopySource(null); }
     setPendingKey(null);
   };
   const update = patch => { setDraft(previous => ({ ...previous, ...patch })); setDirty(true); setMessage({ type: '', text: '' }); };
@@ -76,6 +78,7 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
       setProducts(previous => previous.map(item => (item.productKey === selectedKey ? { ...item, saved: true, isDefault: false, source: undefined, config: { ...saved, isDefault: false } } : item)));
       setDraft(prepare(saved)); setDirty(false); setConfirmActive(false);
       setMessage({ type: 'ok', text: 'Хадгаллаа.' });
+      setCopySource({ key: selectedKey, steps: clone(saved.steps || []) });
     } catch (err) {
       if (err.response?.status === 409) setMessage({ type: 'conflict', text: 'Өөр админ өөрчилсөн. Дахин ачаална уу.' });
       else if (err.response?.status === 400 && err.response.data?.errors) { setErrors(err.response.data.errors); setMessage({ type: 'error', text: err.response.data.message || 'Тохиргоонд алдаа байна.' }); }
@@ -98,6 +101,7 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
     };
   }, [draft, selectedKey]);
 
+  const onCopied = (key, saved) => setProducts(previous => previous.map(item => (item.productKey === key ? { ...item, saved: true, isDefault: false, source: undefined, config: { ...saved, isDefault: false } } : item)));
   const currentIsDefault = isDefaultEntry(entryFor(selectedKey));
 
   if (status === 'loading' && !draft) return <p role="status" className="flex items-center gap-2 p-6 text-slate-600"><Loader2 size={18} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p>;
@@ -146,6 +150,8 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
 
         {Object.keys(errors).length > 0 && <div role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-800"><p className="mb-1 font-semibold">Алдаа:</p><ul className="list-disc space-y-0.5 pl-5">{Object.entries(errors).map(([path, text]) => <li key={path}><span className="font-mono text-xs">{path}</span> — {String(text)}</li>)}</ul></div>}
         {message.text && <p role={message.type === 'ok' ? 'status' : 'alert'} className={`flex flex-wrap items-center gap-3 rounded-xl p-3 text-sm ${message.type === 'ok' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{message.type === 'ok' && <CheckCircle2 size={16} aria-hidden="true" />}{message.text}{message.type === 'conflict' && <button type="button" onClick={() => load(selectedKey)} className="font-semibold underline">Дахин ачаалах</button>}</p>}
+
+        {copySource?.key === selectedKey && <CopyStepsPanel key={`${copySource.key}-${draft.version}`} apiUrl={apiUrl} sourceKey={selectedKey} sourceSteps={copySource.steps} products={products} toPayload={toPayload} onApplied={onCopied} onDismiss={() => setCopySource(null)} />}
 
         <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
           <p className="text-xs text-slate-500">Хувилбар {draft.version ?? 0}{dirty ? ' · хадгалаагүй өөрчлөлттэй' : ''}</p>

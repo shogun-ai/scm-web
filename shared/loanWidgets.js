@@ -68,7 +68,7 @@ export const PRESET_WIDGETS = [
   file('id_reference', 'Иргэний үнэмлэхийн лавлагаа', 'file_id'),
   file('address_reference', 'Оршин суугаа газрын лавлагаа', 'file_address'),
   file('ndsh_reference', 'НДШ лавлагаа', 'file_social', { showWhen: { key: 'income_source', op: 'in', value: ['salary', 'salary_business'] } }),
-  { key: 'income_source', label: 'Орлогын эх үүсвэр', type: 'select', group: 'documents', options: INCOME_SOURCE_OPTIONS, storage: 'answers.income_source' },
+  { key: 'income_source', label: 'Эргэн төлөгдөх орлогын эх үүсвэр', type: 'select', group: 'documents', options: INCOME_SOURCE_OPTIONS, storage: 'answers.income_source' },
   file('bank_statement', 'Дансны хуулга', 'file_bank', { maxFiles: 5, showWhen: { key: 'income_source', op: 'in', value: ['business', 'salary_business'] } }),
   { key: 'income_other_note', label: 'Орлогын эх үүсвэрийн тайлбар', type: 'textarea', group: 'documents', maxLength: 1000, showWhen: { key: 'income_source', op: 'equals', value: 'other' }, storage: 'answers.income_other_note' },
   file('income_other_file', 'Орлогын эх үүсвэрийг нотлох баримт', 'file_income_other', { showWhen: { key: 'income_source', op: 'equals', value: 'other' } }),
@@ -732,6 +732,7 @@ export function mirrorAnswers(value = {}, { productKey } = {}) {
   return out;
 }
 
+const INDIVIDUAL_ONLY = { key: 'borrower_type', op: 'equals', value: 'individual' };
 const presetRef = (key, required = false) => ({ kind: 'preset', key, required });
 // Products whose default form asks for collateral (§15): collateral_types becomes required there.
 export const COLLATERAL_PRODUCT_KEYS = ['biz_loan', 'car_purchase_loan', 'car_coll_loan', 're_loan', 'line_loan', 'mortgage'];
@@ -746,8 +747,10 @@ export function buildDefaultConfig(productKey) {
     baseProductEnabled: true,
     defaultAssigneeId: '',
     steps: [
-      { id: 'contact', title: 'Холбоо барих', description: '', fields: [presetRef('borrower_type', true), presetRef('full_name', true), presetRef('org_name', true), presetRef('phone', true), presetRef('email', true)] },
-      { id: 'loan', title: 'Зээлийн хэрэгцээ', description: '', fields: [presetRef('loan_amount', true), presetRef('loan_term', true), presetRef('repayment_source', true), presetRef('purpose'), presetRef('income_source', true), presetRef('collateral_types', needsCollateral)] },
+      { id: 'contact', title: 'Холбоо барих', description: '', fields: [presetRef('borrower_type', true), presetRef('full_name', true), presetRef('org_name', true), presetRef('phone', true), presetRef('email', true),
+        // D13: individual-only (REGISTER_RE / age rules are for persons); address applies to organizations too.
+        { ...presetRef('birth_date', true), showWhen: INDIVIDUAL_ONLY }, { ...presetRef('register_number', true), showWhen: INDIVIDUAL_ONLY }, presetRef('address', true)] },
+      { id: 'loan', title: 'Зээлийн хэрэгцээ', description: '', fields: [presetRef('loan_amount', true), presetRef('loan_term', true), presetRef('purpose'), presetRef('income_source', true), presetRef('other_loans', true), presetRef('collateral_types', needsCollateral)] },
       { id: 'documents', title: 'Баримт', description: '', fields: [
         presetRef('id_reference'), presetRef('address_reference'),
         presetRef('ndsh_reference'), presetRef('bank_statement'), presetRef('income_other_note', true), presetRef('income_other_file'),
