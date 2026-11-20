@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, Save, Settings2 } from 'lucide-react';
 import { LOAN_PRODUCTS } from '@shared/loanFormConfig';
-import { resolveSteps, validateConfig } from '@shared/loanWidgets';
+import { buildDefaultConfig, resolveSteps, validateConfig } from '@shared/loanWidgets';
 import StepsEditor from './StepsEditor';
 import CopyStepsPanel from './CopyStepsPanel';
 import SubProductEditor from './SubProductEditor';
@@ -34,6 +34,15 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
   const [assignees, setAssignees] = useState([]);
   const [confirmActive, setConfirmActive] = useState(false);
   const [copySource, setCopySource] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  // Replace this product's steps with the current default form (unsaved until "Хадгалах").
+  const resetToDefault = () => {
+    const defaults = buildDefaultConfig(selectedKey);
+    update({ steps: defaults.steps });
+    setConfirmReset(false);
+    setErrors({});
+    setMessage({ type: 'ok', text: 'Анхны маягт ачааллаа. "Хадгалах" дарснаар хэрэгжинэ.' });
+  };
 
   const load = useCallback(async (keepKey) => {
     setStatus('loading'); setLoadError('');
@@ -58,7 +67,7 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
     if (key === selectedKey) return;
     if (dirty) { setPendingKey(key); return; }
     const entry = entryFor(key);
-    if (entry) { setSelectedKey(key); setDraft(prepare(entry.config)); setErrors({}); setMessage({ type: '', text: '' }); setConfirmActive(false); setCopySource(null); }
+    if (entry) { setSelectedKey(key); setDraft(prepare(entry.config)); setErrors({}); setMessage({ type: '', text: '' }); setConfirmActive(false); setCopySource(null); setConfirmReset(false); }
   };
   const discardAndSwitch = () => {
     const entry = entryFor(pendingKey);
@@ -134,6 +143,12 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
 
         <div role="tabpanel" id="cfg-panel" aria-labelledby={`cfg-tab-${tab}`} className="space-y-5">
           {tab === 'form' && <>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 p-3 text-sm">
+              <span className="min-w-0 flex-1 text-slate-600">Талбаруудыг системийн шинэ анхны маягтаар (орлогын эх үүсвэр, барьцааны сонголт гэх мэт) солих.</span>
+              {!confirmReset
+                ? <button type="button" onClick={() => setConfirmReset(true)} className="min-h-10 rounded-lg border border-[#003B5C] px-3 font-semibold text-[#003B5C] hover:bg-slate-50">Анхны маягтаар шинэчлэх</button>
+                : <span role="alertdialog" aria-label="Анхны маягтаар шинэчлэх" className="flex flex-wrap items-center gap-2"><span className="text-amber-900">Одоогийн талбарууд солигдоно.</span><button type="button" onClick={resetToDefault} className="min-h-10 rounded-lg bg-[#003B5C] px-3 font-semibold text-white">Тийм, солих</button><button type="button" onClick={() => setConfirmReset(false)} className="min-h-10 rounded-lg border border-slate-300 px-3">Болих</button></span>}
+            </div>
             <div className="space-y-3">
               <label className="flex min-h-10 items-center gap-3 text-sm font-medium"><input type="checkbox" className="h-5 w-5 accent-[#003B5C]" checked={Boolean(draft.isActive)} onChange={event => { update({ isActive: event.target.checked }); setConfirmActive(event.target.checked); }} />Идэвхтэй (нийтийн сайтад шинэ маягт харагдана)</label>
               {confirmActive && draft.isActive && <p role="status" className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900">Хадгалсны дараа нийтийн сайтад шинэ маягт харагдана.</p>}
