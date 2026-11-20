@@ -97,8 +97,9 @@ function harness({ env = { LOAN_TASKS_ENABLED: 'true' }, configs = [], loans = [
   multer.memoryStorage = () => ({});
   const cloudinary = {
     url: id => `https://res.cloudinary.com/demo/raw/authenticated/s--sig--/${id}`,
+    utils: { private_download_url: (id, format, options) => `https://api.cloudinary.com/v1_1/demo/${options.resource_type}/download?public_id=${encodeURIComponent(id)}&format=${format}&type=${options.type}&expires_at=${options.expires_at}&signature=sig` },
     uploader: {
-      upload_stream: (_options, callback) => ({ end: () => { calls.uploads++; if (uploadFailAt && calls.uploads === uploadFailAt) callback(new Error('cloud down')); else callback(null, { public_id: `private/doc${calls.uploads}` }); } }),
+      upload_stream: (_options, callback) => ({ end: () => { calls.uploads++; if (uploadFailAt && calls.uploads === uploadFailAt) callback(new Error('cloud down')); else callback(null, { public_id: `scm_loan_private/doc${calls.uploads}` }); } }),
       destroy: async () => { calls.destroys++; },
     },
   };
@@ -145,7 +146,7 @@ const activeConfig = (extra = {}) => ({
 const answers = (extra = {}) => ({ full_name: { lastName: 'Бат', firstName: 'Болд' }, phone: '99001234', email: 'bold@example.mn', register_number: 'УБ90050112', loan_amount: 5000000, other_loans: { hasActiveLoans: true, loans: [{ lender: 'Хаан', balance: 100, monthlyPayment: 10 }] }, ...extra });
 const submitBody = (extra = {}) => ({ productKey: 'cons_loan', subProductId: '', configVersion: '3', answers: JSON.stringify(answers()), consent: 'true', website: '', ...extra });
 const submit = (h, { body = {}, files = [pdfFile('id_reference')], uploadError } = {}) => h.invoke('post', '/api/loan-tasks/public/submit', { user: undefined, body: submitBody(body), files, uploadError });
-const legacyLoan = (extra = {}) => ({ _id: LOAN_ID, status: 'resolved', workflowRevision: 5, applicationReference: 'SCM-2025-AAAAAA', firstname: 'Болд', lastname: 'Бат', regNo: 'УБ90050112', phone: '99001234', selectedProduct: 'cons_loan', amount: 1000, applicationData: { borrower: { regNo: 'УБ90050112' } }, fileDetails: [{ _id: 'fd1', fieldName: 'file_id', fileName: 'id.pdf', fileUrl: 'https://res.cloudinary.com/x', publicId: 'p1', deliveryType: 'authenticated' }], assignee: { userId: OFFICER_ID, name: 'Сараа' }, ...extra });
+const legacyLoan = (extra = {}) => ({ _id: LOAN_ID, status: 'resolved', workflowRevision: 5, applicationReference: 'SCM-2025-AAAAAA', firstname: 'Болд', lastname: 'Бат', regNo: 'УБ90050112', phone: '99001234', selectedProduct: 'cons_loan', amount: 1000, applicationData: { borrower: { regNo: 'УБ90050112' } }, fileDetails: [{ _id: 'fd1', fieldName: 'file_id', fileName: 'id.pdf', fileUrl: 'https://res.cloudinary.com/x', publicId: 'scm_loan_private/p1', deliveryType: 'authenticated' }], assignee: { userId: OFFICER_ID, name: 'Сараа' }, ...extra });
 
 test('feature flag off: public GET reports disabled, everything else 503, quick flow untouched', async () => {
   const h = harness({ env: {}, configs: [activeConfig()] });
@@ -355,7 +356,8 @@ test('legacy request actions write only task fields (+assignee), never legacy st
   let response = await h.invoke('get', '/api/loan-tasks/:id', { params: { id: LOAN_ID } });
   assert.equal(response.data.taskStatus, 'resolved'); assert.deepEqual(response.data.outcome.code, 'approved_conditional');
   assert.equal(response.data.taskForm, null); assert.equal(response.data.answers, null);
-  assert.equal(response.data.files[0].label, 'Иргэний үнэмлэхийн лавлагаа'); assert.ok(response.data.files[0].url.includes('s--sig--'));
+  assert.equal(response.data.files[0].label, 'Иргэний үнэмлэхийн лавлагаа'); assert.ok(response.data.files[0].url.startsWith('https://api.cloudinary.com/v1_1/demo/raw/download?public_id=scm_loan_private%2Fp1'));
+  assert.ok(response.data.files[0].url.includes(`expires_at=${Math.floor(NOW.getTime() / 1000) + 600}`), 'short-lived URL generated at read time');
   assert.equal(response.data.allowedActions.reopen, false);
   response = await h.invoke('post', '/api/loan-tasks/:id/actions', { params: { id: LOAN_ID }, body: { type: 'reopen', note: 'x', expectedRevision: 0 } });
   assert.equal(response.code, 403);
@@ -532,4 +534,71 @@ test('file helpers detect magic bytes and guard prototype keys', () => {
   const { errors } = validateTaskFiles([pdfFile('constructor'), pdfFile('toString')], {});
   assert.deepEqual(Object.keys(errors), ['constructor', '_files']);
   assert.equal(Object.getPrototypeOf(errors), Object.prototype);
+});
+
+// ---------- 2026-11-20 review fixes (route level) ----------
+test('review fixes: list revision, closed product, size guard, doc-request only, short-lived task file URLs', async () => {
+  // H1: the board list returns taskRevision (selected + mapped).
+  let h = harness({ loans: [legacyLoan({ status: 'studying', taskStatus: 'in_review', taskRevision: 2 })] });
+  let response = await h.invoke('get', '/api/loan-tasks', { user: manager });
+  assert.equal(response.code, 200); assert.equal(response.data.items[0].taskRevision, 2);
+  assert.match(h.calls.selects.at(-1), /\btaskRevision\b/);
+  response = await h.invoke('post', '/api/loan-tasks/:id/actions', { user: manager, params: { id: LOAN_ID }, body: { type: 'assign', assigneeId: OTHER_ID, expectedRevision: response.data.items[0].taskRevision } });
+  assert.equal(response.code, 200, 'quick-assign with the list revision succeeds');
+
+  // M4 (code): active product with nothing live -> explicit closed state; inactive / live keep previous shapes.
+  const closedConfig = activeConfig({ baseProductEnabled: false, subProducts: [{ id: 'expired', name: 'Expired', isActive: true, startDate: '2026-01-01', endDate: '2026-02-01', inheritSteps: true, steps: [], order: 1 }] });
+  h = harness({ configs: [closedConfig] });
+  response = await h.invoke('get', '/api/loan-tasks/public/products/:productKey', { user: undefined, params: { productKey: 'cons_loan' }, query: { t: '123' } });
+  assert.deepEqual(response.data, { enabled: true, closed: true, product: null, productKey: 'cons_loan', name: response.data.name, message: 'Одоогоор хүсэлт хүлээн авахгүй байна.' });
+  assert.ok(response.data.name);
+  h = harness({ configs: [activeConfig({ isActive: false })] });
+  response = await h.invoke('get', '/api/loan-tasks/public/products/:productKey', { user: undefined, params: { productKey: 'cons_loan' } });
+  assert.deepEqual(response.data, { enabled: true, product: null }, 'inactive -> legacy fallback');
+  h = harness({ configs: [activeConfig()] });
+  response = await h.invoke('get', '/api/loan-tasks/public/products/:productKey', { user: undefined, params: { productKey: 'cons_loan' }, query: { t: String(Date.now()) } });
+  assert.equal(response.data.closed, undefined); assert.equal(response.data.product.configVersion, 3, 'unknown cache-buster query ignored');
+  h = harness({ env: {}, configs: [closedConfig] });
+  response = await h.invoke('get', '/api/loan-tasks/public/products/:productKey', { user: undefined, params: { productKey: 'cons_loan' } });
+  assert.deepEqual(response.data, { enabled: false, product: null }, 'flag off unchanged');
+
+  // M4 (security): declared oversize multipart is rejected before parsing / uploading.
+  h = harness({ configs: [activeConfig()] });
+  response = await h.invoke('post', '/api/loan-tasks/public/submit', { user: undefined, headers: { 'content-length': String(60 * 1024 * 1024) }, body: submitBody(), files: [pdfFile('id_reference')] });
+  assert.equal(response.code, 413); assert.equal(response.data.code, 'PAYLOAD_TOO_LARGE'); assert.equal(h.calls.uploads, 0); assert.equal(h.records.length, 0);
+  response = await h.invoke('post', '/api/loan-tasks/public/submit', { user: undefined, headers: { 'content-length': '2048' }, body: submitBody(), files: [pdfFile('id_reference')] });
+  assert.equal(response.code, 201, 'normal declared size passes');
+  response = await h.invoke('post', '/api/loan-tasks/upload/:token', { user: undefined, headers: { 'content-length': String(60 * 1024 * 1024) }, params: { token: 'A'.repeat(43) }, files: [pdfFile('bank_statement')] });
+  assert.equal(response.code, 413);
+  // public submit keeps the stored URL on fileDetails (legacy LOS + AI intake read fileDetails[].fileUrl).
+  assert.ok(h.records[0].fileDetails[0].fileUrl.includes('s--sig--')); assert.equal(h.records[0].fileDetails[0].publicId, 'scm_loan_private/doc1');
+
+  // M2 (code): request_docs / status->additional_docs rejected on /actions.
+  h = harness({ loans: [legacyLoan({ status: 'studying' })] });
+  response = await h.invoke('post', '/api/loan-tasks/:id/actions', { params: { id: LOAN_ID }, body: { type: 'request_docs', items: ['НДШ'], expectedRevision: 0 } });
+  assert.equal(response.code, 400); assert.equal(response.data.code, 'USE_DOC_REQUEST');
+  response = await h.invoke('post', '/api/loan-tasks/:id/actions', { params: { id: LOAN_ID }, body: { type: 'status', to: 'additional_docs', expectedRevision: 0 } });
+  assert.equal(response.code, 400); assert.ok(response.data.errors.to);
+  assert.equal(h.store[0].taskStatus, undefined); assert.equal(h.calls.updates.length, 0);
+  response = await h.invoke('get', '/api/loan-tasks/:id', { params: { id: LOAN_ID } });
+  assert.equal(response.data.allowedActions.transitions.includes('additional_docs'), false);
+
+  // M3: new task files persist no signed URL; detail returns a short-lived download URL. L1: requested label kept.
+  response = await h.invoke('post', '/api/loan-tasks/:id/files', { params: { id: LOAN_ID }, body: { fieldKey: 'bank_statement' }, files: [pdfFile('files')] });
+  assert.equal(response.code, 200, JSON.stringify(response.data));
+  const stored = h.store[0].taskFiles[0];
+  assert.equal(stored.fileUrl, undefined); assert.equal(stored.publicId, 'scm_loan_private/doc1'); assert.equal(stored.resourceType, 'raw'); assert.equal(stored.label, 'Дансны хуулга');
+  const staffFile = response.data.files.find(file => file.source === 'staff');
+  assert.ok(staffFile.url.startsWith('https://api.cloudinary.com/v1_1/demo/raw/download?public_id=scm_loan_private%2Fdoc1'));
+  assert.ok(staffFile.url.includes(`expires_at=${Math.floor(NOW.getTime() / 1000) + 600}`));
+  response = await h.invoke('post', '/api/loan-tasks/:id/doc-request', { params: { id: LOAN_ID }, body: { items: [{ key: 'extra_1', label: 'Банкны хуулга (Хаан)' }], expectedRevision: 0 } });
+  assert.equal(response.code, 200, JSON.stringify(response.data));
+  const token = new URL(response.data.uploadUrl).searchParams.get('upload');
+  response = await h.invoke('post', '/api/loan-tasks/upload/:token', { user: undefined, params: { token }, headers: { 'content-length': '4096' }, files: [pdfFile('extra_1')] });
+  assert.equal(response.code, 200, JSON.stringify(response.data));
+  assert.equal(h.store[0].taskFiles[1].label, 'Банкны хуулга (Хаан)'); assert.equal(h.store[0].taskFiles[1].fileUrl, undefined);
+  response = await h.invoke('get', '/api/loan-tasks/:id', { params: { id: LOAN_ID } });
+  const linkFile = response.data.files.find(file => file.source === 'applicant_link');
+  assert.equal(linkFile.label, 'Банкны хуулга (Хаан)');
+  assert.equal(JSON.stringify(response.data).includes('tokenHash'), false);
 });

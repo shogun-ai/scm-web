@@ -34,7 +34,10 @@ export const TASK_TRANSITIONS = {
   rejected: [],
   resolved: [],
 };
-export const TASK_ACTION_TYPES = ['assign', 'status', 'request_docs', 'note', 'reopen'];
+// Status changes to this value must use the doc-request endpoint, never a plain status action.
+export const DOC_REQUEST_ONLY_STATUS = 'additional_docs';
+export const DOC_REQUEST_ONLY_MESSAGE = 'Нэмэлт баримтыг "Нэмэлт баримт хүсэх" үйлдлээр хүснэ үү.';
+export const TASK_ACTION_TYPES =['assign', 'status', 'request_docs', 'note', 'reopen'];
 export const TASK_NOTE_MAX = 2000;
 export const TASK_DOC_ITEMS_MAX = 10;
 export const TASK_DOC_ITEM_MAX_LENGTH = 120;
@@ -96,7 +99,8 @@ export function allowedTaskActions(loan, { manager = false, isAssignee = false }
   const canWork = Boolean(manager || isAssignee);
   return {
     assign: Boolean(manager),
-    transitions: canWork ? [...TASK_TRANSITIONS[taskStatus]] : [],
+    // additional_docs is reached only through the doc-request flow (upload link + applicant email).
+    transitions: canWork ? TASK_TRANSITIONS[taskStatus].filter(to => to !== DOC_REQUEST_ONLY_STATUS) : [],
     reopen: Boolean(manager) && terminal,
     note: canWork,
     requestDocs: canWork && !terminal && taskStatus !== 'new',
@@ -161,6 +165,7 @@ export function validateTaskAction(body, loan, { manager = false, isAssignee = t
     if (!canWork) throw new TaskActionError('Энэ хүсэлтэд үйлдэл хийх эрхгүй байна.', 403);
     const to = body.to;
     if (!TASK_STATUSES.includes(to)) errors.to = 'Төлөв буруу байна.';
+    else if (to === DOC_REQUEST_ONLY_STATUS && !terminal) errors.to = DOC_REQUEST_ONLY_MESSAGE;
     else if (!TASK_TRANSITIONS[from].includes(to)) {
       if (terminal) throw new TaskActionError('Шийдвэрлэсэн хүсэлтийг зөвхөн менежер дахин нээнэ.', 403, {}, 'TERMINAL');
       errors.to = `"${TASK_STATUS_LABELS[from]}" төлвөөс "${TASK_STATUS_LABELS[to]}" руу шилжих боломжгүй.`;

@@ -21,7 +21,8 @@ export const fetchLoanTaskAvailability = async (apiUrl, timeout = 5000) => {
   } catch { return false; }
 };
 export const fetchPublicProducts = (apiUrl, timeout = 5000) => data(axios.get(`${base(apiUrl)}/public/products`, { timeout }));
-export const fetchPublicProduct = (apiUrl, productKey, timeout = 5000) => data(axios.get(`${base(apiUrl)}/public/products/${encodeURIComponent(productKey)}`, { timeout }));
+// fresh: bypass the 60 s browser/CDN cache (e.g. after 409 CONFIG_CHANGED); the backend ignores `t`.
+export const fetchPublicProduct = (apiUrl, productKey, timeout = 5000, { fresh = false } = {}) => data(axios.get(`${base(apiUrl)}/public/products/${encodeURIComponent(productKey)}`, { timeout, ...(fresh ? { params: { t: Date.now() } } : {}) }));
 export const submitPublicRequest = (apiUrl, formData, onUploadProgress) => data(axios.post(`${base(apiUrl)}/public/submit`, formData, { onUploadProgress }));
 export const fetchUploadRequest = (apiUrl, token) => data(axios.get(`${base(apiUrl)}/upload/${encodeURIComponent(token)}`, { timeout: 15000 }));
 export const submitUploadFiles = (apiUrl, token, formData, onUploadProgress) => data(axios.post(`${base(apiUrl)}/upload/${encodeURIComponent(token)}`, formData, { onUploadProgress }));

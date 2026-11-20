@@ -68,7 +68,10 @@ test('taskStatusFilter agrees with deriveTaskState for every legacy/task combina
 
 test('allowed actions respect role, assignment and terminal state', () => {
   const open = { status: 'pending', taskStatus: 'in_review' };
-  assert.deepEqual(allowedTaskActions(open, { manager: false, isAssignee: true }), { assign: false, transitions: TASK_TRANSITIONS.in_review, reopen: false, note: true, requestDocs: true, uploadFiles: true });
+  assert.deepEqual(allowedTaskActions(open, { manager: false, isAssignee: true }), { assign: false, transitions: ['rejected', 'resolved'], reopen: false, note: true, requestDocs: true, uploadFiles: true });
+  // additional_docs is never offered as a plain status transition (doc-request flow only).
+  for (const status of ['new', 'assigned', 'additional_docs', 'in_review']) assert.equal(allowedTaskActions({ taskStatus: status }, { manager: true }).transitions.includes('additional_docs'), false, status);
+  assert.ok(TASK_TRANSITIONS.in_review.includes('additional_docs'), 'transition table keeps the doc-request target');
   assert.equal(allowedTaskActions(open, { manager: false, isAssignee: false }).note, false);
   const closed = { status: 'resolved' };
   assert.deepEqual(allowedTaskActions(closed, { isAssignee: true }), { assign: false, transitions: [], reopen: false, note: true, requestDocs: false, uploadFiles: false });
@@ -94,6 +97,13 @@ test('validateTaskAction enforces transitions, notes, outcomes and allow-listed 
   assert.equal(bad({ type: 'status', to: 'in_review', expectedRevision: 0 }, { status: 'resolved' }).status, 403);
   assert.equal(bad({ type: 'request_docs', items: [], expectedRevision: 0 }).errors.items !== undefined, true);
   assert.equal(bad({ type: 'request_docs', items: ['a'], expectedRevision: 0 }, { status: 'pending' }).errors.type !== undefined, true);
+  // additional_docs only via doc-request: plain status action rejected from every open state, terminal stays 403.
+  for (const from of [{ taskStatus: 'in_review' }, { taskStatus: 'assigned' }, { status: 'pending', assignee: { userId: ID } }]) {
+    const error = bad({ type: 'status', to: 'additional_docs', expectedRevision: 0 }, from, { manager: true });
+    assert.equal(error.status, 400); assert.match(error.errors.to, /Нэмэлт баримт хүсэх/);
+  }
+  assert.equal(bad({ type: 'status', to: 'additional_docs', expectedRevision: 0 }, { taskStatus: 'resolved' }).status, 403);
+  assert.equal(validateTaskAction({ type: 'status', to: 'in_review', expectedRevision: 0 }, { taskStatus: 'additional_docs' }).to, 'in_review');
   assert.equal(bad({ type: 'note', note: '' }).errors.note !== undefined, true);
   assert.equal(bad({ type: 'note', note: 'x'.repeat(2001) }).errors.note !== undefined, true);
   assert.equal(bad({ type: 'note', note: 'x' }, loan, { isAssignee: false }).status, 403);

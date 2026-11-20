@@ -176,28 +176,59 @@ function LegacyQuickLoanRequest({ onBack, initialProduct }) {
 
 const PUBLIC_API_URL = import.meta.env.VITE_API_URL || (['localhost', '127.0.0.1'].includes(window.location.hostname) ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com');
 
+// Removes the one-time upload token from the address bar/history (it stays in component state).
+const stripUploadTokenFromUrl = () => {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('upload')) return;
+    url.searchParams.delete('upload');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  } catch { /* keep the page usable even if history is unavailable */ }
+};
+
+function ProductClosed({ name, message, onBack }) {
+  return <main className="sc-public-page min-h-screen bg-[#f7f8f6] pb-20 pt-28 text-[#102d43] md:pt-32">
+    <div className="mx-auto max-w-2xl px-5 md:px-8">
+      {onBack && <button type="button" onClick={onBack} className="mb-6 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-slate-600 hover:text-[#102d43]"><ArrowLeft size={16} aria-hidden="true" />Буцах</button>}
+      <section role="status" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+        {name && <p className="text-sm font-medium text-slate-500">{name}</p>}
+        <h1 className="mt-1 text-2xl font-semibold">{message || 'Одоогоор хүсэлт хүлээн авахгүй байна'}</h1>
+        <p className="mt-3 text-slate-600">Энэ бүтээгдэхүүнд одоогоор шинэ хүсэлт хүлээн авахгүй байна. Дэлгэрэнгүй мэдээллийг манай утсаар лавлана уу.</p>
+      </section>
+    </div>
+  </main>;
+}
+
 // Wrapper: ?upload=<token> -> applicant upload page; otherwise the dynamic task form
-// when the feature is enabled for the product. Any failure falls back to the legacy quick form.
+// when the feature is enabled for the product. An explicitly closed product shows a notice;
+// flag off / not found / network errors fall back to the legacy quick form.
 export default function QuickLoanRequest({ onBack, initialProduct }) {
   const params = new URLSearchParams(window.location.search);
-  const uploadToken = params.get('upload');
+  const [uploadToken] = useState(() => params.get('upload'));
   const queryProduct = params.get('product');
   const subProductId = params.get('sub') || '';
   const rawKey = queryProduct || PRODUCT_IDS[initialProduct?.id] || initialProduct?.productKey || '';
   const productKey = rawKey === 'car_loan' ? 'car_purchase_loan' : rawKey;
-  const [state, setState] = useState({ status: uploadToken || !productKey ? 'done' : 'loading', product: null });
+  const [state, setState] = useState({ status: uploadToken || !productKey ? 'done' : 'loading', product: null, closed: null });
+
+  useEffect(() => { if (uploadToken) stripUploadTokenFromUrl(); }, [uploadToken]);
 
   useEffect(() => {
     if (uploadToken || !productKey) return undefined;
     let cancelled = false;
     fetchPublicProduct(PUBLIC_API_URL, productKey, 5000)
-      .then(data => { if (!cancelled) setState({ status: 'done', product: data?.enabled && data.product?.productKey && Array.isArray(data.product.steps) ? data.product : null }); })
-      .catch(() => { if (!cancelled) setState({ status: 'done', product: null }); });
+      .then(data => {
+        if (cancelled) return;
+        if (data?.enabled && data.closed) { setState({ status: 'done', product: null, closed: { name: typeof data.name === 'string' ? data.name : '', message: typeof data.message === 'string' ? data.message : '' } }); return; }
+        setState({ status: 'done', product: data?.enabled && data.product?.productKey && Array.isArray(data.product.steps) ? data.product : null, closed: null });
+      })
+      .catch(() => { if (!cancelled) setState({ status: 'done', product: null, closed: null }); });
     return () => { cancelled = true; };
   }, [uploadToken, productKey]);
 
   if (uploadToken) return <TaskUploadForm token={uploadToken} onBack={onBack} apiUrl={PUBLIC_API_URL} />;
   if (state.status === 'loading') return <main className="sc-public-page min-h-screen bg-[#f7f8f6] pb-20 pt-28 text-[#102d43] md:pt-32"><div className="mx-auto max-w-6xl px-5 md:px-8"><p role="status" className="inline-flex items-center gap-3 text-slate-600"><Loader2 size={20} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p><div className="mt-8 h-72 animate-pulse rounded-2xl bg-white" aria-hidden="true" /></div></main>;
+  if (state.closed) return <ProductClosed name={state.closed.name} message={state.closed.message} onBack={onBack} />;
   if (state.product) return <TaskLoanForm product={state.product} subProductId={subProductId} onBack={onBack} apiUrl={PUBLIC_API_URL} />;
   return <LegacyQuickLoanRequest onBack={onBack} initialProduct={initialProduct} />;
 }

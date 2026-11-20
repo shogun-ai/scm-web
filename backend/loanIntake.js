@@ -1,4 +1,5 @@
 import { LOAN_PRODUCTS } from '../shared/loanFormConfig.js';
+import { TERMINAL_TASK_STATUSES } from '../shared/loanTaskStatus.js';
 
 export const QUICK_FILE_FIELDS = ['file_id', 'file_address', 'file_social', 'file_bank', 'file_credit', 'file_car_photos', 'file_prop_map'];
 export const REQUEST_STATUSES = ['pending', 'created', 'assigned', 'data_collection', 'studying', 'assessment', 'committee', 'returned', 'approved', 'rejected', 'resolved', 'closed', 'disbursed'];
@@ -10,6 +11,46 @@ export const isRequestManager = user => rolesOf(user).some(role => managerRoles.
 export const isRequestStaff = user => rolesOf(user).some(role => staffRoles.includes(role));
 export const requestScope = user => isRequestManager(user) ? {} : { 'assignee.userId': String(user?._id || '') };
 export const canAccessRequest = (user, loan) => isRequestStaff(user) && (isRequestManager(user) || String(loan?.assignee?.userId || '') === String(user?._id || ''));
+
+// Render runs exactly one reverse proxy hop in front of the service, so the client address is the
+// X-Forwarded-For entry appended by that proxy. Never use `true`: it would trust client-supplied XFF.
+export const TRUST_PROXY_HOPS = 1;
+
+// Legacy write guard: non-managers may not modify requests closed by the task flow.
+export function taskLockBlocks(user, loan, method) {
+  return !isRequestManager(user) && TERMINAL_TASK_STATUSES.includes(loan?.taskStatus) && !['GET', 'HEAD'].includes(method);
+}
+
+// Upload tokens are stored only as hashes, but legacy serializers must not expose even the hash.
+export function stripTaskSecrets(doc) {
+  if (!doc || typeof doc !== 'object') return doc;
+  const plain = typeof doc.toJSON === 'function' ? doc.toJSON() : doc;
+  if (!Array.isArray(plain?.taskUploadLinks)) return plain;
+  return {
+    ...plain,
+    taskUploadLinks: plain.taskUploadLinks.map(link => {
+      if (!link || typeof link !== 'object') return link;
+      const { tokenHash: _hidden, ...rest } = link;
+      return rest;
+    }),
+  };
+}
+
+// Rejects bodies whose declared size exceeds the cap before multer buffers them in memory.
+// Without Content-Length (chunked transfer) the request continues and multer's per-file/count limits apply.
+export function rejectOversizedBody(maxBytes, message = 'Нийт файлын хэмжээ хэтэрсэн байна.') {
+  return (req, res, next) => {
+    const header = req.headers?.['content-length'];
+    if (header === undefined || header === '') return next();
+    const value = String(header).trim();
+    if (!/^\d{1,15}$/.test(value)) return res.status(400).json({ message: 'Хүсэлтийн хэмжээ буруу байна.' });
+    if (Number(value) > maxBytes) {
+      res.set('Connection', 'close');
+      return res.status(413).json({ message, code: 'PAYLOAD_TOO_LARGE' });
+    }
+    return next();
+  };
+}
 
 export class IntakeError extends Error {
   constructor(message, status = 400, errors = {}) { super(message); this.status = status; this.errors = errors; }
@@ -69,6 +110,13 @@ export function validateRequestPatch(body = {}, loan = {}, manager = false) {
   }
   if (!Object.keys(patch).length) throw new IntakeError('Өөрчлөлт оруулна уу.');
   return patch;
+}
+
+export const USE_TASK_BOARD_MESSAGE = 'Энэ хүсэлтийн төлөв, хариуцагчийг шинэ хүсэлтийн самбараас өөрчилнө үү.';
+// Task-form (task-v1) requests are managed by the task board; legacy status/assignee patches would fork state.
+export function assertLegacyPatchAllowed(body, loan) {
+  if (loan?.formVersion !== 'task-v1' || !body || typeof body !== 'object') return;
+  if (Object.hasOwn(body, 'status') || Object.hasOwn(body, 'assigneeId')) throw Object.assign(new IntakeError(USE_TASK_BOARD_MESSAGE, 409), { code: 'USE_TASK_BOARD' });
 }
 
 export function createIntakeLimiter({ max = 5, windowMs = 15 * 60 * 1000, now = Date.now } = {}) {
@@ -144,7 +192,7 @@ export function registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest,
   const parseUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 12, fields: 18, fieldSize: 4000, parts: 30 }, fileFilter: (_req, file, cb) => ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype) ? cb(null, true) : cb(new IntakeError('Файлын төрөл зөвшөөрөгдөөгүй байна.')) }).fields(QUICK_FILE_FIELDS.map(name => ({ name, maxCount: name === 'file_bank' ? 4 : 3 })));
   const parseStaffUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 12, fields: 2, fieldSize: 200, parts: 14 } }).fields([{ name: 'files', maxCount: 12 }, ...QUICK_FILE_FIELDS.map(name => ({ name, maxCount: 12 }))]);
   const requireStaff = (req, res, next) => isRequestStaff(req.user) ? next() : res.status(403).json({ message: 'Хүсэлт харах эрхгүй байна.' });
-  const fail = (res, error) => res.status(error instanceof IntakeError ? error.status : 500).json({ message: error instanceof IntakeError ? error.message : 'Хүсэлтийг боловсруулахад алдаа гарлаа.', ...(error instanceof IntakeError && Object.keys(error.errors).length ? { errors: error.errors } : {}) });
+  const fail = (res, error) => res.status(error instanceof IntakeError ? error.status : 500).json({ message: error instanceof IntakeError ? error.message : 'Хүсэлтийг боловсруулахад алдаа гарлаа.', ...(error instanceof IntakeError && error.code ? { code: error.code } : {}), ...(error instanceof IntakeError && Object.keys(error.errors).length ? { errors: error.errors } : {}) });
   const validId = id => /^[a-f\d]{24}$/i.test(id || '');
   const uploadPrivate = file => new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream({ folder: 'scm_loan_private', resource_type: 'raw', type: 'authenticated' }, (error, result) => error ? reject(error) : resolve({ fieldName: file.fieldname, fileName: file.originalname.slice(0, 200), fileUrl: cloudinary.url(result.public_id, { resource_type: 'raw', type: 'authenticated', sign_url: true, secure: true }), publicId: result.public_id, deliveryType: 'authenticated', mimeType: file.mimetype, size: file.size }));
@@ -195,7 +243,7 @@ export function registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest,
         saved = true;
         // D6: task-form requests skip AI automation unless explicitly enabled (manual retry still works).
         if (loan.formVersion !== 'task-v1' || process.env.LOAN_TASKS_AI_AUTOMATION === 'true') automate(loan._id);
-        res.json(loan);
+        res.json(stripTaskSecrets(loan));
       } catch (error) {
         if (!saved) await Promise.allSettled(persisted.map(file => cloudinary.uploader.destroy(file.publicId, { resource_type: 'raw', type: 'authenticated' })));
         fail(res, error);
@@ -228,9 +276,9 @@ export function registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest,
   app.get('/api/loan-requests/:id', authenticateUser, requireStaff, async (req, res) => {
     try {
       if (!validId(req.params.id)) throw new IntakeError('Хүсэлтийн ID буруу байна.');
-      const loan = await LoanRequest.findOne({ _id: req.params.id, ...requestScope(req.user) }).lean();
+      const loan = await LoanRequest.findOne({ _id: req.params.id, ...requestScope(req.user) }).select('-taskUploadLinks.tokenHash').lean();
       if (!loan) throw new IntakeError('Хүсэлт олдсонгүй.', 404);
-      res.json(loan);
+      res.json(stripTaskSecrets(loan));
     } catch (error) { fail(res, error); }
   });
   app.post('/api/loan-requests/:id/intake-automation', authenticateUser, requireStaff, async (req, res) => {
@@ -256,6 +304,8 @@ export function registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest,
       const query = { _id: req.params.id, ...requestScope(req.user) };
       const loan = await LoanRequest.findOne(query).lean();
       if (!loan) throw new IntakeError('Хүсэлт олдсонгүй.', 404);
+      if (taskLockBlocks(req.user, loan, 'PATCH')) throw new IntakeError('Шийдвэрлэсэн хүсэлтийг өөрчлөх эрхгүй байна.', 403);
+      assertLegacyPatchAllowed(req.body, loan);
       const patch = validateRequestPatch(req.body, loan, isRequestManager(req.user));
       if (patch.status) {
         const action = committeeAction(patch.status, loan.status);
@@ -276,7 +326,7 @@ export function registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest,
       const updated = await LoanRequest.findOneAndUpdate(query, { $set: patch, $inc: { workflowRevision: 1 } }, { new: true, runValidators: true });
       if (!updated) throw new IntakeError('Хүсэлт өөрчлөгдсөн байна. Дахин ачаална уу.', 409);
       await createLog(req.user, 'loan_request_workflow_updated', `${loan._id}: ${loan.status} -> ${updated.status}`);
-      res.json(updated);
+      res.json(stripTaskSecrets(updated));
     } catch (error) { fail(res, error); }
   });
 }

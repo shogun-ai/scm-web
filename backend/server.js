@@ -36,10 +36,10 @@ import ZentroTransaction from './models/ZentroTransaction.js';
 import ZentroImportBatch from './models/ZentroImportBatch.js';
 import { createZentroFacebookIntegration } from './zentroFacebook.js';
 import { classifyTransaction as classifyStatementTransaction, DEFAULT_INCOME_WEIGHTS } from '../shared/statementWorkbenchUtils.js';
-import { registerLoanIntakeRoutes, canAccessRequest, isRequestManager, isRequestStaff, requestScope, isAllowedLoanRemoteUrl, automationWriteQuery, researchVisibilityStages, assertLinkedResearchAccess } from './loanIntake.js';
+import { registerLoanIntakeRoutes, canAccessRequest, isRequestManager, isRequestStaff, requestScope, isAllowedLoanRemoteUrl, automationWriteQuery, researchVisibilityStages, assertLinkedResearchAccess, TRUST_PROXY_HOPS, stripTaskSecrets } from './loanIntake.js';
 import nodemailer from 'nodemailer';
 import LoanFormConfig from './models/LoanFormConfig.js';
-import { applyLoanTaskSchema, registerLoanTaskRoutes, legacyLoanPostGone, taskLockBlocks } from './loanTasks.js';
+import { applyLoanTaskSchema, registerLoanTaskRoutes, legacyLoanPostGone, taskLockBlocks, sanitizeLegacyLoanWrite } from './loanTasks.js';
 import { createMailer } from './mailer.js';
 
 const ZentroCodeRuleSchema = new mongoose.Schema({
@@ -173,6 +173,10 @@ if (!fs.existsSync(exposureUploadsDir)) {
 }
 
 const app = express();
+// Render terminates client connections at exactly one proxy hop in front of this service, so req.ip is the
+// address that proxy appended to X-Forwarded-For. Exact hop count (never `true`): clients cannot spoof req.ip
+// by sending their own X-Forwarded-For. Rate limiters (loan intake, onboarding, safety notices) key on req.ip.
+app.set('trust proxy', TRUST_PROXY_HOPS);
 
 // Ð”ÑÑÑ€ Ð½ÑŒ 'import cors from 'cors'' Ð±Ð°Ð¹Ð³Ð°Ð° ÑƒÑ‡Ñ€Ð°Ð°Ñ ÑˆÑƒÑƒÐ´ Ð¸Ð½Ð³ÑÐ¶ Ð°ÑˆÐ¸Ð³Ð»Ð°Ð½Ð°:
 const ALLOWED_ORIGINS = [
@@ -255,7 +259,7 @@ const defaultJsonParser = express.json({
 });
 const onboardingJsonParser = express.json({ limit: ONBOARDING_PUBLIC_BODY_LIMIT });
 const safetyNoticeJsonParser = express.json({ limit: '384kb' });
-// Proxy trust is not configured: peers may represent many visitors, so use a generous aggregate bound.
+// Generous aggregate bound kept from before trust proxy was configured (one hop, see app.set above).
 const guardPublicSafetyNotices = createSafetyNoticeGuard({ max: 6000 });
 const guardAdminSafetyNotices = createSafetyNoticeGuard({ max: 120, keyFn: req => String(req.user._id) });
 app.use((req, res, next) => {
@@ -3438,7 +3442,7 @@ app.post('/api/loans', (req, res) => {
 app.get('/api/loans', authenticateUser, async (req, res) => {
     try {
         const query = isRequestManager(req.user) ? {} : { $or: [{ intakeVersion: { $ne: 'quick-v1' } }, ...(isRequestStaff(req.user) ? [{ intakeVersion: 'quick-v1', ...requestScope(req.user) }] : [])] };
-        res.json(await LoanRequest.find(query).sort({ createdAt: -1 }).limit(500).lean());
+        res.json(await LoanRequest.find(query).select('-taskUploadLinks.tokenHash').sort({ createdAt: -1 }).limit(500).lean());
     } catch { res.status(500).json({ message: 'Хүсэлтүүдийг ачаалж чадсангүй.' }); }
 });
 
@@ -3509,7 +3513,9 @@ app.post('/api/loans/maintenance/prune-before-date', authenticateUser, async (re
 
 app.put('/api/loans/:id', authenticateUser, async (req, res) => {
     try {
-        const { adminUser, ...updateData } = req.body;
+        // Task-flow fields, file arrays, intakeVersion and update operators are never writable here (assignee stays: loan.scm.mn assigns via this route).
+        const { adminUser, ...rawUpdate } = req.body || {};
+        const updateData = sanitizeLegacyLoanWrite(rawUpdate, { allowAssignee: true });
         const existingLoanForLog = await LoanRequest.findById(req.params.id).lean();
         if (!existingLoanForLog) return res.status(404).json({ message: 'Loan not found' });
         if (Object.prototype.hasOwnProperty.call(updateData, 'status')) {
@@ -3545,7 +3551,7 @@ app.put('/api/loans/:id', authenticateUser, async (req, res) => {
             'loan_request_updated',
             `${loanDisplayName(updated)} (${updated._id}) - ${describeLoanUpdate(existingLoanForLog, updated, updateData)}`
         );
-        res.json(updated);
+        res.json(stripTaskSecrets(updated));
     } catch (e) { res.status(500).send("Error"); }
 });
 
@@ -3576,7 +3582,7 @@ app.delete('/api/loans/:id', authenticateUser, requireAdmin, async (req, res) =>
 app.post('/api/loans/staff', authenticateUser, async (req, res) => {
     try {
         const loan = await new LoanRequest({
-            ...req.body,
+            ...sanitizeLegacyLoanWrite(req.body),
             status: 'created',
             source: 'staff',
             createdByStaff: true,
@@ -3822,7 +3828,7 @@ app.post('/api/loans/:id/files', authenticateUser, (req, res) => {
             if (!loan) return res.status(404).json({ message: 'Not found' });
             runPostSubmissionAutomationInBackground(loan._id);
             await createLog(req.user, 'loan_files_added', `${loanDisplayName(loan)} (${loan._id}) - ${files.length} file(s) added to ${fieldName}`);
-            res.json(loan);
+            res.json(stripTaskSecrets(loan));
         } catch (e) {
             console.error('File upload error:', e.message);
             res.status(500).json({ message: 'Файл хуулахад алдаа гарлаа: ' + e.message });
@@ -3842,7 +3848,7 @@ app.delete('/api/loans/:id/files/:fileId', authenticateUser, async (req, res) =>
         );
         if (!loan) return res.status(404).json({ message: 'Олдсонгүй' });
         await createLog(req.user, 'loan_file_deleted', `${loanDisplayName(loan)} (${loan._id}) - ${removedFile?.fileName || req.params.fileId}`);
-        res.json(loan);
+        res.json(stripTaskSecrets(loan));
     } catch (e) {
         res.status(500).json({ message: 'Файл устгахад алдаа гарлаа' });
     }

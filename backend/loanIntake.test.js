@@ -199,3 +199,24 @@ test('retry is scoped and atomically excludes running and final employee cases',
   response = await final.invoke('post', '/api/loan-requests/:id/intake-automation');
   assert.equal(response.code, 403); assert.equal(final.calls.automation, 0);
 });
+
+test('legacy PATCH: task lock for non-managers, task-v1 status/assignee go to the board, token hashes never returned', async () => {
+  const locked = harness({ loan: { _id: ID, status: 'studying', workflowRevision: 2, assignee: { userId: ID }, taskStatus: 'resolved' } });
+  let response = await locked.invoke('patch', '/api/loan-requests/:id', { body: { status: 'assessment' } });
+  assert.equal(response.code, 403); assert.equal(locked.calls.updates.length, 0);
+  const taskForm = harness({ permission: true, loan: { _id: ID, status: 'pending', formVersion: 'task-v1', taskStatus: 'in_review', assignee: { userId: ID }, taskUploadLinks: [{ _id: 'l', tokenHash: 'secret-hash' }] } });
+  for (const body of [{ status: 'studying' }, { assigneeId: OTHER }, { status: 'approved', note: 'x' }]) {
+    response = await taskForm.invoke('patch', '/api/loan-requests/:id', { user: manager, body });
+    assert.equal(response.code, 409, JSON.stringify(body)); assert.equal(response.data.code, 'USE_TASK_BOARD');
+  }
+  assert.equal(taskForm.calls.updates.length, 0);
+  response = await taskForm.invoke('patch', '/api/loan-requests/:id', { body: { note: 'Утсаар ярьсан' } });
+  assert.equal(response.code, 200, 'note-only patch still allowed');
+  assert.equal(JSON.stringify(response.data).includes('secret-hash'), false);
+  response = await taskForm.invoke('get', '/api/loan-requests/:id');
+  assert.equal(response.code, 200); assert.equal(JSON.stringify(response.data).includes('secret-hash'), false);
+  // legacy (non task-v1) requests keep the existing workflow
+  const legacy = harness({ loan: { _id: ID, status: 'pending' } });
+  response = await legacy.invoke('patch', '/api/loan-requests/:id', { user: manager, body: { assigneeId: OTHER } });
+  assert.equal(response.code, 200);
+});

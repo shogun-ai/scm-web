@@ -79,8 +79,11 @@ export default function LoanTaskBoard({ apiUrl, user, onOpenLegacy }) {
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="flex items-center gap-2 text-2xl font-bold text-[#003B5C]"><ClipboardList size={24} aria-hidden="true" />Зээлийн хүсэлт</h2>
-      <div className="flex flex-wrap gap-2">
-        {manager && onOpenLegacy && <button type="button" onClick={onOpenLegacy} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"><History size={16} aria-hidden="true" />Хуучин зээлийн үйл явц</button>}
+      <div className="flex flex-wrap items-center gap-2">
+        {manager && onOpenLegacy && <div className="flex flex-col items-start gap-1 sm:items-end">
+          <button type="button" onClick={onOpenLegacy} aria-describedby="legacy-los-note" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"><History size={16} aria-hidden="true" />Хуучин зээлийн үйл явц</button>
+          <p id="legacy-los-note" className="max-w-xs text-xs text-slate-500">Тэнд харагдах төлөв энэ самбарын төлөвөөс тусдаа бөгөөд хоорондоо шинэчлэгдэхгүй.</p>
+        </div>}
         <button type="button" onClick={load} disabled={status === 'loading'} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#003B5C] px-4 text-sm font-medium text-white disabled:opacity-60"><RefreshCw size={16} className={status === 'loading' ? 'animate-spin' : ''} aria-hidden="true" />Шинэчлэх</button>
       </div>
     </div>

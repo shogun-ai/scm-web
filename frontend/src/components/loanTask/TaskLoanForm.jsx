@@ -114,7 +114,7 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
       const data = error.response?.data;
       if (error.response?.status === 409 && data?.code === 'CONFIG_CHANGED') {
         try {
-          const fresh = (await fetchPublicProduct(apiUrl, product.productKey))?.product;
+          const fresh = (await fetchPublicProduct(apiUrl, product.productKey, 5000, { fresh: true }))?.product;
           if (fresh) { setProduct(fresh); if (selected && !(fresh.subProducts || []).some(sub => sub.id === selected)) setSelected(null); }
         } catch { /* keep current form */ }
         setStep(0);

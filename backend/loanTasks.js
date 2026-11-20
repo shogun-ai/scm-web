@@ -9,9 +9,9 @@ import {
   isSubProductLive, subProductStatus, ubDate, storageFieldToPresetKey,
 } from '../shared/loanWidgets.js';
 import {
-  TASK_STATUSES, TERMINAL_TASK_STATUSES, deriveTaskState, taskStatusFilter, allowedTaskActions, validateTaskAction, TaskActionError,
+  TASK_STATUSES, TERMINAL_TASK_STATUSES, deriveTaskState, taskStatusFilter, allowedTaskActions, validateTaskAction, TaskActionError, DOC_REQUEST_ONLY_MESSAGE,
 } from '../shared/loanTaskStatus.js';
-import { IntakeError, createIntakeLimiter, isRequestManager, isRequestStaff, requestScope } from './loanIntake.js';
+import { IntakeError, createIntakeLimiter, isRequestManager, isRequestStaff, requestScope, rejectOversizedBody, taskLockBlocks } from './loanIntake.js';
 import * as emails from './loanTaskEmails.js';
 
 const { Schema } = mongoose;
@@ -30,7 +30,7 @@ const TaskHistorySchema = new Schema({
 
 const TaskFileSchema = new Schema({
   fieldName: String, fieldKey: String, fileName: String, fileUrl: String, mimeType: String, size: Number,
-  publicId: String, deliveryType: String, source: String, linkId: String,
+  publicId: String, deliveryType: String, resourceType: String, format: String, label: String, source: String, linkId: String,
   uploadedBy: { userId: String, name: String }, uploadedAt: Date,
 }, { _id: true });
 
@@ -79,9 +79,46 @@ export function legacyLoanPostGone(_req, res) {
   res.status(410).json({ error: LEGACY_LOAN_POST_GONE_MESSAGE, message: LEGACY_LOAN_POST_GONE_MESSAGE });
 }
 
-// Legacy /api/loans/:id guard: non-managers may not modify requests closed by the task flow.
-export function taskLockBlocks(user, loan, method) {
-  return !isRequestManager(user) && TERMINAL_TASK_STATUSES.includes(loan?.taskStatus) && !['GET', 'HEAD'].includes(method);
+// Legacy /api/loans/:id guard (defined in loanIntake.js so PATCH /api/loan-requests/:id shares it).
+export { taskLockBlocks };
+
+// Legacy write routes (PUT /api/loans/:id, POST /api/loans/staff) must never write task-flow fields:
+// those are owned by the task endpoints (state machine, revision, audit, hashed upload links).
+const LEGACY_BLOCKED_ROOTS = new Set([...Object.keys(LOAN_TASK_SCHEMA_FIELDS), 'fileDetails', 'fileNames', 'intakeVersion', '__proto__', 'constructor', 'prototype']);
+export function sanitizeLegacyLoanWrite(body, { allowAssignee = false } = {}) {
+  const out = {};
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return out;
+  for (const key of Object.keys(body)) {
+    const root = key.split('.')[0];
+    if (key.startsWith('$') || LEGACY_BLOCKED_ROOTS.has(root) || /^task/i.test(root) || (!allowAssignee && root === 'assignee')) continue;
+    out[key] = body[key];
+  }
+  return out;
+}
+
+// Private loan documents are uploaded to this Cloudinary folder (type: authenticated).
+export const PRIVATE_FILE_FOLDER = 'scm_loan_private';
+export const FILE_URL_TTL_SECONDS = 600;
+export const isPrivateLoanPublicId = id => typeof id === 'string' && id.length <= 300 && id.startsWith(`${PRIVATE_FILE_FOLDER}/`) && !id.includes('..');
+export function safeHttpUrl(value) {
+  if (typeof value !== 'string' || !value) return '';
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password ? url.href : '';
+  } catch { return ''; }
+}
+// Staff-facing file URL, generated at read time: private files get a short-lived signed download URL;
+// authenticated files outside the private folder are never signed; other legacy files keep an http(s) URL only.
+export function fileDownloadUrl(file, { cloudinary, now = new Date(), ttlSeconds = FILE_URL_TTL_SECONDS } = {}) {
+  if (!file || typeof file !== 'object') return '';
+  if (file.deliveryType === 'authenticated') {
+    if (!isPrivateLoanPublicId(file.publicId) || typeof cloudinary?.utils?.private_download_url !== 'function') return '';
+    return cloudinary.utils.private_download_url(file.publicId, typeof file.format === 'string' ? file.format : '', {
+      resource_type: file.resourceType === 'image' ? 'image' : 'raw', type: 'authenticated', attachment: false,
+      expires_at: Math.floor(now.getTime() / 1000) + ttlSeconds,
+    });
+  }
+  return safeHttpUrl(file.fileUrl);
 }
 
 export function detectFileFormat(buffer) {
@@ -132,7 +169,7 @@ const PRODUCT_KEYS = new Set(LOAN_PRODUCTS.map(product => product.id));
 const str = (value, max = 300) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
 const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const MB = 1024 * 1024;
-const LIST_FIELDS = '_id applicationReference userType firstname lastname orgName contactName phone contactPhone selectedProduct amount term status taskStatus taskOutcome assignee formVersion taskForm.productKey taskForm.productName taskForm.subProductId taskForm.subProductName createdAt taskUpdatedAt';
+const LIST_FIELDS = '_id applicationReference userType firstname lastname orgName contactName phone contactPhone selectedProduct amount term status taskStatus taskOutcome assignee formVersion taskForm.productKey taskForm.productName taskForm.subProductId taskForm.subProductName createdAt taskUpdatedAt taskRevision';
 const STAFF_FILE_RULE = { formats: Object.keys(FILE_FORMATS), maxBytes: LIMITS.fileMaxMb * MB, maxFiles: 5, required: false };
 const LINK_UPLOAD_CAP = 30;
 
@@ -197,6 +234,7 @@ export function toTaskListItem(loan) {
     isTaskForm,
     createdAt: loan.createdAt || null,
     taskUpdatedAt: loan.taskUpdatedAt || null,
+    taskRevision: loan.taskRevision || 0,
   };
 }
 
@@ -204,14 +242,19 @@ export function toTaskDetail(loan, user, { cloudinary, now = new Date() } = {}) 
   const base = toTaskListItem(loan);
   const state = deriveTaskState(loan);
   const terminal = TERMINAL_TASK_STATUSES.includes(state.taskStatus);
-  const signed = file => (file.publicId && file.deliveryType === 'authenticated' && typeof cloudinary?.url === 'function'
-    ? cloudinary.url(file.publicId, { resource_type: 'raw', type: 'authenticated', sign_url: true, secure: true })
-    : file.fileUrl || '');
+  const links = Array.isArray(loan.taskUploadLinks) ? loan.taskUploadLinks : [];
+  // Free-text extra_N items: the requested label lives on the file (new) or on its upload link item (older files).
+  const requestedLabel = file => {
+    if (typeof file.label === 'string' && file.label) return file.label;
+    if (!file.linkId || !file.fieldKey) return '';
+    const link = links.find(item => String(item._id) === String(file.linkId));
+    return link?.items?.find(item => item.key === file.fieldKey)?.label || '';
+  };
   const fileOut = (file, source) => {
     const fieldKey = file.fieldKey || storageFieldToPresetKey(file.fieldName) || (CUSTOM_KEY_RE.test(file.fieldName || '') ? file.fieldName : null);
     return {
-      id: String(file._id || ''), source, fieldName: file.fieldName || '', fieldKey, label: fieldLabel(loan, fieldKey, file.fieldName),
-      fileName: file.fileName || '', mimeType: file.mimeType || '', size: file.size ?? null, url: signed(file), uploadedAt: file.uploadedAt || null,
+      id: String(file._id || ''), source, fieldName: file.fieldName || '', fieldKey, label: requestedLabel(file) || fieldLabel(loan, fieldKey, file.fieldName),
+      fileName: file.fileName || '', mimeType: file.mimeType || '', size: file.size ?? null, url: fileDownloadUrl(file, { cloudinary, now }), uploadedAt: file.uploadedAt || null,
     };
   };
   const steps = snapshotSteps(loan);
@@ -242,7 +285,7 @@ export function toTaskDetail(loan, user, { cloudinary, now = new Date() } = {}) 
       actor: item.actor ? { name: item.actor.name || '', system: Boolean(item.actor.system) } : null,
       email: item.email?.template ? { template: item.email.template, result: item.email.result || '' } : null,
     })),
-    uploadLinks: (Array.isArray(loan.taskUploadLinks) ? loan.taskUploadLinks : []).map(link => ({
+    uploadLinks: links.map(link => ({
       id: String(link._id || ''), items: (link.items || []).map(item => ({ key: item.key, label: item.label })), note: link.note || '',
       expiresAt: link.expiresAt || null, createdAt: link.createdAt || null, createdBy: { name: link.createdBy?.name || '' },
       active: !link.revokedAt && new Date(link.expiresAt).getTime() > now.getTime() && !terminal,
@@ -301,6 +344,12 @@ const liveSubProducts = (config, now) => (Array.isArray(config?.subProducts) ? c
   .filter(sub => isSubProductLive(sub, now))
   .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
+// Active config with nothing live (base product off, no live sub product): the product is closed, not legacy.
+export function isPublicProductClosed(config, now) {
+  return Boolean(config?.isActive) && config.baseProductEnabled === false && liveSubProducts(config, now).length === 0;
+}
+export const PRODUCT_CLOSED_MESSAGE = 'Одоогоор хүсэлт хүлээн авахгүй байна.';
+
 function toPublicProduct(config, now) {
   if (!config?.isActive) return null;
   const subProducts = liveSubProducts(config, now).map(sub => ({
@@ -330,6 +379,9 @@ export function registerLoanTaskRoutes({
   const adminUrl = () => env.ADMIN_APP_URL || 'https://www.scm.mn/admin';
   const uploadBaseUrl = () => (env.LOAN_UPLOAD_BASE_URL || 'https://www.scm.mn/loan-request').replace(/[?#].*$/, '');
 
+  // Declared-size cap before multer buffers anything: file bytes + answers JSON + multipart overhead margin.
+  const MULTIPART_MARGIN = LIMITS.answersJsonBytes + MB;
+  const guardMultipartSize = rejectOversizedBody(LIMITS.bytesTotal + MULTIPART_MARGIN, `Нийт файлын хэмжээ ${Math.round(LIMITS.bytesTotal / MB)} МБ-аас хэтрэхгүй.`);
   const parseSubmit = multer({ storage: multer.memoryStorage(), limits: { files: LIMITS.filesTotal, fileSize: LIMITS.fileMaxMb * MB, fields: 8, fieldSize: LIMITS.answersJsonBytes, parts: 24 } }).any();
   const parseStaffFiles = multer({ storage: multer.memoryStorage(), limits: { files: 5, fileSize: LIMITS.fileMaxMb * MB, fields: 2, fieldSize: 200, parts: 8 } }).any();
   const parseLinkFiles = multer({ storage: multer.memoryStorage(), limits: { files: LIMITS.filesTotal, fileSize: LIMITS.fileMaxMb * MB, fields: 2, fieldSize: 200, parts: 14 } }).any();
@@ -347,12 +399,16 @@ export function registerLoanTaskRoutes({
     return id;
   };
 
-  const uploadPrivate = (file, fieldName) => new Promise((resolve, reject) => {
+  // persistUrl: only public-submit fileDetails keep a stored signed URL, because legacy consumers
+  // (old LOS view, AI intake automation) read fileDetails[].fileUrl. Task files store publicId only and
+  // get a short-lived URL at read time (fileDownloadUrl).
+  const uploadPrivate = (file, fieldName, { persistUrl = false } = {}) => new Promise((resolve, reject) => {
     const format = detectFileFormat(file.buffer);
-    const stream = cloudinary.uploader.upload_stream({ folder: 'scm_loan_private', resource_type: 'raw', type: 'authenticated' }, (error, result) => (error ? reject(error) : resolve({
+    const stream = cloudinary.uploader.upload_stream({ folder: PRIVATE_FILE_FOLDER, resource_type: 'raw', type: 'authenticated' }, (error, result) => (error ? reject(error) : resolve({
       fieldName, fileName: String(file.originalname || 'file').slice(0, 200),
-      fileUrl: cloudinary.url(result.public_id, { resource_type: 'raw', type: 'authenticated', sign_url: true, secure: true }),
-      publicId: result.public_id, deliveryType: 'authenticated', mimeType: FILE_FORMATS[format] || file.mimetype, size: file.buffer.length,
+      ...(persistUrl ? { fileUrl: cloudinary.url(result.public_id, { resource_type: 'raw', type: 'authenticated', sign_url: true, secure: true }) } : {}),
+      publicId: result.public_id, deliveryType: 'authenticated', resourceType: 'raw', format: typeof result.format === 'string' ? result.format : '',
+      mimeType: FILE_FORMATS[format] || file.mimetype, size: file.buffer.length,
     })));
     stream.end(file.buffer);
   });
@@ -417,12 +473,15 @@ export function registerLoanTaskRoutes({
       res.set('Cache-Control', 'public, max-age=60');
       if (!PRODUCT_KEYS.has(req.params.productKey)) throw new HttpError('Бүтээгдэхүүн олдсонгүй.', 404);
       if (!enabled()) return res.json({ enabled: false, product: null });
-      const configs = await loadConfigs();
-      res.json({ enabled: true, product: toPublicProduct(configs.find(config => config.productKey === req.params.productKey), now()) });
+      const productKey = req.params.productKey;
+      const config = (await loadConfigs()).find(item => item.productKey === productKey);
+      const at = now();
+      if (isPublicProductClosed(config, at)) return res.json({ enabled: true, closed: true, product: null, productKey, name: PRODUCTS_MAP[productKey] || productKey, message: PRODUCT_CLOSED_MESSAGE });
+      res.json({ enabled: true, product: toPublicProduct(config, at) });
     } catch (error) { fail(res, error); }
   });
 
-  app.post('/api/loan-tasks/public/submit', ensureEnabled, submitLimiter, (req, res) => {
+  app.post('/api/loan-tasks/public/submit', ensureEnabled, guardMultipartSize, submitLimiter, (req, res) => {
     parseSubmit(req, res, async parseError => {
       if (parseError) return res.status(400).json({ message: 'Файл тус бүр 10 МБ-аас бага, нийт 12 хүртэл PDF, JPG, PNG эсвэл WEBP файл оруулна уу.' });
       const persisted = [];
@@ -460,7 +519,7 @@ export function registerLoanTaskRoutes({
         const fileAnswerIndex = [];
         for (const [key, files] of Object.entries(fileCheck.byKey)) {
           for (const file of files) {
-            persisted.push(await uploadPrivate(file, rules[key].storageField));
+            persisted.push(await uploadPrivate(file, rules[key].storageField, { persistUrl: true }));
             fileAnswerIndex.push(key);
           }
         }
@@ -550,7 +609,7 @@ export function registerLoanTaskRoutes({
     } catch (error) { fail(res, error); }
   });
 
-  app.post('/api/loan-tasks/upload/:token', ensureEnabled, linkUploadLimiter, async (req, res) => {
+  app.post('/api/loan-tasks/upload/:token', ensureEnabled, guardMultipartSize, linkUploadLimiter, async (req, res) => {
     let found;
     try {
       found = await findLink(req.params.token);
@@ -579,7 +638,7 @@ export function registerLoanTaskRoutes({
           for (const file of list) {
             const stored = await uploadPrivate(file, rules[key].storageField);
             persisted.push(stored);
-            entries.push({ ...stored, fieldKey: key, source: 'applicant_link', linkId: String(link._id), uploadedBy: { name: 'Харилцагч' }, uploadedAt: at });
+            entries.push({ ...stored, fieldKey: key, label: rules[key].label, source: 'applicant_link', linkId: String(link._id), uploadedBy: { name: 'Харилцагч' }, uploadedAt: at });
           }
         }
         const labels = Object.keys(byKey).map(key => rules[key].label);
@@ -743,6 +802,8 @@ export function registerLoanTaskRoutes({
       const loan = await loadScoped(req, id);
       const user = req.user;
       const manager = isRequestManager(user);
+      // Additional documents always go through /doc-request (upload link + applicant email), never a bare status change.
+      if (req.body?.type === 'request_docs') throw new HttpError(DOC_REQUEST_ONLY_MESSAGE, 400, { code: 'USE_DOC_REQUEST', errors: { type: DOC_REQUEST_ONLY_MESSAGE } });
       const action = validateTaskAction(req.body, loan, { manager, isAssignee: isAssigneeOf(user, loan) });
       const at = now();
       const actor = actorOf(user);
@@ -825,7 +886,7 @@ export function registerLoanTaskRoutes({
         for (const file of byKey.files) {
           const stored = await uploadPrivate(file, base.storageField);
           persisted.push(stored);
-          entries.push({ ...stored, fieldKey, source: 'staff', uploadedBy: { userId: actor.userId, name: actor.name }, uploadedAt: at });
+          entries.push({ ...stored, fieldKey, label: base.label, source: 'staff', uploadedBy: { userId: actor.userId, name: actor.name }, uploadedAt: at });
         }
         const query = { _id: loan._id, ...requestScope(req.user), ...(isRequestManager(req.user) ? {} : { taskStatus: { $nin: TERMINAL_TASK_STATUSES } }) };
         const updated = await LoanRequest.findOneAndUpdate(query, {
