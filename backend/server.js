@@ -7038,6 +7038,10 @@ app.get('/api/products/content', async (req, res) => {
 
 app.post('/api/products/content', authenticateUser, requireAdmin, async (req, res) => {
     try {
+        // Keys are used in URLs and bot payloads: lowercase latin letters, digits and underscores only.
+        if (!/^[a-z][a-z0-9_]{1,39}$/.test(String(req.body?.productKey || ''))) {
+            return res.status(400).json({ message: 'Бүтээгдэхүүний key зөвхөн англи жижиг үсэг, тоо, "_" байна (жишээ: parking_loan).' });
+        }
         const product = new ProductContent(req.body);
         await product.save();
         chatbotCache = null;

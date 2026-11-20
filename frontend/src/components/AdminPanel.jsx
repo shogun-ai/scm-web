@@ -1955,6 +1955,10 @@ const AdminPanel = ({ user, token, onLogout }) => {
                                 await axios.put(`${API_URL}/api/products/content/${editingProduct.productKey}`, pruneNewEmptyTerms(editingProduct, products.find(p => p._id === editingProduct._id)));
                                 alert('✅ Хадгалагдлаа!');
                               } else {
+                                if (!/^[a-z][a-z0-9_]{1,39}$/.test(String(editingProduct.productKey || ''))) {
+                                  alert('Бүтээгдэхүүний key зөвхөн англи жижиг үсэг, тоо, "_" байна (жишээ: parking_loan).');
+                                  return;
+                                }
                                 await axios.post(`${API_URL}/api/products/content`, pruneNewEmptyTerms(editingProduct, null));
                                 alert('✅ Нэмэгдлээ!');
                               }

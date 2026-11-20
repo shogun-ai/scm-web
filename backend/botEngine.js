@@ -166,7 +166,7 @@ export function checkCard(raw, fallbackId = '') {
   const imageRaw = str(raw.imageUrl ?? '', 500);
   if (imageRaw === null || (imageRaw && !httpsUrl(imageRaw))) return bad('Зургийн холбоос https:// хэлбэртэй байх ёстой.');
   const productRaw = raw.productKey === undefined || raw.productKey === null || raw.productKey === '' ? null : raw.productKey;
-  if (productRaw !== null && (typeof productRaw !== 'string' || !KEY_RE.test(productRaw))) return bad('Картын бүтээгдэхүүн буруу байна.');
+  if (productRaw !== null && (typeof productRaw !== 'string' || !KEY_RE.test(productRaw))) return bad('Картын бүтээгдэхүүний key буруу байна (англи үсэг, тоо, "_" байх ёстой). Контент засах хэсэгт бүтээгдэхүүний key-г засаад дахин холбоно уу, эсвэл картын бүтээгдэхүүнийг хоосон болгоно уу.');
   if (raw.active !== undefined && typeof raw.active !== 'boolean') return bad('Картын идэвхтэй төлөв буруу байна.');
   const rawButtons = raw.buttons === undefined ? [] : raw.buttons;
   if (!Array.isArray(rawButtons) || rawButtons.length > 3) return bad('Картад 3 хүртэл товч байна.');
@@ -239,7 +239,8 @@ export async function defaultCards(section, ctx) {
     ].map(item => ({ id: item.id, title: item.title, subtitle: item.subtitle, imageUrl: '', productKey: null, active: true, buttons: [btn('node', 'Нээх', item.node)] }));
   }
   if (section === 'loans') {
-    return (await activeLoans(ctx)).slice(0, MAX_CARDS).map(product => ({
+    // Products with an invalid key (e.g. a Mongolian title saved as key) cannot be linked in payloads; skip them.
+    return (await activeLoans(ctx)).filter(product => KEY_RE.test(String(product.productKey || ''))).slice(0, MAX_CARDS).map(product => ({
       id: idOf(`loan_${product.productKey}`), title: clean(product.title, MAX_CARD_TITLE) || product.productKey, subtitle: clean(product.shortDesc, MAX_CARD_TITLE),
       imageUrl: httpsUrl(product.bgImageUrl) || httpsUrl(product.headerImageUrl) || '', productKey: product.productKey, active: true,
       buttons: [btn('terms', 'Нөхцөл, шаардлага', product.productKey), btn('apply', 'Хүсэлт гаргах', product.productKey), btn('calculator', 'Тооцоолуур', product.productKey)],
