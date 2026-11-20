@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Check, CheckCircle2, Loader2, Paperclip, ShieldC
 import { LOAN_PRODUCTS } from '@shared/loanFormConfig';
 import TaskLoanForm from './loanTask/TaskLoanForm';
 import TaskUploadForm from './loanTask/TaskUploadForm';
-import { fetchPublicProduct } from './loanTask/api';
+import { fetchPublicProduct, fetchPublicProducts } from './loanTask/api';
 
 const PRODUCT_IDS = { 1: 'biz_loan', 2: 'car_purchase_loan', 3: 'cons_loan', 5: 'credit_card', 6: 're_loan', 7: 'line_loan' };
 const DOCUMENTS = [
@@ -199,6 +199,19 @@ function ProductClosed({ name, message, onBack }) {
   </main>;
 }
 
+function ProductPicker({ products, onPick, onBack }) {
+  return <main className="sc-public-page min-h-screen bg-[#f7f8f6] pb-20 pt-28 text-[#102d43] md:pt-32">
+    <div className="mx-auto max-w-3xl px-5 md:px-8">
+      {onBack && <button type="button" onClick={onBack} className="mb-6 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-slate-600 hover:text-[#102d43]"><ArrowLeft size={16} aria-hidden="true" />Буцах</button>}
+      <h1 className="text-2xl font-semibold md:text-3xl">Зээлийн хүсэлт</h1>
+      <p className="mt-2 text-slate-600">Хүсэлт гаргах зээлийн бүтээгдэхүүнээ сонгоно уу.</p>
+      <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+        {products.map(product => <li key={product.productKey}><button type="button" onClick={() => onPick(product.productKey)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left font-medium shadow-sm transition hover:border-[#102d43] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#102d43]/30"><span>{product.name}</span><ArrowRight size={18} className="shrink-0 text-slate-400" aria-hidden="true" /></button></li>)}
+      </ul>
+    </div>
+  </main>;
+}
+
 // Wrapper: ?upload=<token> -> applicant upload page; otherwise the dynamic task form
 // when the feature is enabled for the product. An explicitly closed product shows a notice;
 // flag off / not found / network errors fall back to the legacy quick form.
@@ -208,10 +221,26 @@ export default function QuickLoanRequest({ onBack, initialProduct }) {
   const queryProduct = params.get('product');
   const subProductId = params.get('sub') || '';
   const rawKey = queryProduct || PRODUCT_IDS[initialProduct?.id] || initialProduct?.productKey || '';
-  const productKey = rawKey === 'car_loan' ? 'car_purchase_loan' : rawKey;
+  const presetKey = rawKey === 'car_loan' ? 'car_purchase_loan' : rawKey;
+  // No product chosen yet: when the task flow is on, let the applicant pick from the live products.
+  const [pickedKey, setPickedKey] = useState('');
+  const productKey = presetKey || pickedKey;
+  const [list, setList] = useState({ status: uploadToken || presetKey ? 'skip' : 'loading', products: [] });
   const [state, setState] = useState({ status: uploadToken || !productKey ? 'done' : 'loading', product: null, closed: null });
 
   useEffect(() => { if (uploadToken) stripUploadTokenFromUrl(); }, [uploadToken]);
+
+  useEffect(() => {
+    if (uploadToken || presetKey) return undefined;
+    let cancelled = false;
+    fetchPublicProducts(PUBLIC_API_URL, 5000)
+      .then(data => { if (!cancelled) setList({ status: 'done', products: data?.enabled && Array.isArray(data.products) ? data.products.filter(item => item?.productKey && item?.name) : [] }); })
+      .catch(() => { if (!cancelled) setList({ status: 'done', products: [] }); });
+    return () => { cancelled = true; };
+  }, [uploadToken, presetKey]);
+
+  const pick = key => { setState({ status: 'loading', product: null, closed: null }); setPickedKey(key); };
+  const backToPicker = () => { setPickedKey(''); setState({ status: 'done', product: null, closed: null }); };
 
   useEffect(() => {
     if (uploadToken || !productKey) return undefined;
@@ -227,8 +256,15 @@ export default function QuickLoanRequest({ onBack, initialProduct }) {
   }, [uploadToken, productKey]);
 
   if (uploadToken) return <TaskUploadForm token={uploadToken} onBack={onBack} apiUrl={PUBLIC_API_URL} />;
+  const loadingView = <main className="sc-public-page min-h-screen bg-[#f7f8f6] pb-20 pt-28 text-[#102d43] md:pt-32"><div className="mx-auto max-w-6xl px-5 md:px-8"><p role="status" className="inline-flex items-center gap-3 text-slate-600"><Loader2 size={20} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p><div className="mt-8 h-72 animate-pulse rounded-2xl bg-white" aria-hidden="true" /></div></main>;
+  if (!productKey) {
+    if (list.status === 'loading') return loadingView;
+    if (list.products.length) return <ProductPicker products={list.products} onPick={pick} onBack={onBack} />;
+    return <LegacyQuickLoanRequest onBack={onBack} initialProduct={initialProduct} />;
+  }
+  const formBack = pickedKey ? backToPicker : onBack;
   if (state.status === 'loading') return <main className="sc-public-page min-h-screen bg-[#f7f8f6] pb-20 pt-28 text-[#102d43] md:pt-32"><div className="mx-auto max-w-6xl px-5 md:px-8"><p role="status" className="inline-flex items-center gap-3 text-slate-600"><Loader2 size={20} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p><div className="mt-8 h-72 animate-pulse rounded-2xl bg-white" aria-hidden="true" /></div></main>;
-  if (state.closed) return <ProductClosed name={state.closed.name} message={state.closed.message} onBack={onBack} />;
-  if (state.product) return <TaskLoanForm product={state.product} subProductId={subProductId} onBack={onBack} apiUrl={PUBLIC_API_URL} />;
-  return <LegacyQuickLoanRequest onBack={onBack} initialProduct={initialProduct} />;
+  if (state.closed) return <ProductClosed name={state.closed.name} message={state.closed.message} onBack={formBack} />;
+  if (state.product) return <TaskLoanForm product={state.product} subProductId={subProductId} onBack={formBack} apiUrl={PUBLIC_API_URL} />;
+  return <LegacyQuickLoanRequest onBack={onBack} initialProduct={pickedKey ? { productKey: pickedKey } : initialProduct} />;
 }
