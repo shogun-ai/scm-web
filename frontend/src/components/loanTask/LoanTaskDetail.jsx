@@ -4,6 +4,7 @@ import { LEGACY_STATUS_LABELS, TASK_OUTCOMES, TASK_OUTCOME_LABELS, TASK_STATUS_L
 import { PRESET_WIDGETS } from '@shared/loanWidgets';
 import TaskField from './TaskField';
 import TaskStatusBadge from './TaskStatusBadge';
+import ChannelBadge from './ChannelBadge';
 import ConfirmDeleteDialog from '../admin/ConfirmDeleteDialog';
 import { deleteLoanRequest, errorMessage, fetchTaskDetail, openLoanFile, postDocRequest, postTaskAction, postTaskFiles, postTaskMessage } from './api';
 import { FILE_CATEGORIES, categoryOf, formatMoney, isFileField, isVisible, maskRegister } from './taskFormUtils';
@@ -199,7 +200,7 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
       <header className="border-b border-slate-200 p-5 pb-4 sm:px-7">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-mono text-xs text-slate-500">{detail?.applicationReference || ''}</p>
+            <p className="font-mono text-xs text-slate-500">{detail?.applicationReference || ''}<ChannelBadge channel={detail?.channel} /></p>
             <h2 className="text-xl font-bold text-[#003B5C]">{detail?.displayName || 'Хүсэлт'}</h2>
             {detail && <p className="mt-1 text-sm text-slate-700">{detail.productName || detail.productKey || '—'}{detail.subProductName ? ` · ${detail.subProductName}` : ''}</p>}
           </div>

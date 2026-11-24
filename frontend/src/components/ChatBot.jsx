@@ -161,10 +161,11 @@ const ChatBot = () => {
     setIsOpen(false);
   };
 
+  // D23: the chatbot never collects applications; every apply action opens the web form tagged with the chat channel.
   const navigateToLoanRequest = (productKey) => {
-    const path = productKey && typeof productKey === 'string'
-      ? `/loan-request?product=${encodeURIComponent(productKey)}`
-      : '/loan-request';
+    let path = '/loan-request?source=webchat';
+    if (productKey === 'trust') path = '/trust-request?source=webchat';
+    else if (productKey && typeof productKey === 'string') path = `/loan-request?product=${encodeURIComponent(productKey)}&source=webchat`;
     navigateInternal(path);
   };
 

@@ -46,6 +46,7 @@ export const maskEmail = email => {
 
 export const trustReference = (id, year = new Date().getFullYear()) => `TRUST-${year}-${String(id).slice(-6).toUpperCase()}`;
 
+export const TRUST_CHANNELS = ['web', 'messenger', 'webchat'];
 export function validateTrustSubmission(body) {
   const errors = {};
   const src = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
@@ -54,6 +55,9 @@ export function validateTrustSubmission(body) {
     email: str(src.email, 254), amount: str(typeof src.amount === 'number' ? String(src.amount) : src.amount, 40),
   };
   for (const key of ['lastname', 'firstname', 'phone', 'amount']) if (!value[key]) errors[key] = 'Заавал бөглөнө үү.';
+  // D23: submission channel (whitelist); anything else is stored as 'web'. The form sends it as `channel` (or `source`).
+  const channel = str(src.channel, 20) || str(src.source, 20);
+  value.channel = TRUST_CHANNELS.includes(channel) ? channel : 'web';
   if (value.phone && !/^[\d+\-\s()]{6,30}$/.test(value.phone)) errors.phone = 'Утасны дугаар буруу байна.';
   if (value.email && !isValidEmailAddress(value.email)) errors.email = 'Имэйл хаяг буруу байна.';
   return { value, errors };

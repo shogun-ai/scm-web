@@ -61,6 +61,8 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
   useEffect(() => { fetchAssignees(apiUrl).then(rows => setAssignees(Array.isArray(rows) ? rows : [])).catch(() => setAssignees([])); }, [apiUrl]);
 
   const entryFor = key => products.find(item => item.productKey === key);
+  // D23: the list comes from the backend (LOAN_PRODUCTS + active CMS-only ProductContent products); LOAN_PRODUCTS until it loads.
+  const productList = products.length ? products.map(item => ({ id: item.productKey, name: item.name || item.productKey })) : LOAN_PRODUCTS;
   // D12: product without a saved config -> backend serves the default draft (version 0).
   const isDefaultEntry = item => Boolean(item && (item.isDefault || item.config?.isDefault || item.source === 'default'));
   const selectProduct = key => {
@@ -79,7 +81,7 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
   const save = async () => {
     const payload = toPayload(draft);
     let result = { ok: true, errors: {} };
-    try { result = validateConfig(payload); } catch { /* server validates */ }
+    try { result = validateConfig(payload, { extraKeys: [selectedKey] }); } catch { /* server validates */ }
     if (!result.ok) { setErrors(result.errors || {}); setMessage({ type: 'error', text: 'Тохиргоонд алдаа байна. Доорх алдааг засна уу.' }); return; }
     setErrors({}); setSaving(true); setMessage({ type: '', text: '' });
     try {
@@ -97,7 +99,7 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
 
   const previewProduct = useMemo(() => {
     if (!draft) return null;
-    const name = LOAN_PRODUCTS.find(item => item.id === selectedKey)?.name || selectedKey;
+    const name = products.find(item => item.productKey === selectedKey)?.name || LOAN_PRODUCTS.find(item => item.id === selectedKey)?.name || selectedKey;
     let steps = [];
     try { steps = resolveSteps(draft.steps); } catch { steps = []; }
     return {
@@ -108,7 +110,7 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
         return { id: sub.id, name: sub.name, description: sub.description, endDate: sub.endDate, steps: subSteps };
       }),
     };
-  }, [draft, selectedKey]);
+  }, [draft, selectedKey, products]);
 
   const onCopied = (key, saved) => setProducts(previous => previous.map(item => (item.productKey === key ? { ...item, saved: true, isDefault: false, source: undefined, config: { ...saved, isDefault: false } } : item)));
   const currentIsDefault = isDefaultEntry(entryFor(selectedKey));
@@ -130,7 +132,7 @@ export default function LoanTaskConfigEditor({ apiUrl }) {
     <h2 className="flex items-center gap-2 text-2xl font-bold text-[#003B5C]"><Settings2 size={24} aria-hidden="true" />Хүсэлтийн маягт</h2>
     <div className="grid items-start gap-5 lg:grid-cols-[16rem_1fr]">
       <nav aria-label="Бүтээгдэхүүн" className="rounded-2xl bg-white p-2 shadow-sm">
-        <ul className="space-y-1">{LOAN_PRODUCTS.map(product => { const item = entryFor(product.id) || { saved: false, config: {} }; return <li key={product.id}><button type="button" aria-current={selectedKey === product.id ? 'true' : undefined} onClick={() => selectProduct(product.id)} className={`flex min-h-11 w-full flex-col items-start gap-1 rounded-xl px-3 py-2 text-left text-sm ${selectedKey === product.id ? 'bg-[#003B5C] text-white' : 'hover:bg-slate-100'}`}><span className="font-medium">{product.name}</span><span className={`flex flex-wrap items-center gap-2 ${selectedKey === product.id ? '[&_span]:!bg-white/90 [&_span]:!text-slate-800' : ''}`}>{badge(item)}</span></button></li>; })}</ul>
+        <ul className="space-y-1">{productList.map(product => { const item = entryFor(product.id) || { saved: false, config: {} }; return <li key={product.id}><button type="button" aria-current={selectedKey === product.id ? 'true' : undefined} onClick={() => selectProduct(product.id)} className={`flex min-h-11 w-full flex-col items-start gap-1 rounded-xl px-3 py-2 text-left text-sm ${selectedKey === product.id ? 'bg-[#003B5C] text-white' : 'hover:bg-slate-100'}`}><span className="font-medium">{product.name}</span><span className={`flex flex-wrap items-center gap-2 ${selectedKey === product.id ? '[&_span]:!bg-white/90 [&_span]:!text-slate-800' : ''}`}>{badge(item)}</span></button></li>; })}</ul>
       </nav>
 
       <div className="min-w-0 space-y-5 rounded-2xl bg-white p-5 shadow-sm">

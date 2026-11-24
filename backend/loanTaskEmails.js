@@ -36,14 +36,15 @@ export function applicantAcknowledgement({ reference, productName, subProductNam
   };
 }
 
-export function staffAssignment({ reference, productName, subProductName, adminUrl } = {}) {
+// `unassigned` (D23): new request without an owner, sent to the shared info mailbox instead of a staff member.
+export function staffAssignment({ reference, productName, subProductName, adminUrl, unassigned = false } = {}) {
   const ref = clean(reference);
   return {
     template: 'staff_assignment',
-    subject: `Танд зээлийн хүсэлт хуваарилагдлаа — ${ref}`,
+    subject: unassigned ? `Шинэ зээлийн хүсэлт (хуваарилаагүй) — ${ref}` : `Танд зээлийн хүсэлт хуваарилагдлаа — ${ref}`,
     ...layout([
       'Сайн байна уу,',
-      'Танд шинэ зээлийн хүсэлт хуваарилагдлаа.',
+      unassigned ? 'Шинэ зээлийн хүсэлт ирлээ. Хариуцагч хуваарилаагүй байна.' : 'Танд шинэ зээлийн хүсэлт хуваарилагдлаа.',
       `Хүсэлтийн дугаар: ${ref}`,
       `Бүтээгдэхүүн: ${productLine(productName, subProductName)}`,
     ], { link: clean(adminUrl), linkLabel: 'Админ хэсэгт нээх' }),

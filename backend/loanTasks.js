@@ -13,6 +13,7 @@ import {
 } from '../shared/loanTaskStatus.js';
 import { IntakeError, createIntakeLimiter, isRequestManager, isRequestStaff, rejectOversizedBody, taskLockBlocks } from './loanIntake.js';
 import * as emails from './loanTaskEmails.js';
+import { isValidEmailAddress } from './mailer.js';
 import { resolvePermissions } from '../shared/permissions.js';
 import { fileRefOf, fileProxyPath, isProxyableFile } from './loanFiles.js';
 
@@ -55,8 +56,8 @@ export const LOAN_TASK_SCHEMA_FIELDS = {
   taskHistory: { type: [TaskHistorySchema], default: undefined },
   taskFiles: { type: [TaskFileSchema], default: undefined },
   taskUploadLinks: { type: [UploadLinkSchema], default: undefined },
-  // D18: submission channel ('web' | 'messenger'); `messenger` ({ psid, postId }) is never exposed in list/detail DTOs.
-  channel: { type: String, enum: ['web', 'messenger'] },
+  // D18/D23: submission channel ('web' | 'messenger' | 'webchat'); `messenger` ({ psid, postId }) is never exposed in list/detail DTOs.
+  channel: { type: String, enum: ['web', 'messenger', 'webchat'] },
   messenger: { type: Mixed },
 };
 
@@ -171,6 +172,9 @@ const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
 const SUB_ID_RE = /^[a-z0-9-]{2,40}$/;
 const CUSTOM_KEY_RE = /^cf_[a-z0-9_]{1,40}$/;
 const PRODUCT_KEYS = new Set(LOAN_PRODUCTS.map(product => product.id));
+// D23: ProductContent keys that map onto LOAN_PRODUCTS variants (the web form offers a choice) and the trust product are never CMS-only form products.
+const CMS_EXCLUDED_KEYS = new Set(['car_loan', 'trust']);
+const CMS_KEY_RE = /^[A-Za-z0-9_-]{1,50}$/;
 // Cloudinary authenticated raw files referenced by a loan (applicant fileDetails + staff/link taskFiles), de-duplicated.
 export function deletablePublicIds(loan) {
   const all = [...(Array.isArray(loan?.fileDetails) ? loan.fileDetails : []), ...(Array.isArray(loan?.taskFiles) ? loan.taskFiles : [])];
@@ -260,7 +264,7 @@ export function toTaskListItem(loan, { canDelete = false } = {}) {
     outcome: state.outcome,
     assignee: loan.assignee?.userId ? { userId: String(loan.assignee.userId), name: loan.assignee.name || '' } : null,
     isTaskForm,
-    channel: loan.channel === 'messenger' ? 'messenger' : 'web',
+    channel: CHANNELS.includes(loan.channel) ? loan.channel : 'web',
     createdAt: loan.createdAt || null,
     taskUpdatedAt: loan.taskUpdatedAt || null,
     taskRevision: loan.taskRevision || 0,
@@ -392,12 +396,12 @@ export function effectiveConfig(configs, productKey, env = {}) {
   return defaultConfigsEnabled(env) ? defaultActiveConfig(productKey, env) : undefined;
 }
 
-function toAdminConfig(doc, productKey, now, env = {}) {
+function toAdminConfig(doc, productKey, now, env = {}, name = PRODUCTS_MAP[productKey] || productKey) {
   const source = doc || (defaultConfigsEnabled(env) ? defaultActiveConfig(productKey, env) : { ...buildDefaultConfig(productKey), version: 0 });
   return {
     productKey,
     isDefault: !doc,
-    name: PRODUCTS_MAP[productKey] || productKey,
+    name,
     isActive: Boolean(source.isActive),
     baseProductEnabled: source.baseProductEnabled !== false,
     defaultAssigneeId: source.defaultAssigneeId || '',
@@ -419,7 +423,7 @@ export function isPublicProductClosed(config, now) {
 }
 export const PRODUCT_CLOSED_MESSAGE = 'Одоогоор хүсэлт хүлээн авахгүй байна.';
 
-function toPublicProduct(config, now) {
+function toPublicProduct(config, now, name = PRODUCTS_MAP[config?.productKey] || config?.productKey) {
   if (!config?.isActive) return null;
   const subProducts = liveSubProducts(config, now).map(sub => ({
     id: sub.id, name: sub.name, description: sub.description || '', endDate: sub.endDate || null,
@@ -428,14 +432,14 @@ function toPublicProduct(config, now) {
   const baseProductEnabled = config.baseProductEnabled !== false;
   if (!baseProductEnabled && !subProducts.length) return null;
   return {
-    productKey: config.productKey, name: PRODUCTS_MAP[config.productKey] || config.productKey, configVersion: config.version ?? 0,
+    productKey: config.productKey, name, configVersion: config.version ?? 0,
     source: config.isDefault ? 'default' : 'saved',
     baseProductEnabled, steps: baseProductEnabled ? resolveSteps(config.steps) : [], subProducts,
   };
 }
 
 // ---------- D18: in-chat (Messenger) application ----------
-export const CHANNELS = ['web', 'messenger'];
+export const CHANNELS = ['web', 'messenger', 'webchat'];
 const MESSENGER_PSID_RE = /^\d{5,30}$/;
 const MESSENGER_POST_RE = /^[A-Za-z0-9_-]{1,100}$/;
 const MESSENGER_STEPS = resolveSteps([{
@@ -499,7 +503,7 @@ export function buildMessengerTaskDoc({ input, config, assignee = null, history 
 
 // ---------- Routes ----------
 export function registerLoanTaskRoutes({
-  app, multer, cloudinary, LoanRequest, LoanFormConfig, User, authenticateUser, requireAdmin, createLog = async () => {},
+  app, multer, cloudinary, LoanRequest, LoanFormConfig, User, ProductContent, authenticateUser, requireAdmin, createLog = async () => {},
   mailer, automate, env = process.env, now = () => new Date(), getCompanyPhone = async () => '',
   schedule = setImmediate, randomBytes = crypto.randomBytes, logger = console,
   getPermissions = async user => resolvePermissions(user), getDeleteEnabled = async () => false,
@@ -618,7 +622,36 @@ export function registerLoanTaskRoutes({
     cache = { at: time, list: Array.isArray(list) ? list : [] };
     return cache.list;
   };
-  const invalidateConfigs = () => { cache = { at: 0, list: null }; };
+  const invalidateConfigs = () => { cache = { at: 0, list: null }; cmsCache = { at: 0, list: null }; };
+
+  // D23: active CMS-only loan products (ProductContent) -> [{ productKey, name }]; cached 30 s, failures degrade to an empty list.
+  let cmsCache = { at: 0, list: null };
+  const loadCmsProducts = async () => {
+    if (!ProductContent?.find) return [];
+    const time = now().getTime();
+    if (cmsCache.list && time - cmsCache.at < 30000) return cmsCache.list;
+    let list = [];
+    try {
+      const docs = await ProductContent.find({ isActive: true }).select('productKey title order').sort({ order: 1 }).limit(50).lean();
+      list = (Array.isArray(docs) ? docs : []).map(doc => ({ productKey: typeof doc?.productKey === 'string' ? doc.productKey : '', name: typeof doc?.title === 'string' ? doc.title.replace(/\s+/g, ' ').trim().slice(0, 80) : '' }))
+        .filter(item => CMS_KEY_RE.test(item.productKey) && item.name && !PRODUCT_KEYS.has(item.productKey) && !CMS_EXCLUDED_KEYS.has(item.productKey));
+    } catch { logger.warn?.('[loan-tasks] cms products unavailable'); list = []; }
+    cmsCache = { at: time, list };
+    return list;
+  };
+  // -> { productKey, name, cms } | null (LOAN_PRODUCTS id or an active CMS-only ProductContent key).
+  const resolveProduct = async key => {
+    if (typeof key !== 'string') return null;
+    if (PRODUCT_KEYS.has(key)) return { productKey: key, name: PRODUCTS_MAP[key], cms: false };
+    const hit = (await loadCmsProducts()).find(item => item.productKey === key);
+    return hit ? { productKey: hit.productKey, name: hit.name, cms: true } : null;
+  };
+  // D23: a new request nobody owns notifies MAIL_REPLY_TO (info@scm.mn) with the staff template (existing deliver mechanism).
+  const notifyUnassigned = (loanId, context) => {
+    const to = String(env.MAIL_REPLY_TO || '').trim();
+    if (!to || !isValidEmailAddress(to)) return;
+    deliver(loanId, async () => ({ to, reference: context.reference, ...emails.staffAssignment({ ...context, adminUrl: adminUrl(), unassigned: true }) }));
+  };
 
   // ----- Public -----
   app.get('/api/loan-tasks/public/products', async (_req, res) => {
@@ -627,9 +660,10 @@ export function registerLoanTaskRoutes({
       if (!enabled()) return res.json({ enabled: false, products: [] });
       const at = now();
       const configs = await loadConfigs();
-      const products = LOAN_PRODUCTS.map(product => {
-        const publicProduct = toPublicProduct(effectiveConfig(configs, product.id, env), at);
-        return publicProduct ? { productKey: product.id, name: product.name, hasLiveSubProducts: publicProduct.subProducts.length > 0 } : null;
+      const all = [...LOAN_PRODUCTS.map(product => ({ productKey: product.id, name: product.name })), ...(await loadCmsProducts())];
+      const products = all.map(product => {
+        const publicProduct = toPublicProduct(effectiveConfig(configs, product.productKey, env), at, product.name);
+        return publicProduct ? { productKey: product.productKey, name: product.name, hasLiveSubProducts: publicProduct.subProducts.length > 0 } : null;
       }).filter(Boolean);
       res.json({ enabled: true, products });
     } catch (error) { fail(res, error); }
@@ -638,13 +672,15 @@ export function registerLoanTaskRoutes({
   app.get('/api/loan-tasks/public/products/:productKey', async (req, res) => {
     try {
       res.set('Cache-Control', 'public, max-age=60');
-      if (!PRODUCT_KEYS.has(req.params.productKey)) throw new HttpError('Бүтээгдэхүүн олдсонгүй.', 404);
+      if (!CMS_KEY_RE.test(req.params.productKey || '')) throw new HttpError('Бүтээгдэхүүн олдсонгүй.', 404);
       if (!enabled()) return res.json({ enabled: false, product: null });
-      const productKey = req.params.productKey;
+      const resolved = await resolveProduct(req.params.productKey);
+      if (!resolved) throw new HttpError('Бүтээгдэхүүн олдсонгүй.', 404);
+      const { productKey, name } = resolved;
       const config = effectiveConfig(await loadConfigs(), productKey, env);
       const at = now();
-      if (isPublicProductClosed(config, at)) return res.json({ enabled: true, closed: true, product: null, productKey, name: PRODUCTS_MAP[productKey] || productKey, message: PRODUCT_CLOSED_MESSAGE });
-      res.json({ enabled: true, product: toPublicProduct(config, at) });
+      if (isPublicProductClosed(config, at)) return res.json({ enabled: true, closed: true, product: null, productKey, name, message: PRODUCT_CLOSED_MESSAGE });
+      res.json({ enabled: true, product: toPublicProduct(config, at, name) });
     } catch (error) { fail(res, error); }
   });
 
@@ -658,7 +694,8 @@ export function registerLoanTaskRoutes({
         if (body.website !== undefined && String(body.website).trim()) throw new HttpError('Хүсэлтийг хүлээн авах боломжгүй байна.', 400);
         const unavailable = () => new HttpError('Энэ бүтээгдэхүүнд одоогоор хүсэлт авахгүй байна.', 404, { code: 'PRODUCT_UNAVAILABLE' });
         const productKey = str(body.productKey, 60);
-        if (!PRODUCT_KEYS.has(productKey)) throw unavailable();
+        const resolved = await resolveProduct(productKey);
+        if (!resolved) throw unavailable();
         const at = now();
         const config = effectiveConfig(await loadConfigs(), productKey, env);
         if (!config?.isActive) throw unavailable();
@@ -702,7 +739,7 @@ export function registerLoanTaskRoutes({
         history.unshift({ at, type: 'created', to: taskStatus, actor: { name: 'Вэб маягт', system: true } });
         if (assignee) history.splice(1, 0, { at, type: 'assigned', to: 'assigned', assignee, actor: SYSTEM_ACTOR });
         const mirror = mirrorAnswers(answers.value, { productKey });
-        const productName = PRODUCTS_MAP[productKey] || productKey;
+        const productName = resolved.name;
         const loan = new LoanRequest({
           ...mirror,
           status: assignee ? 'assigned' : 'pending',
@@ -735,6 +772,7 @@ export function registerLoanTaskRoutes({
         const context = { reference, productName, subProductName: sub?.name || '' };
         if (answers.value.email) deliver(loan._id, async () => ({ to: answers.value.email, reference, replyTo: assignee ? await staffEmail(assignee.userId) : '', ...emails.applicantAcknowledgement({ ...context, companyPhone: await companyPhone() }) }));
         if (assignee) deliver(loan._id, async () => ({ to: await staffEmail(assignee.userId), reference, ...emails.staffAssignment({ ...context, adminUrl: adminUrl() }) }));
+        else notifyUnassigned(loan._id, context);
         if (env.LOAN_TASKS_AI_AUTOMATION === 'true' && typeof automate === 'function') automate(loan._id);
       } catch (error) {
         if (!saved) await destroyAll(persisted);
@@ -837,7 +875,8 @@ export function registerLoanTaskRoutes({
         widgetGroups: WIDGET_GROUPS,
         limits: LIMITS,
         fileFormats: Object.keys(FILE_FORMATS),
-        products: LOAN_PRODUCTS.map(product => ({ productKey: product.id, name: product.name, saved: byKey.has(product.id), config: toAdminConfig(byKey.get(product.id), product.id, at, env) })),
+        products: [...LOAN_PRODUCTS.map(product => ({ productKey: product.id, name: product.name })), ...(await loadCmsProducts())]
+          .map(product => ({ productKey: product.productKey, name: product.name, cms: !PRODUCT_KEYS.has(product.productKey), saved: byKey.has(product.productKey), config: toAdminConfig(byKey.get(product.productKey), product.productKey, at, env, product.name) })),
       });
     } catch (error) { fail(res, error); }
   });
@@ -845,12 +884,13 @@ export function registerLoanTaskRoutes({
   app.put('/api/loan-tasks/admin/configs/:productKey', ensureEnabled, authenticateUser, requireAdmin, async (req, res) => {
     try {
       const productKey = req.params.productKey;
-      if (!PRODUCT_KEYS.has(productKey)) throw new HttpError('Бүтээгдэхүүн олдсонгүй.', 404);
+      const resolved = await resolveProduct(productKey);
+      if (!resolved) throw new HttpError('Бүтээгдэхүүн олдсонгүй.', 404);
       const body = req.body;
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError('Тохиргоо буруу байна.', 400);
       const expectedVersion = body.expectedVersion;
       if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new HttpError('expectedVersion заавал.', 400, { errors: { expectedVersion: 'expectedVersion заавал (0 = шинэ).' } });
-      const { ok, errors, value } = validateConfig({ ...body, productKey });
+      const { ok, errors, value } = validateConfig({ ...body, productKey }, { extraKeys: resolved.cms ? [productKey] : [] });
       if (!ok) throw new HttpError('Тохиргоог шалгана уу.', 400, { errors });
       const assigneeIds = [['defaultAssigneeId', value.defaultAssigneeId], ...value.subProducts.map((sub, index) => [`subProducts.${index}.defaultAssigneeId`, sub.defaultAssigneeId])].filter(([, id]) => id);
       if (assigneeIds.length) {
@@ -877,7 +917,7 @@ export function registerLoanTaskRoutes({
       }
       invalidateConfigs();
       await createLog(req.user, 'loan_task_config_saved', `${productKey} v${saved.version} active=${saved.isActive ? 1 : 0}`);
-      res.json(toAdminConfig(saved, productKey, at, env));
+      res.json(toAdminConfig(saved, productKey, at, env, resolved.name));
     } catch (error) { fail(res, error); }
   });
 
@@ -895,7 +935,7 @@ export function registerLoanTaskRoutes({
       filters.push({ 'assignee.userId': assignee });
     }
     if (query.productKey && query.productKey !== 'all') {
-      if (!PRODUCT_KEYS.has(query.productKey)) throw new HttpError('Бүтээгдэхүүн буруу байна.', 400);
+      if (typeof query.productKey !== 'string' || !CMS_KEY_RE.test(query.productKey)) throw new HttpError('Бүтээгдэхүүн буруу байна.', 400);
       filters.push({ selectedProduct: query.productKey });
     }
     if (query.subProductId && query.subProductId !== 'all') {
@@ -906,7 +946,8 @@ export function registerLoanTaskRoutes({
       if (query.source === 'task') filters.push({ formVersion: 'task-v1' });
       else if (query.source === 'legacy') filters.push({ formVersion: { $ne: 'task-v1' } });
       else if (query.source === 'messenger') filters.push({ channel: 'messenger' });
-      else if (query.source === 'web') filters.push({ channel: { $ne: 'messenger' } });
+      else if (query.source === 'webchat') filters.push({ channel: 'webchat' });
+      else if (query.source === 'web') filters.push({ channel: { $nin: ['messenger', 'webchat'] } });
       else throw new HttpError('Эх үүсвэр буруу байна.', 400);
     }
     const search = str(query.search, 80);
@@ -1201,6 +1242,7 @@ export function registerLoanTaskRoutes({
     await loan.save();
     const reference = loan.applicationReference;
     if (assignee) deliver(loan._id, async () => ({ to: await staffEmail(assignee.userId), reference, ...emails.staffAssignment({ reference, productName, subProductName: '', adminUrl: adminUrl() }) }));
+    else notifyUnassigned(loan._id, { reference, productName, subProductName: '' });
     return { applicationReference: reference, productKey: input.productKey, productName, assigned: Boolean(assignee) };
   };
 

@@ -3,19 +3,17 @@
 // `me/messages` (replies) and `me/messenger_profile` (menu). Page posts are read with GET `me/posts`.
 // Dependencies are injected (axios, session store, request creator, clock) so everything is testable without Meta/Mongo.
 import crypto from 'node:crypto';
-import { LOAN_PRODUCTS, PRODUCTS_MAP } from '../shared/loanFormConfig.js';
-import { buildNode, SITE_URL, CONTACT_PHONE, MENU_REPLY } from './botEngine.js';
+import { PRODUCTS_MAP } from '../shared/loanFormConfig.js';
+import { buildNode, buildApplyNode, buildSteeringNode, detectProduct, shortenAnswer, SITE_URL, CONTACT_PHONE, MENU_REPLY, TRUST_KEY } from './botEngine.js';
 
 export { SITE_URL, CONTACT_PHONE };
 export const LOAN_REQUEST_URL = `${SITE_URL}/loan-request`;
 export const DEFAULT_EXPECTED_PAGE = 'Solongo.Capital';
 export const POSTS_CACHE_MS = 5 * 60 * 1000;
 export const SESSION_TTL_SECONDS = 24 * 3600;
-export const REQUESTS_PER_HOUR = 3;
+export const CHAT_REQUESTS_PER_HOUR = 30; // D23: free-text AI answers per PSID (applications now happen on the web form)
 export const SHARED_WEBHOOK_PATH = '/api/zentro/facebook/webhook';
 export const LEGACY_WEBHOOK_PATH = '/api/messenger/webhook';
-const MAX_AMOUNT = 1e10;
-const MIN_AMOUNT = 50000;
 const FALLBACK_REPLY = `Уучлаарай, чатбот түр саатлаа. Та дахин бичнэ үү эсвэл ${CONTACT_PHONE} дугаараар холбогдоно уу.`;
 
 // ---------- Pure helpers ----------
@@ -159,145 +157,8 @@ export function nodeToMessengerMessages(node = {}) {
   return messages;
 }
 
-// ---------- In-chat application: validation ----------
-export function parsePhone(text) {
-  let digits = String(text || '').replace(/[\s()\-.]/g, '');
-  if (/^\+?976\d{8}$/.test(digits)) digits = digits.replace(/^\+?976/, '');
-  return /^\d{8}$/.test(digits) ? digits : null;
-}
-
-export function parseAmount(text) {
-  const raw = String(text || '').toLowerCase().replace(/[\s₮]|төгрөг|төг/g, '');
-  let value;
-  if (/^\d{1,3}(?:[,'’.]\d{3})+$/.test(raw)) value = Number(raw.replace(/[,'’.]/g, ''));
-  else {
-    const match = /^(\d+(?:[.,]\d+)?)(сая|мянга|mln|m|k)?$/.exec(raw);
-    if (!match) return null;
-    const multiplier = { сая: 1e6, mln: 1e6, m: 1e6, мянга: 1e3, k: 1e3 }[match[2]] || 1;
-    value = Math.round(Number(match[1].replace(',', '.')) * multiplier);
-  }
-  return Number.isSafeInteger(value) && value >= MIN_AMOUNT && value <= MAX_AMOUNT ? value : null;
-}
-
-export function parseTerm(text) {
-  const match = /^(\d{1,3})\s*(сар|сартай|month|months|жил|жилийн)?$/i.exec(String(text || '').trim());
-  if (!match) return null;
-  const years = ['жил', 'жилийн'].includes(String(match[2] || '').toLowerCase());
-  const months = Number(match[1]) * (years ? 12 : 1);
-  return Number.isInteger(months) && months >= 1 && months <= 120 ? months : null;
-}
-
-// "Овог Нэр" -> { lastname, firstname }; needs at least two parts (space or dot separated), letters only.
-export function parseName(text) {
-  const name = String(text || '').replace(/\s+/g, ' ').trim();
-  if (name.length < 3 || name.length > 80 || !/^[\p{L}][\p{L} .'-]*$/u.test(name)) return null;
-  const parts = name.split(/[\s.]+/).filter(Boolean);
-  if (parts.length < 2) return null;
-  return { lastname: parts[0], firstname: parts.slice(1).join(' ') };
-}
-
-// ---------- In-chat application: conversation state machine (pure) ----------
-const STATES = ['product', 'name', 'phone', 'amount', 'term', 'confirm'];
-const SHORT_PRODUCT_TITLES = {
-  biz_loan: 'Бизнесийн зээл', car_purchase_loan: 'Авто худалдан авах', car_coll_loan: 'Авто барьцаалсан', cons_loan: 'Хэрэглээний зээл',
-  credit_card: 'Кредит карт', re_loan: 'Үл хөдлөх барьцаа', line_loan: 'Зээлийн шугам', mortgage: 'Орон сууцны зээл',
-};
-const CANCEL_REPLY = { title: 'Цуцлах', payload: 'cancel' };
-const money = value => Number(value).toLocaleString('en-US');
-
-const productLabel = draft => draft.productName || PRODUCTS_MAP[draft.productKey] || draft.productKey;
-const productReplies = () => [...LOAN_PRODUCTS.map(product => ({ title: SHORT_PRODUCT_TITLES[product.id] || product.name, payload: `product:${product.id}` })), CANCEL_REPLY];
-const prompts = {
-  product: () => ({ text: 'Ямар зээл авах вэ? Доорх сонголтоос сонгоно уу.', quickReplies: productReplies() }),
-  name: () => ({ text: 'Овог нэрээ бичнэ үү. Жишээ: Бат Болд', quickReplies: [CANCEL_REPLY] }),
-  phone: () => ({ text: 'Холбоо барих утасны дугаараа бичнэ үү (8 оронтой). Жишээ: 99001234', quickReplies: [CANCEL_REPLY] }),
-  amount: () => ({ text: 'Хүссэн зээлийн дүнгээ бичнэ үү. Жишээ: 5000000 эсвэл 5 сая', quickReplies: [CANCEL_REPLY] }),
-  term: () => ({ text: 'Хэдэн сарын хугацаатай авах вэ? (1–120 сар). Жишээ: 12', quickReplies: [CANCEL_REPLY] }),
-  confirm: draft => ({
-    text: [
-      'Хүсэлтээ шалгана уу:',
-      `Бүтээгдэхүүн: ${productLabel(draft)}`,
-      `Нэр: ${[draft.lastname, draft.firstname].filter(Boolean).join(' ')}`,
-      `Утас: ${draft.phone}`,
-      `Дүн: ${money(draft.amount)}₮`,
-      `Хугацаа: ${draft.term} сар`,
-      '',
-      'Баталгаажуулснаар таны мэдээллийг зээлийн хүсэлт хянан шийдвэрлэх зорилгоор боловсруулахыг зөвшөөрч байна.',
-    ].join('\n'),
-    quickReplies: [{ title: 'Баталгаажуулах', payload: 'confirm' }, { title: 'Засах', payload: 'edit' }, CANCEL_REPLY],
-  }),
-};
-const errorText = {
-  product: 'Доорх сонголтоос зээлийн төрлөө сонгоно уу.',
-  name: 'Овог, нэрээ хоёуланг нь үсгээр бичнэ үү. Жишээ: Бат Болд',
-  phone: 'Утасны дугаар 8 оронтой байх ёстой. Жишээ: 99001234',
-  amount: `Дүн буруу байна. ${money(MIN_AMOUNT)}₮-өөс ${money(MAX_AMOUNT)}₮ хүртэл тоо бичнэ үү. Жишээ: 5000000 эсвэл 5 сая`,
-  term: 'Хугацаа 1–120 сар байна. Жишээ: 12',
-  confirm: 'Доорх товчоор баталгаажуулах, засах эсвэл цуцлах сонголтоо хийнэ үү.',
-};
-
-const POST_ID_RE = /^[A-Za-z0-9_-]{1,100}$/;
-// ProductContent keys differ from the in-chat product ids for car_loan (purchase/collateral variants): default to purchase.
-const PRODUCT_KEY_ALIASES = { car_loan: 'car_purchase_loan' };
-export const resolveProductKey = key => { const value = PRODUCT_KEY_ALIASES[key] || key; return PRODUCTS_MAP[value] ? value : ''; };
-
-// { postId?, productKey?, productName? }: a valid productKey skips the product step. `productName` marks a CMS-only product
-// (ProductContent key that is not in LOAN_PRODUCTS, D21 #4): the key is kept as is and the name comes from ProductContent.
-const CMS_KEY_RE = /^[A-Za-z0-9_-]{1,50}$/;
-export const startApplication = ({ postId = '', productKey = '', productName = '' } = {}) => {
-  const session = { state: 'product', draft: {}, postId: POST_ID_RE.test(postId) ? postId : '' };
-  const name = String(productName || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-  const key = name && CMS_KEY_RE.test(productKey) ? productKey : resolveProductKey(productKey);
-  const intro = { text: 'Зээлийн хүсэлтийг энд товч бөглөж болно. Баримтаа дараа нь сайт дээр нэмнэ.' };
-  if (!key) return { session, messages: [intro, prompts.product()], action: null };
-  session.state = 'name';
-  session.draft = name && key === productKey ? { productKey: key, productName: name } : { productKey: key };
-  return { session, messages: [intro, { text: `Бүтээгдэхүүн: ${productLabel(session.draft)}` }, prompts.name()], action: null };
-};
-
-// advance(session, { payload?, text? }) -> { session|null, messages, action: null|'submit'|'cancel' }
-// Never mutates the input session. A null session means the conversation ended.
-export function advance(session, input = {}) {
-  const payload = typeof input.payload === 'string' ? input.payload : '';
-  const text = typeof input.text === 'string' ? input.text.trim() : '';
-  const state = session?.state;
-  if (!STATES.includes(state)) return { session: null, messages: [], action: null };
-  const draft = { ...(session.draft || {}) };
-  const next = (to, patch = {}) => {
-    const merged = Object.fromEntries(Object.entries({ ...draft, ...patch }).filter(([, value]) => value !== undefined));
-    return { session: { ...session, state: to, draft: merged }, messages: [prompts[to](merged)], action: null };
-  };
-  const retry = () => ({ session: { ...session, draft }, messages: [{ text: errorText[state], quickReplies: prompts[state](draft).quickReplies }], action: null });
-
-  const lowered = (payload || text).toLowerCase();
-  if (payload === 'cancel' || ['цуцлах', 'cancel'].includes(lowered)) {
-    return { session: null, messages: [{ text: 'Хүсэлтийг цуцаллаа. Дахин хүсвэл "Зээлийн хүсэлт" гэж бичнэ үү.', quickReplies: [MENU_REPLY] }], action: 'cancel' };
-  }
-  if (payload === 'back' || lowered === 'буцах') {
-    const index = STATES.indexOf(state);
-    if (index <= 0) return { session: null, messages: [{ text: 'Хүсэлтийг цуцаллаа.', quickReplies: [MENU_REPLY] }], action: 'cancel' };
-    return next(STATES[index - 1]);
-  }
-
-  switch (state) {
-    case 'product': {
-      const key = payload.startsWith('product:') ? payload.slice(8) : (LOAN_PRODUCTS.find(product => product.name.toLowerCase() === lowered || (SHORT_PRODUCT_TITLES[product.id] || '').toLowerCase() === lowered)?.id || '');
-      return PRODUCTS_MAP[key] ? next('name', { productKey: key, productName: undefined }) : retry();
-    }
-    case 'name': { const name = payload ? null : parseName(text); return name ? next('phone', name) : retry(); }
-    case 'phone': { const phone = payload ? null : parsePhone(text); return phone ? next('amount', { phone }) : retry(); }
-    case 'amount': { const amount = payload ? null : parseAmount(text); return amount ? next('term', { amount }) : retry(); }
-    case 'term': { const term = payload ? null : parseTerm(text); return term ? next('confirm', { term }) : retry(); }
-    default: { // confirm
-      if (payload === 'confirm') return { session: { ...session, draft }, messages: [], action: 'submit' };
-      if (payload === 'edit' || payload === 'restart') return next('product', { productKey: undefined, productName: undefined });
-      return retry();
-    }
-  }
-}
-
 // ---------- Rate limit (per PSID, in memory) ----------
-export function createPsidLimiter({ max = REQUESTS_PER_HOUR, windowMs = 3600 * 1000, now = Date.now, cap = 20000 } = {}) {
+export function createPsidLimiter({ max = CHAT_REQUESTS_PER_HOUR, windowMs = 3600 * 1000, now = Date.now, cap = 20000 } = {}) {
   const hits = new Map();
   return {
     // Consumes one slot; false when the PSID already used `max` slots inside the window.
@@ -364,19 +225,20 @@ export function createMongoSessionStore(mongoose) {
 }
 
 // ---------- Messenger service ----------
-const GLOBAL_LEGACY = new Set(['back']);
+const GLOBAL_LEGACY = new Set(['back']); // old "back" postback of the removed in-chat flow -> welcome menu
 const NODE_VALUES = new Set(['restart', 'menu', 'loans', 'trust', 'ads', 'payment', 'contact', 'language', 'lang:mn', 'lang:en']);
 // Typed text equal to a menu title behaves like the button (only outside the in-chat application).
 const IDLE_SESSION = { state: 'idle', draft: {}, postId: '' }; // "seen" marker: a PSID without any session is a first contact (D21 #1)
 const LABEL_RE = /^[a-z]+(?::[A-Za-z0-9_-]{1,100}){0,2}$/;
 const logLabel = value => (LABEL_RE.test(String(value)) ? String(value) : 'other'); // never log typed text
 const NODE_TEXTS = new Map([['зээл', 'loans'], ['итгэлцэл', 'trust'], ['идэвхтэй зээлийн зар', 'ads'], ['төлөлт хийх', 'payment'], ['дахин эхлүүлэх', 'restart'], ['цэс', 'restart'], ['start', 'restart']]);
-export const FREE_TEXT_MAX = 600;
-const FREE_TEXT_REPLIES = [{ title: 'Зээл', payload: 'loans' }, { title: 'Итгэлцэл', payload: 'trust' }, MENU_REPLY];
+const CMS_KEY_RE = /^[A-Za-z0-9_-]{1,50}$/;
 const APPLY_TEXTS = new Set(['зээлийн хүсэлт', 'зээлийн хүсэлт өгөх', 'apply', 'хүсэлт өгөх']);
+const APPLY_INTENT_RE = /хүсэлт\s*(гаргах|өгөх|илгээх|бөглөх)|өргөдөл|бөглөх|\bapply\b/i;
+const isApplyIntent = text => { const value = String(text || '').trim(); return value.length > 0 && value.length <= 80 && APPLY_INTENT_RE.test(value); };
 
 export function createScmMessenger({
-  axios, env = process.env, sessionStore, createRequest, content = {}, rateLimiter = createPsidLimiter(), now = Date.now, logger = console,
+  axios, env = process.env, sessionStore, content = {}, rateLimiter = createPsidLimiter(), now = Date.now, logger = console,
 } = {}) {
   const graph = createGraphClient({ axios, env });
   // ZENTRO_FB_PAGE_ID_FOR_LEGACY_GUARD: events of the Zentro Page are never handled by SCM logic.
@@ -394,7 +256,6 @@ export function createScmMessenger({
   const sendText = (psid, text, quickReplies) => send(psid, { text: String(text || FALLBACK_REPLY).slice(0, 1900), ...(quickReplies?.length ? { quick_replies: buildQuickReplies(quickReplies) } : {}) });
   const sendButtons = (psid, text, buttons) => send(psid, { attachment: { type: 'template', payload: { template_type: 'button', text: String(text).slice(0, 640), buttons } } });
   const sendGeneric = (psid, elements) => send(psid, { attachment: { type: 'template', payload: { template_type: 'generic', elements } } });
-  const deliver = async (psid, messages) => { for (const message of messages) await sendText(psid, message.text, message.quickReplies); };
 
   // --- Page posts (read-only, cached 5 minutes; stale copy served if Graph fails) ---
   async function getPosts() {
@@ -427,76 +288,49 @@ export function createScmMessenger({
     return undefined;
   }
 
-  // --- legacy chatbot (/api/chat) path, unchanged behaviour ---
-  // Free text goes to the legacy chatbot, but only its short text is relayed (<=600 chars) + quick replies; no product carousels (§19).
-  async function legacyChat(psid, text, ctx) {
+  // --- free text (D23): a short AI answer (<=3 sentences, <=400 chars) + a steering node (product card / loans carousel) ---
+  // The bot never collects applications in chat; every apply path ends in a web_url button to the web form.
+  async function aiAnswer(psid, text, ctx) {
     const response = await axios.post(`${baseUrlOf(ctx)}/api/chat`, { sessionId: `fb_${psid}`, message: text, history: [] }, { headers: { 'x-session-id': `fb_${psid}` }, timeout: 30000 });
     const chat = response.data || { reply: '' };
-    const { cleanText, action } = stripChatControlTokens(chat.reply || '');
-    const suffix = action === 'loan_request' ? `
-
-Зээлийн хүсэлт: ${LOAN_REQUEST_URL}` : '';
-    const base = String(cleanText || chat.productCard?.title || '').trim();
-    const body = `${base.length + suffix.length > FREE_TEXT_MAX ? `${base.slice(0, Math.max(0, FREE_TEXT_MAX - suffix.length - 1)).trimEnd()}…` : base}${suffix}`.trim();
-    return sendText(psid, body || 'Та дараах сонголтуудаас сонгож үйлчилгээгээ авна уу.', FREE_TEXT_REPLIES);
+    const { cleanText } = stripChatControlTokens(chat.reply || '');
+    return shortenAnswer(String(cleanText || chat.productCard?.title || '').replace(/https?:\/\/\S+/g, '').trim());
   }
 
   // --- bot nodes (botEngine, §19) ---
   const nodeCtx = () => ({ loadProducts: content.loadProducts || (async () => []), loadSetting: content.loadSetting || (async () => undefined), getPosts: () => getPosts(), channel: 'messenger' });
-  async function sendNode(psid, nodeId) {
-    for (const message of nodeToMessengerMessages(await buildNode(nodeId, nodeCtx()))) await send(psid, message);
+  async function sendBuilt(psid, node) {
+    for (const message of nodeToMessengerMessages(node)) await send(psid, message);
   }
-  // Ends any running application but keeps a "seen" marker so the next free text is not treated as a first contact.
+  const sendNode = async (psid, nodeId) => sendBuilt(psid, await buildNode(nodeId, nodeCtx()));
+  // Marks the PSID as seen (idle). Also ends any stale session of the removed in-chat application flow (D23).
   const endFlow = psid => sessionStore.save(psid, IDLE_SESSION);
 
-  // ProductContent is the product source (D21 #4): CMS-only keys (not in LOAN_PRODUCTS) keep their key and take their name from ProductContent.
-  async function resolveApplyProduct(key) {
+  async function steer(psid, text, ctx) {
+    let reply = '';
+    // Chat rate limit: over the limit the AI is skipped, the steering cards still go out.
+    if (rateLimiter.take(psid)) {
+      try { reply = await aiAnswer(psid, text, ctx); } catch { logger.error?.('[scm-messenger] ai answer failed'); }
+    }
+    if (reply) await sendText(psid, reply);
+    await sendBuilt(psid, await buildSteeringNode(text, nodeCtx()));
+  }
+
+  // ProductContent is the product source: apply key -> { productKey, title } for LOAN_PRODUCTS ids, car_loan (the web form offers the
+  // purchase/collateral choice), trust and active CMS-only products. Unknown keys (e.g. an old post id) -> null (generic link).
+  async function resolveApplyKey(key) {
     if (!key) return null;
-    const formKey = resolveProductKey(key);
-    if (formKey) return { productKey: formKey === key ? key : formKey };
-    if (!CMS_KEY_RE.test(key) || key === 'trust') return null;
+    if (key === TRUST_KEY) return { productKey: TRUST_KEY, title: 'Итгэлцэл' };
+    if (key === 'car_loan') return { productKey: key, title: 'Автомашины зээл' }; // the web form asks purchase vs collateral
+    if (PRODUCTS_MAP[key]) return { productKey: key, title: PRODUCTS_MAP[key] };
+    if (!CMS_KEY_RE.test(key)) return null;
     let products = [];
     try { products = (await content.loadProducts?.()) || []; } catch { products = []; }
     const product = (Array.isArray(products) ? products : []).find(item => item?.productKey === key && item.isActive !== false);
-    const name = String(product?.title || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-    return product && name ? { productKey: key, productName: name } : null;
+    if (!product) return null;
+    return { productKey: key, title: String(product.title || '').replace(/\s+/g, ' ').trim().slice(0, 80) };
   }
-
-  // --- in-chat application ---
-  async function runApplicationStep(psid, session, input) {
-    const result = advance(session, input);
-    if (result.action === 'submit') return submitApplication(psid, result.session);
-    if (!result.session) await endFlow(psid);
-    else await sessionStore.save(psid, result.session);
-    return deliver(psid, result.messages);
-  }
-
-  async function submitApplication(psid, session) {
-    if (!rateLimiter.take(psid)) {
-      await endFlow(psid);
-      return sendText(psid, `Нэг цагт илгээх хүсэлтийн хязгаарт хүрсэн байна. Түр хүлээгээд дахин оролдоно уу эсвэл ${CONTACT_PHONE} дугаарт холбогдоно уу.`, [{ title: 'Цэс', payload: 'menu' }]);
-    }
-    const { draft } = session;
-    let result;
-    try {
-      result = await createRequest({ productKey: draft.productKey, ...(draft.productName ? { productName: draft.productName } : {}), lastname: draft.lastname || '', firstname: draft.firstname, phone: draft.phone, amount: draft.amount, term: draft.term, psid, postId: session.postId || '' });
-    } catch (error) {
-      logger.error?.(`[scm-messenger] request creation failed code=${error?.code || error?.status || 'unknown'}`);
-      await sessionStore.save(psid, { ...session, state: 'confirm' });
-      return sendText(psid, `Хүсэлтийг бүртгэж чадсангүй. Дахин оролдох уу эсвэл ${LOAN_REQUEST_URL}?source=messenger хаягаар / ${CONTACT_PHONE} дугаараар хандана уу.`, [{ title: 'Баталгаажуулах', payload: 'confirm' }, CANCEL_REPLY]);
-    }
-    await endFlow(psid);
-    await sendText(psid, `Таны хүсэлтийг хүлээн авлаа. Хүсэлтийн дугаар: ${result.applicationReference}. Манай ажилтан тантай удахгүй холбогдоно.`);
-    return sendButtons(psid, 'Шаардлагатай баримтаа сайт дээр нэмж оруулж болно.', [{
-      type: 'web_url', title: 'Баримтаа нэмэх', url: `${LOAN_REQUEST_URL}?product=${encodeURIComponent(draft.productKey)}&source=messenger`, webview_height_ratio: 'full',
-    }]);
-  }
-
-  async function startFlow(psid, options = {}) {
-    const started = startApplication(options);
-    await sessionStore.save(psid, started.session);
-    return deliver(psid, started.messages);
-  }
+  const sendApply = (psid, product) => sendBuilt(psid, buildApplyNode(product?.productKey || '', nodeCtx(), { title: product?.title || '' }));
 
   // --- event routing ---
   // Every handled event logs one PII-free line: kind (message|postback|referral|optin), node label (never typed text), result.
@@ -530,10 +364,11 @@ export function createScmMessenger({
       if (!value) return;
       const session = await sessionStore.get(psid);
       const firstContact = !session;
-      const inFlow = Boolean(session && STATES.includes(session.state));
+      // D23: a session left in the removed in-chat application flow is stale -> treated as idle (the old quick replies still answer below).
+      if (session && session.state !== 'idle') await endFlow(psid);
       const lowered = value.toLowerCase();
-      const nodeValue = NODE_VALUES.has(value) || /^(terms|calc|post):/.test(value) ? value : (!payload && !inFlow ? NODE_TEXTS.get(lowered) : '');
-      const isApply = value === 'apply' || value.startsWith('apply:') || (!payload && !inFlow && APPLY_TEXTS.has(lowered));
+      const nodeValue = NODE_VALUES.has(value) || /^(terms|calc|post):/.test(value) ? value : (!payload ? NODE_TEXTS.get(lowered) : '');
+      const isApply = value === 'apply' || value.startsWith('apply:') || value.startsWith('product:') || (!payload && (APPLY_TEXTS.has(lowered) || isApplyIntent(text)));
       // First contact (no session at all) with plain typed text -> restart, whatever was typed.
       if (firstContact && !payload && !nodeValue && !isApply) {
         label = 'restart';
@@ -542,34 +377,33 @@ export function createScmMessenger({
         return logEvent(kind, label, 'sent');
       }
       if (firstContact) await endFlow(psid);
-      // Menu / node / apply payloads interrupt a running application (e.g. persistent menu); anything else continues it.
-      const interrupts = nodeValue || (payload && isApply);
-      if (inFlow && interrupts) await endFlow(psid);
-      else if (inFlow) { label = 'flow'; await runApplicationStep(psid, session, payload ? { payload } : { text }); return logEvent(kind, label, 'sent'); }
       if (nodeValue) {
         label = nodeValue;
-        if (nodeValue === 'restart' || nodeValue === 'menu' || nodeValue === 'lang:mn') await endFlow(psid);
         await sendNode(psid, nodeValue);
         return logEvent(kind, label, 'sent');
       }
-      if (GLOBAL_LEGACY.has(value)) { label = 'back'; await legacyChat(psid, value, ctx); return logEvent(kind, label, 'sent'); }
+      if (GLOBAL_LEGACY.has(value)) { label = 'back'; await sendNode(psid, 'restart'); return logEvent(kind, label, 'sent'); }
       if (value === 'posts') { label = 'posts'; await showPosts(psid); return logEvent(kind, label, 'sent'); }
       if (value === 'site') { label = 'site'; await sendButtons(psid, 'Сайт дээр дэлгэрэнгүй бөглөнө үү.', [{ type: 'web_url', title: 'Хүсэлт бөглөх', url: `${LOAN_REQUEST_URL}?source=messenger`, webview_height_ratio: 'full' }]); return logEvent(kind, label, 'sent'); }
       if (value.startsWith('detail:')) { label = 'detail'; await showDetail(psid, value.slice(7)); return logEvent(kind, label, 'sent'); }
-      if (isApply) {
+      // Old quick replies of the removed in-chat flow (cancel / confirm / edit) and every apply action -> short text + web form button.
+      if (payload === 'cancel') { label = 'cancel'; await sendText(psid, 'Сайн байна уу. Хүсвэл доорх цэснээс үргэлжлүүлнэ үү.', [MENU_REPLY]); return logEvent(kind, label, 'sent'); }
+      if (isApply || payload === 'confirm' || payload === 'edit') {
         label = 'apply';
-        const arg = value.startsWith('apply:') ? value.slice(6) : '';
-        const [productArg, ...ctxParts] = arg.split(':'); // apply:<productKey>[:post:<id>] (optional post context)
-        if (arg.startsWith('post:')) await startFlow(psid, { postId: arg.slice(5) });
-        else {
-          const product = await resolveApplyProduct(productArg);
-          if (product) await startFlow(psid, { ...product, ...(ctxParts[0] === 'post' && ctxParts[1] ? { postId: ctxParts[1] } : {}) });
-          else await startFlow(psid, { postId: arg }); // legacy apply:<postId>; invalid ids are dropped
+        let product = null;
+        if (value.startsWith('apply:') || value.startsWith('product:')) {
+          const arg = value.slice(value.indexOf(':') + 1);
+          product = arg.startsWith('post:') ? null : await resolveApplyKey(arg.split(':')[0]); // apply:<productKey>[:post:<id>] | apply:post:<id> | legacy apply:<postId>
+        } else if (!payload && text) {
+          let hit = null;
+          try { hit = await detectProduct(text, nodeCtx()); } catch { hit = null; }
+          if (hit) product = await resolveApplyKey(hit.productKey);
         }
+        await sendApply(psid, product);
         return logEvent(kind, label, 'sent');
       }
       label = 'chat';
-      await legacyChat(psid, value, ctx);
+      await steer(psid, value, ctx);
       return logEvent(kind, label, 'sent');
     } catch (error) {
       logger.error?.(`[scm-messenger] event kind=${kind} node=${logLabel(label)} result=failed code=${error?.fbCode || error?.status || 'n/a'} (${error?.name || 'Error'})`);

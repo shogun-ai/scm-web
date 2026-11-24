@@ -5,7 +5,6 @@ import { validateConfig } from '@shared/loanWidgets';
 import { errorMessage, fetchAdminConfigs, saveAdminConfig } from './api';
 
 const clone = value => JSON.parse(JSON.stringify(value));
-const nameOf = key => LOAN_PRODUCTS.find(item => item.id === key)?.name || key;
 const ownStepSubs = config => (config?.subProducts || []).filter(sub => sub.inheritSteps === false);
 
 // Apply the source STEPS only (never subProducts, assignee, isActive, baseProductEnabled or name) to one target.
@@ -17,7 +16,7 @@ async function applyToTarget({ apiUrl, key, steps, toPayload }) {
   const config = { ...clone(entry.config), productKey: key, steps: clone(steps) };
   const payload = toPayload({ ...config, version: entry.config.version ?? 0 });
   let result = { ok: true };
-  try { result = validateConfig(payload); } catch { /* server validates */ }
+  try { result = validateConfig(payload, { extraKeys: [key] }); } catch { /* server validates */ }
   if (!result.ok) {
     const first = Object.entries(result.errors || {})[0];
     return { key, ok: false, message: `Шалгалтын алдаа${first ? `: ${first[0]} — ${first[1]}` : ''}` };
@@ -37,7 +36,10 @@ async function applyToTarget({ apiUrl, key, steps, toPayload }) {
 }
 
 export default function CopyStepsPanel({ apiUrl, sourceKey, sourceSteps, products, toPayload, onApplied, onDismiss }) {
-  const targets = LOAN_PRODUCTS.filter(item => item.id !== sourceKey);
+  // D23: targets include CMS-only products listed by the backend.
+  const productList = Array.isArray(products) && products.length ? products.map(item => ({ id: item.productKey, name: item.name || item.productKey })) : LOAN_PRODUCTS;
+  const nameOf = key => productList.find(item => item.id === key)?.name || LOAN_PRODUCTS.find(item => item.id === key)?.name || key;
+  const targets = productList.filter(item => item.id !== sourceKey);
   const [selected, setSelected] = useState([]);
   const [phase, setPhase] = useState('select'); // select | confirm | running | done
   const [results, setResults] = useState([]);

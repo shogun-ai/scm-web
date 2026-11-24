@@ -4,6 +4,7 @@ import {
   buildNode, formatTerms, sanitizeAccounts, validateBotContent, createBotContentSource, registerBotRoutes, isNodeId,
   DEFAULT_WELCOME, MAX_CARDS, suggestCategory, normalizePhone, postButtons,
   validateBotCards, checkCard, defaultCards, sectionCards, chunkLines, FALLBACK_IMAGE_URL, CARD_SECTIONS,
+  applyUrl, shortenAnswer, detectProduct, buildSteeringNode, buildApplyNode,
 } from './botEngine.js';
 
 const person = { conditions: ['Хүү 2%', 'Хугацаа 12 сар'], requirements: ['18 нас хүрсэн'] };
@@ -74,10 +75,10 @@ test('loans: active non-trust products by order, <=3 buttons, limits, https-only
   assert.equal(node.cards[0].imageUrl, FALLBACK_IMAGE_URL, 'non-https image replaced by the default image');
   assert.deepEqual(cons.buttons, [
     { kind: 'postback', title: 'Нөхцөл, шаардлага', payload: 'terms:cons_loan' },
-    { kind: 'postback', title: 'Хүсэлт гаргах', payload: 'apply:cons_loan' },
+    { kind: 'url', title: 'Хүсэлт гаргах', url: 'https://www.scm.mn/loan-request?product=cons_loan&source=messenger' },
     { kind: 'url', title: 'Тооцоолуур', url: 'https://www.scm.mn/calculator?product=cons_loan&source=messenger' },
   ]);
-  assert.ok(node.cards.every(item => item.buttons[1].payload !== 'apply:trust'));
+  assert.ok(node.cards.every(item => !String(item.buttons[1].url).includes('product=trust')));
   const many = Array.from({ length: 15 }, (_, i) => ({ productKey: `p${i}`, title: `П${i}`, order: i, isActive: true }));
   assert.equal((await buildNode('loans', ctxOf({ products: many }))).cards.length, MAX_CARDS);
   const empty = await buildNode('loans', ctxOf({ products: [PRODUCTS[4]] }));
@@ -95,7 +96,7 @@ test('terms: individual / organization blocks, car_loan purchase and collateral 
   assert.match(biz.cards[1].text, /^Байгууллага\nНөхцөл:\n• Хүү 3%/);
   for (const item of biz.cards) {
     assert.ok(item.text.length <= 640);
-    assert.deepEqual(item.buttons.map(button => [button.title, button.payload || button.url]), [['Хүсэлт гаргах', 'apply:biz_loan'], ['Тооцоолуур', 'https://www.scm.mn/calculator?product=biz_loan&source=messenger'], ['Буцах', 'loans']]);
+    assert.deepEqual(item.buttons.map(button => [button.title, button.payload || button.url]), [['Хүсэлт гаргах', 'https://www.scm.mn/loan-request?product=biz_loan&source=messenger'], ['Тооцоолуур', 'https://www.scm.mn/calculator?product=biz_loan&source=messenger'], ['Буцах', 'loans']]);
   }
   assert.equal(biz.text, undefined);
   assert.equal((await buildNode('terms:biz_loan', ctxOf({ channel: 'web' }))).cards[0].buttons[1].url, 'https://www.scm.mn/calculator?product=biz_loan&source=web');
@@ -147,7 +148,7 @@ test('trust: one card with trust-request (source=messenger) and trust-calculator
   assert.equal((await buildNode('trust', ctxOf({ channel: 'web' }))).cards[0].buttons[0].url, 'https://www.scm.mn/trust-request?source=web');
 });
 
-test('ads: last 6 posts, permalink + apply:post:<id> buttons, junk skipped, empty/failed Graph -> text', async () => {
+test('ads: last 6 posts, permalink + post:<id> buttons, junk skipped, empty/failed Graph -> text', async () => {
   const posts = Array.from({ length: 9 }, (_, i) => ({ id: `p_${i}`, message: `Гарчиг ${i}\n${'Тайлбар '.repeat(30)}`, full_picture: 'https://fb/img.jpg', permalink_url: `https://www.facebook.com/p/${i}` }));
   posts.splice(2, 0, { id: 'x' }, { message: 'no id' });
   const node = await buildNode('ads', ctxOf({ posts }));
@@ -333,11 +334,11 @@ test('ads buttons per category; admin override beats suggestion; unknown/inactiv
   const node = await buildNode('ads', ctxOf({ posts, settings: { bot_post_meta: meta }, channel: 'web' }));
   assertNodeShape(node);
   const view = item => item.buttons.map(button => button.payload || button.url);
-  assert.deepEqual(view(node.cards[0]), ['apply:post:a1', 'post:a1', 'contact']);
-  assert.deepEqual(view(node.cards[1]), ['apply:biz_loan', 'terms:biz_loan', 'https://www.scm.mn/calculator?product=biz_loan&source=web']);
+  assert.deepEqual(view(node.cards[0]), ['https://www.scm.mn/loan-request?source=webchat', 'post:a1', 'contact']);
+  assert.deepEqual(view(node.cards[1]), ['https://www.scm.mn/loan-request?product=biz_loan&source=webchat', 'terms:biz_loan', 'https://www.scm.mn/calculator?product=biz_loan&source=web']);
   assert.deepEqual(view(node.cards[2]), ['post:a3', 'contact'], 'override safety->news');
-  assert.deepEqual(view(node.cards[3]), ['apply:post:a4', 'post:a4', 'contact'], 'inactive product ignored');
-  assert.deepEqual(view(node.cards[4]), ['apply:post:a5', 'post:a5', 'contact'], 'trust is not a loan product');
+  assert.deepEqual(view(node.cards[3]), ['https://www.scm.mn/loan-request?source=webchat', 'post:a4', 'contact'], 'inactive product ignored');
+  assert.deepEqual(view(node.cards[4]), ['https://www.scm.mn/loan-request?source=webchat', 'post:a5', 'contact'], 'trust is not a loan product');
   assert.deepEqual(postButtons({ id: 'z', message: 'мэдээ', permalink_url: 'https://www.facebook.com/p/z' }, undefined, [], {}).map(button => button.payload), ['post:z', 'contact']);
   assert.deepEqual(postButtons({ message: 'мэдээ', permalink_url: 'https://www.facebook.com/p/z' }, undefined, [], {}).map(button => button.url || button.payload), ['https://www.facebook.com/p/z', 'contact'], 'no usable id -> permalink url');
   const broken = await buildNode('ads', { ...ctxOf({ posts }), loadSetting: async () => { throw new Error('db'); } });
@@ -444,13 +445,13 @@ test('bot_cards defaults: menu = 5 cards, loans derived from ProductContent incl
   // the loans node renders the CMS-only card with working terms/apply/calculator payloads
   const node = await buildNode('loans', ctx);
   assertNodeShape(node);
-  assert.deepEqual(node.cards.at(-1).buttons.map(button => button.payload || button.url), ['terms:heated_parking', 'apply:heated_parking', 'https://www.scm.mn/calculator?product=heated_parking&source=messenger']);
+  assert.deepEqual(node.cards.at(-1).buttons.map(button => button.payload || button.url), ['terms:heated_parking', 'https://www.scm.mn/loan-request?product=heated_parking&source=messenger', 'https://www.scm.mn/calculator?product=heated_parking&source=messenger']);
 });
 
 test('CMS-only product: terms:<key> works (not "олдсонгүй"); inactive product still not found', async () => {
   const terms = await buildNode('terms:heated_parking', ctxOf({ products: CMS_PRODUCTS }));
   assert.match(terms.cards[0].text, /^Дулаан зогсоолын зээл\n\nИргэн/);
-  assert.equal(terms.cards[0].buttons[0].payload, 'apply:heated_parking');
+  assert.equal(terms.cards[0].buttons[0].url, 'https://www.scm.mn/loan-request?product=heated_parking&source=messenger');
   assert.match((await buildNode('terms:heated_parking', ctxOf())).text, /олдсонгүй/, 'absent from ProductContent');
   assert.equal((await buildNode('calc:heated_parking', ctxOf({ products: CMS_PRODUCTS }))).cards[0].title, 'Дулаан зогсоолын зээл — тооцоолуур');
 });
@@ -517,13 +518,13 @@ test('post:<id> node: image + full text + [apply/contact][Facebook-т нээх][
   assert.equal(node.text, body.replace(/\s+\n/g, '\n').trim());
   assert.ok(node.text.length > 1500, 'full text, not truncated to a card');
   assert.equal(node.imageUrl, 'https://fb/img.jpg');
-  assert.deepEqual(node.buttons.map(button => [button.title, button.payload || button.url]), [['Хүсэлт гаргах', 'apply:post:1_1'], ['Facebook-т нээх', 'https://www.facebook.com/p/1'], ['Буцах', 'ads']]);
+  assert.deepEqual(node.buttons.map(button => [button.title, button.payload || button.url]), [['Хүсэлт гаргах', 'https://www.scm.mn/loan-request?source=messenger'], ['Facebook-т нээх', 'https://www.facebook.com/p/1'], ['Буцах', 'ads']]);
   assert.deepEqual(quickPayloads(node), ['restart']);
   const safety = await buildNode('post:1_2', ctxOf({ posts }));
   assert.equal(safety.imageUrl, undefined);
   assert.deepEqual(safety.buttons.map(button => button.payload || button.url), ['contact', 'https://www.facebook.com/p/2', 'ads']);
   const linked = await buildNode('post:1_3', ctxOf({ posts, settings: { bot_post_meta: meta } }));
-  assert.deepEqual(linked.buttons.map(button => button.payload || button.url), ['apply:biz_loan', 'ads'], 'no usable permalink -> no Facebook button');
+  assert.deepEqual(linked.buttons.map(button => button.payload || button.url), ['https://www.scm.mn/loan-request?product=biz_loan&source=messenger', 'ads'], 'no usable permalink -> no Facebook button');
   const missing = await buildNode('post:nope', ctxOf({ posts }));
   assert.match(missing.text, /олдсонгүй/);
   assert.deepEqual(quickPayloads(missing), ['ads', 'restart']);
@@ -622,7 +623,7 @@ test('admin bot-posts accepts CMS-only loan products as post product (D21 #3 val
   assert.equal(ok.code, 200);
   assert.equal(h.docs.bot_post_meta.p_1.productKey, 'heated_parking');
   const node = await h.invoke('get', '/api/bot/node/:id', { user: undefined, params: { id: 'ads' } });
-  assert.deepEqual(node.data.cards[0].buttons.map(button => button.payload || button.url), ['apply:heated_parking', 'terms:heated_parking', 'https://www.scm.mn/calculator?product=heated_parking&source=web']);
+  assert.deepEqual(node.data.cards[0].buttons.map(button => button.payload || button.url), ['https://www.scm.mn/loan-request?product=heated_parking&source=webchat', 'terms:heated_parking', 'https://www.scm.mn/calculator?product=heated_parking&source=web']);
 });
 
 test('language nodes: choose language, English placeholder (bilingual), Mongolian = restart; valid node ids', async () => {
@@ -634,4 +635,96 @@ test('language nodes: choose language, English placeholder (bilingual), Mongolia
   assert.match(english.text, /English version is coming soon\. For now, please continue in Mongolian\.\nАнгли хувилбар одоогоор хийгдэж байна\. Түр монголоор үргэлжлүүлнэ үү\./);
   assert.deepEqual(english.quickReplies, [{ title: 'Монголоор үргэлжлүүлэх', payload: 'restart' }]);
   assert.deepEqual(await buildNode('lang:mn', ctxOf()), await buildNode('restart', ctxOf()));
+});
+
+// ---------- D23: steering to the web form ----------
+test('D23 apply actions are web_url buttons: card apply, terms, trust, per channel source (messenger / webchat)', async () => {
+  const messenger = await buildNode('loans', ctxOf());
+  assert.equal(messenger.cards[0].buttons[1].url, 'https://www.scm.mn/loan-request?product=biz_loan&source=messenger');
+  const web = await buildNode('loans', ctxOf({ channel: 'web' }));
+  assert.equal(web.cards[0].buttons[1].url, 'https://www.scm.mn/loan-request?product=biz_loan&source=webchat');
+  assert.equal(applyUrl('', { channel: 'messenger' }), 'https://www.scm.mn/loan-request?source=messenger');
+  assert.equal(applyUrl('trust', { channel: 'messenger' }), 'https://www.scm.mn/trust-request?source=messenger');
+  assert.equal(applyUrl('car_loan', { channel: 'messenger' }), 'https://www.scm.mn/loan-request?product=car_loan&source=messenger', 'car_loan stays; the form offers the variant choice');
+  assert.equal(applyUrl('bad key!', { channel: 'messenger' }), 'https://www.scm.mn/loan-request?source=messenger');
+  const apply = node => JSON.stringify(node).includes('"payload":"apply');
+  for (const id of ['loans', 'trust', 'ads', 'terms:biz_loan']) assert.equal(apply(await buildNode(id, ctxOf({ posts: [{ id: 'p1', message: 'Зээл' }] }))), false, `${id} has no apply postback`);
+});
+
+test('D23 shortenAnswer: <=3 sentences, <=400 chars, cut at a sentence end; decimals are not sentence ends', () => {
+  assert.equal(shortenAnswer('Нэг. Хоёр! Гурав? Дөрөв.'), 'Нэг. Хоёр! Гурав?');
+  assert.equal(shortenAnswer('Хүү 1.5% сар бүр. Хугацаа 12 сар.'), 'Хүү 1.5% сар бүр. Хугацаа 12 сар.');
+  const long = `${'а'.repeat(250)}. ${'б'.repeat(250)}. Гурав.`;
+  assert.equal(shortenAnswer(long), `${'а'.repeat(250)}.`, 'the second sentence would exceed 400 -> dropped whole');
+  const one = shortenAnswer(`${'слово '.repeat(120)}`);
+  assert.ok(one.length <= 400 && one.endsWith('…'), 'a single over-long sentence is cut at a word');
+  assert.equal(shortenAnswer('  \n '), '');
+  assert.equal(shortenAnswer(null), '');
+  for (const text of ['а '.repeat(500), 'Өгүүлбэр. '.repeat(40)]) assert.ok(shortenAnswer(text).length <= 400);
+});
+
+test('D23 detectProduct: key, title, synonyms (авто, ипотек, бизнес, хэрэглээ, кредит карт, үл хөдлөх, шугам, зогсоол, итгэлцэл), title words; null otherwise', async () => {
+  const all = [
+    ...CMS_PRODUCTS,
+    { productKey: 'credit_card', title: 'Кредит карт', order: 7, isActive: true },
+    { productKey: 're_loan', title: 'Үл хөдлөх барьцаалсан зээл', order: 8, isActive: true },
+    { productKey: 'line_loan', title: 'Зээлийн шугам', order: 9, isActive: true },
+    { productKey: 'mortgage', title: 'Орон сууцны зээл', order: 10, isActive: true },
+  ];
+  const ctx = ctxOf({ products: all });
+  const key = async text => (await detectProduct(text, ctx))?.productKey ?? null;
+  assert.equal(await key('Машин авах зээл хэд вэ'), 'car_loan');
+  assert.equal(await key('авто зээл авмаар байна'), 'car_loan');
+  assert.equal(await key('Ипотекийн зээл байна уу'), 'mortgage');
+  assert.equal(await key('орон сууц авъя'), 'mortgage');
+  assert.equal(await key('бизнесээ тэлэх'), 'biz_loan');
+  assert.equal(await key('хэрэглээний зээлийн хүү'), 'cons_loan');
+  assert.equal(await key('кредит карт'), 'credit_card');
+  assert.equal(await key('үл хөдлөх хөрөнгө барьцаалж'), 're_loan');
+  assert.equal(await key('зээлийн шугам'), 'line_loan');
+  assert.equal(await key('Дулаан зогсоол авах'), 'heated_parking');
+  assert.equal(await key('итгэлцэл гэж юу вэ'), 'trust');
+  assert.equal(await key('heated_parking'), 'heated_parking', 'productKey in the text');
+  assert.equal(await key('Сайн байна уу'), null);
+  assert.equal(await key('зээл авмаар байна'), null, 'generic word does not select a product');
+  assert.equal(await key('   '), null);
+  const noMortgage = ctxOf({ products: PRODUCTS });
+  assert.equal(await detectProduct('ипотек', noMortgage), null, 'synonym only matches an existing active product');
+  assert.equal(await detectProduct('хуучин', noMortgage), null, 'inactive product never matches');
+});
+
+test('D23 buildSteeringNode: detected product -> its card with [Нөхцөл][Хүсэлт гаргах web_url][Тооцоолуур]; none -> loans carousel; quick replies [Зээл][Итгэлцэл][Цэс]', async () => {
+  const single = await buildSteeringNode('Машин авах зээл', ctxOf({ channel: 'messenger' }));
+  assertNodeShape(single);
+  assert.equal(single.cards.length, 1);
+  assert.equal(single.cards[0].title, 'Автомашины зээл');
+  assert.deepEqual(single.cards[0].buttons.map(button => [button.title, button.payload || button.url]), [
+    ['Нөхцөл, шаардлага', 'terms:car_loan'], ['Хүсэлт гаргах', 'https://www.scm.mn/loan-request?product=car_loan&source=messenger'], ['Тооцоолуур', 'https://www.scm.mn/calculator?product=car_loan&source=messenger'],
+  ]);
+  assert.deepEqual(quickPayloads(single), ['loans', 'trust', 'restart']);
+  const parking = await buildSteeringNode('дулаан зогсоол', ctxOf({ products: CMS_PRODUCTS, channel: 'messenger' }));
+  assert.equal(parking.cards[0].buttons[1].url, 'https://www.scm.mn/loan-request?product=heated_parking&source=messenger');
+  const trust = await buildSteeringNode('итгэлцэл', ctxOf({ channel: 'messenger' }));
+  assert.ok(trust.cards[0].buttons.some(button => button.url === 'https://www.scm.mn/trust-request?source=messenger'));
+  const carousel = await buildSteeringNode('Сайн байна уу', ctxOf({ channel: 'messenger' }));
+  assertNodeShape(carousel);
+  assert.deepEqual(carousel.cards.map(item => item.title), ['Бизнесийн зээл', 'Автомашины зээл', 'Хэрэглээний зээл']);
+  assert.ok(carousel.cards.every(item => item.buttons.some(button => /\/loan-request\?product=/.test(button.url || ''))), 'every card shows the apply link');
+  assert.deepEqual(quickPayloads(carousel), ['loans', 'trust', 'restart']);
+  // A stored card without an apply button still shows one (replaced into the 3-button limit).
+  const stripped = { bot_cards: { version: 1, sections: { loans: [{ id: 'l1', title: 'Бизнес', productKey: 'biz_loan', active: true, buttons: [{ type: 'terms', title: 'Нөхцөл', value: 'biz_loan' }, { type: 'calculator', title: 'Тооцоо', value: 'biz_loan' }, { type: 'node', title: 'Цэс', value: 'restart' }] }] } } };
+  const forced = await buildSteeringNode('бизнес', ctxOf({ settings: stripped, channel: 'messenger' }));
+  assert.equal(forced.cards[0].buttons.length, 3);
+  assert.equal(forced.cards[0].buttons[2].url, 'https://www.scm.mn/loan-request?product=biz_loan&source=messenger');
+});
+
+test('D23 buildSteeringNode never fails: no active products or loader errors still give an apply button', async () => {
+  const empty = await buildSteeringNode('Сайн байна уу', ctxOf({ products: [], channel: 'messenger' }));
+  assert.equal(empty.buttons[0].url, 'https://www.scm.mn/loan-request?source=messenger');
+  assert.deepEqual(quickPayloads(empty), ['loans', 'trust', 'restart']);
+  const broken = await buildSteeringNode('машин', { loadProducts: async () => { throw new Error('db'); }, loadSetting: async () => { throw new Error('db'); }, channel: 'messenger' });
+  assert.equal(broken.buttons[0].url, 'https://www.scm.mn/loan-request?source=messenger');
+  const apply = buildApplyNode('car_loan', { channel: 'messenger' }, { title: 'Автомашины зээл' });
+  assert.match(apply.text, /Автомашины зээл/);
+  assert.deepEqual(apply.buttons, [{ kind: 'url', title: 'Хүсэлт гаргах', url: 'https://www.scm.mn/loan-request?product=car_loan&source=messenger' }]);
 });

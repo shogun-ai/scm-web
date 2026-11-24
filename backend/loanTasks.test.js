@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
-import { registerLoanTaskRoutes, LOAN_TASK_SCHEMA_FIELDS, applyLoanTaskSchema, legacyLoanPostGone, taskLockBlocks, hashToken, detectFileFormat, validateTaskFiles } from './loanTasks.js';
+import { registerLoanTaskRoutes, CHANNELS, toTaskListItem, LOAN_TASK_SCHEMA_FIELDS, applyLoanTaskSchema, legacyLoanPostGone, taskLockBlocks, hashToken, detectFileFormat, validateTaskFiles } from './loanTasks.js';
 import { buildDefaultConfig } from '../shared/loanWidgets.js';
 
 const NOW = new Date('2026-11-20T03:00:00Z');
@@ -964,4 +964,174 @@ test('D18 inactive default assignee leaves the Messenger task unassigned with a 
   await h.api.createMessengerTask({ productKey: 'cons_loan', firstname: 'Болд', lastname: 'Бат', phone: '99001234', amount: 100000, term: 6, psid: '1234567890' });
   assert.equal(h.records[0].taskStatus, 'new');
   assert.ok(h.records[0].taskHistory.some(item => item.type === 'note'));
+});
+
+// ---------- D23: CMS-only products, webchat channel, unassigned notification ----------
+const PARKING_DOC = { productKey: 'heated_parking', title: 'Дулаан   зогсоолын зээл', isActive: true, order: 6 };
+const CMS_DOCS = [
+  PARKING_DOC,
+  { productKey: 'car_loan', title: 'Автомашины зээл', isActive: true, order: 2 },
+  { productKey: 'trust', title: 'Итгэлцэл', isActive: true, order: 4 },
+  { productKey: 'old_cms', title: 'Хаагдсан', isActive: false, order: 7 },
+  { productKey: 'cons_loan', title: 'Давхардсан', isActive: true, order: 3 },
+  { productKey: 'bad key!', title: 'Буруу түлхүүр', isActive: true, order: 8 },
+];
+const fakeProductContent = docs => ({
+  find: query => {
+    const rows = docs.filter(doc => doc.isActive === query.isActive);
+    return { select() { return this; }, sort() { return this; }, limit() { return this; }, lean: async () => structuredClone(rows) };
+  },
+});
+const cmsHarness = (options = {}) => harness({ ...options, extraDeps: { ProductContent: fakeProductContent(CMS_DOCS), ...(options.extraDeps || {}) } });
+
+test('D23 public products list active CMS-only products (name from ProductContent); car_loan, trust, inactive, duplicates and bad keys are not products', async () => {
+  const h = cmsHarness();
+  let response = await h.invoke('get', '/api/loan-tasks/public/products', { user: undefined });
+  const keys = response.data.products.map(item => item.productKey);
+  assert.ok(keys.includes('heated_parking'));
+  assert.equal(response.data.products.find(item => item.productKey === 'heated_parking').name, 'Дулаан зогсоолын зээл');
+  for (const hidden of ['car_loan', 'trust', 'old_cms', 'bad key!']) assert.equal(keys.includes(hidden), false, hidden);
+  assert.equal(keys.filter(key => key === 'cons_loan').length, 1);
+  assert.equal(keys.filter(key => key === 'car_purchase_loan').length, 1, 'both car variants stay in the list for the picker/choice');
+  response = await h.invoke('get', '/api/loan-tasks/public/products/:productKey', { user: undefined, params: { productKey: 'heated_parking' } });
+  assert.equal(response.code, 200);
+  assert.equal(response.data.product.productKey, 'heated_parking');
+  assert.equal(response.data.product.name, 'Дулаан зогсоолын зээл');
+  assert.equal(response.data.product.source, 'default');
+  assert.equal(response.data.product.configVersion, 0);
+  assert.ok(response.data.product.steps.length >= 3);
+  for (const key of ['car_loan', 'trust', 'old_cms', 'made_up', 'bad key!']) {
+    response = await h.invoke('get', '/api/loan-tasks/public/products/:productKey', { user: undefined, params: { productKey: key } });
+    assert.equal(response.code, 404, key);
+  }
+  // Without ProductContent (older wiring) nothing changes.
+  const plain = harness();
+  assert.equal((await plain.invoke('get', '/api/loan-tasks/public/products/:productKey', { user: undefined, params: { productKey: 'heated_parking' } })).code, 404);
+  // ProductContent failure degrades to the LOAN_PRODUCTS list.
+  const broken = harness({ extraDeps: { ProductContent: { find: () => { throw new Error('db'); } } } });
+  response = await broken.invoke('get', '/api/loan-tasks/public/products', { user: undefined });
+  assert.equal(response.code, 200);
+  assert.equal(response.data.products.length, 8);
+});
+
+test('D23 submit for a CMS-only product: default config, name from ProductContent, saved config + version, rejects unknown/inactive keys', async () => {
+  const h = cmsHarness();
+  let response = await defaultSubmit(h, { product: 'heated_parking', answers: { income_source: 'salary' }, files: [pdfFile('ndsh_reference')] });
+  assert.equal(response.code, 201, JSON.stringify(response.data));
+  const loan = h.records[0];
+  assert.equal(loan.selectedProduct, 'heated_parking');
+  assert.equal(loan.taskForm.productKey, 'heated_parking');
+  assert.equal(loan.taskForm.productName, 'Дулаан зогсоолын зээл');
+  assert.equal(loan.taskForm.configVersion, 0);
+  assert.equal(loan.channel, 'web');
+  for (const key of ['car_loan', 'trust', 'old_cms', 'made_up']) {
+    response = await defaultSubmit(h, { product: key, answers: { income_source: 'salary' } });
+    assert.equal(response.code, 404, key);
+    assert.equal(response.data.code, 'PRODUCT_UNAVAILABLE');
+  }
+  assert.equal(h.records.length, 1);
+  // a saved (admin) config for the CMS product wins and is version-checked
+  const saved = cmsHarness({ configs: [{ ...activeConfig(), productKey: 'heated_parking', version: 2 }] });
+  response = await submit(saved, { body: { productKey: 'heated_parking', configVersion: '2' } });
+  assert.equal(response.code, 201, JSON.stringify(response.data));
+  assert.equal(saved.records[0].taskForm.productName, 'Дулаан зогсоолын зээл');
+  assert.equal((await submit(cmsHarness({ configs: [{ ...activeConfig(), productKey: 'heated_parking', version: 2 }] }), { body: { productKey: 'heated_parking', configVersion: '1' } })).code, 409);
+  // a product deactivated in the CMS stops accepting requests even with a saved config
+  const closed = harness({ configs: [{ ...activeConfig(), productKey: 'old_cms', version: 1 }], extraDeps: { ProductContent: fakeProductContent(CMS_DOCS) } });
+  assert.equal((await submit(closed, { body: { productKey: 'old_cms', configVersion: '1' } })).code, 404);
+});
+
+test('D23 admin config editor lists CMS-only products and saves their config (unknown keys still 404)', async () => {
+  const h = cmsHarness();
+  let response = await h.invoke('get', '/api/loan-tasks/admin/configs', { user: admin });
+  assert.equal(response.code, 200);
+  const parking = response.data.products.find(item => item.productKey === 'heated_parking');
+  assert.ok(parking);
+  assert.deepEqual([parking.name, parking.cms, parking.saved, parking.config.name, parking.config.isDefault, parking.config.version], ['Дулаан зогсоолын зээл', true, false, 'Дулаан зогсоолын зээл', true, 0]);
+  assert.equal(response.data.products.find(item => item.productKey === 'cons_loan').cms, false);
+  assert.equal(response.data.products.length, 9);
+  const { isDefault: _d, version: _v, updatedAt: _u, updatedBy: _b, name: _n, ...draft } = parking.config;
+  response = await h.invoke('put', '/api/loan-tasks/admin/configs/:productKey', { user: admin, params: { productKey: 'heated_parking' }, body: { ...draft, expectedVersion: 0 } });
+  assert.equal(response.code, 200, JSON.stringify(response.data));
+  assert.deepEqual([response.data.version, response.data.name, response.data.isDefault], [1, 'Дулаан зогсоолын зээл', false]);
+  assert.equal(h.configStore[0].productKey, 'heated_parking');
+  for (const key of ['made_up', 'old_cms', 'car_loan', 'trust']) {
+    response = await h.invoke('put', '/api/loan-tasks/admin/configs/:productKey', { user: admin, params: { productKey: key }, body: { ...draft, productKey: key, expectedVersion: 0 } });
+    assert.equal(response.code, 404, key);
+  }
+  // the staff board can filter by a CMS-only product key
+  response = await h.invoke('get', '/api/loan-tasks', { user: manager, query: { productKey: 'heated_parking' } });
+  assert.equal(response.code, 200);
+  response = await h.invoke('get', '/api/loan-tasks', { user: manager, query: { productKey: 'bad key!' } });
+  assert.equal(response.code, 400);
+});
+
+test('D23 channel webchat: stored on submit, listed with source=webchat, excluded from source=web, exposed by the list item', async () => {
+  const h = harness({ configs: [activeConfig()] });
+  assert.equal((await submit(h, { body: { channel: 'webchat' } })).code, 201);
+  assert.equal(h.records[0].channel, 'webchat');
+  assert.equal(h.records[0].source, 'web');
+  assert.deepEqual(CHANNELS, ['web', 'messenger', 'webchat']);
+  assert.equal(toTaskListItem({ _id: 'x', formVersion: 'task-v1', channel: 'webchat' }).channel, 'webchat');
+  assert.equal(toTaskListItem({ _id: 'x', formVersion: 'task-v1', channel: 'bogus' }).channel, 'web');
+  const base = { formVersion: 'task-v1', taskStatus: 'new', status: 'pending', firstname: 'А', phone: '99001234', selectedProduct: 'cons_loan', createdAt: NOW };
+  const board = harness({ loans: [
+    { ...base, _id: 'aaaaaaaaaaaaaaaaaaaaaa01', channel: 'messenger' }, { ...base, _id: 'aaaaaaaaaaaaaaaaaaaaaa02', channel: 'webchat' },
+    { ...base, _id: 'aaaaaaaaaaaaaaaaaaaaaa03', channel: 'web' }, { ...base, _id: 'aaaaaaaaaaaaaaaaaaaaaa04' },
+  ] });
+  const ids = async source => (await board.invoke('get', '/api/loan-tasks', { user: manager, query: { source } })).data.items.map(item => item._id.slice(-2));
+  assert.deepEqual(await ids('webchat'), ['02']);
+  assert.deepEqual(await ids('messenger'), ['01']);
+  assert.deepEqual((await ids('web')).sort(), ['03', '04']);
+  assert.equal(await ids('all').then(list => list.length), 4);
+});
+
+test('D23 a new request without an assignee notifies MAIL_REPLY_TO (info@scm.mn) with the staff template; assigned requests only notify the assignee', async () => {
+  const env = { LOAN_TASKS_ENABLED: 'true', MAIL_REPLY_TO: 'info@scm.mn' };
+  const h = harness({ env, configs: [activeConfig()] });
+  assert.equal((await submit(h)).code, 201);
+  await h.flush();
+  const mails = h.calls.sent.map(mail => [mail.to, mail.template]);
+  assert.deepEqual(mails.sort(), [['bold@example.mn', 'applicant_ack'], ['info@scm.mn', 'staff_assignment']]);
+  const staff = h.calls.sent.find(mail => mail.to === 'info@scm.mn');
+  assert.match(staff.subject, /хуваарилаагүй/);
+  assert.ok(staff.subject.includes(h.records[0].applicationReference));
+  assert.ok(staff.text.includes('https://www.scm.mn/admin'));
+  for (const pii of ['УБ90050112', 'Болд', '5000000', '99001234']) assert.equal(staff.text.includes(pii), false, pii);
+  assert.equal(h.store[0].taskHistory.filter(item => item.type === 'email').length, 2, 'both deliveries recorded');
+  // assigned: only the assignee gets the staff email
+  const assigned = harness({ env, configs: [activeConfig({ defaultAssigneeId: OTHER_ID })], users: [{ ...otherOfficer, isActive: true }] });
+  assert.equal((await submit(assigned)).code, 201);
+  await assigned.flush();
+  assert.deepEqual(assigned.calls.sent.filter(mail => mail.template === 'staff_assignment').map(mail => mail.to), ['dorj@scm.mn']);
+  // inactive default assignee -> still unassigned -> info@ is told
+  const inactive = harness({ env, configs: [activeConfig({ defaultAssigneeId: OTHER_ID })], users: [{ ...otherOfficer, isActive: false }] });
+  assert.equal((await submit(inactive)).code, 201);
+  await inactive.flush();
+  assert.ok(inactive.calls.sent.some(mail => mail.to === 'info@scm.mn' && mail.template === 'staff_assignment'));
+  // MAIL_REPLY_TO missing / invalid -> nothing extra; mail failure never reaches the response
+  for (const value of [undefined, '', 'not-an-email', 'a@b.mn\r\nBcc: x@y.mn']) {
+    const quiet = harness({ env: { LOAN_TASKS_ENABLED: 'true', ...(value === undefined ? {} : { MAIL_REPLY_TO: value }) }, configs: [activeConfig()] });
+    assert.equal((await submit(quiet)).code, 201);
+    await quiet.flush();
+    assert.deepEqual(quiet.calls.sent.map(mail => mail.template), ['applicant_ack'], String(value));
+  }
+  const failing = harness({ env, configs: [activeConfig()], mailer: { send: async () => { throw new Error('smtp'); } } });
+  assert.equal((await submit(failing)).code, 201);
+  await failing.flush();
+  // Messenger task creation (legacy path) notifies too
+  const chat = harness({ env, configs: [activeConfig()] });
+  await chat.api.createMessengerTask({ productKey: 'cons_loan', lastname: 'Бат', firstname: 'Болд', phone: '99001234', amount: 5000000, term: 12, psid: '1234567890' });
+  await chat.flush();
+  assert.deepEqual(chat.calls.sent.map(mail => [mail.to, mail.template]), [['info@scm.mn', 'staff_assignment']]);
+});
+
+test('D23 staffAssignment email: default text unchanged, unassigned variant for the shared mailbox', async () => {
+  const { staffAssignment } = await import('./loanTaskEmails.js');
+  const normal = staffAssignment({ reference: 'R1', productName: 'P', adminUrl: 'https://www.scm.mn/admin' });
+  assert.match(normal.subject, /Танд зээлийн хүсэлт хуваарилагдлаа/);
+  const open = staffAssignment({ reference: 'R1', productName: 'P', adminUrl: 'https://www.scm.mn/admin', unassigned: true });
+  assert.equal(open.template, 'staff_assignment');
+  assert.match(open.subject, /Шинэ зээлийн хүсэлт \(хуваарилаагүй\) — R1/);
+  assert.match(open.text, /Хариуцагч хуваарилаагүй/);
 });

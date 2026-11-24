@@ -1652,6 +1652,7 @@ async function updateComplianceReview(loanOrId) {
 const TrustRequestSchema = new mongoose.Schema({ 
     lastname: String, firstname: String, phone: String, email: String, amount: String, 
     status: { type: String, default: 'pending' }, contactNote: String, 
+    channel: { type: String, enum: ['web', 'messenger', 'webchat'], default: 'web' },
     reference: String,
     messages: { type: [{ _id: false, at: Date, message: String, actor: { userId: String, name: String }, email: { template: String, result: String } }], default: undefined },
     history: { type: [{ _id: false, at: Date, type: String, email: { template: String, result: String } }], default: undefined },
@@ -2954,7 +2955,7 @@ registerLoanIntakeRoutes({ app, multer, cloudinary, LoanRequest, User, authentic
 const appMailer = createMailer({ createTransport: nodemailer.createTransport });
 const getCompanyPhoneConfig = async () => { const doc = await SiteConfig.findOne({ key: 'contact_phone' }).lean(); return typeof doc?.value === 'string' ? doc.value : ''; };
 const loanTasks = registerLoanTaskRoutes({
-    app, multer, cloudinary, LoanRequest, LoanFormConfig, User, authenticateUser, requireAdmin, createLog,
+    app, multer, cloudinary, LoanRequest, LoanFormConfig, User, ProductContent, authenticateUser, requireAdmin, createLog,
     mailer: appMailer,
     getPermissions: user => permissionService.permissionsFor(user),
     getDeleteEnabled: () => readDeleteFlag(SiteConfig),

@@ -115,7 +115,9 @@ export default function TaskLoanForm({ product: initialProduct, subProductId = '
       payload.append('answers', JSON.stringify(result.value));
       payload.append('consent', 'true');
       payload.append('website', honeypot);
-      if (new URLSearchParams(window.location.search).get('source') === 'messenger') payload.append('channel', 'messenger');
+      // D23: chat entry points link here with ?source=messenger|webchat; the backend stores it as the request channel.
+      const sourceParam = new URLSearchParams(window.location.search).get('source');
+      if (sourceParam === 'messenger' || sourceParam === 'webchat') payload.append('channel', sourceParam);
       const hidden = hiddenKeys(allSteps, raw);
       for (const field of allFields(steps)) {
         if (isFileField(field) && !hidden.has(field.key)) (files[field.key] || []).forEach(file => payload.append(field.key, file));

@@ -25,7 +25,7 @@ export const MAX_ACCOUNTS = 10;
 export const MAX_CARDS = 10;
 export const MAX_POSTS = 6;
 export const MAX_TEXT = 8000;
-export const SITE_PATHS = { calculator: '/calculator', trustCalculator: '/trust-calculator', trustRequest: '/trust-request' };
+export const SITE_PATHS = { loanRequest: '/loan-request', calculator: '/calculator', trustCalculator: '/trust-calculator', trustRequest: '/trust-request' };
 export const POST_META_KEY = 'bot_post_meta';
 export const POST_CATEGORIES = ['loan', 'safety', 'news'];
 export const MAX_ADMIN_POSTS = 20;
@@ -52,9 +52,16 @@ const withQuery = (path, params) => {
   return `${SITE_URL}${path}${query ? `?${query}` : ''}`;
 };
 const sourceOf = ctx => (ctx?.channel === 'web' ? 'web' : 'messenger');
+// D23: application links carry the chat channel ('webchat' for the website chatbot, 'messenger' for Messenger).
+const applySourceOf = ctx => (ctx?.channel === 'web' ? 'webchat' : 'messenger');
 export const calculatorUrl = (productKey, ctx) => withQuery(SITE_PATHS.calculator, { product: productKey, source: sourceOf(ctx) });
 export const trustCalculatorUrl = ctx => withQuery(SITE_PATHS.trustCalculator, { source: sourceOf(ctx) });
-export const trustRequestUrl = ctx => withQuery(SITE_PATHS.trustRequest, { source: sourceOf(ctx) });
+export const trustRequestUrl = ctx => withQuery(SITE_PATHS.trustRequest, { source: applySourceOf(ctx) });
+// D23: the bot never collects applications in chat; every apply action is a link to the web form. No key -> product picker.
+export const applyUrl = (productKey, ctx) => {
+  if (productKey === TRUST_KEY) return trustRequestUrl(ctx);
+  return withQuery(SITE_PATHS.loanRequest, { product: KEY_RE.test(String(productKey || '')) ? productKey : '', source: applySourceOf(ctx) });
+};
 
 const url = (title, href) => ({ kind: 'url', title, url: href });
 const postback = (title, payload) => ({ kind: 'postback', title, payload });
@@ -278,7 +285,7 @@ function resolveButton(button, ctx) {
   switch (button?.type) {
     case 'node': return isNodeId(value) ? postback(title, value) : null;
     case 'terms': return KEY_RE.test(value) ? postback(title, `terms:${value}`) : null;
-    case 'apply': return KEY_RE.test(value) ? postback(title, `apply:${value}`) : null;
+    case 'apply': return KEY_RE.test(value) ? url(title, applyUrl(value, ctx)) : null;
     case 'calculator':
       if (value === TRUST_KEY) return url(title, trustCalculatorUrl(ctx));
       return !value || KEY_RE.test(value) ? url(title, calculatorUrl(value, ctx)) : null;
@@ -353,7 +360,7 @@ async function termsNode(key, ctx) {
   if (!KEY_RE.test(key)) return fallbackNode();
   const product = (await activeLoans(ctx)).find(item => item.productKey === key);
   if (!product) return { text: 'Энэ бүтээгдэхүүний мэдээлэл олдсонгүй.', quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY] };
-  const buttons = [postback('Хүсэлт гаргах', `apply:${key}`), url('Тооцоолуур', calculatorUrl(key, ctx)), postback('Буцах', 'loans')];
+  const buttons = [url('Хүсэлт гаргах', applyUrl(key, ctx)), url('Тооцоолуур', calculatorUrl(key, ctx)), postback('Буцах', 'loans')];
   const title = clean(product.title, MAX_CARD_TITLE);
   const blocks = [];
   if (product.purchase || product.collateral) {
@@ -416,9 +423,9 @@ export function postButtons(post, meta, loans, ctx) {
   const view = POST_ID_RE.test(id) ? [postback('Пост үзэх', `post:${id}`)] : (permalink ? [url('Пост үзэх', permalink)] : []);
   const contact = postback('Холбоо барих', 'contact');
   if (category === 'loan' && productKey) {
-    return [postback('Хүсэлт гаргах', `apply:${productKey}`), postback('Нөхцөл, шаардлага', `terms:${productKey}`), url('Тооцоолуур', calculatorUrl(productKey, ctx))];
+    return [url('Хүсэлт гаргах', applyUrl(productKey, ctx)), postback('Нөхцөл, шаардлага', `terms:${productKey}`), url('Тооцоолуур', calculatorUrl(productKey, ctx))];
   }
-  if (category === 'loan') return [...(POST_ID_RE.test(id) ? [postback('Хүсэлт гаргах', `apply:post:${id}`)] : []), ...view, contact].slice(0, 3);
+  if (category === 'loan') return [url('Хүсэлт гаргах', applyUrl('', ctx)), ...view, contact].slice(0, 3);
   return [...view, contact];
 }
 
@@ -453,7 +460,7 @@ async function postNode(id, ctx) {
   const { category, productKey } = postChoice(post, meta, loans);
   const permalink = httpsUrl(post.permalink_url);
   const buttons = [
-    category === 'loan' ? postback('Хүсэлт гаргах', productKey ? `apply:${productKey}` : `apply:post:${id}`) : postback('Холбоо барих', 'contact'),
+    category === 'loan' ? url('Хүсэлт гаргах', applyUrl(productKey, ctx)) : postback('Холбоо барих', 'contact'),
     ...(permalink ? [url('Facebook-т нээх', permalink)] : []),
     postback('Буцах', 'ads'),
   ];
@@ -521,6 +528,127 @@ async function paymentNode(ctx) {
   let cards = [];
   try { cards = await cardsFor('payment', ctx); } catch { cards = []; }
   return { text: text.slice(0, MAX_TEXT), ...(cards.length ? { cards } : {}), quickReplies: [MENU_REPLY] };
+}
+
+// ---------- D23: steering to the web form ----------
+// The bot never collects applications in chat: free text gets a short AI answer plus the matching product card whose
+// [Хүсэлт гаргах] button opens the web form; legacy apply postbacks answer with a text + the same web_url button.
+export const STEER_REPLIES = [{ title: 'Зээл', payload: 'loans' }, { title: 'Итгэлцэл', payload: 'trust' }, MENU_REPLY];
+export const ANSWER_MAX_SENTENCES = 3;
+export const ANSWER_MAX_CHARS = 400;
+
+// <=3 sentences and <=400 chars, always ending at a sentence end (a single over-long sentence is cut at a word and gets "…").
+export function shortenAnswer(text, { maxSentences = ANSWER_MAX_SENTENCES, maxChars = ANSWER_MAX_CHARS } = {}) {
+  const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (!flat) return '';
+  let out = '';
+  for (const sentence of flat.split(/(?<=[.!?…])\s+/).filter(Boolean).slice(0, maxSentences)) {
+    const next = out ? `${out} ${sentence}` : sentence;
+    if (next.length > maxChars) break;
+    out = next;
+  }
+  if (out) return out;
+  const cut = flat.slice(0, maxChars - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > maxChars / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+const GENERIC_TITLE_WORDS = new Set(['зээл', 'зээлийн', 'зээлүүд', 'үйлчилгээ', 'бүтээгдэхүүн', 'хөтөлбөр', 'худалдан', 'авах', 'барьцаа', 'барьцаалсан']);
+// Order matters: the more specific phrases come first. `keys` = candidate ProductContent keys; `match` = custom predicate (CMS-only products).
+const PRODUCT_SYNONYMS = [
+  { re: /кредит\s*карт|credit\s*card/i, keys: ['credit_card'] },
+  { re: /ипотек|орон\s*сууц/i, keys: ['mortgage'] },
+  { re: /үл\s*хөдлөх/i, keys: ['re_loan'] },
+  { re: /зогсоол/i, match: product => /park|зогсоол/i.test(`${product.productKey} ${product.title}`) },
+  { re: /шугам/i, keys: ['line_loan'] },
+  { re: /авто|машин|тээврийн/i, keys: ['car_loan', 'car_purchase_loan', 'car_coll_loan'] },
+  { re: /бизнес/i, keys: ['biz_loan'] },
+  { re: /хэрэглээ/i, keys: ['cons_loan'] },
+];
+const wordStem = word => (word.length > 6 ? word.slice(0, word.length - 2) : word);
+
+// -> active ProductContent loan product | { productKey: 'trust' } | null. Matches the message against productKey, title, synonyms, title words.
+export async function detectProduct(text, ctx) {
+  const message = String(text ?? '').toLowerCase();
+  if (!message.trim()) return null;
+  const loans = await activeLoans(ctx);
+  const byKey = key => loans.find(product => product.productKey === key);
+  const direct = loans.find(product => {
+    const key = String(product.productKey).toLowerCase();
+    const title = clean(product.title, 80).toLowerCase();
+    return message.includes(key) || (title.length >= 4 && message.includes(title));
+  });
+  if (direct) return direct;
+  for (const synonym of PRODUCT_SYNONYMS) {
+    if (!synonym.re.test(message)) continue;
+    const hit = synonym.match ? loans.find(synonym.match) : synonym.keys.map(byKey).find(Boolean);
+    if (hit) return hit;
+  }
+  if (/итгэлцэл/i.test(message)) return { productKey: TRUST_KEY };
+  for (const product of loans) {
+    const words = clean(product.title, 80).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(word => word.length >= 5 && !GENERIC_TITLE_WORDS.has(word));
+    if (words.some(word => message.includes(wordStem(word)))) return product;
+  }
+  return null;
+}
+
+const isApplyLink = button => button?.kind === 'url' && /\/(loan|trust)-request(\?|$)/.test(String(button.url));
+// Guarantees a visible [Хүсэлт гаргах] web_url on a rendered card (keeps <=3 buttons).
+function ensureApplyButton(rendered, productKey, ctx) {
+  if (rendered.buttons.some(isApplyLink)) return rendered;
+  const apply = url('Хүсэлт гаргах', applyUrl(productKey, ctx));
+  return { ...rendered, buttons: rendered.buttons.length >= 3 ? [...rendered.buttons.slice(0, 2), apply] : [...rendered.buttons, apply] };
+}
+
+// The card of a detected product: the stored/default card of its section (loans or trust), else a plain default one.
+async function productCard(hit, ctx) {
+  const products = await ctx.loadProducts();
+  const section = hit.productKey === TRUST_KEY ? 'trust' : 'loans';
+  const { cards } = await sectionCards(section, ctx);
+  let source = cards.find(item => item.productKey === hit.productKey && item.active !== false);
+  if (!source) source = (await defaultCards(section, ctx)).find(item => item.productKey === hit.productKey);
+  if (!source) {
+    source = {
+      id: idOf(hit.productKey), title: clean(hit.title, MAX_CARD_TITLE) || hit.productKey, subtitle: clean(hit.shortDesc, MAX_CARD_TITLE), imageUrl: '', productKey: hit.productKey, active: true,
+      buttons: [btn('terms', 'Нөхцөл, шаардлага', hit.productKey), btn('apply', 'Хүсэлт гаргах', hit.productKey), btn('calculator', 'Тооцоолуур', hit.productKey)],
+    };
+  }
+  const [rendered] = renderCards([{ ...source, active: true }], products, ctx);
+  return rendered ? ensureApplyButton(rendered, hit.productKey, ctx) : null;
+}
+
+// text + a single web_url button to the web form (legacy apply postbacks, apply intents).
+export function buildApplyNode(productKey, ctx = {}, { title = '' } = {}) {
+  const name = clean(title, 80);
+  return {
+    text: `${name ? `${name} — хүсэлтээ` : 'Зээлийн хүсэлтээ'} вэб маягтаар бөглөнө үү. Доорх товчийг дарна уу.`,
+    buttons: [url('Хүсэлт гаргах', applyUrl(productKey, ctx))],
+    quickReplies: [{ title: 'Зээл', payload: 'loans' }, MENU_REPLY],
+  };
+}
+
+// Free text -> the product card when one is detected, else the loans carousel; a [Хүсэлт гаргах] path is always present. No questions asked.
+export async function buildSteeringNode(text, rawCtx = {}) {
+  const replies = () => STEER_REPLIES.map(reply => ({ ...reply }));
+  try {
+    const ctx = { ...rawCtx, defaultImage: await resolveDefaultImage(rawCtx) };
+    const hit = await detectProduct(text, ctx);
+    if (hit) {
+      const single = await productCard(hit, ctx);
+      if (single) return { cards: [single], quickReplies: replies() };
+    }
+    const [{ cards: sources }, products] = await Promise.all([sectionCards('loans', ctx), ctx.loadProducts()]);
+    const cards = [];
+    for (const source of sources) {
+      const [rendered] = source.active === false ? [] : renderCards([source], products, ctx);
+      if (rendered) cards.push(ensureApplyButton(rendered, source.productKey || '', ctx));
+      if (cards.length >= MAX_CARDS) break;
+    }
+    if (cards.length) return { cards, quickReplies: replies() };
+    return { ...buildApplyNode('', ctx), quickReplies: replies() };
+  } catch {
+    return { ...buildApplyNode('', rawCtx), quickReplies: replies() };
+  }
 }
 
 export async function buildNode(nodeId, rawCtx = {}) {

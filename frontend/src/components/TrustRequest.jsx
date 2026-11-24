@@ -79,7 +79,9 @@ const TrustRequest = ({ onBack }) => {
         // ✅ 2. ЭНД ӨӨРЧЛӨГДӨЖ БАЙНА:
         // (http://localhost:5000 гэсэн хатуу линкийг ${API_BASE_URL} болгов)
         // ==========================================
-        await axios.post(`${API_BASE_URL}/api/trusts`, formData);
+        const sourceParam = new URLSearchParams(window.location.search).get('source');
+        const channel = ['messenger', 'webchat'].includes(sourceParam) ? sourceParam : 'web'; // D23: where the applicant came from
+        await axios.post(`${API_BASE_URL}/api/trusts`, { ...formData, channel });
         // ==========================================
         setShowSuccess(true);
         trackLead('trust');

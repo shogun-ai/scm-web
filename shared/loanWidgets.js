@@ -456,11 +456,12 @@ function validateDateOrNull(value, path, errors) {
 }
 
 // -> { ok, errors: { [path]: msg }, value: normalized config (without version/updatedBy) }
-export function validateConfig(config) {
+// D23: `extraKeys` = CMS-only ProductContent keys (not in LOAN_PRODUCTS) the caller has already verified as active loan products.
+export function validateConfig(config, { extraKeys = [] } = {}) {
   const errors = {};
   if (!isObject(config)) return { ok: false, errors: { _form: 'Тохиргоо буруу байна.' }, value: null };
   const productKey = config.productKey;
-  if (!PRODUCT_KEYS.has(productKey)) errors.productKey = 'Бүтээгдэхүүн буруу байна.';
+  if (!PRODUCT_KEYS.has(productKey) && !(typeof productKey === 'string' && extraKeys.includes(productKey))) errors.productKey = 'Бүтээгдэхүүн буруу байна.';
   for (const name of ['isActive', 'baseProductEnabled']) if (config[name] !== undefined && typeof config[name] !== 'boolean') errors[name] = 'true/false байна.';
   const isActive = config.isActive === true;
   const value = {

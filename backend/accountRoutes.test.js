@@ -111,7 +111,10 @@ test('trust validation helpers', () => {
   assert.deepEqual(pickTrustUpdate('x'), {});
   const bad = validateTrustSubmission({ lastname: 'Б', firstname: '', phone: 'abc', email: 'nope', amount: 5 });
   assert.ok(bad.errors.firstname && bad.errors.phone && bad.errors.email && !bad.errors.amount);
-  assert.deepEqual(validateTrustSubmission({ lastname: 'Б', firstname: 'Д', phone: '99001122', amount: '5000000', status: 'resolved', messages: [] }).value, { lastname: 'Б', firstname: 'Д', phone: '99001122', email: '', amount: '5000000' });
+  assert.deepEqual(validateTrustSubmission({ lastname: 'Б', firstname: 'Д', phone: '99001122', amount: '5000000', status: 'resolved', messages: [] }).value, { lastname: 'Б', firstname: 'Д', phone: '99001122', email: '', amount: '5000000', channel: 'web' });
+  for (const [input, expected] of [[{ channel: 'messenger' }, 'messenger'], [{ channel: 'webchat' }, 'webchat'], [{ source: 'webchat' }, 'webchat'], [{ source: 'messenger' }, 'messenger'], [{ channel: 'web' }, 'web'], [{ channel: 'telegram' }, 'web'], [{ channel: { $ne: 1 } }, 'web'], [{ channel: 'webchat', source: 'messenger' }, 'webchat'], [{}, 'web']]) {
+    assert.equal(validateTrustSubmission({ lastname: 'Б', firstname: 'Д', phone: '99001122', amount: '1', ...input }).value.channel, expected, JSON.stringify(input));
+  }
   assert.equal(trustReference('dddddddddddddddddddddd01', 2026), 'TRUST-2026-DDDD01');
   assert.equal(maskEmail('bold@example.mn'), 'b***@example.mn');
 });
@@ -176,6 +179,18 @@ test('public trust submission: validated, whitelisted, ack to customer + staff n
   await h.flush();
   assert.deepEqual(h.calls.sent.map(mail => [mail.to, mail.template]).sort(), [['bold@example.mn', 'trust_ack'], ['trust-desk@scm.mn', 'staff_trust_notification']]);
   assert.equal(h.trustStore[0].history[0].email.result, 'sent');
+});
+
+test('D23 trust submit stores the channel (messenger|webchat|web) from a whitelist; unknown values become web', async () => {
+  const h = harness({ env: { MAIL_REPLY_TO: 'desk@scm.mn' } });
+  const body = extra => ({ lastname: 'Бат', firstname: 'Болд', phone: '99001122', amount: '5000000', ...extra });
+  for (const [extra, expected] of [[{ channel: 'webchat' }, 'webchat'], [{ source: 'messenger' }, 'messenger'], [{}, 'web'], [{ channel: 'evil x' }, 'web'], [{ channel: 'admin' }, 'web']]) {
+    h.trustStore.length = 0;
+    const ok = await h.invoke('post', '/api/trusts', { user: undefined, body: body(extra) });
+    assert.equal(ok.code, 201, JSON.stringify(extra));
+    assert.equal(h.trustStore[0].channel, expected, JSON.stringify(extra));
+  }
+  await h.flush();
 });
 
 test('trust submission without email only notifies staff; mail failure never reaches the response', async () => {
