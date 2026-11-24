@@ -32,6 +32,7 @@ const MOCK = {
   ads: 'Page-ийн сүүлийн 6 постын карт харагдана.',
 };
 
+// Device frame only is tuned for the dark admin sky (hairline rim + depth); the Messenger UI inside is unchanged.
 export default function MessengerEmulator({ section, cards, defaultImageUrl, onNavigate }) {
   const [mockState, setMock] = useState({ section, text: '' });
   const mock = mockState.section === section ? mockState.text : '';
@@ -46,7 +47,7 @@ export default function MessengerEmulator({ section, cards, defaultImageUrl, onN
     else setMock({ section, text: MOCK[b.type] || '' });
   };
 
-  return <div className="mx-auto w-full max-w-[360px] overflow-hidden rounded-[2rem] border-[6px] border-slate-800 bg-white shadow-xl" aria-label="Messenger урьдчилсан харагдац">
+  return <div className="mx-auto w-full max-w-[360px] overflow-hidden rounded-[2.25rem] border-[7px] border-[#151B2E] bg-white text-left shadow-[0_0_0_1px_rgba(255,255,255,0.14),0_1px_0_1px_rgba(255,255,255,0.18),0_40px_90px_-30px_rgba(0,0,0,0.95)] [color-scheme:light]" aria-label="Messenger урьдчилсан харагдац">
     <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-2">
       <ChevronLeft size={20} className="text-[#0084FF]" aria-hidden="true" />
       <img src={logo} alt="" className="h-8 w-8 rounded-full border border-slate-200 bg-white object-contain" />

@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Loader2, Send } from 'lucide-react';
+import { Loader2, MailCheck, Save, Send, Workflow } from 'lucide-react';
 import { getAuthHeaders } from '../loanTask/api';
+import Button from './ui/Button';
+import { Notice } from './ui/Feedback';
+import { Field, Select } from './ui/Form';
 
 // D24/D25 тохиргоо: итгэлцлийн нэмэлт материал авто хүсэлт, өдөр тутмын сануулга (+ тест), хуваарилалт.
 // GET/PUT /api/admin/settings, POST /api/admin/daily-digest/test.
@@ -12,12 +15,29 @@ const KINDS = [
 ];
 const DIGEST_REASONS = { mail_disabled: 'Имэйл илгээх тохиргоо (MAIL_ENABLED) идэвхгүй байна.', no_email: 'Таны имэйл хаяг бүртгэлгүй байна.' };
 
-function Switch({ id, label, help, checked, disabled, onChange }) {
-  return <div className="flex items-start justify-between gap-4">
-    <div><p id={`${id}-label`} className="font-bold text-slate-800">{label}</p><p id={`${id}-help`} className="mt-1 text-sm text-slate-600">{help}</p></div>
-    <button type="button" role="switch" aria-checked={checked} aria-labelledby={`${id}-label`} aria-describedby={`${id}-help`} disabled={disabled} onClick={onChange} className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${checked ? 'bg-emerald-600' : 'bg-slate-300'}`}>
-      <span className={`inline-block h-6 w-6 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-7' : 'translate-x-1'}`} />
-    </button>
+// Тохиргооны глас карт (тэнгэр дээр): hue icon tile, гарчиг, тайлбар.
+export function SettingsCard({ id, icon: Icon, title, description, aside, children, className = '' }) {
+  return <section aria-labelledby={id} className={`glass relative p-5 md:p-6 ${className}`}>
+    <span className="adm-card__rim" aria-hidden="true" />
+    <div className="relative flex items-start gap-3.5">
+      {Icon && <span className="hidden h-10 w-10 shrink-0 sm:grid place-items-center rounded-xl bg-[color-mix(in_srgb,var(--hue)_14%,transparent)] text-[color-mix(in_srgb,var(--hue)_70%,white)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--hue)_30%,transparent)]" aria-hidden="true"><Icon size={18} /></span>}
+      <div className="min-w-0 flex-1">
+        <h3 id={id} className="text-[15px] font-semibold text-white">{title}</h3>
+        {description && <p className="mt-1 text-sm leading-relaxed text-[var(--adm-ink-2)]">{description}</p>}
+      </div>
+      {aside && <div className="shrink-0">{aside}</div>}
+    </div>
+    <div className="relative mt-5">{children}</div>
+  </section>;
+}
+
+// Toggle primitive-д aria-labelledby/aria-describedby байхгүй тул энд адилхан `.adm-switch` дээр орон нутгийн хувилбар.
+export function SettingSwitch({ id, label, help, checked, disabled, onChange, hue }) {
+  return <div className="flex items-start justify-between gap-4 py-1">
+    <div className="min-w-0"><p id={`${id}-label`} className="text-sm font-semibold text-white">{label}</p><p id={`${id}-help`} className="mt-1 text-[13px] leading-relaxed text-[var(--adm-ink-3)]">{help}</p></div>
+    <span className="grid min-h-11 min-w-11 shrink-0 place-items-center">
+      <button type="button" role="switch" aria-checked={Boolean(checked)} aria-labelledby={`${id}-label`} aria-describedby={`${id}-help`} disabled={disabled} onClick={onChange} className="adm-switch disabled:opacity-50" style={hue ? { '--hue': `var(--sp-${hue})` } : undefined} />
+    </span>
   </div>;
 }
 
@@ -84,41 +104,44 @@ export default function AutomationSettings({ apiUrl }) {
     finally { setTesting(false); }
   };
 
-  return <>
-    <section aria-labelledby="automation-title" className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
-      <h2 id="automation-title" className="text-xl font-bold text-[#003B5C]">Автомат имэйл ба сануулга</h2>
-      {!loaded && !error && <p role="status" className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={14} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p>}
-      <Switch id="trust-auto-docs" label="Итгэлцэл: нэмэлт материалыг автоматаар хүсэх" help="Итгэлцлийн хүсэлт ирэхэд харилцагчийн имэйл байвал нэмэлт материал оруулах холбоос бүхий имэйл автоматаар явна. Анхдагчаар асаалттай." checked={trustAuto} disabled={!loaded || busy === 'trust'} onChange={toggleTrust} />
-      <Switch id="daily-digest" label="Өдөр тутмын сануулга (09:00, Улаанбаатар)" help="Ажилтан бүрт өөрт хуваарилагдсан шийдвэрлэгдээгүй зээл, итгэлцлийн хүсэлтийн жагсаалтыг имэйлээр өдөр бүр илгээнэ. Анхдагчаар асаалттай." checked={digest} disabled={!loaded || busy === 'digest'} onChange={toggleDigest} />
-      <div>
-        <button type="button" onClick={sendTest} disabled={testing} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-[#003B5C] hover:bg-slate-50 disabled:opacity-50">{testing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}Тест илгээх</button>
-        <p className="mt-1 text-xs text-slate-500">Зөвхөн танд (өөрийн мэдэгдлийн имэйл рүү) одоогийн сануулгыг илгээнэ.</p>
-        {testMsg.text && <p role={testMsg.type === 'error' ? 'alert' : 'status'} className={`mt-2 rounded-lg p-2 text-sm ${testMsg.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}`}>{testMsg.text}</p>}
-      </div>
-    </section>
+  const option = 'flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-sm font-medium text-[var(--adm-ink-2)] transition hover:border-white/20 has-[:checked]:border-[color-mix(in_srgb,var(--hue)_55%,transparent)] has-[:checked]:bg-[color-mix(in_srgb,var(--hue)_10%,transparent)] has-[:checked]:text-white has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[color-mix(in_srgb,var(--hue)_65%,white)]';
 
-    <section aria-labelledby="assignment-title" className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
-      <h2 id="assignment-title" className="text-xl font-bold text-[#003B5C]">Хуваарилалт</h2>
-      {KINDS.map(kind => {
-        const value = assignment[kind.key];
-        const name = `assign-${kind.key}`;
-        return <fieldset key={kind.key} disabled={!loaded || busy === name} className="space-y-2 border-t pt-4 first-of-type:border-0 first-of-type:pt-0">
-          <legend className="font-bold text-slate-800">{kind.title}</legend>
-          <label className="flex min-h-11 items-center gap-3 text-sm"><input type="radio" name={name} checked={value.mode === 'manual'} onChange={() => setKind(kind.key, { mode: 'manual' })} className="h-4 w-4" />Гараар хуваарилах</label>
-          <label className="flex min-h-11 items-center gap-3 text-sm"><input type="radio" name={name} checked={value.mode === 'auto'} onChange={() => setKind(kind.key, { mode: 'auto' })} className="h-4 w-4" />Автоматаар нэг ажилтанд</label>
-          {value.mode === 'auto' && <div>
-            <label htmlFor={`${name}-staff`} className="sr-only">{kind.title}: ажилтан</label>
-            <select id={`${name}-staff`} value={value.staffId} onChange={event => setKind(kind.key, { staffId: event.target.value })} className="min-h-11 w-full max-w-xs rounded-xl border border-slate-300 bg-white px-3 text-sm">
+  return <>
+    <SettingsCard id="automation-title" icon={MailCheck} title="Автомат имэйл ба сануулга" description="Харилцагч болон ажилтанд автоматаар очих имэйлүүд.">
+      {!loaded && !error && <p role="status" className="mb-3 flex items-center gap-2 text-sm text-[var(--adm-ink-2)]"><Loader2 size={14} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p>}
+      <div className="divide-y divide-white/[0.07] [&>*]:py-3 [&>*:first-child]:pt-0">
+        <SettingSwitch id="trust-auto-docs" hue="green" label="Итгэлцэл: нэмэлт материалыг автоматаар хүсэх" help="Итгэлцлийн хүсэлт ирэхэд харилцагчийн имэйл байвал нэмэлт материал оруулах холбоос бүхий имэйл автоматаар явна. Анхдагчаар асаалттай." checked={trustAuto} disabled={!loaded || busy === 'trust'} onChange={toggleTrust} />
+        <SettingSwitch id="daily-digest" hue="green" label="Өдөр тутмын сануулга (09:00, Улаанбаатар)" help="Ажилтан бүрт өөрт хуваарилагдсан шийдвэрлэгдээгүй зээл, итгэлцлийн хүсэлтийн жагсаалтыг имэйлээр өдөр бүр илгээнэ. Анхдагчаар асаалттай." checked={digest} disabled={!loaded || busy === 'digest'} onChange={toggleDigest} />
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 !pb-0">
+          <Button variant="secondary" busy={testing} disabled={testing} onClick={sendTest} icon={<Send size={16} aria-hidden="true" />} aria-describedby="digest-test-help">Тест илгээх</Button>
+          <p id="digest-test-help" className="min-w-0 flex-1 text-xs text-[var(--adm-ink-3)]">Зөвхөн танд (өөрийн мэдэгдлийн имэйл рүү) одоогийн сануулгыг илгээнэ.</p>
+        </div>
+      </div>
+      {testMsg.text && <Notice kind={testMsg.type === 'error' ? 'err' : 'ok'} className="mt-3">{testMsg.text}</Notice>}
+    </SettingsCard>
+
+    <SettingsCard id="assignment-title" icon={Workflow} title="Хуваарилалт" description="Шинэ хүсэлтийг гараар эсвэл нэг ажилтанд автоматаар хуваарилна.">
+      <div className="space-y-5">
+        {KINDS.map(kind => {
+          const value = assignment[kind.key];
+          const name = `assign-${kind.key}`;
+          return <fieldset key={kind.key} disabled={!loaded || busy === name} className="space-y-2.5 border-t border-white/[0.07] pt-5 first:border-0 first:pt-0 disabled:opacity-60">
+            <legend className="float-left mb-2.5 w-full text-sm font-semibold text-white">{kind.title}</legend>
+            <div className="clear-both grid gap-2 sm:grid-cols-2">
+              <label className={option}><input type="radio" name={name} checked={value.mode === 'manual'} onChange={() => setKind(kind.key, { mode: 'manual' })} className="h-4 w-4 accent-[var(--hue)]" />Гараар хуваарилах</label>
+              <label className={option}><input type="radio" name={name} checked={value.mode === 'auto'} onChange={() => setKind(kind.key, { mode: 'auto' })} className="h-4 w-4 accent-[var(--hue)]" />Автоматаар нэг ажилтанд</label>
+            </div>
+            {value.mode === 'auto' && <Field label={`${kind.title}: ажилтан`}>{({ id }) => <Select id={id} value={value.staffId} onChange={event => setKind(kind.key, { staffId: event.target.value })} className="sm:max-w-xs">
               <option value="">Ажилтан сонгох…</option>
               {staff.map(item => <option key={item._id} value={item._id}>{item.name || item._id}</option>)}
-            </select>
-          </div>}
-          <p className="text-xs text-slate-500">{kind.note}</p>
-          <button type="button" onClick={() => saveAssignment(kind.key)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#003B5C] px-4 text-sm font-semibold text-white disabled:opacity-50">{busy === name && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}Хадгалах</button>
-        </fieldset>;
-      })}
-    </section>
-    {message && <p role="status" className="rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800">{message}</p>}
-    {error && <p role="alert" className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+            </Select>}</Field>}
+            <p className="text-xs leading-relaxed text-[var(--adm-ink-3)]">{kind.note}</p>
+            <Button variant="secondary" busy={busy === name} onClick={() => saveAssignment(kind.key)} icon={<Save size={16} aria-hidden="true" />}>Хадгалах</Button>
+          </fieldset>;
+        })}
+      </div>
+    </SettingsCard>
+    {message && <Notice kind="ok">{message}</Notice>}
+    {error && <Notice kind="err">{error}</Notice>}
   </>;
 }

@@ -53,6 +53,60 @@ Sheet content keeps the original light palette.
 - Status pills: `tone="dark"|"light"` on `TaskStatusBadge` / `ChannelBadge`; dark pills measured 7.8–9.1:1.
 - Public ChatBot hidden on `/admin*`; mobile nav drawer auto-closes on module change and locks body scroll.
 
+## Phase 4 — tab extraction & primitives
+
+### Extracted tabs (`frontend/src/components/admin/tabs/`)
+AdminPanel.jsx is now a router + data/state owner (~1240 lines, was ~3370). Tab bodies were moved mechanically
+(scope-analysed: every outer binding they reference arrives as a prop with the same name; imports re-created), so
+behaviour, API calls, permissions and data loading are unchanged. Restyle these files; keep prop names.
+
+| File | Menu | Notes |
+|---|---|---|
+| `TrustsTab.jsx` + `TrustDrawer.jsx` | Итгэлцлийн хүсэлт | **restyled** with primitives (gold) |
+| `UsersTab.jsx` (+ `admin/NotifyEmailEditor.jsx`) | Хэрэглэгчид | |
+| `PermissionsTab.jsx` | Эрхийн матриц | wrapper of `TaskPermissionMatrix` |
+| `LogsTab.jsx` | Үйлдлийн лог | |
+| `FinanceTab.jsx` | Файл засах | |
+| `CmsTab.jsx` + `cms/Cms*Section.jsx` | Контент засах | one file per sub-tab: Safety, Hero, Promotions, About, Financials, Products, Calculator, Ceo, Board, Management, Shareholder; "theme" sub-tab still inline in CmsTab |
+| `ChatbotTab.jsx` | Чатбот | CMS sub-tab `chatbot` |
+| `BotContentTab.jsx` | Ботын агуулга | wrapper of `BotContentPanel` |
+| `DeleteSettingsTab.jsx` | Устгах тохиргоо | wrapper of `AdminSettingsPanel` |
+| `FacebookTab.jsx` | Facebook холболт | wrapper of `FacebookStatusPanel` |
+| `LoanTaskConfigTab.jsx` | Хүсэлтийн маягт | wrapper of `LoanTaskConfigEditor` |
+| `DocumentAiTab.jsx` | Баримт AI уншилт | wrapper of `LoanResearch` |
+| `ProfileTab.jsx`, `ProfileSecurityTab.jsx` | Миний профайл | |
+| `OnboardingTab.jsx`, `OnboardingDetailModal.jsx` | Харилцагч бүртгэл | menu hidden (D16) |
+| `LegacyRequestModal.jsx` | (legacy LOS detail, printable) | |
+
+Tabs still listed in `AdminShell sheet` render inside the pearl sheet; to move a tab onto the dark sky, add its key
+to the `sheet={!(…)}` exclusion in AdminPanel (as done for dashboard / los / trusts).
+
+## Primitives (`frontend/src/components/admin/ui/`)
+Dark tone = on the sky/glass; light tone = inside drawers / pearl sheets. All measured ≥ 4.5:1 (most ≥ 7:1).
+
+- **`PageHeader`** `{ hue, icon, eyebrow, title, count, countLabel, description, actions }` — hue eyebrow, white title, count line.
+- **`Toolbar`** `{ search, filters, columns=2..5, activeCount, resultCount, label }` — glass bar; `filters` collapse
+  to a bottom sheet below 768px (Escape, scrim, scroll lock). Put `<Field>`s in `filters`, `<SearchInput>` in `search`.
+- **`DataTable`** `{ columns, rows, rowKey, caption, cardTitle, cardAside, cardFooter, selected }` —
+  column `{ key, header, render(row), align, className, hideOnCard, cardWide, cardLabel, srHeader }`.
+  Sticky header in its own scroll area, hue row-hover light, card list on mobile.
+- **`Tabs`** `{ items:[{id,label,count,dot}], value, onChange, label }` — segmented chips, role=tablist, arrow keys.
+- **`SideDrawer`** `{ hue:'green'|'gold', label, eyebrow, reference, badge, title, subtitle, meta, note, actions, actionsNote, onClose, children }`
+  — the loan detail and trust detail both use it (identical structure). Escape (ignored while an alertdialog is open),
+  focus in/trap/return. Body building blocks in `ui/Drawer.jsx`: **`DrawerSection`** `{ id, title, first }`,
+  **`DrawerAction`** `{ icon, active, danger, busy }` (sticky-bar button, `active` = open panel),
+  **`DetailList`** `{ items:[{label,value}], columns }`, **`Timeline`** `{ items:[{key,meta,content}] }`.
+  New hues: add `.adm-drawer[data-hue='x'] { --hue; --drawer-ink }` in `admin-data.css` (`--drawer-ink` must be AA on white).
+- **`Form`**: `Field` `{ label, hint, error, tone, required }` (render-prop `({ id, describedBy })` to wire the control),
+  `Input`, `Select`, `Textarea`, `SearchInput`, `Toggle` (role=switch) — all take `tone`.
+- **`Button`** `{ variant: primary|secondary|danger (dark) · ink|light|lightDanger (light), icon, busy, hue }`.
+- **`Feedback`**: `Pill` `{ hue: cyan|indigo|gold|violet|rose|green|neutral, tone, dot }`, `EmptyState` `{ icon, title, description, action, tone }`, `Notice` `{ kind: ok|err|info }`.
+- **`Modal`** `{ title, description, onClose, busy, footer, size, role }` and **`ConfirmDialog`** `{ title, message, confirmLabel, danger, busy, onConfirm, onCancel }` — z-60 so they stack above a drawer.
+
+Rules learned: never leave `transform`/`filter`/`backdrop-filter` (incl. a filling animation) on an ancestor of a
+`position: fixed` dialog — entry animations use `animation-fill-mode: backwards` for this reason; keep fixed dialogs
+out of `space-y-*` stacks (they inherit the margin).
+
 ## Open questions
 - The public `ChatBot` floating button (rendered by `App.jsx`) overlaps the admin bottom-right corner; out of scope here.
 - Tab headings inside sheets duplicate the topbar title; kept to avoid touching every tab.

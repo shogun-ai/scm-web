@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { AlertTriangle, Loader2, Trash2 } from 'lucide-react';
+import { AlertTriangle, BarChart3, Loader2, Save, Settings2, Trash2 } from 'lucide-react';
 import { getAuthHeaders } from '../loanTask/api';
-import AutomationSettings from './AutomationSettings';
+import AutomationSettings, { SettingSwitch, SettingsCard } from './AutomationSettings';
+import PageHeader from './ui/PageHeader';
+import Button from './ui/Button';
+import { Notice, Pill } from './ui/Feedback';
+import { MODULE_HUES } from './theme/spectrum';
 
-// Устгах тохиргоо: loanRequestDeleteEnabled (GET/PUT /api/admin/settings).
+const HUE = MODULE_HUES.deleteSettings;
+
+// Устгах тохиргоо: loanRequestDeleteEnabled (GET/PUT /api/admin/settings). Тэнгэр дээр шууд (pearl sheet-гүй).
 export default function AdminSettingsPanel({ apiUrl }) {
   const [enabled, setEnabled] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -48,35 +54,34 @@ export default function AdminSettingsPanel({ apiUrl }) {
     finally { setPixelSaving(false); }
   };
 
-  return <div className="max-w-2xl space-y-6 animate-fade-in">
-    <h2 className="flex items-center gap-2 text-2xl font-bold text-[#003B5C]"><Trash2 size={24} aria-hidden="true" />Устгах тохиргоо</h2>
-    <section className="rounded-2xl border bg-white p-6 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p id="del-switch-label" className="font-bold text-slate-800">Зээлийн хүсэлт устгахыг зөвшөөрөх</p>
-          <p id="del-switch-help" className="mt-1 text-sm text-slate-600">Асаалттай үед зөвхөн админ хүсэлтийг жагсаалт болон дэлгэрэнгүйгээс устгах боломжтой. Анхдагчаар унтраалттай.</p>
-        </div>
-        <button type="button" role="switch" aria-checked={enabled} aria-labelledby="del-switch-label" aria-describedby="del-switch-help" disabled={!loaded || saving} onClick={toggle} className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${enabled ? 'bg-red-600' : 'bg-slate-300'}`}>
-          <span className={`inline-block h-6 w-6 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-7' : 'translate-x-1'}`} />
-        </button>
+  return <div className="adm-board space-y-4 md:space-y-5" style={{ '--hue': `var(--sp-${HUE})` }}>
+    <PageHeader hue={HUE} icon={Settings2} eyebrow="Тохиргоо" title="Устгах тохиргоо" description="Хүсэлт устгах эрх, Meta Pixel, автомат имэйл ба хуваарилалт" />
+    <div className="grid items-start gap-4 md:gap-5 xl:grid-cols-2">
+      <div className="space-y-4 md:space-y-5">
+        <SettingsCard id="del-card-title" icon={Trash2} title="Хүсэлт устгах" description="Зөвхөн админ, зөвхөн энэ унтраалга асаалттай үед."
+          aside={loaded ? (enabled ? <Pill hue="rose">Асаалттай</Pill> : <Pill hue="neutral" dot={false}>Унтраалттай</Pill>) : null}>
+          <SettingSwitch id="del-switch" label="Зээлийн хүсэлт устгахыг зөвшөөрөх" help="Асаалттай үед зөвхөн админ хүсэлтийг жагсаалт болон дэлгэрэнгүйгээс устгах боломжтой. Анхдагчаар унтраалттай." checked={enabled} disabled={!loaded || saving} onChange={toggle} />
+          {!loaded && !error && <p role="status" className="mt-3 flex items-center gap-2 text-sm text-[var(--adm-ink-2)]"><Loader2 size={14} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p>}
+          {message && <Notice kind="ok" className="mt-3">{message}</Notice>}
+          {error && <Notice kind="err" className="mt-3">{error}</Notice>}
+          <p role="note" className="adm-note adm-note--err mt-4 flex items-start gap-2.5 !text-[13px] leading-relaxed"><AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />Устгасан хүсэлт болон түүний файлууд бүрмөсөн устгагдана, сэргээх боломжгүй. Ашиглаж дууссаны дараа унтрааж орхино уу.</p>
+        </SettingsCard>
+        <SettingsCard id="meta-pixel-title" icon={BarChart3} title="Meta Pixel" description="Сайтын PageView болон Lead (хүсэлт илгээсэн) үйл явдлыг хэмжинэ.">
+          <form onSubmit={savePixel} noValidate>
+            <label htmlFor="meta-pixel-id" className="adm-label">Pixel ID</label>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              <input id="meta-pixel-id" inputMode="numeric" autoComplete="off" value={pixelId} onChange={event => setPixelId(event.target.value)} disabled={!loaded || pixelSaving} aria-describedby="meta-pixel-help" aria-invalid={Boolean(pixelError)} placeholder="1234567890123456" className="adm-field adm-tnum min-w-0 flex-1 sm:max-w-xs" />
+              <Button type="submit" hue={HUE} busy={pixelSaving} disabled={!loaded || pixelSaving} icon={<Save size={16} aria-hidden="true" />}>Хадгалах</Button>
+            </div>
+            <p id="meta-pixel-help" className="mt-2 text-xs text-[var(--adm-ink-3)]">10–20 оронтой тоо. Хоосон бол Pixel ачаалагдахгүй.</p>
+            {pixelMessage && <Notice kind="ok" className="mt-3">{pixelMessage}</Notice>}
+            {pixelError && <Notice kind="err" className="mt-3">{pixelError}</Notice>}
+          </form>
+        </SettingsCard>
       </div>
-      {!loaded && !error && <p role="status" className="mt-3 flex items-center gap-2 text-sm text-slate-500"><Loader2 size={14} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p>}
-      {message && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800">{message}</p>}
-      {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-      <p role="note" className="mt-4 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-800"><AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />Устгасан хүсэлт болон түүний файлууд бүрмөсөн устгагдана, сэргээх боломжгүй. Ашиглаж дууссаны дараа унтрааж орхино уу.</p>
-    </section>
-    <section className="rounded-2xl border bg-white p-6 shadow-sm">
-      <form onSubmit={savePixel} noValidate>
-        <label htmlFor="meta-pixel-id" className="font-bold text-slate-800">Meta Pixel ID</label>
-        <p id="meta-pixel-help" className="mt-1 text-sm text-slate-600">Сайтын PageView болон Lead (хүсэлт илгээсэн) үйл явдлыг хэмжинэ. Хоосон бол Pixel ачаалагдахгүй.</p>
-        <div className="mt-3 flex flex-wrap gap-3">
-          <input id="meta-pixel-id" inputMode="numeric" autoComplete="off" value={pixelId} onChange={event => setPixelId(event.target.value)} disabled={!loaded || pixelSaving} aria-describedby="meta-pixel-help" aria-invalid={Boolean(pixelError)} placeholder="1234567890123456" className="min-h-11 w-64 rounded-xl border border-slate-300 px-3 text-sm tabular-nums focus:border-[#003B5C] focus:outline-none focus:ring-2" />
-          <button type="submit" disabled={!loaded || pixelSaving} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#003B5C] px-4 text-sm font-semibold text-white disabled:opacity-50">{pixelSaving && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}Хадгалах</button>
-        </div>
-        {pixelMessage && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800">{pixelMessage}</p>}
-        {pixelError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-2 text-sm text-red-700">{pixelError}</p>}
-      </form>
-    </section>
-    <AutomationSettings apiUrl={apiUrl} />
+      <div className="space-y-4 md:space-y-5">
+        <AutomationSettings apiUrl={apiUrl} />
+      </div>
+    </div>
   </div>;
 }

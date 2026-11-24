@@ -28,7 +28,7 @@ export const MODULE_HUES = {
   finance: 'amber',
   cms: 'amber',
   chatbot: 'cyan',
-  botContent: 'violet',
+  botContent: 'cyan',
   users: 'cyan',
   permissions: 'indigo',
   logs: 'green',

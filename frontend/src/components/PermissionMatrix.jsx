@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { Fragment, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import {
   Printer, ChevronDown, ChevronRight, Edit2, Save, X,
-  Lock, Shield, Users, Settings, CheckCircle2, AlertCircle,
+  Lock, Shield, CheckCircle2, AlertCircle, Check, Eye, Minus, Loader2,
 } from 'lucide-react';
+import PageHeader from './admin/ui/PageHeader';
+import Tabs from './admin/ui/Tabs';
+import Button from './admin/ui/Button';
+import { Pill } from './admin/ui/Feedback';
 
 // ─────────────────────────────────────────────
 // ROLES
@@ -20,10 +24,10 @@ export const ROLE_LABELS = Object.fromEntries(ROLES.map(r => [r.key, r.label]));
 // Permission levels in cycle order
 const PERM_CYCLE = ['full', 'view', 'partial', 'none'];
 const PERM_META = {
-  full:    { bg: 'bg-green-100',  text: 'text-green-800',  border: 'border-green-300',  label: 'Бүрэн',        sym: '✓' },
-  view:    { bg: 'bg-blue-50',    text: 'text-blue-700',   border: 'border-blue-200',   label: 'Харах',        sym: '👁' },
-  partial: { bg: 'bg-amber-50',   text: 'text-amber-700',  border: 'border-amber-200',  label: 'Хэсэгчлэн',   sym: '~' },
-  none:    { bg: 'bg-slate-50',   text: 'text-slate-300',  border: 'border-slate-100',  label: 'Эрхгүй',      sym: '—' },
+  full:    { bg: 'bg-[#34D399]/[0.14]', text: 'text-[#8FF0C8]', border: 'border-[#34D399]/35', label: 'Бүрэн',      sym: '✓' },
+  view:    { bg: 'bg-[#4CC6FF]/[0.12]', text: 'text-[#A6E6FF]', border: 'border-[#4CC6FF]/30', label: 'Харах',      sym: '👁' },
+  partial: { bg: 'bg-[#F3CB55]/[0.12]', text: 'text-[#F7DC8A]', border: 'border-[#F3CB55]/30', label: 'Хэсэгчлэн',  sym: '~' },
+  none:    { bg: 'bg-white/[0.03]',     text: 'text-[#93A0B6]', border: 'border-white/10',     label: 'Эрхгүй',     sym: '—' },
 };
 
 // ─────────────────────────────────────────────
@@ -151,19 +155,23 @@ const summarize = (permMap) => {
 // ─────────────────────────────────────────────
 // CELL COMPONENT
 // ─────────────────────────────────────────────
-const Cell = ({ value, editable, onClick }) => {
+const PERM_ICON = { full: Check, view: Eye, partial: null, none: Minus };
+const Cell = ({ value, editable, onClick, label }) => {
   const m = PERM_META[value] || PERM_META.none;
+  const Icon = PERM_ICON[value] || Minus;
   return (
-    <td className="px-2 py-2 text-center border-b border-slate-100">
+    <td className="px-2 py-2 text-center">
       <button
+        type="button"
         onClick={editable ? onClick : undefined}
         disabled={!editable}
         title={editable ? `${m.label} — дарж өөрчлөх` : m.label}
-        className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-black border transition-all
+        aria-label={`${label}: ${m.label}${editable ? ' — дарж өөрчлөх' : ''}`}
+        className={`inline-flex h-9 w-9 items-center justify-center rounded-[10px] border text-xs font-bold ring-inset transition
           ${m.bg} ${m.text} ${m.border}
-          ${editable ? 'cursor-pointer hover:scale-110 hover:shadow-md ring-offset-1 hover:ring-2 hover:ring-slate-400' : 'cursor-default'}`}
+          ${editable ? 'cursor-pointer hover:ring-1 hover:ring-white/40' : 'cursor-default'}`}
       >
-        {m.sym}
+        {value === 'partial' ? '~' : <Icon size={14} strokeWidth={2.5} aria-hidden="true" />}
       </button>
     </td>
   );
@@ -268,102 +276,93 @@ const CommitteeSettings = ({ apiUrl }) => {
       await axios.put(`${apiUrl}/api/config/committee`, settings, { headers: authHeaders() });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
-    } catch { }
+    } catch { /* алдааг чимээгүй өнгөрөөнө (хуучин зан төлөв) */ }
     setSaving(false);
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="max-w-2xl space-y-4">
       {/* Required approvers */}
-      <div className="bg-white border rounded-2xl p-6 space-y-4">
-        <div>
-          <p className="text-sm font-black text-[#003B5C]">Зөвшөөрөлийн тоо</p>
-          <p className="text-xs text-slate-500 mt-0.5">Зээлийн хорооны шийдвэр гарахад хэдэн хүний зөвшөөрөл шаардлагатай вэ?</p>
+      <section className="glass relative space-y-4 p-5 md:p-6" aria-labelledby="committee-count">
+        <span className="adm-card__rim" aria-hidden="true" />
+        <div className="relative">
+          <h3 id="committee-count" className="text-[15px] font-semibold text-white">Зөвшөөрөлийн тоо</h3>
+          <p className="mt-1 text-sm text-[var(--adm-ink-2)]">Зээлийн хорооны шийдвэр гарахад хэдэн хүний зөвшөөрөл шаардлагатай вэ?</p>
         </div>
-        <div className="flex gap-3">
+        <div className="relative flex gap-3" role="group" aria-labelledby="committee-count">
           {[1, 2, 3].map(n => (
             <button
               key={n}
+              type="button"
+              aria-pressed={settings.requiredApprovers === n}
               onClick={() => setSettings(p => ({ ...p, requiredApprovers: n }))}
-              className={`w-16 h-16 rounded-2xl border-2 font-black text-xl transition-all ${
+              className={`adm-tnum h-14 w-14 rounded-2xl border text-xl font-bold transition ${
                 settings.requiredApprovers === n
-                  ? 'bg-[#003B5C] border-[#003B5C] text-white shadow-lg scale-105'
-                  : 'bg-white border-slate-200 text-slate-500 hover:border-[#003B5C] hover:text-[#003B5C]'
+                  ? 'border-[color-mix(in_srgb,var(--hue)_60%,transparent)] bg-[color-mix(in_srgb,var(--hue)_20%,transparent)] text-white shadow-[0_10px_30px_-12px_var(--hue)]'
+                  : 'border-white/10 bg-white/[0.03] text-[var(--adm-ink-2)] hover:border-white/25 hover:text-white'
               }`}
             >
               {n}
             </button>
           ))}
         </div>
-        <p className="text-xs text-slate-400">
+        <p className="relative text-xs text-[var(--adm-ink-3)]">
           {settings.requiredApprovers === 1 && 'Нэг хүний шийдвэр хангалтай.'}
           {settings.requiredApprovers === 2 && 'Хоёр хүн зөвшөөрсний дараа батлагдана.'}
           {settings.requiredApprovers === 3 && 'Гурван хүн зөвшөөрсний дараа л батлагдана.'}
         </p>
-      </div>
+      </section>
 
       {/* Approver users */}
-      <div className="bg-white border rounded-2xl p-6 space-y-4">
-        <div>
-          <p className="text-sm font-black text-[#003B5C]">Зээлийн хорооны гишүүд</p>
-          <p className="text-xs text-slate-500 mt-0.5">Зээлийн хорооны шийдвэр гаргах эрх бүхий хэрэглэгчдийг сонгоно уу.</p>
+      <section className="glass relative space-y-4 p-5 md:p-6" aria-labelledby="committee-members">
+        <span className="adm-card__rim" aria-hidden="true" />
+        <div className="relative">
+          <h3 id="committee-members" className="text-[15px] font-semibold text-white">Зээлийн хорооны гишүүд</h3>
+          <p className="mt-1 text-sm text-[var(--adm-ink-2)]">Зээлийн хорооны шийдвэр гаргах эрх бүхий хэрэглэгчдийг сонгоно уу.</p>
         </div>
         {usersList.length === 0 ? (
-          <p className="text-sm text-slate-400 py-4 text-center">Хэрэглэгч байхгүй байна.</p>
+          <p className="relative py-4 text-center text-sm text-[var(--adm-ink-3)]">Хэрэглэгч байхгүй байна.</p>
         ) : (
-          <div className="space-y-2">
+          <div className="relative space-y-2">
             {usersList.map(u => {
               const isSelected = settings.approvers.includes(u._id);
               return (
                 <label
                   key={u._id}
-                  className={`flex items-center gap-4 p-3.5 border-2 rounded-xl cursor-pointer transition-all ${
+                  className={`flex min-h-12 cursor-pointer items-center gap-4 rounded-xl border px-3.5 py-2.5 transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[color-mix(in_srgb,var(--hue)_65%,white)] ${
                     isSelected
-                      ? 'bg-[#003B5C]/5 border-[#003B5C]'
-                      : 'bg-white border-slate-200 hover:border-slate-400'
+                      ? 'border-[color-mix(in_srgb,var(--hue)_55%,transparent)] bg-[color-mix(in_srgb,var(--hue)_10%,transparent)]'
+                      : 'border-white/10 bg-white/[0.03] hover:border-white/20'
                   }`}
                 >
                   <input
                     type="checkbox"
                     checked={isSelected}
                     onChange={() => toggleApprover(u._id)}
-                    className="w-4 h-4 accent-[#003B5C] rounded"
+                    className="h-4 w-4 rounded accent-[var(--hue)]"
                   />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-sm text-[#003B5C]">{u.name}</p>
-                    <p className="text-xs text-slate-500">{ROLE_LABELS[u.roles?.[0]] || ROLE_LABELS[u.role] || u.role || '—'}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-white">{u.name}</p>
+                    <p className="text-xs text-[var(--adm-ink-3)]">{ROLE_LABELS[u.roles?.[0]] || ROLE_LABELS[u.role] || u.role || '—'}</p>
                   </div>
-                  {isSelected && (
-                    <span className="text-[10px] font-black px-2 py-0.5 bg-[#003B5C] text-white rounded-lg">Гишүүн</span>
-                  )}
+                  {isSelected && <Pill hue="indigo" dot={false}>Гишүүн</Pill>}
                 </label>
               );
             })}
           </div>
         )}
-        <p className="text-xs text-slate-400">
-          Сонгогдсон: <strong>{settings.approvers.length}</strong> хэрэглэгч
+        <p className="relative text-xs text-[var(--adm-ink-3)]">
+          Сонгогдсон: <strong className="text-white">{settings.approvers.length}</strong> хэрэглэгч
           {settings.approvers.length > 0 && settings.approvers.length < settings.requiredApprovers && (
-            <span className="text-amber-600 ml-2">⚠ Шаардлагатай тооноос ({settings.requiredApprovers}) бага байна.</span>
+            <span className="ml-2 text-[#F7DC8A]">Шаардлагатай тооноос ({settings.requiredApprovers}) бага байна.</span>
           )}
         </p>
-      </div>
+      </section>
 
       {/* Save */}
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="inline-flex items-center gap-2 px-6 py-3 bg-[#003B5C] text-white rounded-xl font-bold text-sm hover:bg-[#002d47] disabled:opacity-50 transition-all"
-      >
-        {saving ? (
-          <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-        ) : saved ? (
-          <CheckCircle2 size={15} />
-        ) : (
-          <Save size={15} />
-        )}
+      <Button onClick={handleSave} busy={saving} disabled={saving} icon={saved ? <CheckCircle2 size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}>
         {saved ? 'Хадгалагдлаа!' : 'Хадгалах'}
-      </button>
+      </Button>
     </div>
   );
 };
@@ -430,7 +429,7 @@ const PermissionMatrix = ({ apiUrl }) => {
       setEditMap(null);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
-    } catch { }
+    } catch { /* алдааг чимээгүй өнгөрөөнө (хуучин зан төлөв) */ }
     setSaving(false);
   };
 
@@ -440,110 +439,68 @@ const PermissionMatrix = ({ apiUrl }) => {
   const toggleSection = key => setCollapsed(p => ({ ...p, [key]: !p[key] }));
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24 bg-white border rounded-2xl gap-3 text-slate-400">
-      <span className="w-5 h-5 border-2 border-slate-300 border-t-[#003B5C] rounded-full animate-spin" />
-      <span className="font-bold">Уншиж байна...</span>
+    <div role="status" className="glass relative flex items-center justify-center gap-3 py-24 text-[var(--adm-ink-2)]">
+      <Loader2 size={18} className="animate-spin" aria-hidden="true" />
+      <span className="font-semibold">Уншиж байна...</span>
     </div>
   );
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Page header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-[#007A3D]">Системийн тохиргоо</p>
-          <h2 className="text-2xl font-bold text-[#003B5C]">Хэрэглэгчийн эрх</h2>
-        </div>
-        <div className="flex items-center gap-2">
-          {saved && (
-            <span className="flex items-center gap-1.5 text-sm font-bold text-green-700 bg-green-50 border border-green-300 px-3 py-1.5 rounded-xl">
-              <CheckCircle2 size={14} /> Хадгалагдлаа
-            </span>
-          )}
-          {subTab === 'matrix' && !editMode && (
-            <>
-              <button onClick={() => printMatrix(permMap)}
-                className="inline-flex items-center gap-2 px-4 py-2 border rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">
-                <Printer size={14} /> Хэвлэх
-              </button>
-              <button onClick={startEdit}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[#003B5C] text-white rounded-xl text-sm font-bold hover:bg-[#002d47] transition-all">
-                <Edit2 size={14} /> Засах
-              </button>
-            </>
-          )}
-          {subTab === 'matrix' && editMode && (
-            <>
-              <button onClick={cancelEdit}
-                className="inline-flex items-center gap-2 px-4 py-2 border rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">
-                <X size={14} /> Болих
-              </button>
-              <button onClick={savePermissions} disabled={saving}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 disabled:opacity-50 transition-all">
-                {saving ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Save size={14} />}
-                Хадгалах
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+    <div className="space-y-4 md:space-y-5">
+      <PageHeader hue="indigo" icon={Shield} eyebrow="Хуучин LOS" title="Хэрэглэгчийн эрх"
+        actions={<>
+          {saved && <Pill hue="green">Хадгалагдлаа</Pill>}
+          {subTab === 'matrix' && !editMode && <>
+            <Button variant="secondary" onClick={() => printMatrix(permMap)} icon={<Printer size={16} aria-hidden="true" />}>Хэвлэх</Button>
+            <Button onClick={startEdit} icon={<Edit2 size={16} aria-hidden="true" />}>Засах</Button>
+          </>}
+          {subTab === 'matrix' && editMode && <>
+            <Button variant="secondary" onClick={cancelEdit} icon={<X size={16} aria-hidden="true" />}>Болих</Button>
+            <Button hue="green" onClick={savePermissions} busy={saving} disabled={saving} icon={<Save size={16} aria-hidden="true" />}>Хадгалах</Button>
+          </>}
+        </>} />
 
       {/* Edit mode banner */}
       {editMode && (
-        <div className="flex items-center gap-3 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl text-amber-800 text-sm font-bold">
-          <AlertCircle size={16} />
-          Засах горим идэвхтэй байна. Эсийг дарж эрхийг өөрчилнө үү.
-          <span className="ml-2 font-normal text-amber-700">Adminийн эрхийг өөрчлөх боломжгүй.</span>
-        </div>
+        <p role="status" className="adm-note flex flex-wrap items-center gap-x-3 gap-y-1 border-[#F3CB55]/30 bg-[#F3CB55]/10 text-[#F7DC8A]">
+          <AlertCircle size={16} aria-hidden="true" />
+          <span className="font-semibold">Засах горим идэвхтэй байна. Эсийг дарж эрхийг өөрчилнө үү.</span>
+          <span>Админы эрхийг өөрчлөх боломжгүй.</span>
+        </p>
       )}
 
       {/* Sub tabs */}
-      <div className="bg-white border rounded-2xl p-1.5 inline-flex gap-1">
-        {[
-          { key: 'matrix',    label: 'Эрхийн матриц',         icon: Shield },
-          { key: 'committee', label: 'Зээлийн хорооны тохиргоо', icon: Settings },
-        ].map(t => {
-          const Icon = t.icon;
-          return (
-            <button key={t.key} onClick={() => { setSubTab(t.key); if (editMode) cancelEdit(); }}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                subTab === t.key ? 'bg-[#003B5C] text-white' : 'text-slate-500 hover:bg-slate-50'
-              }`}>
-              <Icon size={14} /> {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <Tabs label="Хуучин LOS тохиргоо" value={subTab} onChange={key => { setSubTab(key); if (editMode) cancelEdit(); }}
+        items={[{ id: 'matrix', label: 'Эрхийн матриц' }, { id: 'committee', label: 'Зээлийн хорооны тохиргоо' }]} />
 
       {subTab === 'committee' && <CommitteeSettings apiUrl={apiUrl} />}
 
       {subTab === 'matrix' && (
         <>
           {/* Role summary cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
             {ROLES.map(r => {
               const c = counts[r.key];
               const accessPct = Math.round(((c.full + c.view + c.partial) / c.total) * 100);
               return (
-                <div key={r.key} className="bg-white rounded-2xl p-4 border-2 border-slate-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-black px-2 py-0.5 rounded-lg text-white" style={{ background: r.color }}>
-                      {r.abbr}
-                    </span>
+                <div key={r.key} className="glass relative p-4">
+                  <span className="adm-card__rim" aria-hidden="true" />
+                  <div className="relative mb-2 flex items-center justify-between">
+                    <span className="adm-label">{r.abbr}</span>
                     {r.locked
-                      ? <Lock size={13} className="text-slate-400" title="Засах боломжгүй" />
-                      : <Edit2 size={13} className="text-slate-400" />
+                      ? <Lock size={13} className="text-[var(--adm-ink-3)]" aria-label="Засах боломжгүй" />
+                      : <Edit2 size={13} className="text-[var(--adm-ink-3)]" aria-hidden="true" />
                     }
                   </div>
-                  <p className="font-black text-sm text-[#003B5C] mb-2">{r.label}</p>
-                  <div className="w-full bg-slate-100 rounded-full h-1.5 mb-2 overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${accessPct}%`, background: r.color }} />
+                  <p className="relative mb-2 text-sm font-semibold text-white">{r.label}</p>
+                  <div className="relative mb-2 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.08]" role="img" aria-label={`${accessPct}% хандалт`}>
+                    <div className="h-full rounded-full bg-[var(--hue)] shadow-[0_0_10px_var(--hue)]" style={{ width: `${accessPct}%` }} />
                   </div>
-                  <div className="grid grid-cols-2 gap-0.5 text-[10px]">
-                    <span className="text-green-700 font-bold">✓ {c.full}</span>
-                    <span className="text-blue-600 font-bold">👁 {c.view}</span>
-                    <span className="text-amber-600 font-bold">~ {c.partial}</span>
-                    <span className="text-slate-400 font-bold">— {c.none}</span>
+                  <div className="adm-tnum relative grid grid-cols-2 gap-0.5 text-[11px] font-semibold">
+                    <span className="text-[#8FF0C8]">{PERM_META.full.label} {c.full}</span>
+                    <span className="text-[#A6E6FF]">{PERM_META.view.label} {c.view}</span>
+                    <span className="text-[#F7DC8A]">{PERM_META.partial.label} {c.partial}</span>
+                    <span className="text-[var(--adm-ink-3)]">{PERM_META.none.label} {c.none}</span>
                   </div>
                 </div>
               );
@@ -551,70 +508,66 @@ const PermissionMatrix = ({ apiUrl }) => {
           </div>
 
           {/* Legend */}
-          <div className="flex flex-wrap gap-4 text-xs bg-white border rounded-xl px-4 py-3">
-            {Object.entries(PERM_META).map(([k, m]) => (
-              <span key={k} className="flex items-center gap-2">
-                <span className={`w-6 h-6 flex items-center justify-center rounded-md font-black border text-xs ${m.bg} ${m.text} ${m.border}`}>
-                  {m.sym}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+            {Object.entries(PERM_META).map(([k, m]) => {
+              const Icon = PERM_ICON[k];
+              return (
+                <span key={k} className="flex items-center gap-2">
+                  <span className={`flex h-6 w-6 items-center justify-center rounded-md border text-xs font-bold ${m.bg} ${m.text} ${m.border}`} aria-hidden="true">
+                    {Icon ? <Icon size={12} strokeWidth={2.5} /> : '~'}
+                  </span>
+                  <span className="font-medium text-[var(--adm-ink-2)]">{m.label}</span>
                 </span>
-                <span className="font-semibold text-slate-600">{m.label}</span>
-              </span>
-            ))}
+              );
+            })}
             {editMode && (
-              <span className="ml-auto text-amber-700 font-bold flex items-center gap-1">
-                <AlertCircle size={11} /> Эс дарж эрхийг циклчилж солино
+              <span className="flex items-center gap-1 font-semibold text-[#F7DC8A] md:ml-auto">
+                <AlertCircle size={12} aria-hidden="true" /> Эс дарж эрхийг циклчилж солино
               </span>
             )}
           </div>
 
           {/* Matrix table */}
-          <div className="bg-white border rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px]">
+          <div className="glass relative overflow-hidden">
+            <span className="adm-card__rim" aria-hidden="true" />
+            <div className="relative overflow-x-auto">
+              <table className="adm-table w-full min-w-[640px] text-sm">
+                <caption className="sr-only">Хуучин LOS эрхийн матриц</caption>
                 <thead>
-                  <tr className="bg-[#003B5C]">
-                    <th className="px-4 py-3 text-left text-xs font-bold text-white/70 uppercase tracking-wider w-72">
-                      Үйлдэл
-                    </th>
+                  <tr>
+                    <th scope="col" className="!static w-72 !bg-transparent text-left">Үйлдэл</th>
                     {ROLES.map(r => (
-                      <th key={r.key} className="px-2 py-3 text-center w-28">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-xs font-black text-white px-2 py-0.5 rounded-lg flex items-center gap-1"
-                            style={{ background: r.color + '50', border: `1px solid ${r.color}80` }}>
-                            {r.locked && <Lock size={9} />} {r.abbr}
-                          </span>
-                          <span className="text-[10px] text-white/70 font-semibold leading-tight">{r.label}</span>
-                        </div>
+                      <th key={r.key} scope="col" className="!static w-28 !bg-transparent text-center">
+                        <span className="inline-flex items-center gap-1">{r.locked && <Lock size={10} aria-hidden="true" />}{r.abbr}</span>
+                        <span className="mt-0.5 block text-[10px] font-medium normal-case tracking-normal text-[var(--adm-ink-3)]">{r.label}</span>
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {DEFAULT_SECTIONS.map(section => (
-                    <>
-                      <tr key={`sec-${section.key}`}
-                        onClick={() => toggleSection(section.key)}
-                        className="bg-slate-50 border-y border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
-                        <td colSpan={ROLES.length + 1} className="px-4 py-2.5">
-                          <div className="flex items-center gap-2">
+                    <Fragment key={section.key}>
+                      <tr className="bg-white/[0.035]">
+                        <td colSpan={ROLES.length + 1} className="!p-0">
+                          <button type="button" onClick={() => toggleSection(section.key)} aria-expanded={!collapsed[section.key]}
+                            className="flex min-h-11 w-full items-center gap-2 px-4 text-left transition hover:bg-white/[0.04]">
                             {collapsed[section.key]
-                              ? <ChevronRight size={14} className="text-slate-400" />
-                              : <ChevronDown size={14} className="text-slate-400" />}
-                            <span>{section.icon}</span>
-                            <span className="text-xs font-black uppercase tracking-wider text-slate-600">{section.title}</span>
-                            <span className="text-[10px] text-slate-400">{section.rows.length} үйлдэл</span>
-                          </div>
+                              ? <ChevronRight size={14} className="text-[var(--adm-ink-3)]" aria-hidden="true" />
+                              : <ChevronDown size={14} className="text-[var(--adm-ink-3)]" aria-hidden="true" />}
+                            <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--adm-ink-2)]">{section.title}</span>
+                            <span className="adm-tnum text-[11px] text-[var(--adm-ink-3)]">{section.rows.length} үйлдэл</span>
+                          </button>
                         </td>
                       </tr>
                       {!collapsed[section.key] && section.rows.map((row, i) => (
-                        <tr key={`${section.key}-${i}`}
-                          className="hover:bg-blue-50/30 transition-colors group">
-                          <td className="px-4 py-2 text-sm text-slate-700 border-b border-slate-100 group-hover:font-medium">
+                        <tr key={`${section.key}-${i}`} className="adm-row">
+                          <th scope="row" className="border-b border-white/[0.05] px-4 py-2 text-left text-sm font-normal text-[var(--adm-ink)]">
                             {row.action}
-                          </td>
+                          </th>
                           {ROLES.map(r => (
                             <Cell
                               key={r.key}
+                              label={`${r.label}: ${row.action}`}
                               value={activeMap?.[r.key]?.[`${section.key}:${row.action}`] || 'none'}
                               editable={editMode && !r.locked}
                               onClick={() => cycleCell(r.key, section.key, row.action)}
@@ -622,7 +575,7 @@ const PermissionMatrix = ({ apiUrl }) => {
                           ))}
                         </tr>
                       ))}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import axios from 'axios';
-import { Loader2, UserPlus } from 'lucide-react';
+import { Check, UserPlus } from 'lucide-react';
 import { getAuthHeaders } from '../loanTask/api';
 import { inviteResultText } from './inviteUtils';
+import Button from './ui/Button';
+import { Field, Input } from './ui/Form';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const FIELD = 'min-h-11 rounded-xl border bg-slate-50 p-3 text-sm focus:border-[#003B5C] focus:outline-none';
 
 // Нууц үггүй хэрэглэгч нэмэх: урилгын имэйлээр нууц үгээ өөрөө үүсгэнэ.
+// Light tone — UsersTab-ийн Modal дотор харагдана.
 export default function InviteUserForm({ apiUrl, roles, onCreated }) {
   const [form, setForm] = useState({ name: '', email: '', notificationEmail: '', roles: [] });
   const [busy, setBusy] = useState(false);
@@ -38,27 +40,31 @@ export default function InviteUserForm({ apiUrl, roles, onCreated }) {
     } finally { setBusy(false); }
   };
 
-  return <form onSubmit={submit} className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm" aria-labelledby="invite-title">
-    <h3 id="invite-title" className="font-black text-[#003B5C]">Хэрэглэгч нэмэх</h3>
-    <p className="text-xs text-slate-500">Нууц үг оруулахгүй. Хэрэглэгчид имэйлээр урилга очиж, 48 цагийн дотор өөрөө нууц үгээ үүсгэнэ.</p>
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-      <label className="text-xs font-semibold text-slate-600">Нэр<input className={`${FIELD} mt-1 w-full`} value={form.name} onChange={event => setForm(previous => ({ ...previous, name: event.target.value }))} autoComplete="off" /></label>
-      <label className="text-xs font-semibold text-slate-600">Имэйл<input type="email" className={`${FIELD} mt-1 w-full`} value={form.email} onChange={event => setForm(previous => ({ ...previous, email: event.target.value }))} autoComplete="off" /></label>
-      <label className="text-xs font-semibold text-slate-600">Мэдэгдлийн имэйл (заавал биш)<input type="email" className={`${FIELD} mt-1 w-full`} value={form.notificationEmail} onChange={event => setForm(previous => ({ ...previous, notificationEmail: event.target.value }))} autoComplete="off" /></label>
+  const set = key => event => setForm(previous => ({ ...previous, [key]: event.target.value }));
+
+  return <form onSubmit={submit} className="space-y-4" aria-label="Хэрэглэгч нэмэх" noValidate>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <Field tone="light" label="Нэр" required>{({ id }) => <Input tone="light" id={id} value={form.name} onChange={set('name')} autoComplete="off" />}</Field>
+      <Field tone="light" label="Нэвтрэх имэйл" required>{({ id }) => <Input tone="light" id={id} type="email" value={form.email} onChange={set('email')} autoComplete="off" placeholder="name@scm.mn" />}</Field>
+      <Field tone="light" className="sm:col-span-2" label="Мэдэгдлийн имэйл" hint="Заавал биш. Зээлийн хүсэлтийн мэдэгдэл энэ хаяг руу очно.">{({ id, describedBy }) => <Input tone="light" id={id} aria-describedby={describedBy} type="email" value={form.notificationEmail} onChange={set('notificationEmail')} autoComplete="off" />}</Field>
     </div>
     <fieldset>
-      <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Эрх (хамгийн ихдээ 2 сонгоно)</legend>
-      <div className="flex flex-wrap gap-2">
+      <legend className="text-xs font-semibold text-slate-700">Эрх <span className="font-normal text-slate-600">· хамгийн ихдээ 2 сонгоно</span></legend>
+      <div className="mt-2 flex flex-wrap gap-2">
         {roles.map(role => {
           const selected = form.roles.includes(role.key);
           const maxed = !selected && form.roles.length >= 2;
-          return <label key={role.key} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border-2 px-3 py-2 text-sm font-bold transition-all focus-within:ring-2 focus-within:ring-[#003B5C]/40 ${selected ? 'border-[#003B5C] bg-[#003B5C] text-white' : maxed ? 'cursor-not-allowed border-slate-200 text-slate-400 opacity-40' : 'border-slate-200 text-slate-600 hover:border-[#003B5C]'}`}>
-            <input type="checkbox" className="sr-only" checked={selected} disabled={maxed} onChange={() => toggleRole(role.key)} />{role.label}
+          return <label key={role.key} className={`inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--drawer-ink)] ${selected ? 'cursor-pointer border-[#0B1530] bg-[#0B1530] text-white' : maxed ? 'cursor-not-allowed border-slate-200 bg-white/60 text-slate-500' : 'cursor-pointer border-slate-300 bg-white text-slate-800 hover:border-slate-500'}`}>
+            <input type="checkbox" className="sr-only" checked={selected} disabled={maxed} onChange={() => toggleRole(role.key)} />
+            {selected && <Check size={14} aria-hidden="true" />}{role.label}
           </label>;
         })}
       </div>
     </fieldset>
-    {result && <p role={result.ok ? 'status' : 'alert'} className={`rounded-lg p-3 text-sm ${result.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{result.text}</p>}
-    <button type="submit" disabled={busy} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#003B5C] px-6 text-sm font-bold text-white disabled:opacity-50">{busy ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <UserPlus size={15} aria-hidden="true" />}Урилга илгээх</button>
+    <p className="text-xs text-slate-600">Нууц үг оруулахгүй. Хэрэглэгчид имэйлээр урилга очиж, 48 цагийн дотор өөрөө нууц үгээ үүсгэнэ.</p>
+    {result && <p role={result.ok ? 'status' : 'alert'} className={`rounded-xl border p-3 text-sm ${result.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-700'}`}>{result.text}</p>}
+    <div className="flex justify-end">
+      <Button type="submit" variant="ink" busy={busy} disabled={busy} icon={<UserPlus size={16} aria-hidden="true" />}>Урилга илгээх</Button>
+    </div>
   </form>;
 }

@@ -1,8 +1,14 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { CheckCircle2, History, Loader2, Lock, Save } from 'lucide-react';
+import { ArrowLeft, Check, CheckCircle2, History, Loader2, Lock, Save, ShieldCheck } from 'lucide-react';
 import { PERMISSION_GROUPS, PERMISSION_ROLES, PERMISSIONS, effectiveMatrix, matrixCellKey } from '@shared/permissions';
 import { getAuthHeaders } from '../loanTask/api';
+import PageHeader from './ui/PageHeader';
+import Button from './ui/Button';
+import { Notice, Pill } from './ui/Feedback';
+import { MODULE_HUES } from './theme/spectrum';
+
+const HUE = MODULE_HUES.permissions;
 
 // Хуучин LOS-ийн матриц ба зээлийн хорооны тохиргоо (нэмэлт, хойно ачаална).
 const LegacyPermissionMatrix = lazy(() => import('../PermissionMatrix'));
@@ -74,61 +80,87 @@ export default function TaskPermissionMatrix({ apiUrl }) {
     finally { setSaving(false); }
   };
 
+  const changed = (role, key) => Boolean(draft?.[role]?.[key]) !== Boolean(baseline?.[role]?.[key]);
+  const changedCount = draft ? PERMISSION_ROLES.reduce((sum, role) => sum + PERMISSIONS.filter(item => changed(role.key, item.key)).length, 0) : 0;
+
+  // Нүд: sr-only checkbox (нэр, тайлбар хадгалагдана) + гэрэлтдэг дүрс. Түгжээтэй нүд бүдэг, цоожтой.
+  const cell = (role, item, helpId, withLabel) => {
+    const locked = role.key === 'admin' || item.adminOnly;
+    const checked = Boolean(draft[role.key]?.[item.key]);
+    const isChanged = changed(role.key, item.key);
+    return <label className={`group inline-flex min-h-11 items-center gap-2.5 rounded-xl ${withLabel ? 'w-full border border-white/10 bg-white/[0.03] px-3' : 'min-w-11 justify-center'} ${locked || saving ? 'cursor-not-allowed' : 'cursor-pointer'} has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[color-mix(in_srgb,var(--hue)_65%,white)]`}>
+      <input type="checkbox" className="sr-only" checked={checked} disabled={locked || saving}
+        aria-label={`${role.label}: ${item.label}`} aria-describedby={helpId} onChange={() => toggle(role.key, item.key)} />
+      <span aria-hidden="true" className={`relative grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[7px] transition duration-200 ${checked
+        ? (locked ? 'bg-white/[0.14] text-[var(--adm-ink-2)]' : 'bg-[var(--hue)] text-[#05070D] shadow-[0_0_14px_-2px_var(--hue)]')
+        : `ring-1 ring-inset ${locked ? 'ring-white/10' : 'ring-white/45 group-hover:ring-white/70'}`}`}>
+        {checked && <Check size={14} strokeWidth={3} />}
+        {isChanged && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[#F3CB55] ring-2 ring-[#0D1122]" />}
+      </span>
+      {withLabel && <span className={`min-w-0 text-[13px] font-medium ${locked ? 'text-[var(--adm-ink-3)]' : 'text-[var(--adm-ink)]'}`}>{role.label}</span>}
+      {locked && <Lock size={12} className={`${withLabel ? 'ml-auto' : ''} text-[var(--adm-ink-3)]`} aria-hidden="true" />}
+    </label>;
+  };
+
   if (showLegacy) {
-    return <div className="space-y-4">
-      <button type="button" onClick={() => setShowLegacy(false)} className="min-h-11 rounded-xl bg-white px-4 text-sm font-bold text-[#003B5C] shadow-sm">← Шинэ эрхийн матриц руу буцах</button>
-      <Suspense fallback={<p role="status" className="text-sm text-slate-500">Ачаалж байна…</p>}><LegacyPermissionMatrix apiUrl={apiUrl} /></Suspense>
+    return <div className="adm-board space-y-4" style={{ '--hue': `var(--sp-${HUE})` }}>
+      <Button variant="secondary" icon={<ArrowLeft size={16} aria-hidden="true" />} onClick={() => setShowLegacy(false)}>Шинэ эрхийн матриц руу буцах</Button>
+      <Suspense fallback={<p role="status" className="flex items-center gap-2 text-sm text-[var(--adm-ink-2)]"><Loader2 size={16} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p>}><LegacyPermissionMatrix apiUrl={apiUrl} /></Suspense>
     </div>;
   }
 
-  return <div className="space-y-5 animate-fade-in">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <p className="text-xs font-bold uppercase tracking-widest text-[#007A3D]">Тохиргоо</p>
-        <h2 className="text-2xl font-bold text-[#003B5C]">Эрхийн матриц</h2>
-        <p className="mt-1 max-w-2xl text-sm text-slate-600">Хүсэлтийн удирдлагын эрхийг ролиор тохируулна. Админ бүх эрхтэй (түгжээтэй). Админаас бусад ролийн сонголтыг өөрчлөөд "Хадгалах" дарна уу.</p>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => setShowLegacy(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"><History size={16} aria-hidden="true" />Хуучин LOS матриц</button>
-        <button type="button" onClick={() => setDraft(baseline)} disabled={!dirty || saving} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-40">Болих</button>
-        <button type="button" onClick={save} disabled={!dirty || saving} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#003B5C] px-5 text-sm font-bold text-white disabled:opacity-40">{saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : saved ? <CheckCircle2 size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}{saved ? 'Хадгалагдлаа' : 'Хадгалах'}</button>
-      </div>
+  return <div className="adm-board space-y-4 md:space-y-5" style={{ '--hue': `var(--sp-${HUE})` }}>
+    <PageHeader hue={HUE} icon={ShieldCheck} eyebrow="Тохиргоо" title="Эрхийн матриц" count={PERMISSIONS.length} countLabel="эрх"
+      description={`${PERMISSION_ROLES.length} роль · Админ бүх эрхтэй (түгжээтэй)`}
+      actions={<>
+        <Button variant="secondary" icon={<History size={16} aria-hidden="true" />} onClick={() => setShowLegacy(true)}>Хуучин LOS матриц</Button>
+        <Button variant="secondary" onClick={() => setDraft(baseline)} disabled={!dirty || saving}>Болих</Button>
+        <Button hue={HUE} onClick={save} busy={saving} disabled={!dirty || saving} icon={saved ? <CheckCircle2 size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}>{saved ? 'Хадгалагдлаа' : 'Хадгалах'}</Button>
+      </>} />
+
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <p className="max-w-3xl text-sm text-[var(--adm-ink-2)]">Хүсэлтийн удирдлагын эрхийг ролиор тохируулна. Админаас бусад ролийн сонголтыг өөрчлөөд "Хадгалах" дарна уу.</p>
+      {dirty && <Pill hue="gold">{changedCount} хадгалаагүй өөрчлөлт</Pill>}
     </div>
 
-    {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-    {loading && <p role="status" className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p>}
+    {error && <Notice kind="err">{error}</Notice>}
+    {loading && <p role="status" className="flex items-center gap-2 text-sm text-[var(--adm-ink-2)]"><Loader2 size={16} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p>}
 
-    {draft && <div className="space-y-5">
-      {groups.map(group => <section key={group.key} aria-labelledby={`pg-${group.key}`} className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-        <h3 id={`pg-${group.key}`} className="border-b bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-600">{group.label}</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
+    {draft && <div className="space-y-4">
+      {groups.map(group => <section key={group.key} aria-labelledby={`pg-${group.key}`} className="glass relative overflow-hidden">
+        <span className="adm-card__rim" aria-hidden="true" />
+        <div className="relative flex items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-3.5 md:px-5">
+          <h3 id={`pg-${group.key}`} className="flex items-center gap-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--adm-ink-2)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--hue)] shadow-[0_0_8px_var(--hue)]" aria-hidden="true" />{group.label}
+          </h3>
+          <span className="adm-tnum text-xs text-[var(--adm-ink-3)]">{group.items.length} эрх</span>
+        </div>
+        <div className="relative hidden overflow-x-auto md:block">
+          <table className="adm-table w-full min-w-[720px] text-left text-sm">
             <caption className="sr-only">{group.label} — эрхийн матриц</caption>
-            <thead><tr className="text-xs text-slate-500">
-              <th scope="col" className="px-4 py-2 font-semibold">Эрх</th>
-              {PERMISSION_ROLES.map(role => <th key={role.key} scope="col" className="w-28 px-2 py-2 text-center font-semibold">{role.label}</th>)}
+            <thead><tr>
+              <th scope="col" className="!static !bg-transparent">Эрх</th>
+              {PERMISSION_ROLES.map(role => <th key={role.key} scope="col" className="!static w-32 !bg-transparent text-center">{role.label}</th>)}
             </tr></thead>
-            <tbody className="divide-y divide-slate-100">{group.items.map(item => <tr key={item.key}>
-              <th scope="row" className="px-4 py-3 align-top font-medium text-slate-800">
+            <tbody>{group.items.map(item => <tr key={item.key} className="adm-row">
+              <th scope="row" className="border-b border-white/[0.05] px-[14px] py-3 align-top font-medium text-white">
                 {item.label}
-                <span id={`help-${item.key}`} className="mt-0.5 block text-xs font-normal text-slate-500">{HELP[item.key] || ''}</span>
+                <span id={`help-${item.key}`} className="mt-0.5 block max-w-xl text-xs font-normal leading-relaxed text-[var(--adm-ink-3)]">{HELP[item.key] || ''}</span>
               </th>
-              {PERMISSION_ROLES.map(role => {
-                const locked = role.key === 'admin' || item.adminOnly;
-                const checked = Boolean(draft[role.key]?.[item.key]);
-                return <td key={role.key} className="px-2 py-3 text-center align-top">
-                  <label className="inline-flex min-h-11 min-w-11 items-center justify-center">
-                    <input type="checkbox" className="h-5 w-5 accent-[#003B5C] disabled:opacity-60" checked={checked} disabled={locked || saving}
-                      aria-label={`${role.label}: ${item.label}`} aria-describedby={`help-${item.key}`} onChange={() => toggle(role.key, item.key)} />
-                    {locked && <Lock size={12} className="ml-1 text-slate-400" aria-hidden="true" />}
-                  </label>
-                </td>;
-              })}
+              {PERMISSION_ROLES.map(role => <td key={role.key} className="text-center align-top">{cell(role, item, `help-${item.key}`, false)}</td>)}
             </tr>)}</tbody>
           </table>
         </div>
+        <ul className="relative divide-y divide-white/[0.06] md:hidden">{group.items.map(item => <li key={item.key} className="px-4 py-4">
+          <p className="font-medium text-white">{item.label}</p>
+          <p id={`help-m-${item.key}`} className="mt-0.5 text-xs leading-relaxed text-[var(--adm-ink-3)]">{HELP[item.key] || ''}</p>
+          <div className="mt-3 grid grid-cols-1 gap-2 min-[400px]:grid-cols-2">{PERMISSION_ROLES.map(role => <div key={role.key}>{cell(role, item, `help-m-${item.key}`, true)}</div>)}</div>
+        </li>)}</ul>
       </section>)}
-      <p className="flex items-center gap-1 text-xs text-slate-500"><Lock size={12} aria-hidden="true" />Түгжээтэй нүдийг өөрчлөх боломжгүй (админы эрх, зөвхөн админд олгогдох эрх).</p>
+      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--adm-ink-3)]">
+        <span className="inline-flex items-center gap-1.5"><Lock size={12} aria-hidden="true" />Түгжээтэй нүдийг өөрчлөх боломжгүй (админы эрх, зөвхөн админд олгогдох эрх).</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#F3CB55]" aria-hidden="true" />Хадгалаагүй өөрчлөлт</span>
+      </p>
     </div>}
   </div>;
 }

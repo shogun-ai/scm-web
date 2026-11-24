@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronsDown, ChevronsUp, GripVertical, Loader2, Plus, RotateCcw, Save, Trash2, Upload } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronsDown, ChevronsUp, GripVertical, Loader2, Plus, RotateCcw, Save, Trash2, Upload } from 'lucide-react';
 import { getAuthHeaders } from '../loanTask/api';
 import MessengerEmulator from './MessengerEmulator';
+import Button from './ui/Button';
+import Tabs from './ui/Tabs';
+import { Check, FileButton, IconButton, InlineNote, Panel, SUBCARD } from './tabs/cms/editorKit';
 
 const SECTIONS = [['menu', 'Үндсэн цэс'], ['loans', 'Зээл'], ['trust', 'Итгэлцэл'], ['payment', 'Төлөлт'], ['contact', 'Холбоо барих']];
 const BUTTON_TYPES = [['node', 'Цэс рүү очих'], ['terms', 'Нөхцөл, шаардлага'], ['apply', 'Хүсэлт гаргах'], ['calculator', 'Тооцоолуур'], ['url', 'Холбоос'], ['call', 'Залгах'], ['post', 'Пост']];
@@ -11,8 +14,8 @@ const MAX_TITLE = 80;
 const MAX_BTN_TITLE = 20;
 const MAX_BUTTONS = 3;
 
-const inputCls = 'min-h-11 w-full rounded-xl border border-slate-300 px-3 text-sm focus:border-[#003B5C] focus:outline-none focus:ring-2 focus:ring-[#003B5C]/20';
-const iconBtn = 'flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 text-slate-700 disabled:opacity-40';
+const inputCls = 'adm-field w-full';
+const LABEL = 'adm-label mb-1.5 block';
 const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
 const newId = () => `c_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -78,20 +81,20 @@ function ButtonRow({ button, index, count, card, products, idPrefix, onChange, o
     else base.value = '';
     onChange(base);
   };
-  return <li className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-    <div className="grid gap-2 md:grid-cols-3">
+  return <li className="rounded-xl bg-black/20 p-3 ring-1 ring-inset ring-white/[0.06]">
+    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
       <div>
-        <label htmlFor={`${id}-t`} className="mb-1 block text-xs font-semibold text-slate-600">Төрөл</label>
+        <label htmlFor={`${id}-t`} className={LABEL}>Төрөл</label>
         <select id={`${id}-t`} value={button.type} onChange={(e) => onType(e.target.value)} className={inputCls}>
           {BUTTON_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </div>
       <div>
-        <label htmlFor={`${id}-n`} className="mb-1 block text-xs font-semibold text-slate-600">Гарчиг ({button.title.length}/{MAX_BTN_TITLE})</label>
+        <label htmlFor={`${id}-n`} className={LABEL}>Гарчиг <span className="adm-tnum normal-case tracking-normal">({button.title.length}/{MAX_BTN_TITLE})</span></label>
         <input id={`${id}-n`} value={button.title} maxLength={MAX_BTN_TITLE} onChange={(e) => set({ title: e.target.value })} className={inputCls} />
       </div>
       <div>
-        <label htmlFor={`${id}-v`} className="mb-1 block text-xs font-semibold text-slate-600">Утга</label>
+        <label htmlFor={`${id}-v`} className={LABEL}>Утга</label>
         {button.type === 'node' && <select id={`${id}-v`} value={button.value} onChange={(e) => set({ value: e.target.value })} className={inputCls}>
           {NODE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>}
@@ -103,11 +106,11 @@ function ButtonRow({ button, index, count, card, products, idPrefix, onChange, o
         {button.type === 'call' && <input id={`${id}-v`} type="tel" value={button.value} onChange={(e) => set({ value: e.target.value })} placeholder="+976..." className={inputCls} />}
         {button.type === 'post' && <input id={`${id}-v`} value={button.value} onChange={(e) => set({ value: e.target.value })} placeholder="Постын ID" className={inputCls} />}
       </div>
-    </div>
-    <div className="mt-2 flex gap-2">
-      <button type="button" onClick={() => onMove(-1)} disabled={index === 0} aria-label={`Товч #${index + 1}-ийг дээш`} className={iconBtn}><ArrowUp size={16} aria-hidden="true" /></button>
-      <button type="button" onClick={() => onMove(1)} disabled={index === count - 1} aria-label={`Товч #${index + 1}-ийг доош`} className={iconBtn}><ArrowDown size={16} aria-hidden="true" /></button>
-      <button type="button" onClick={onRemove} aria-label={`Товч #${index + 1}-ийг хасах`} className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 text-red-700"><Trash2 size={16} aria-hidden="true" /></button>
+      <div className="flex">
+        <IconButton label={`Товч #${index + 1}-ийг дээш`} icon={<ArrowUp size={16} aria-hidden="true" />} onClick={() => onMove(-1)} disabled={index === 0} />
+        <IconButton label={`Товч #${index + 1}-ийг доош`} icon={<ArrowDown size={16} aria-hidden="true" />} onClick={() => onMove(1)} disabled={index === count - 1} />
+        <IconButton danger label={`Товч #${index + 1}-ийг хасах`} icon={<Trash2 size={16} aria-hidden="true" />} onClick={onRemove} />
+      </div>
     </div>
   </li>;
 }
@@ -132,58 +135,53 @@ function CardForm({ card, index, count, products, apiUrl, dragProps, onChange, o
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
   };
 
-  return <div className={`rounded-xl border p-4 ${card.active ? 'border-slate-200' : 'border-slate-200 bg-slate-50 opacity-80'}`} {...dragProps}>
-    <div className="mb-3 flex flex-wrap items-center gap-2">
-      <span className="flex h-11 w-8 cursor-grab items-center justify-center text-slate-400" aria-hidden="true" title="Чирж зөөх"><GripVertical size={18} /></span>
-      <span className="text-sm font-semibold text-slate-700">Карт #{index + 1}</span>
-      <label className="ml-2 inline-flex min-h-11 items-center gap-2 text-sm text-slate-700">
-        <input type="checkbox" checked={card.active} onChange={(e) => set({ active: e.target.checked })} />Идэвхтэй
-      </label>
-      <div className="ml-auto flex flex-wrap gap-2">
-        <button type="button" onClick={() => onMove('first')} disabled={index === 0} aria-label={`Карт #${index + 1}-ийг эхэнд гаргах`} title="Эхэнд гаргах" className={iconBtn}><ChevronsUp size={16} aria-hidden="true" /></button>
-        <button type="button" onClick={() => onMove(-1)} disabled={index === 0} aria-label={`Карт #${index + 1}-ийг урагш`} className={iconBtn}><ArrowUp size={16} aria-hidden="true" /></button>
-        <button type="button" onClick={() => onMove(1)} disabled={index === count - 1} aria-label={`Карт #${index + 1}-ийг хойш`} className={iconBtn}><ArrowDown size={16} aria-hidden="true" /></button>
-        <button type="button" onClick={() => onMove('last')} disabled={index === count - 1} aria-label={`Карт #${index + 1}-ийг сүүлд оруулах`} title="Сүүлд оруулах" className={iconBtn}><ChevronsDown size={16} aria-hidden="true" /></button>
-        <button type="button" onClick={onRemove} aria-label={`Карт #${index + 1}-ийг устгах`} className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 text-red-700"><Trash2 size={16} aria-hidden="true" /></button>
+  return <div className={`${SUBCARD} ${card.active ? '' : 'opacity-75'}`} {...dragProps}>
+    <div className="mb-3 flex flex-wrap items-center gap-1">
+      <span className="flex h-11 w-7 cursor-grab items-center justify-center text-[var(--adm-ink-3)] active:cursor-grabbing" aria-hidden="true" title="Чирж зөөх"><GripVertical size={18} /></span>
+      <span className="adm-tnum text-sm font-semibold text-white">Карт #{index + 1}</span>
+      <Check className="ml-3" checked={card.active} onChange={(e) => set({ active: e.target.checked })} label="Идэвхтэй" />
+      <div className="ml-auto flex flex-wrap">
+        <IconButton label={`Карт #${index + 1}-ийг эхэнд гаргах`} icon={<ChevronsUp size={16} aria-hidden="true" />} onClick={() => onMove('first')} disabled={index === 0} />
+        <IconButton label={`Карт #${index + 1}-ийг урагш`} icon={<ArrowUp size={16} aria-hidden="true" />} onClick={() => onMove(-1)} disabled={index === 0} />
+        <IconButton label={`Карт #${index + 1}-ийг хойш`} icon={<ArrowDown size={16} aria-hidden="true" />} onClick={() => onMove(1)} disabled={index === count - 1} />
+        <IconButton label={`Карт #${index + 1}-ийг сүүлд оруулах`} icon={<ChevronsDown size={16} aria-hidden="true" />} onClick={() => onMove('last')} disabled={index === count - 1} />
+        <IconButton danger label={`Карт #${index + 1}-ийг устгах`} icon={<Trash2 size={16} aria-hidden="true" />} onClick={onRemove} />
       </div>
     </div>
-    <div className="mb-2 flex flex-wrap gap-2 text-xs">
-      <button type="button" onClick={() => onMove('first')} disabled={index === 0} className="min-h-9 rounded-lg border border-slate-300 px-3 font-semibold text-slate-700 disabled:opacity-40">Эхэнд гаргах</button>
-      <button type="button" onClick={() => onMove('last')} disabled={index === count - 1} className="min-h-9 rounded-lg border border-slate-300 px-3 font-semibold text-slate-700 disabled:opacity-40">Сүүлд оруулах</button>
+    <div className="mb-3 flex flex-wrap gap-2">
+      <Button variant="secondary" className="!min-h-9 !px-3 !text-xs" onClick={() => onMove('first')} disabled={index === 0}>Эхэнд гаргах</Button>
+      <Button variant="secondary" className="!min-h-9 !px-3 !text-xs" onClick={() => onMove('last')} disabled={index === count - 1}>Сүүлд оруулах</Button>
     </div>
     <div className="grid gap-3 md:grid-cols-2">
       <div>
-        <label htmlFor={`${id}-title`} className="mb-1 block text-xs font-semibold text-slate-600">Гарчиг * ({card.title.length}/{MAX_TITLE})</label>
+        <label htmlFor={`${id}-title`} className={LABEL}>Гарчиг * <span className="adm-tnum normal-case tracking-normal">({card.title.length}/{MAX_TITLE})</span></label>
         <input id={`${id}-title`} value={card.title} maxLength={MAX_TITLE} onChange={(e) => set({ title: e.target.value })} className={inputCls} />
       </div>
       <div>
-        <label htmlFor={`${id}-sub`} className="mb-1 block text-xs font-semibold text-slate-600">Тайлбар ({card.subtitle.length}/{MAX_TITLE})</label>
+        <label htmlFor={`${id}-sub`} className={LABEL}>Тайлбар <span className="adm-tnum normal-case tracking-normal">({card.subtitle.length}/{MAX_TITLE})</span></label>
         <input id={`${id}-sub`} value={card.subtitle} maxLength={MAX_TITLE} onChange={(e) => set({ subtitle: e.target.value })} className={inputCls} />
       </div>
       <div className="md:col-span-2">
-        <label htmlFor={`${id}-img`} className="mb-1 block text-xs font-semibold text-slate-600">Зураг (URL эсвэл upload)</label>
+        <label htmlFor={`${id}-img`} className={LABEL}>Зураг (URL эсвэл upload)</label>
         <div className="flex items-center gap-2">
-          {card.imageUrl ? <img src={card.imageUrl} alt="" className="h-11 w-20 shrink-0 rounded-lg border object-cover" /> : <div className="h-11 w-20 shrink-0 rounded-lg bg-slate-100" aria-hidden="true" />}
-          <input id={`${id}-img`} value={card.imageUrl} onChange={(e) => set({ imageUrl: e.target.value })} placeholder="https://..." className={inputCls} />
-          <input ref={fileRef} type="file" accept="image/*" className="sr-only" id={`${id}-file`} onChange={(e) => upload(e.target.files?.[0])} />
-          <label htmlFor={`${id}-file`} className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-[#003B5C] px-3 text-sm font-semibold text-[#003B5C]">
-            {uploading ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Upload size={16} aria-hidden="true" />}Upload
-          </label>
+          {card.imageUrl ? <img src={card.imageUrl} alt="" className="h-11 w-20 shrink-0 rounded-lg object-cover ring-1 ring-white/10" /> : <div className="h-11 w-20 shrink-0 rounded-lg bg-white/[0.05]" aria-hidden="true" />}
+          <input id={`${id}-img`} value={card.imageUrl} onChange={(e) => set({ imageUrl: e.target.value })} placeholder="https://..." className={`${inputCls} min-w-0`} />
+          <FileButton label="Upload" id={`${id}-file`} inputRef={fileRef} busy={uploading} icon={uploading ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Upload size={16} aria-hidden="true" />} onFile={(file) => upload(file)} />
         </div>
-        {uploadError && <p role="alert" className="mt-1 text-xs text-red-700">{uploadError}</p>}
+        {uploadError && <p role="alert" className="mt-1.5 text-xs text-[#FFC9D3]">{uploadError}</p>}
       </div>
       <div className="md:col-span-2">
-        <label htmlFor={`${id}-prod`} className="mb-1 block text-xs font-semibold text-slate-600">Холбосон бүтээгдэхүүн</label>
+        <label htmlFor={`${id}-prod`} className={LABEL}>Холбосон бүтээгдэхүүн</label>
         <select id={`${id}-prod`} value={card.productKey} onChange={(e) => set({ productKey: e.target.value })} className={inputCls}>
           <option value="">— Бүтээгдэхүүнгүй —</option>
           {products.map((p) => <option key={p.productKey} value={p.productKey}>{p.title || p.productKey}</option>)}
         </select>
       </div>
     </div>
-    <div className="mt-3">
+    <div className="mt-4 border-t border-white/[0.06] pt-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold text-slate-700">Товчнууд ({card.buttons.length}/{MAX_BUTTONS})</h4>
-        <button type="button" onClick={() => set({ buttons: [...card.buttons, { type: 'node', title: '', value: 'loans' }] })} disabled={card.buttons.length >= MAX_BUTTONS} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#003B5C] px-3 text-sm font-semibold text-[#003B5C] disabled:opacity-50"><Plus size={16} aria-hidden="true" />Товч нэмэх</button>
+        <h4 className="adm-label">Товчнууд <span className="adm-tnum">({card.buttons.length}/{MAX_BUTTONS})</span></h4>
+        <Button variant="secondary" icon={<Plus size={16} aria-hidden="true" />} onClick={() => set({ buttons: [...card.buttons, { type: 'node', title: '', value: 'loans' }] })} disabled={card.buttons.length >= MAX_BUTTONS}>Товч нэмэх</Button>
       </div>
       <ul className="space-y-2">
         {card.buttons.map((b, j) => <ButtonRow key={j} button={b} index={j} count={card.buttons.length} card={card} products={products} idPrefix={id}
@@ -300,53 +298,53 @@ export default function BotCardsEditor({ apiUrl }) {
     onDragEnd: () => { setDragging(null); setOverIndex(null); },
   });
 
-  if (loading) return <p role="status" className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={14} className="animate-spin" aria-hidden="true" />Ботын картыг ачаалж байна…</p>;
+  if (loading) return <p role="status" className="flex items-center gap-2 text-sm text-[var(--adm-ink-2)]"><Loader2 size={14} className="animate-spin" aria-hidden="true" />Ботын картыг ачаалж байна…</p>;
 
-  return <section className="rounded-2xl border bg-white p-6 shadow-sm" aria-labelledby="bot-cards-heading">
-    <h3 id="bot-cards-heading" className="mb-1 font-bold text-slate-800">Ботын карт</h3>
-    <p className="mb-3 text-sm text-slate-600">Картын дараалал нь Messenger болон сайтын чатботод харагдах дараалал. Чирж зөөх эсвэл сумаар солино.</p>
+  const activeLabel = SECTIONS.find(([k]) => k === active)?.[1];
+  return <Panel title="Ботын карт" description="Картын дараалал нь Messenger болон сайтын чатботод харагдах дараалал. Чирж зөөх эсвэл сумаар солино." bodyClassName="space-y-4">
+    <Tabs label="Ботын хэсэг" panelId="bot-cards-panel" value={active} onChange={selectSection}
+      items={SECTIONS.map(([key, label]) => ({ id: key, label: <>{label}{defaults[key] && <span className="sr-only"> (анхны тохиргоо)</span>}</>, dot: defaults[key] ? '#F3CB55' : undefined }))} />
 
-    <div role="tablist" aria-label="Ботын хэсэг" className="mb-4 flex flex-wrap gap-2">
-      {SECTIONS.map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={active === key} onClick={() => selectSection(key)}
-        className={`min-h-11 rounded-xl px-4 text-sm font-semibold ${active === key ? 'bg-[#003B5C] text-white' : 'border border-slate-300 text-slate-700'}`}>{label}{defaults[key] ? ' •' : ''}</button>)}
-    </div>
-
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-      <div className="min-w-0">
-        {defaults[active] && <p className="mb-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800">Энэ хэсэг анхны (default) тохиргоотой. Засаад хадгалбал өөрийн тохиргоо болно.</p>}
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <button type="button" onClick={addCard} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#003B5C] px-4 text-sm font-semibold text-[#003B5C]"><Plus size={16} aria-hidden="true" />Карт нэмэх</button>
-          <button type="button" onClick={reset} disabled={saving} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 disabled:opacity-50"><RotateCcw size={16} aria-hidden="true" />Анхны тохиргоо руу буцаах</button>
+    <div id="bot-cards-panel" role="tabpanel" aria-label={activeLabel} className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="min-w-0 space-y-3">
+        {defaults[active] && <InlineNote kind="warn" className="!text-xs">Энэ хэсэг анхны (default) тохиргоотой. Засаад хадгалбал өөрийн тохиргоо болно.</InlineNote>}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" icon={<Plus size={16} aria-hidden="true" />} onClick={addCard}>Карт нэмэх</Button>
+          <Button variant="secondary" icon={<RotateCcw size={16} aria-hidden="true" />} onClick={reset} disabled={saving}>Анхны тохиргоо руу буцаах</Button>
         </div>
-        {cards.length === 0 && <p className="text-sm text-slate-500">Карт алга.</p>}
+        {cards.length === 0 && <p className="text-sm text-[var(--adm-ink-3)]">Карт алга.</p>}
         <ul className="space-y-3">
-          {cards.map((card, i) => <li key={card.id} className={overIndex === i && dragging !== null && dragging !== i ? 'rounded-xl ring-2 ring-[#0084FF]' : ''}>
+          {cards.map((card, i) => <li key={card.id} className={overIndex === i && dragging !== null && dragging !== i ? 'rounded-2xl ring-2 ring-[var(--hue)] ring-offset-2 ring-offset-[#0C1020]' : ''}>
             <CardForm card={card} index={i} count={cards.length} products={products} apiUrl={apiUrl} dragProps={dragProps(i)}
               onChange={(nc) => setCards((l) => l.map((c, k) => (k === i ? nc : c)))}
               onMove={(how) => moveCard(i, how)} onRemove={() => removeCard(i)} />
           </li>)}
         </ul>
 
-        <div className="mt-5 rounded-xl border border-slate-200 p-4">
-          <label htmlFor="bot-default-image" className="mb-1 block text-sm font-semibold text-slate-800">Үндсэн зураг (зураггүй картад)</label>
+        <div className={SUBCARD}>
+          <label htmlFor="bot-default-image" className={LABEL}>Үндсэн зураг (зураггүй картад)</label>
           <div className="flex items-center gap-2">
-            {defaultImage ? <img src={defaultImage} alt="" className="h-11 w-20 shrink-0 rounded-lg border object-cover" /> : <div className="h-11 w-20 shrink-0 rounded-lg bg-slate-100" aria-hidden="true" />}
-            <input id="bot-default-image" value={defaultImage} onChange={(e) => { setDefaultImage(e.target.value); setMessage(''); }} placeholder="https://... (хоосон бол сайтын лого)" className={inputCls} />
+            {defaultImage ? <img src={defaultImage} alt="" className="h-11 w-20 shrink-0 rounded-lg object-cover ring-1 ring-white/10" /> : <div className="h-11 w-20 shrink-0 rounded-lg bg-white/[0.05]" aria-hidden="true" />}
+            <input id="bot-default-image" value={defaultImage} onChange={(e) => { setDefaultImage(e.target.value); setMessage(''); }} placeholder="https://... (хоосон бол сайтын лого)" className={`${inputCls} min-w-0`} />
           </div>
         </div>
 
-        {message && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800">{message}</p>}
-        {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button type="button" onClick={save} disabled={saving} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#003B5C] px-5 text-sm font-semibold text-white disabled:opacity-50">{saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}Хадгалах</button>
-          <button type="button" onClick={load} disabled={saving} className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 disabled:opacity-50">Буцаах</button>
+        {message && <InlineNote kind="ok">{message}</InlineNote>}
+        {error && <InlineNote kind="err">{error}</InlineNote>}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button icon={<Save size={16} aria-hidden="true" />} busy={saving} onClick={save} disabled={saving}>Хадгалах</Button>
+          <Button variant="secondary" onClick={load} disabled={saving}>Буцаах</Button>
         </div>
       </div>
 
-      <div className="lg:sticky lg:top-4 lg:self-start">
-        <p className="mb-2 flex items-center gap-1 text-xs font-semibold text-slate-500"><ArrowLeft size={12} aria-hidden="true" /><ArrowRight size={12} aria-hidden="true" />Урьдчилсан харагдац: {SECTIONS.find(([k]) => k === preview)?.[1]}</p>
-        <MessengerEmulator section={preview} cards={sections[preview] || []} defaultImageUrl={defaultImage} onNavigate={setPreview} />
+      <div className="lg:sticky lg:top-24 lg:self-start">
+        <p className="adm-label mb-3">Урьдчилсан харагдац · <span className="normal-case tracking-normal text-[var(--adm-ink-2)]">{SECTIONS.find(([k]) => k === preview)?.[1]}</span></p>
+        <div className="relative">
+          {/* Soft hue bloom behind the phone — light, not a block. */}
+          <div className="pointer-events-none absolute inset-x-6 top-10 bottom-10 rounded-[3rem] bg-[radial-gradient(60%_50%_at_50%_40%,color-mix(in_srgb,var(--hue)_28%,transparent),transparent_70%)] blur-2xl" aria-hidden="true" />
+          <div className="relative"><MessengerEmulator section={preview} cards={sections[preview] || []} defaultImageUrl={defaultImage} onNavigate={setPreview} /></div>
+        </div>
       </div>
     </div>
-  </section>;
+  </Panel>;
 }

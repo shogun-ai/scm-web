@@ -1,17 +1,31 @@
 import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
-import { CheckCircle2, Facebook, Loader2, RefreshCw, XCircle } from 'lucide-react';
+import { CheckCircle2, Facebook, KeyRound, RefreshCw, Settings2, XCircle } from 'lucide-react';
 import { getAuthHeaders } from '../loanTask/api';
+import PageHeader from './ui/PageHeader';
+import Button from './ui/Button';
+import { Notice, Pill } from './ui/Feedback';
+import { MODULE_HUES } from './theme/spectrum';
 
-const Row = ({ label, ok }) => <li className="flex items-center justify-between gap-3 py-2">
-  <span className="text-sm text-slate-700">{label}</span>
-  <span className={`inline-flex items-center gap-1 text-sm font-semibold ${ok ? 'text-emerald-700' : 'text-red-700'}`}>
-    {ok ? <CheckCircle2 size={16} aria-hidden="true" /> : <XCircle size={16} aria-hidden="true" />}
-    <span aria-hidden="true">{ok ? '✓' : '✗'}</span><span className="sr-only">{ok ? 'Зөв' : 'Алдаатай'}</span>
+const HUE = MODULE_HUES.facebook;
+const CHECKS = [
+  { key: 'tokenConfigured', label: 'Token тохируулсан' },
+  { key: 'matchesExpected', label: 'Solongo.Capital мөн эсэх' },
+  { key: 'webhookSubscribed', label: 'Webhook subscribed' },
+  { key: 'appSecretConfigured', label: 'App secret тохируулсан' },
+  { key: 'messengerProfileOk', label: 'Messenger цэс' },
+];
+const code = 'rounded-md bg-white/[0.07] px-1.5 py-0.5 font-mono text-[12.5px] text-[var(--adm-ink)] ring-1 ring-inset ring-white/10';
+
+const Row = ({ label, ok }) => <li className="flex min-h-12 items-center justify-between gap-3 py-2.5">
+  <span className="flex items-center gap-3 text-sm text-[var(--adm-ink)]">
+    {ok ? <CheckCircle2 size={18} className="shrink-0 text-[#8FF0C8]" aria-hidden="true" /> : <XCircle size={18} className="shrink-0 text-[#FFB8C5]" aria-hidden="true" />}
+    {label}
   </span>
+  {ok ? <Pill hue="green">Зөв</Pill> : <Pill hue="rose">Алдаатай</Pill>}
 </li>;
 
-// Facebook холболт: GET /api/admin/facebook/status, POST /api/admin/facebook/messenger-profile.
+// Facebook холболт: GET /api/admin/facebook/status, POST /api/admin/facebook/messenger-profile. Тэнгэр дээр шууд.
 export default function FacebookStatusPanel({ apiUrl }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -41,37 +55,51 @@ export default function FacebookStatusPanel({ apiUrl }) {
   };
 
   const page = status?.page && typeof status.page === 'object' ? status.page : null;
+  const failed = status ? CHECKS.filter(check => !status[check.key]).length : 0;
 
-  return <div className="max-w-2xl space-y-6 animate-fade-in">
-    <h2 className="flex items-center gap-2 text-2xl font-bold text-[#003B5C]"><Facebook size={24} aria-hidden="true" />Facebook холболт</h2>
-    <section className="rounded-2xl border bg-white p-6 shadow-sm" aria-busy={loading}>
-      {loading && <p role="status" className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={14} className="animate-spin" aria-hidden="true" />Ачаалж байна…</p>}
-      {status && !loading && <>
-        <p className="mb-2 text-sm text-slate-700">Page: <strong>{page ? `${page.name || '—'} (${page.id || '—'})` : 'Холбогдоогүй'}</strong></p>
-        <ul className="divide-y divide-slate-100">
-          <Row label="Token тохируулсан" ok={Boolean(status.tokenConfigured)} />
-          <Row label="Solongo.Capital мөн эсэх" ok={Boolean(status.matchesExpected)} />
-          <Row label="Webhook subscribed" ok={Boolean(status.webhookSubscribed)} />
-          <Row label="App secret тохируулсан" ok={Boolean(status.appSecretConfigured)} />
-          <Row label="Messenger цэс" ok={Boolean(status.messengerProfileOk)} />
-        </ul>
-      </>}
-      {message && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800">{message}</p>}
-      {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-      <div className="mt-4 flex flex-wrap gap-3">
-        <button type="button" onClick={reconfigure} disabled={busy || loading} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#003B5C] px-4 text-sm font-semibold text-white disabled:opacity-50">{busy ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}Messenger цэсийг дахин тохируулах</button>
-        <button type="button" onClick={load} disabled={loading || busy} className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 disabled:opacity-50">Шинэчлэх</button>
-      </div>
-    </section>
-    <section className="rounded-2xl border bg-white p-6 text-sm text-slate-700 shadow-sm">
-      <h3 className="mb-2 font-bold text-slate-800">Token солих заавар</h3>
-      <ol className="list-decimal space-y-1 pl-5">
-        <li>Meta Business дээр Solongo.Capital page-д хандах page access token үүсгэнэ.</li>
-        <li>Эрх: <code>pages_messaging</code>, <code>pages_read_engagement</code>, <code>pages_manage_metadata</code>.</li>
-        <li>Render дээр <code>FB_PAGE_ACCESS_TOKEN</code> environment хувьсагчийг шинэчилж, сервисийг дахин ачаална.</li>
-        <li>Энэ хуудсанд &quot;Шинэчлэх&quot; дарж бүх зүйл ✓ болсныг шалгана.</li>
-      </ol>
-      <p className="mt-2 text-slate-500">Дэлгэрэнгүй: <code>docs/setup/facebook-messenger.md</code>. Token хэзээ ч энд харагдахгүй.</p>
-    </section>
+  return <div className="adm-board space-y-4 md:space-y-5" style={{ '--hue': `var(--sp-${HUE})` }}>
+    <PageHeader hue={HUE} icon={Facebook} eyebrow="Холболт" title="Facebook холболт" description="Solongo.Capital page, webhook болон Messenger цэсийн төлөв"
+      actions={<>
+        <Button variant="secondary" onClick={load} disabled={loading || busy} icon={<RefreshCw size={16} className={loading ? 'animate-spin' : ''} aria-hidden="true" />}>Шинэчлэх</Button>
+        <Button hue={HUE} onClick={reconfigure} busy={busy} disabled={busy || loading} icon={<Settings2 size={16} aria-hidden="true" />}>Messenger цэсийг дахин тохируулах</Button>
+      </>} />
+    {message && <Notice kind="ok">{message}</Notice>}
+    {error && <Notice kind="err">{error}</Notice>}
+
+    <div className="grid items-start gap-4 md:gap-5 lg:grid-cols-5">
+      <section className="glass relative p-5 md:p-6 lg:col-span-3" aria-labelledby="fb-status-title" aria-busy={loading}>
+        <span className="adm-card__rim" aria-hidden="true" />
+        <div className="relative flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 id="fb-status-title" className="adm-label">Page</h3>
+            <p className="mt-1.5 text-lg font-semibold text-white">{loading && !status ? '—' : page ? (page.name || '—') : 'Холбогдоогүй'}</p>
+            {page?.id && <p className="adm-tnum mt-0.5 font-mono text-xs text-[var(--adm-ink-3)]">ID {page.id}</p>}
+          </div>
+          {status && !loading && (failed === 0 ? <Pill hue="green">Бүх шалгалт хэвийн</Pill> : <Pill hue="rose">{failed} асуудал</Pill>)}
+        </div>
+        <div className="relative mt-4 border-t border-white/[0.07] pt-2">
+          {loading && <div role="status" aria-label="Ачаалж байна" className="space-y-3 py-2">{CHECKS.map(check => <div key={check.key} className="adm-skeleton h-8" />)}</div>}
+          {status && !loading && <ul className="divide-y divide-white/[0.06]">{CHECKS.map(check => <Row key={check.key} label={check.label} ok={Boolean(status[check.key])} />)}</ul>}
+          {!status && !loading && <p className="py-4 text-sm text-[var(--adm-ink-2)]">Төлөв ачаалагдаагүй. "Шинэчлэх" дарж дахин оролдоно уу.</p>}
+        </div>
+      </section>
+
+      <section className="glass relative p-5 md:p-6 lg:col-span-2" aria-labelledby="fb-guide-title">
+        <span className="adm-card__rim" aria-hidden="true" />
+        <h3 id="fb-guide-title" className="relative flex items-center gap-2 text-[15px] font-semibold text-white"><KeyRound size={16} className="text-[color-mix(in_srgb,var(--hue)_70%,white)]" aria-hidden="true" />Token солих заавар</h3>
+        <ol className="relative mt-4 space-y-3.5 text-sm leading-relaxed text-[var(--adm-ink-2)]">
+          {[
+            <>Meta Business дээр Solongo.Capital page-д хандах page access token үүсгэнэ.</>,
+            <>Эрх: <code className={code}>pages_messaging</code>, <code className={code}>pages_read_engagement</code>, <code className={code}>pages_manage_metadata</code>.</>,
+            <>Render дээр <code className={code}>FB_PAGE_ACCESS_TOKEN</code> environment хувьсагчийг шинэчилж, сервисийг дахин ачаална.</>,
+            <>Энэ хуудсанд &quot;Шинэчлэх&quot; дарж бүх шалгалт &quot;Зөв&quot; болсныг шалгана.</>,
+          ].map((step, index) => <li key={index} className="flex gap-3">
+            <span className="adm-tnum grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white/[0.06] text-xs font-semibold text-white ring-1 ring-inset ring-white/15" aria-hidden="true">{index + 1}</span>
+            <span className="min-w-0 break-words pt-0.5">{step}</span>
+          </li>)}
+        </ol>
+        <p className="relative mt-5 border-t border-white/[0.07] pt-4 text-xs leading-relaxed text-[var(--adm-ink-3)]">Дэлгэрэнгүй: <code className={code}>docs/setup/facebook-messenger.md</code>. Token хэзээ ч энд харагдахгүй.</p>
+      </section>
+    </div>
   </div>;
 }

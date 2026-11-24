@@ -175,22 +175,27 @@ select.adm-field option { background: #0E1326; color: #F4F7FB; }
    Detail side sheet — frosted light glass with an ink header
    ========================================================================== */
 .adm-drawer-overlay {
+  /* Tokens repeated here so drawers/modals rendered outside .adm-shell (e.g. AdminPanel root overlays) keep the palette. */
+  --sp-rose: #FF6B86; --sp-amber: #FFA25C; --sp-gold: #F3CB55; --sp-green: #34D399;
+  --sp-cyan: #4CC6FF; --sp-indigo: #7C8CFF; --sp-violet: #B794FF;
+  --adm-ease: cubic-bezier(0.22, 1, 0.36, 1);
   background: rgba(3, 5, 11, 0.62);
   -webkit-backdrop-filter: blur(5px) saturate(120%);
   backdrop-filter: blur(5px) saturate(120%);
-  animation: adm-fade 260ms var(--adm-ease) both;
+  animation: adm-fade 260ms var(--adm-ease) backwards;
 }
 @keyframes adm-fade { from { opacity: 0; } }
 
 .adm-drawer {
   --hue: var(--sp-green);
+  --drawer-ink: #047857; /* hue-tinted dark for focus/dots on the light body (AA on white) */
   color-scheme: light;
   color: #1E293B;
   background:
-    radial-gradient(120% 40% at 100% 0%, rgba(52, 211, 153, 0.08), transparent 60%),
+    radial-gradient(120% 40% at 100% 0%, color-mix(in srgb, var(--hue) 8%, transparent), transparent 60%),
     linear-gradient(180deg, #F6F8FC 0%, #EEF2F8 100%);
   box-shadow: -40px 0 120px -30px rgba(0, 0, 0, 0.85), inset 1px 0 0 rgba(255, 255, 255, 0.8);
-  animation: adm-drawer-in 460ms var(--adm-ease) both;
+  animation: adm-drawer-in 460ms var(--adm-ease) backwards; /* backwards so nested fixed dialogs are not contained after the slide-in */
 }
 @keyframes adm-drawer-in { from { translate: 40px 0; opacity: 0; } to { translate: none; opacity: 1; } }
 
@@ -198,7 +203,7 @@ select.adm-field option { background: #0E1326; color: #F4F7FB; }
   position: relative;
   color: #FFFFFF;
   background:
-    radial-gradient(80% 140% at 0% 0%, rgba(52, 211, 153, 0.22), transparent 55%),
+    radial-gradient(80% 140% at 0% 0%, color-mix(in srgb, var(--hue) 24%, transparent), transparent 55%),
     radial-gradient(60% 120% at 100% 0%, rgba(76, 198, 255, 0.16), transparent 60%),
     linear-gradient(160deg, #0D1A33 0%, #0A0F1F 70%);
 }
@@ -207,7 +212,7 @@ select.adm-field option { background: #0E1326; color: #F4F7FB; }
   position: absolute;
   left: 0; right: 0; bottom: 0;
   height: 1px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.6) 18%, #34D399 45%, #4CC6FF 70%, transparent);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.6) 18%, var(--hue) 45%, #4CC6FF 70%, transparent);
   opacity: 0.8;
 }
 
@@ -240,10 +245,11 @@ select.adm-field option { background: #0E1326; color: #F4F7FB; }
   content: '';
   width: 6px; height: 6px;
   border-radius: 999px;
-  background: #10B981;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+  background: var(--hue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hue) 20%, transparent);
 }
-.adm-drawer :focus-visible { outline: 2px solid #047857; outline-offset: 2px; }
+.adm-drawer :focus-visible { outline: 2px solid var(--drawer-ink); outline-offset: 2px; }
+.adm-drawer__eyebrow { color: color-mix(in srgb, var(--hue) 60%, white); }
 .adm-drawer .adm-drawer__head :focus-visible { outline-color: #8FF0C8; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -349,3 +355,32 @@ select.adm-field option { background: #0E1326; color: #F4F7FB; }
 }
 
 .adm-shell.adm-auth { position: fixed; }
+
+/* Portal-free drawer variant hues */
+.adm-drawer[data-hue='gold'] { --hue: var(--sp-gold); --drawer-ink: #92400E; }
+.adm-drawer[data-hue='green'] { --hue: var(--sp-green); --drawer-ink: #047857; }
+
+/* Light-tone controls for drawers / pearl sheets */
+.adm-lfield {
+  min-height: 44px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(100, 116, 139, 0.35);
+  background: rgba(255, 255, 255, 0.92);
+  color: #1E293B;
+  font-size: 14px;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: border-color 200ms, box-shadow 200ms;
+}
+.adm-lfield::placeholder { color: #64748B; }
+.adm-lfield:focus { outline: none; border-color: var(--drawer-ink, #047857); box-shadow: 0 0 0 4px color-mix(in srgb, var(--hue, #34D399) 22%, transparent); }
+.adm-lfield:disabled { opacity: 0.6; }
+
+.adm-switch { position: relative; display: inline-flex; width: 44px; height: 26px; flex-shrink: 0; border-radius: 999px; background: rgba(148, 163, 184, 0.45); transition: background-color 200ms; }
+.adm-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 999px; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); transition: transform 220ms var(--adm-ease); }
+.adm-switch[aria-checked='true'] { background: var(--hue, #34D399); }
+.adm-switch[aria-checked='true']::after { transform: translateX(18px); }
+
+.adm-drawer.adm-modal { animation: adm-sheet-in 360ms var(--adm-ease) backwards; box-shadow: 0 40px 120px -30px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.8); }
+@media (prefers-reduced-motion: reduce) { .adm-drawer.adm-modal { animation: none !important; } }

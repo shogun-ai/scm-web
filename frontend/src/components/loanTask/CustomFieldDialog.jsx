@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { useState } from 'react';
 import { FILE_FORMATS, slugify } from '@shared/loanWidgets';
 import OptionsEditor from './OptionsEditor';
 import { makeCustomKey } from './configHelpers';
+import { Modal } from '../admin/ui/Modal';
+import Button from '../admin/ui/Button';
+import { Field, Input, Select } from '../admin/ui/Form';
 
-const BOX = 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#003B5C] focus:outline-none focus:ring-2 focus:ring-[#003B5C]/20';
+const CHECK = 'h-[18px] w-[18px] shrink-0 accent-[#0369A1]';
 const TYPE_LABELS = { text: 'Текст', number: 'Тоо', date: 'Огноо', select: 'Сонголт', multiselect: 'Олон сонголт', yesno: 'Тийм/Үгүй', file: 'Файл' };
 const CUSTOM_TYPES = Object.keys(TYPE_LABELS);
 
@@ -12,13 +14,7 @@ export default function CustomFieldDialog({ initial, takenKeys, onSave, onCancel
   const editing = Boolean(initial);
   const [draft, setDraft] = useState(() => initial ? { ...initial, options: initial.options || [] } : { type: 'text', label: '', helpText: '', placeholder: '', required: false, maxLength: '', min: '', max: '', options: [{ value: '', label: '' }], accept: ['pdf', 'jpg', 'png', 'webp'], maxSizeMb: 10, maxFiles: 1 });
   const [error, setError] = useState('');
-  const ref = useRef(null);
-  useEffect(() => {
-    ref.current?.querySelector('input')?.focus();
-    const onKey = event => { if (event.key === 'Escape') onCancel(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel]);
+  // Modal primitive: focus moves to the first input, Escape / backdrop click cancel, focus returns on close.
   const set = patch => setDraft(previous => ({ ...previous, ...patch }));
   const formats = Object.keys(FILE_FORMATS || {});
 
@@ -53,24 +49,21 @@ export default function CustomFieldDialog({ initial, takenKeys, onSave, onCancel
     onSave(field);
   };
 
-  return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onMouseDown={event => { if (event.target === event.currentTarget) onCancel(); }}>
-    <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="cfd-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
-      <div className="mb-4 flex items-center justify-between"><h3 id="cfd-title" className="text-lg font-bold text-[#003B5C]">{editing ? 'Тусгай талбар засах' : 'Тусгай талбар нэмэх'}</h3><button type="button" onClick={onCancel} className="grid h-10 w-10 place-items-center rounded-lg hover:bg-slate-100" aria-label="Хаах"><X size={18} aria-hidden="true" /></button></div>
-      <div className="space-y-4">
-        <label className="block text-xs font-semibold text-slate-600">Нэр <span className="text-red-600" aria-hidden="true">*</span><input className={`${BOX} mt-1`} maxLength={120} value={draft.label} onChange={event => set({ label: event.target.value })} /></label>
-        <label className="block text-xs font-semibold text-slate-600">Төрөл<select className={`${BOX} mt-1`} value={draft.type} disabled={editing} onChange={event => set({ type: event.target.value })}>{CUSTOM_TYPES.map(type => <option key={type} value={type}>{TYPE_LABELS[type]}</option>)}</select></label>
-        <label className="block text-xs font-semibold text-slate-600">Тайлбар<input className={`${BOX} mt-1`} maxLength={300} value={draft.helpText || ''} onChange={event => set({ helpText: event.target.value })} /></label>
-        {['text', 'number', 'select'].includes(draft.type) && <label className="block text-xs font-semibold text-slate-600">Placeholder<input className={`${BOX} mt-1`} maxLength={120} value={draft.placeholder || ''} onChange={event => set({ placeholder: event.target.value })} /></label>}
-        <label className="flex min-h-10 items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-[#003B5C]" checked={Boolean(draft.required)} onChange={event => set({ required: event.target.checked })} />Заавал бөглөх</label>
-        {draft.type === 'text' && <label className="block text-xs font-semibold text-slate-600">Хамгийн их урт (1–1000)<input type="number" min="1" max="1000" className={`${BOX} mt-1`} value={draft.maxLength ?? ''} onChange={event => set({ maxLength: event.target.value })} /></label>}
-        {draft.type === 'number' && <div className="grid grid-cols-2 gap-3"><label className="block text-xs font-semibold text-slate-600">Доод утга<input type="number" className={`${BOX} mt-1`} value={draft.min ?? ''} onChange={event => set({ min: event.target.value })} /></label><label className="block text-xs font-semibold text-slate-600">Дээд утга<input type="number" className={`${BOX} mt-1`} value={draft.max ?? ''} onChange={event => set({ max: event.target.value })} /></label></div>}
-        {draft.type === 'date' && <div className="grid grid-cols-2 gap-3"><label className="block text-xs font-semibold text-slate-600">Эхний огноо<input type="date" className={`${BOX} mt-1`} value={draft.min ?? ''} onChange={event => set({ min: event.target.value })} /></label><label className="block text-xs font-semibold text-slate-600">Сүүлийн огноо<input type="date" className={`${BOX} mt-1`} value={draft.max ?? ''} onChange={event => set({ max: event.target.value })} /></label></div>}
-        {(draft.type === 'select' || draft.type === 'multiselect') && <OptionsEditor options={draft.options} onChange={options => set({ options })} />}
-        {draft.type === 'file' && <div className="space-y-3"><fieldset><legend className="mb-1 text-xs font-semibold text-slate-600">Зөвшөөрөх формат</legend><div className="flex flex-wrap gap-3">{formats.map(format => <label key={format} className="flex min-h-10 items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-[#003B5C]" checked={draft.accept?.includes(format)} onChange={event => set({ accept: event.target.checked ? [...(draft.accept || []), format] : (draft.accept || []).filter(item => item !== format) })} />{format.toUpperCase()}</label>)}</div></fieldset><div className="grid grid-cols-2 gap-3"><label className="block text-xs font-semibold text-slate-600">Хамгийн их MB (1–10)<input type="number" min="1" max="10" className={`${BOX} mt-1`} value={draft.maxSizeMb ?? ''} onChange={event => set({ maxSizeMb: event.target.value })} /></label><label className="block text-xs font-semibold text-slate-600">Хамгийн их тоо (1–5)<input type="number" min="1" max="5" className={`${BOX} mt-1`} value={draft.maxFiles ?? ''} onChange={event => set({ maxFiles: event.target.value })} /></label></div></div>}
-        {editing && <p className="text-xs text-slate-500">Түлхүүр: <span className="font-mono">{initial.key}</span> (өөрчлөгдөхгүй)</p>}
-        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-        <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={onCancel} className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm">Болих</button><button type="button" onClick={save} className="min-h-11 rounded-xl bg-[#003B5C] px-5 text-sm font-semibold text-white">Хадгалах</button></div>
-      </div>
+  const L = 'light';
+  return <Modal title={editing ? 'Тусгай талбар засах' : 'Тусгай талбар нэмэх'} description={editing ? <>Түлхүүр: <span className="font-mono">{initial.key}</span> (өөрчлөгдөхгүй)</> : 'Маягтад шинэ асуулт нэмнэ.'} onClose={onCancel}
+    footer={<><Button variant="light" onClick={onCancel}>Болих</Button><Button variant="ink" onClick={save}>Хадгалах</Button></>}>
+    <div className="max-h-[60vh] space-y-4 overflow-y-auto px-0.5 pb-1 [--drawer-ink:#0369A1] [--hue:#4CC6FF]">
+      <Field tone={L} label="Нэр" required>{({ id }) => <Input tone={L} id={id} maxLength={120} value={draft.label} onChange={event => set({ label: event.target.value })} />}</Field>
+      <Field tone={L} label="Төрөл">{({ id }) => <Select tone={L} id={id} value={draft.type} disabled={editing} onChange={event => set({ type: event.target.value })}>{CUSTOM_TYPES.map(type => <option key={type} value={type}>{TYPE_LABELS[type]}</option>)}</Select>}</Field>
+      <Field tone={L} label="Тайлбар">{({ id }) => <Input tone={L} id={id} maxLength={300} value={draft.helpText || ''} onChange={event => set({ helpText: event.target.value })} />}</Field>
+      {['text', 'number', 'select'].includes(draft.type) && <Field tone={L} label="Placeholder">{({ id }) => <Input tone={L} id={id} maxLength={120} value={draft.placeholder || ''} onChange={event => set({ placeholder: event.target.value })} />}</Field>}
+      <label className="flex min-h-11 items-center gap-2.5 text-sm font-medium text-slate-800"><input type="checkbox" className={CHECK} checked={Boolean(draft.required)} onChange={event => set({ required: event.target.checked })} />Заавал бөглөх</label>
+      {draft.type === 'text' && <Field tone={L} label="Хамгийн их урт (1–1000)">{({ id }) => <Input tone={L} id={id} type="number" min="1" max="1000" value={draft.maxLength ?? ''} onChange={event => set({ maxLength: event.target.value })} />}</Field>}
+      {draft.type === 'number' && <div className="grid grid-cols-2 gap-3"><Field tone={L} label="Доод утга">{({ id }) => <Input tone={L} id={id} type="number" value={draft.min ?? ''} onChange={event => set({ min: event.target.value })} />}</Field><Field tone={L} label="Дээд утга">{({ id }) => <Input tone={L} id={id} type="number" value={draft.max ?? ''} onChange={event => set({ max: event.target.value })} />}</Field></div>}
+      {draft.type === 'date' && <div className="grid grid-cols-2 gap-3"><Field tone={L} label="Эхний огноо">{({ id }) => <Input tone={L} id={id} type="date" value={draft.min ?? ''} onChange={event => set({ min: event.target.value })} />}</Field><Field tone={L} label="Сүүлийн огноо">{({ id }) => <Input tone={L} id={id} type="date" value={draft.max ?? ''} onChange={event => set({ max: event.target.value })} />}</Field></div>}
+      {(draft.type === 'select' || draft.type === 'multiselect') && <OptionsEditor tone={L} options={draft.options} onChange={options => set({ options })} />}
+      {draft.type === 'file' && <div className="space-y-3"><fieldset><legend className="mb-1 text-xs font-semibold text-slate-700">Зөвшөөрөх формат</legend><div className="flex flex-wrap gap-x-4">{formats.map(format => <label key={format} className="flex min-h-11 items-center gap-2 text-sm text-slate-800"><input type="checkbox" className={CHECK} checked={draft.accept?.includes(format)} onChange={event => set({ accept: event.target.checked ? [...(draft.accept || []), format] : (draft.accept || []).filter(item => item !== format) })} />{format.toUpperCase()}</label>)}</div></fieldset><div className="grid grid-cols-2 gap-3"><Field tone={L} label="Хамгийн их MB (1–10)">{({ id }) => <Input tone={L} id={id} type="number" min="1" max="10" value={draft.maxSizeMb ?? ''} onChange={event => set({ maxSizeMb: event.target.value })} />}</Field><Field tone={L} label="Хамгийн их тоо (1–5)">{({ id }) => <Input tone={L} id={id} type="number" min="1" max="5" value={draft.maxFiles ?? ''} onChange={event => set({ maxFiles: event.target.value })} />}</Field></div></div>}
+      {error && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
     </div>
-  </div>;
+  </Modal>;
 }
