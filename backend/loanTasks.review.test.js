@@ -96,7 +96,9 @@ test('L5 / item 12: only http(s) file URLs are returned', () => {
   assert.equal(safeHttpUrl('not a url'), '');
   assert.equal(safeHttpUrl('https://res.cloudinary.com/demo/raw/upload/v1/a.pdf'), 'https://res.cloudinary.com/demo/raw/upload/v1/a.pdf');
   const detail = toTaskDetail(loan({ fileDetails: [{ _id: 'a', fieldName: 'file_id', fileUrl: 'javascript:alert(1)' }, { _id: 'b', fieldName: 'file_id', fileUrl: 'http://res.cloudinary.com/demo/a.pdf' }] }), admin, { cloudinary, now: NOW });
-  assert.deepEqual(detail.files.map(file => file.url), ['', 'http://res.cloudinary.com/demo/a.pdf']);
+  assert.deepEqual(detail.files.map(file => file.url), ['', ''], 'D22: unsafe/non-https legacy URLs are not proxyable and never returned');
+  const https = toTaskDetail(loan({ fileDetails: [{ _id: 'c', fieldName: 'file_id', fileUrl: 'https://res.cloudinary.com/demo/a.pdf' }] }), admin, { now: NOW });
+  assert.deepEqual(https.files.map(file => file.url), ['/api/loan-requests/aaaaaaaaaaaaaaaaaaaaaaaa/files/fd-c']);
 });
 
 test('L1 / item 14: free-text extra_N files show their requested label (file label or link item label)', () => {

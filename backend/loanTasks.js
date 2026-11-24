@@ -14,6 +14,7 @@ import {
 import { IntakeError, createIntakeLimiter, isRequestManager, isRequestStaff, rejectOversizedBody, taskLockBlocks } from './loanIntake.js';
 import * as emails from './loanTaskEmails.js';
 import { resolvePermissions } from '../shared/permissions.js';
+import { fileRefOf, fileProxyPath, isProxyableFile } from './loanFiles.js';
 
 const { Schema } = mongoose;
 const Mixed = Schema.Types.Mixed;
@@ -283,7 +284,7 @@ export function allowedActionsWithPermissions(loan, user, perms) {
   };
 }
 
-export function toTaskDetail(loan, user, { cloudinary, now = new Date(), assigneeNotifyEmail = '', perms = null, canDelete = false } = {}) {
+export function toTaskDetail(loan, user, { now = new Date(), assigneeNotifyEmail = '', perms = null, canDelete = false } = {}) {
   const base = toTaskListItem(loan, { canDelete });
   const state = deriveTaskState(loan);
   const terminal = TERMINAL_TASK_STATUSES.includes(state.taskStatus);
@@ -295,11 +296,13 @@ export function toTaskDetail(loan, user, { cloudinary, now = new Date(), assigne
     const link = links.find(item => String(item._id) === String(file.linkId));
     return link?.items?.find(item => item.key === file.fieldKey)?.label || '';
   };
-  const fileOut = (file, source) => {
+  // D22: Cloudinary URLs are never returned; `url` is the authenticated proxy path (GET .../files/:fileRef).
+  const fileOut = (file, source, kind, index) => {
     const fieldKey = file.fieldKey || storageFieldToPresetKey(file.fieldName) || (CUSTOM_KEY_RE.test(file.fieldName || '') ? file.fieldName : null);
+    const ref = fileRefOf(kind, file, index);
     return {
-      id: String(file._id || ''), source, fieldName: file.fieldName || '', fieldKey, label: requestedLabel(file) || fieldLabel(loan, fieldKey, file.fieldName),
-      fileName: file.fileName || '', mimeType: file.mimeType || '', size: file.size ?? null, url: fileDownloadUrl(file, { cloudinary, now }), uploadedAt: file.uploadedAt || null,
+      id: String(file._id || ''), ref, source, fieldName: file.fieldName || '', fieldKey, label: requestedLabel(file) || fieldLabel(loan, fieldKey, file.fieldName),
+      fileName: file.fileName || '', mimeType: file.mimeType || '', size: file.size ?? null, url: isProxyableFile(file) ? fileProxyPath(loan._id, ref) : '', uploadedAt: file.uploadedAt || null,
     };
   };
   const steps = snapshotSteps(loan);
@@ -323,8 +326,8 @@ export function toTaskDetail(loan, user, { cloudinary, now = new Date(), assigne
     answers: steps ? (loan.taskAnswers || {}) : null,
     answerLabels: steps ? answerLabelsFor(steps, loan.taskAnswers || {}) : null,
     files: [
-      ...(Array.isArray(loan.fileDetails) ? loan.fileDetails : []).map(file => fileOut(file, 'applicant')),
-      ...(Array.isArray(loan.taskFiles) ? loan.taskFiles : []).map(file => fileOut(file, file.source === 'applicant_link' ? 'applicant_link' : 'staff')),
+      ...(Array.isArray(loan.fileDetails) ? loan.fileDetails : []).map((file, index) => fileOut(file, 'applicant', 'fd', index)),
+      ...(Array.isArray(loan.taskFiles) ? loan.taskFiles : []).map((file, index) => fileOut(file, file.source === 'applicant_link' ? 'applicant_link' : 'staff', 'tf', index)),
     ],
     history: (Array.isArray(loan.taskHistory) ? loan.taskHistory : []).map(item => ({
       id: String(item._id || ''), at: item.at || null, type: item.type || '', from: item.from || null, to: item.to || null,

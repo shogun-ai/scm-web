@@ -41,6 +41,7 @@ import nodemailer from 'nodemailer';
 import LoanFormConfig from './models/LoanFormConfig.js';
 import { createBotContentSource, registerBotRoutes } from './botEngine.js';
 import { createScmMessenger, registerScmMessengerRoutes, createMongoSessionStore, createSharedWebhookForwarder } from './scmMessenger.js';
+import { registerLoanFileRoutes } from './loanFiles.js';
 import { applyLoanTaskSchema, registerLoanTaskRoutes, legacyLoanPostGone, taskLockBlocks, sanitizeLegacyLoanWrite } from './loanTasks.js';
 import { createMailer, isValidEmailAddress } from './mailer.js';
 import { registerAccountRoutes, readDeleteFlag, recordLoginEvent, normalizePixelId, META_PIXEL_KEY } from './accountRoutes.js';
@@ -2960,6 +2961,9 @@ const loanTasks = registerLoanTaskRoutes({
     automate: runPostSubmissionAutomationInBackground,
     getCompanyPhone: async () => { const doc = await SiteConfig.findOne({ key: 'contact_phone' }).lean(); return typeof doc?.value === 'string' ? doc.value : ''; },
 });
+
+// D22: authenticated proxy that opens private loan files with the real Content-Type and file name.
+registerLoanFileRoutes({ app, authenticateUser, LoanRequest, cloudinary, http: axios, createLog, getPermissions: user => permissionService.permissionsFor(user) });
 
 // D18: SCM Messenger (Page posts carousel, in-chat application, admin status/profile). Read-only toward the Page.
 // D19: one bot content source for Messenger and the website chatbot (cached 60s, invalidated on admin PUT).

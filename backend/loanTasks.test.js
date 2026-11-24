@@ -363,8 +363,8 @@ test('legacy request actions write only task fields (+assignee), never legacy st
   let response = await h.invoke('get', '/api/loan-tasks/:id', { params: { id: LOAN_ID } });
   assert.equal(response.data.taskStatus, 'resolved'); assert.deepEqual(response.data.outcome.code, 'approved_conditional');
   assert.equal(response.data.taskForm, null); assert.equal(response.data.answers, null);
-  assert.equal(response.data.files[0].label, 'Иргэний үнэмлэхийн лавлагаа'); assert.ok(response.data.files[0].url.startsWith('https://api.cloudinary.com/v1_1/demo/raw/download?public_id=scm_loan_private%2Fp1'));
-  assert.ok(response.data.files[0].url.includes(`expires_at=${Math.floor(NOW.getTime() / 1000) + 600}`), 'short-lived URL generated at read time');
+  assert.equal(response.data.files[0].label, 'Иргэний үнэмлэхийн лавлагаа'); assert.equal(response.data.files[0].url, `/api/loan-requests/${LOAN_ID}/files/fd-fd1`); assert.equal(response.data.files[0].ref, 'fd-fd1');
+  assert.equal(JSON.stringify(response.data).includes('cloudinary.com'), false, 'D22: no Cloudinary URL in the detail response');
   assert.equal(response.data.allowedActions.reopen, false);
   response = await h.invoke('post', '/api/loan-tasks/:id/actions', { params: { id: LOAN_ID }, body: { type: 'reopen', note: 'x', expectedRevision: 0 } });
   assert.equal(response.code, 403);
@@ -596,8 +596,8 @@ test('review fixes: list revision, closed product, size guard, doc-request only,
   const stored = h.store[0].taskFiles[0];
   assert.equal(stored.fileUrl, undefined); assert.equal(stored.publicId, 'scm_loan_private/doc1'); assert.equal(stored.resourceType, 'raw'); assert.equal(stored.label, 'Дансны хуулга');
   const staffFile = response.data.files.find(file => file.source === 'staff');
-  assert.ok(staffFile.url.startsWith('https://api.cloudinary.com/v1_1/demo/raw/download?public_id=scm_loan_private%2Fdoc1'));
-  assert.ok(staffFile.url.includes(`expires_at=${Math.floor(NOW.getTime() / 1000) + 600}`));
+  assert.match(staffFile.url, new RegExp(`^/api/loan-requests/${LOAN_ID}/files/tf-[a-f0-9]+$`));
+  assert.equal(JSON.stringify(response.data).includes('cloudinary.com'), false, 'D22: no Cloudinary URL in the detail response');
   response = await h.invoke('post', '/api/loan-tasks/:id/doc-request', { params: { id: LOAN_ID }, body: { items: [{ key: 'extra_1', label: 'Банкны хуулга (Хаан)' }], expectedRevision: 0 } });
   assert.equal(response.code, 200, JSON.stringify(response.data));
   const token = new URL(response.data.uploadUrl).searchParams.get('upload');

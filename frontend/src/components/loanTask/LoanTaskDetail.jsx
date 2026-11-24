@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, Check, CheckCircle2, Copy, ExternalLink, FileText, Link2, Loader2, Mail, MessageSquare, Phone, Plus, Send, Trash2, UserCheck, X } from 'lucide-react';
+import { Bell, Check, CheckCircle2, Copy, Download, ExternalLink, FileText, Link2, Loader2, Mail, MessageSquare, Phone, Plus, Send, Trash2, UserCheck, X } from 'lucide-react';
 import { LEGACY_STATUS_LABELS, TASK_OUTCOMES, TASK_OUTCOME_LABELS, TASK_STATUS_LABELS } from '@shared/loanTaskStatus';
 import { PRESET_WIDGETS } from '@shared/loanWidgets';
 import TaskField from './TaskField';
 import TaskStatusBadge from './TaskStatusBadge';
 import ConfirmDeleteDialog from '../admin/ConfirmDeleteDialog';
-import { deleteLoanRequest, errorMessage, fetchTaskDetail, postDocRequest, postTaskAction, postTaskFiles, postTaskMessage } from './api';
+import { deleteLoanRequest, errorMessage, fetchTaskDetail, openLoanFile, postDocRequest, postTaskAction, postTaskFiles, postTaskMessage } from './api';
 import { FILE_CATEGORIES, categoryOf, formatMoney, isFileField, isVisible, maskRegister } from './taskFormUtils';
 
 const BOX = 'rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#003B5C] focus:outline-none focus:ring-2 focus:ring-[#003B5C]/20 disabled:opacity-60';
@@ -50,6 +50,14 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [fileBusy, setFileBusy] = useState('');
+  const [fileError, setFileError] = useState('');
+  const openFile = async (file, download = false) => {
+    setFileBusy(file.ref); setFileError('');
+    try { await openLoanFile(apiUrl, id, file.ref, { download, fileName: file.fileName }); }
+    catch (err) { setFileError(err.message); }
+    finally { setFileBusy(''); }
+  };
   const drawerRef = useRef(null);
   const previousFocus = useRef(null);
 
@@ -269,7 +277,8 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
           </Section>
 
           <Section title="Баримт">
-            {groupedFiles.length === 0 ? <p className="text-sm text-slate-500">Файл алга.</p> : <div className="space-y-5">{groupedFiles.map(category => <div key={category.key}><h4 className="mb-2 text-sm font-bold text-[#003B5C]">{category.label}</h4><div className="space-y-3">{category.groups.map(([label, list]) => <div key={label}><h5 className="mb-1 text-xs font-bold text-slate-500">{label}</h5><ul className="space-y-1">{list.map(file => <li key={file.id || file.fileName} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"><FileText size={14} className="shrink-0 text-slate-500" aria-hidden="true" /><span className="min-w-0 flex-1 break-all">{file.fileName} <span className="text-xs text-slate-500">· {formatSize(file.size)} · {SOURCE_LABELS[file.source] || file.source}</span></span>{file.url && <a href={file.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-9 items-center gap-1 text-xs font-semibold text-[#003B5C] underline" aria-label={`${file.fileName} — шинэ табд нээх`}>Нээх<ExternalLink size={12} aria-hidden="true" /></a>}</li>)}</ul></div>)}</div></div>)}</div>}
+            {groupedFiles.length === 0 ? <p className="text-sm text-slate-500">Файл алга.</p> : <div className="space-y-5">{groupedFiles.map(category => <div key={category.key}><h4 className="mb-2 text-sm font-bold text-[#003B5C]">{category.label}</h4><div className="space-y-3">{category.groups.map(([label, list]) => <div key={label}><h5 className="mb-1 text-xs font-bold text-slate-500">{label}</h5><ul className="space-y-1">{list.map(file => <li key={file.id || file.fileName} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"><FileText size={14} className="shrink-0 text-slate-500" aria-hidden="true" /><span className="min-w-0 flex-1 break-all">{file.fileName} <span className="text-xs text-slate-500">· {formatSize(file.size)} · {SOURCE_LABELS[file.source] || file.source}</span></span>{file.url && file.ref && <span className="inline-flex shrink-0 items-center gap-3"><button type="button" disabled={fileBusy === file.ref} onClick={() => openFile(file)} className="inline-flex min-h-9 items-center gap-1 text-xs font-semibold text-[#003B5C] underline disabled:opacity-50" aria-label={`${file.fileName} — шинэ табд нээх`}>{fileBusy === file.ref ? <Loader2 size={12} className="animate-spin" aria-hidden="true" /> : null}Нээх<ExternalLink size={12} aria-hidden="true" /></button><button type="button" disabled={fileBusy === file.ref} onClick={() => openFile(file, true)} className="inline-flex min-h-9 items-center gap-1 text-xs font-semibold text-slate-600 underline disabled:opacity-50" aria-label={`${file.fileName} — татах`}>Татах<Download size={12} aria-hidden="true" /></button></span>}</li>)}</ul></div>)}</div></div>)}</div>}
+            {fileError && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{fileError}</p>}
             {allowed.uploadFiles && <div className="mt-5 space-y-2 rounded-xl border border-slate-200 p-4"><p className="text-xs font-bold text-slate-700">Файл нэмэх</p><label className="block text-xs font-semibold text-slate-600">Хэсэг<select className={`${BOX} mt-1 min-h-11 w-full`} value={uploadKey} onChange={event => setUploadKey(event.target.value)}><option value="additional">Нэмэлт баримт</option>{fileFields.map(field => <option key={field.key} value={field.key}>{field.label}</option>)}</select></label><input type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" aria-label="Нэмэх файл" onChange={event => setUploadFiles(Array.from(event.target.files || []).slice(0, 5))} className="block w-full text-xs file:mr-3 file:min-h-11 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:text-sm file:font-medium" /><button type="button" className={BTN} disabled={busy || !uploadFiles.length} onClick={doUpload}>Файл илгээх ({uploadFiles.length})</button></div>}
           </Section>
 
