@@ -44,10 +44,14 @@ export function resolveFileRef(loan, ref) {
   return index >= 0 ? { kind, file: list[index], index } : null;
 }
 
+// D24: trust request documents live in their own private folder.
+export const TRUST_PRIVATE_FOLDER = 'scm_trust_private';
+export const isPrivateTrustPublicId = id => typeof id === 'string' && id.length <= 300 && id.startsWith(`${TRUST_PRIVATE_FOLDER}/`) && !id.includes('..');
+
 // Where the bytes may come from: private-folder authenticated files, or legacy https res.cloudinary.com URLs.
 export function fileSourceOf(file) {
   if (!file || typeof file !== 'object') return null;
-  if (file.deliveryType === 'authenticated') return isPrivateLoanPublicId(file.publicId) ? 'private' : null;
+  if (file.deliveryType === 'authenticated') return isPrivateLoanPublicId(file.publicId) || isPrivateTrustPublicId(file.publicId) ? 'private' : null;
   return isAllowedLoanRemoteUrl(file.fileUrl) ? 'legacy' : null;
 }
 export const isProxyableFile = file => fileSourceOf(file) !== null;
@@ -133,6 +137,25 @@ export function createFetchFile(http) {
 
 const sizeError = error => error?.code === 'ERR_FR_MAX_BODY_LENGTH_EXCEEDED' || error?.code === 'ERR_BAD_RESPONSE' && /maxContentLength/i.test(error?.message || '');
 
+// Shared by the loan and trust file routes: fetch the bytes server-side and answer with the real type and file name.
+export async function serveProxiedFile({ res, file, cloudinary, fetchFile, now = new Date(), maxBytes = FILE_PROXY_MAX_BYTES, download = false, logger = console, tag = '', onServed }) {
+  const url = sourceUrlFor(file, { cloudinary, now });
+  if (!url) return res.status(503).json({ message: 'Файл татах боломжгүй байна.' });
+  let buffer;
+  try { buffer = await fetchFile(url, { maxBytes, timeout: FILE_PROXY_TIMEOUT_MS }); } catch (error) {
+    if (sizeError(error)) return res.status(413).json({ message: 'Файл хэт том байна.' });
+    logger.error?.(`[loan-files] fetch failed ${tag} code=${error?.code || error?.name || 'Error'}`);
+    return res.status(502).json({ message: 'Файлыг татаж чадсангүй. Дахин оролдоно уу.' });
+  }
+  if (!buffer || buffer.length === 0) return res.status(404).json({ message: 'Файл олдсонгүй.' });
+  if (buffer.length > maxBytes) return res.status(413).json({ message: 'Файл хэт том байна.' });
+  const contentType = resolveContentType(file.mimeType, buffer);
+  const headers = proxyHeaders({ contentType, fileName: file.fileName, download, size: buffer.length });
+  if (onServed) await onServed();
+  res.set(headers);
+  return res.status(200).send(buffer);
+}
+
 export function registerLoanFileRoutes({
   app, authenticateUser, LoanRequest, cloudinary, http, fetchFile = createFetchFile(http),
   createLog = async () => {}, getPermissions = async user => resolvePermissions(user), now = () => new Date(), logger = console,
@@ -153,21 +176,10 @@ export function registerLoanFileRoutes({
       if (!loan) return notFound(res);
       const entry = resolveFileRef(loan, req.params.fileRef);
       if (!entry || !isProxyableFile(entry.file)) return notFound(res);
-      const url = sourceUrlFor(entry.file, { cloudinary, now: now() });
-      if (!url) return res.status(503).json({ message: 'Файл татах боломжгүй байна.' });
-      let buffer;
-      try { buffer = await fetchFile(url, { maxBytes, timeout: FILE_PROXY_TIMEOUT_MS }); } catch (error) {
-        if (sizeError(error)) return res.status(413).json({ message: 'Файл хэт том байна.' });
-        logger.error?.(`[loan-files] fetch failed request=${id} ref=${req.params.fileRef} code=${error?.code || error?.name || 'Error'}`);
-        return res.status(502).json({ message: 'Файлыг татаж чадсангүй. Дахин оролдоно уу.' });
-      }
-      if (!buffer || buffer.length === 0) return notFound(res);
-      if (buffer.length > maxBytes) return res.status(413).json({ message: 'Файл хэт том байна.' });
-      const contentType = resolveContentType(entry.file.mimeType, buffer);
-      const headers = proxyHeaders({ contentType, fileName: entry.file.fileName, download: req.query?.download === '1', size: buffer.length });
-      await Promise.resolve(createLog(req.user, req.query?.download === '1' ? 'loan_file_downloaded' : 'loan_file_opened', `${id}: ${req.params.fileRef}${entry.file.label ? ` (${String(entry.file.label).slice(0, 60)})` : ''}`)).catch(() => {});
-      res.set(headers);
-      return res.status(200).send(buffer);
+      return await serveProxiedFile({
+        res, file: entry.file, cloudinary, fetchFile, now: now(), maxBytes, download: req.query?.download === '1', logger, tag: `request=${id} ref=${req.params.fileRef}`,
+        onServed: () => Promise.resolve(createLog(req.user, req.query?.download === '1' ? 'loan_file_downloaded' : 'loan_file_opened', `${id}: ${req.params.fileRef}${entry.file.label ? ` (${String(entry.file.label).slice(0, 60)})` : ''}`)).catch(() => {}),
+      });
     } catch {
       logger.error?.('[loan-files] unexpected error');
       return res.status(500).json({ message: 'Файлыг нээхэд алдаа гарлаа.' });

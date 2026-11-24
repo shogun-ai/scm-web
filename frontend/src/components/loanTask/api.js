@@ -24,8 +24,10 @@ export const fetchPublicProducts = (apiUrl, timeout = 5000) => data(axios.get(`$
 // fresh: bypass the 60 s browser/CDN cache (e.g. after 409 CONFIG_CHANGED); the backend ignores `t`.
 export const fetchPublicProduct = (apiUrl, productKey, timeout = 5000, { fresh = false } = {}) => data(axios.get(`${base(apiUrl)}/public/products/${encodeURIComponent(productKey)}`, { timeout, ...(fresh ? { params: { t: Date.now() } } : {}) }));
 export const submitPublicRequest = (apiUrl, formData, onUploadProgress) => data(axios.post(`${base(apiUrl)}/public/submit`, formData, { onUploadProgress }));
-export const fetchUploadRequest = (apiUrl, token) => data(axios.get(`${base(apiUrl)}/upload/${encodeURIComponent(token)}`, { timeout: 15000 }));
-export const submitUploadFiles = (apiUrl, token, formData, onUploadProgress) => data(axios.post(`${base(apiUrl)}/upload/${encodeURIComponent(token)}`, formData, { onUploadProgress }));
+// D24: the upload token knows its request kind: 'loan' (/api/loan-tasks/upload) or 'trust' (/api/trusts/upload).
+const uploadBase = (apiUrl, kind) => (kind === 'trust' ? `${apiUrl || API_URL}/api/trusts/upload` : `${base(apiUrl)}/upload`);
+export const fetchUploadRequest = (apiUrl, token, kind = 'loan') => data(axios.get(`${uploadBase(apiUrl, kind)}/${encodeURIComponent(token)}`, { timeout: 15000 }));
+export const submitUploadFiles = (apiUrl, token, formData, onUploadProgress, kind = 'loan') => data(axios.post(`${uploadBase(apiUrl, kind)}/${encodeURIComponent(token)}`, formData, { onUploadProgress }));
 
 // ---- admin / staff ----
 export const fetchAdminConfigs = apiUrl => data(axios.get(`${base(apiUrl)}/admin/configs`, auth()));
@@ -56,12 +58,13 @@ export const parseDispositionFileName = header => {
   return plain ? plain[1] : '';
 };
 const FILE_ERRORS = { 401: 'Нэвтрэх хугацаа дууссан байна.', 403: 'Файл харах эрхгүй байна.', 404: 'Файл олдсонгүй.', 413: 'Файл хэт том байна.', 429: 'Хэт олон хүсэлт илгээлээ. Түр хүлээнэ үү.', 502: 'Файлыг татаж чадсангүй. Дахин оролдоно уу.' };
-export async function openLoanFile(apiUrl, requestId, fileRef, { download = false, fileName = '' } = {}) {
+// Generic authenticated proxy opener; `path` is the proxy route (loan or trust).
+export async function openProtectedFile(apiUrl, path, { download = false, fileName = '' } = {}) {
   // The tab is opened synchronously (inside the click) so popup blockers allow it; it is navigated after the fetch.
   const tab = download ? null : window.open('about:blank', '_blank');
   if (tab) tab.opener = null;
   try {
-    const response = await axios.get(`${apiUrl || API_URL}/api/loan-requests/${encodeURIComponent(requestId)}/files/${encodeURIComponent(fileRef)}`, {
+    const response = await axios.get(`${apiUrl || API_URL}${path}`, {
       ...auth(), params: download ? { download: 1 } : undefined, responseType: 'blob', timeout: 60000,
     });
     const blob = response.data instanceof Blob ? response.data : new Blob([response.data]);
@@ -79,6 +82,9 @@ export async function openLoanFile(apiUrl, requestId, fileRef, { download = fals
     throw new Error(FILE_ERRORS[status] || (error?.code === 'ECONNABORTED' ? 'Файл татах хугацаа хэтэрлээ.' : 'Файлыг нээж чадсангүй. Дахин оролдоно уу.'));
   }
 }
+export const openLoanFile = (apiUrl, requestId, fileRef, options) => openProtectedFile(apiUrl, `/api/loan-requests/${encodeURIComponent(requestId)}/files/${encodeURIComponent(fileRef)}`, options);
+// D24: trust request documents (trusts.view).
+export const openTrustFile = (apiUrl, trustId, fileRef, options) => openProtectedFile(apiUrl, `/api/trusts/${encodeURIComponent(trustId)}/files/${encodeURIComponent(fileRef)}`, options);
 
 // ---- D16: delete (admin + setting) ----
 export const deleteLoanRequest = (apiUrl, id) => data(axios.delete(`${apiUrl || API_URL}/api/loan-requests/${id}`, auth()));

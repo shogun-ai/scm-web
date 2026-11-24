@@ -24,6 +24,7 @@ function harness({ matrix = null, env = { MAIL_REPLY_TO: 'desk@scm.mn' }, users 
     async save() { userStore.push(structuredClone({ ...this })); return this; }
     static findOne(query) { return thenable(userStore.find(user => Object.entries(query).every(([key, value]) => user[key] === value)) || null); }
     static findById(id) { return thenable(userStore.find(user => String(user._id) === String(id)) || null); }
+    static find() { return thenable(userStore); }
     static async updateOne(query, update) { const user = userStore.find(item => String(item._id) === String(query._id)); if (user) Object.assign(user, update.$set); return {}; }
     static async findOneAndUpdate(query, update) {
       const user = userStore.find(item => String(item._id) === String(query._id) && item.inviteTokenHash === query.inviteTokenHash && item.inviteExpiresAt && new Date(item.inviteExpiresAt) > query.inviteExpiresAt.$gt);
@@ -158,7 +159,7 @@ test('admin settings: admin only, strict boolean, logged', async () => {
   const h = harness({ flag: true });
   assert.equal((await h.invoke('get', '/api/admin/settings', { user: OFFICER })).code, 403);
   assert.equal((await h.invoke('put', '/api/admin/settings', { user: OFFICER, body: { loanRequestDeleteEnabled: true } })).code, 403);
-  assert.deepEqual((await h.invoke('get', '/api/admin/settings')).data, { loanRequestDeleteEnabled: true, metaPixelId: '' });
+  assert.deepEqual(Object.fromEntries(Object.entries((await h.invoke('get', '/api/admin/settings')).data).filter(([key]) => ['loanRequestDeleteEnabled', 'metaPixelId'].includes(key))), { loanRequestDeleteEnabled: true, metaPixelId: '' });
   for (const body of [{ loanRequestDeleteEnabled: 'true' }, {}, { loanRequestDeleteEnabled: true, extra: 1 }, []]) assert.equal((await h.invoke('put', '/api/admin/settings', { body })).code, 400);
   const ok = await h.invoke('put', '/api/admin/settings', { body: { loanRequestDeleteEnabled: false } });
   assert.deepEqual(ok.data, { loanRequestDeleteEnabled: false });
@@ -177,8 +178,9 @@ test('public trust submission: validated, whitelisted, ack to customer + staff n
   assert.equal(h.trustStore[0].status, undefined); assert.equal(h.trustStore[0].messages, undefined);
   assert.equal(h.calls.sent.length, 0);
   await h.flush();
-  assert.deepEqual(h.calls.sent.map(mail => [mail.to, mail.template]).sort(), [['bold@example.mn', 'trust_ack'], ['trust-desk@scm.mn', 'staff_trust_notification']]);
-  assert.equal(h.trustStore[0].history[0].email.result, 'sent');
+  // D25: an unassigned request also reaches the shared mailbox (MAIL_REPLY_TO).
+  assert.deepEqual(h.calls.sent.map(mail => [mail.to, mail.template]).sort(), [['bold@example.mn', 'trust_ack'], ['desk@scm.mn', 'staff_trust_notification'], ['trust-desk@scm.mn', 'staff_trust_notification']]);
+  assert.equal(h.trustStore[0].history.find(entry => entry.type === 'email').email.result, 'sent');
 });
 
 test('D23 trust submit stores the channel (messenger|webchat|web) from a whitelist; unknown values become web', async () => {
@@ -319,7 +321,7 @@ test('permission catalog endpoints', async () => {
   const h = harness({ matrix: { loan_officer: { 'perm:loan_requests.change_status': 'none' } } });
   assert.equal((await h.invoke('get', '/api/config/permission-catalog', { user: OFFICER })).code, 403);
   const catalog = await h.invoke('get', '/api/config/permission-catalog');
-  assert.equal(catalog.data.permissions.length, 15);
+  assert.equal(catalog.data.permissions.length, 16);
   assert.equal(catalog.data.effective.loan_officer['loan_requests.change_status'], false);
   assert.equal(catalog.data.effective.director['loan_requests.assign'], true);
   const mine = await h.invoke('get', '/api/me/permissions', { user: OFFICER });

@@ -1,0 +1,210 @@
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowDownRight, ArrowRight, ArrowUpRight, CheckCircle2, ClipboardList, Handshake, Hourglass, Minus, UserCheck } from 'lucide-react';
+import { TASK_STATUSES, TASK_STATUS_LABELS } from '@shared/loanTaskStatus';
+import GlassCard from '../theme/GlassCard';
+import { SPECTRUM } from '../theme/spectrum';
+import { useCountUp } from '../theme/hooks';
+import { fetchTaskSummary } from '../../loanTask/api';
+import { AreaChart, Donut, Gauge, Sparkline, StackedBar } from './charts';
+import { dailySeries, greeting, isPending, isResolved, productMix, recentActivity, resolutionRate, weekDelta } from './dashboardData';
+
+const PRODUCT_HUES = ['indigo', 'cyan', 'green', 'gold', 'amber', 'rose', 'violet'];
+const STATUS_HUES = { new: 'cyan', assigned: 'indigo', additional_docs: 'gold', in_review: 'violet', rejected: 'rose', resolved: 'green' };
+const OTHER_COLOR = '#7C879B';
+
+const relativeTime = (value, now) => {
+  const minutes = Math.round((now - new Date(value).getTime()) / 60000);
+  if (!Number.isFinite(minutes)) return '';
+  if (minutes < 1) return 'дөнгөж сая';
+  if (minutes < 60) return `${minutes} минутын өмнө`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} цагийн өмнө`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days} өдрийн өмнө`;
+  try { return new Date(value).toLocaleDateString('mn-MN'); } catch { return ''; }
+};
+
+function Delta({ diff }) {
+  const Icon = diff > 0 ? ArrowUpRight : diff < 0 ? ArrowDownRight : Minus;
+  return <span className="adm-tnum inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[11.5px] font-semibold text-[var(--adm-ink-2)]" title="Өмнөх 7 хоногтой харьцуулахад">
+    <Icon size={13} aria-hidden="true" />
+    {diff > 0 ? `+${diff}` : diff}
+    <span className="sr-only"> — өмнөх 7 хоногтой харьцуулахад</span>
+  </span>;
+}
+
+function KpiCard({ hue, icon, label, value, diff, spark, note, index }) {
+  const Icon = icon;
+  const shown = useCountUp(value);
+  return <GlassCard hue={hue} glint className={`adm-rise p-4 sm:p-5 ${index === 4 ? 'col-span-2 sm:col-span-1' : ''}`} style={{ '--d': index + 1 }}>
+    <div className="flex items-start justify-between gap-3">
+      <span className="grid h-10 w-10 place-items-center rounded-xl" style={{ background: `${SPECTRUM[hue]}1F`, boxShadow: `inset 0 0 0 1px ${SPECTRUM[hue]}40`, color: SPECTRUM[hue] }}>
+        <Icon size={19} strokeWidth={1.9} aria-hidden="true" />
+      </span>
+      {diff != null && <Delta diff={diff} />}
+    </div>
+    <p className="mt-5 text-[13px] font-semibold text-[var(--adm-ink-2)]">{label}</p>
+    <p className="adm-tnum mt-1 text-[28px] font-bold leading-none tracking-tight text-white sm:text-[34px]">{shown}</p>
+    {spark && <div className="mt-4 -mx-1"><Sparkline values={spark} color={SPECTRUM[hue]} /></div>}
+    {spark && <p className="mt-1 text-[11px] text-[var(--adm-ink-3)]">Сүүлийн 14 хоног</p>}
+    {note && <p className="mt-4 text-[11px] text-[var(--adm-ink-3)]">{note}</p>}
+  </GlassCard>;
+}
+
+function CardHeader({ eyebrow, title, action }) {
+  return <div className="mb-5 flex items-start justify-between gap-4">
+    <div>
+      <p className="adm-eyebrow">{eyebrow}</p>
+      <h3 className="mt-1.5 text-[17px] font-bold tracking-tight text-white">{title}</h3>
+    </div>
+    {action}
+  </div>;
+}
+
+function StatusPill({ resolved }) {
+  return resolved
+    ? <span className="shrink-0 rounded-full bg-[#34D399]/[0.12] px-2.5 py-1 text-[11.5px] font-semibold text-[#86EFC4] ring-1 ring-inset ring-[#34D399]/25">Шийдсэн</span>
+    : <span className="shrink-0 rounded-full bg-[#F3CB55]/[0.12] px-2.5 py-1 text-[11.5px] font-semibold text-[#F7DC8A] ring-1 ring-inset ring-[#F3CB55]/25">Хүлээгдэж буй</span>;
+}
+
+export default function AdminDashboard({ user, requests = [], trusts = [], onboardingCount = 0, showOnboarding = false, loading = false, apiUrl, loanTasksEnabled = false, productNames = {}, onNavigate }) {
+  const [now] = useState(() => new Date());
+  const [summary, setSummary] = useState(null);
+
+  useEffect(() => {
+    if (!loanTasksEnabled) return undefined;
+    let cancelled = false;
+    fetchTaskSummary(apiUrl, {})
+      .then(data => { if (!cancelled && data?.counts && typeof data.counts === 'object') setSummary(data); })
+      .catch(() => { /* pipeline card stays hidden without summary access */ });
+    return () => { cancelled = true; };
+  }, [apiUrl, loanTasksEnabled]);
+
+  const data = useMemo(() => {
+    const loans30 = dailySeries(requests, 30, now);
+    const trusts30 = dailySeries(trusts, 30, now);
+    const productKeys = Object.keys(productNames);
+    return {
+      dates: loans30.map(point => point.date),
+      loans30: loans30.map(point => point.value),
+      trusts30: trusts30.map(point => point.value),
+      spark: {
+        total: dailySeries(requests, 14, now).map(point => point.value),
+        pending: dailySeries(requests, 14, now, isPending).map(point => point.value),
+        resolved: dailySeries(requests, 14, now, isResolved).map(point => point.value),
+        trusts: dailySeries(trusts, 14, now).map(point => point.value),
+      },
+      delta: {
+        total: weekDelta(requests, now).diff,
+        pending: weekDelta(requests, now, isPending).diff,
+        resolved: weekDelta(requests, now, isResolved).diff,
+        trusts: weekDelta(trusts, now).diff,
+      },
+      mix: productMix(requests, productNames).map(row => ({
+        key: row.key,
+        label: row.label,
+        value: row.count,
+        color: row.key === 'other' ? OTHER_COLOR : SPECTRUM[PRODUCT_HUES[productKeys.indexOf(row.key) % PRODUCT_HUES.length]],
+      })),
+      rate: resolutionRate(requests),
+      pendingCount: requests.filter(isPending).length,
+      resolvedCount: requests.filter(isResolved).length,
+      feed: recentActivity(requests, trusts, 6),
+    };
+  }, [requests, trusts, productNames, now]);
+
+  const firstName = String(user?.name || '').trim().split(/\s+/).pop() || '';
+  const pipeline = summary ? TASK_STATUSES.map(code => ({ key: code, label: TASK_STATUS_LABELS[code], value: Number(summary.counts[code]) || 0, color: SPECTRUM[STATUS_HUES[code]] })) : null;
+  const kpis = [
+    { hue: 'indigo', icon: ClipboardList, label: 'Нийт зээлийн хүсэлт', value: requests.length, diff: data.delta.total, spark: data.spark.total },
+    { hue: 'gold', icon: Hourglass, label: 'Хүлээгдэж буй', value: data.pendingCount, diff: data.delta.pending, spark: data.spark.pending },
+    { hue: 'green', icon: CheckCircle2, label: 'Шийдвэрлэсэн', value: data.resolvedCount, diff: data.delta.resolved, spark: data.spark.resolved },
+    { hue: 'violet', icon: Handshake, label: 'Итгэлцлийн хүсэлт', value: trusts.length, diff: data.delta.trusts, spark: data.spark.trusts },
+    ...(showOnboarding ? [{ hue: 'cyan', icon: UserCheck, label: 'Харилцагч бүртгэл', value: onboardingCount, note: 'Нийт илгээсэн бүртгэл' }] : []),
+  ];
+  const showSkeleton = loading && requests.length === 0 && trusts.length === 0;
+
+  return <div className="adm-dash mx-auto max-w-[1440px] space-y-5">
+    <header className="adm-rise flex flex-wrap items-end justify-between gap-5 pb-2" style={{ '--d': 0 }}>
+      <div className="min-w-0">
+        <p className="adm-eyebrow" style={{ color: SPECTRUM.indigo }}>Хянах самбар</p>
+        <h1 className="adm-hero-text mt-2 text-[30px] font-bold leading-[1.1] tracking-tight md:text-[40px]">{greeting(now)}{firstName ? `, ${firstName}` : ''}</h1>
+        <p className="mt-2 max-w-xl text-sm text-[var(--adm-ink-2)]">Хүсэлтийн урсгал, шийдвэрлэлт ба сүүлийн үйл ажиллагааны тойм.</p>
+      </div>
+      <button type="button" onClick={() => onNavigate?.('los')} className="adm-btn" style={{ '--hue': SPECTRUM.green }}>
+        Зээлийн хүсэлт рүү <ArrowRight size={16} aria-hidden="true" />
+      </button>
+    </header>
+
+    <section aria-label="Гол үзүүлэлтүүд" className={`grid grid-cols-2 gap-3 sm:gap-4 ${kpis.length > 4 ? 'xl:grid-cols-5' : 'lg:grid-cols-4'}`}>
+      {kpis.map((kpi, index) => showSkeleton
+        ? <div key={kpi.label} className="glass h-[214px] p-5"><div className="adm-skeleton h-10 w-10" /><div className="adm-skeleton mt-6 h-3 w-32" /><div className="adm-skeleton mt-3 h-8 w-20" /><div className="adm-skeleton mt-6 h-9 w-full" /></div>
+        : <KpiCard key={kpi.label} index={index} {...kpi} />)}
+    </section>
+
+    {pipeline && <GlassCard hue="cyan" tilt={false} className="adm-rise p-5 md:p-6" style={{ '--d': 5 }}>
+      <CardHeader eyebrow="Ажлын урсгал" title="Зээлийн хүсэлтийн шат" action={<span className="adm-tnum text-sm text-[var(--adm-ink-3)]">нийт <b className="text-white">{Number(summary.total) || pipeline.reduce((sum, row) => sum + row.value, 0)}</b></span>} />
+      <StackedBar segments={pipeline} />
+    </GlassCard>}
+
+    <div className="grid gap-4 lg:grid-cols-3">
+      <GlassCard hue="cyan" tilt={false} className="adm-rise p-5 md:p-6 lg:col-span-2" style={{ '--d': 6 }}>
+        <CardHeader
+          eyebrow="30 хоног"
+          title="Хүсэлтийн урсгал"
+          action={<div className="flex flex-wrap items-center gap-4 text-[12.5px] text-[var(--adm-ink-2)]">
+            <span className="flex items-center gap-2"><span className="h-[3px] w-5 rounded-full" style={{ background: `linear-gradient(90deg, ${SPECTRUM.cyan}, ${SPECTRUM.green})` }} aria-hidden="true" />Зээл</span>
+            <span className="flex items-center gap-2"><span className="h-[3px] w-5 rounded-full" style={{ background: `linear-gradient(90deg, ${SPECTRUM.gold}, ${SPECTRUM.amber})` }} aria-hidden="true" />Итгэлцэл</span>
+          </div>}
+        />
+        {showSkeleton ? <div className="adm-skeleton h-[300px] w-full" /> : <AreaChart
+          label="Сүүлийн 30 хоногийн хүсэлт"
+          height={300}
+          dates={data.dates}
+          series={[
+            { id: 'loans', label: 'Зээл', values: data.loans30, colors: [SPECTRUM.cyan, SPECTRUM.green] },
+            { id: 'trusts', label: 'Итгэлцэл', values: data.trusts30, colors: [SPECTRUM.gold, SPECTRUM.amber] },
+          ]}
+        />}
+      </GlassCard>
+
+      <GlassCard hue="violet" tilt={false} className="adm-rise p-5 md:p-6" style={{ '--d': 7 }}>
+        <CardHeader eyebrow="Бүтээгдэхүүн" title="Зээлийн бүтэц" />
+        <Donut segments={data.mix} centerLabel="хүсэлт" />
+      </GlassCard>
+    </div>
+
+    <div className="grid gap-4 lg:grid-cols-3">
+      <GlassCard hue="green" tilt={false} className="adm-rise flex flex-col p-5 md:p-6" style={{ '--d': 8 }}>
+        <CardHeader eyebrow="Гүйцэтгэл" title="Шийдвэрлэлтийн хувь" />
+        <div className="flex flex-1 flex-col justify-center">
+          <Gauge value={data.rate} from={SPECTRUM.cyan} to={SPECTRUM.green} label="шийдсэн" />
+          <div className="mt-4 grid grid-cols-2 gap-3 text-center">
+            <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5"><p className="text-[11.5px] text-[var(--adm-ink-3)]">Шийдсэн</p><p className="adm-tnum text-lg font-bold text-white">{data.resolvedCount}</p></div>
+            <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5"><p className="text-[11.5px] text-[var(--adm-ink-3)]">Хүлээгдэж буй</p><p className="adm-tnum text-lg font-bold text-white">{data.pendingCount}</p></div>
+          </div>
+        </div>
+      </GlassCard>
+
+      <GlassCard hue="indigo" tilt={false} className="adm-rise p-5 md:p-6 lg:col-span-2" style={{ '--d': 9 }}>
+        <CardHeader eyebrow="Сүүлийн үйл ажиллагаа" title="Шинэ хүсэлтүүд" action={<button type="button" onClick={() => onNavigate?.('los')} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-[13px] font-semibold text-[var(--adm-ink-2)] transition-colors hover:bg-white/[0.06] hover:text-white">Бүгдийг харах <ArrowRight size={14} aria-hidden="true" /></button>} />
+        {data.feed.length === 0 && <p className="rounded-xl border border-dashed border-white/10 p-8 text-center text-sm text-[var(--adm-ink-3)]">{showSkeleton ? 'Ачаалж байна…' : 'Хүсэлт байхгүй байна.'}</p>}
+        <ul className="-mx-2 divide-y divide-white/[0.05]">
+          {data.feed.map(({ kind, item }) => {
+            const hue = kind === 'loan' ? SPECTRUM.cyan : SPECTRUM.gold;
+            const name = kind === 'loan' ? `${item.lastname || ''} ${item.firstname || item.orgName || ''}`.trim() : `${item.lastname || ''} ${item.firstname || ''}`.trim();
+            const detail = kind === 'loan' ? (productNames[item.selectedProduct] || 'Зээлийн хүсэлт') : 'Итгэлцэл';
+            return <li key={`${kind}-${item._id}`} className="flex items-center gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-white/[0.03]">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[13px] font-bold" style={{ background: `${hue}1A`, color: hue, boxShadow: `inset 0 0 0 1px ${hue}33` }} aria-hidden="true">{(name || '?').charAt(0).toUpperCase()}</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-white">{name || 'Нэргүй'}</p>
+                <p className="truncate text-[12.5px] text-[var(--adm-ink-3)]">{detail} · {relativeTime(item.createdAt, now.getTime())}</p>
+              </div>
+              <StatusPill resolved={item.status === 'resolved'} />
+            </li>;
+          })}
+        </ul>
+      </GlassCard>
+    </div>
+  </div>;
+}

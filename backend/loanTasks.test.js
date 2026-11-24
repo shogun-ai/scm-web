@@ -1135,3 +1135,39 @@ test('D23 staffAssignment email: default text unchanged, unassigned variant for 
   assert.match(open.subject, /Шинэ зээлийн хүсэлт \(хуваарилаагүй\) — R1/);
   assert.match(open.text, /Хариуцагч хуваарилаагүй/);
 });
+
+// ---------- D25: global auto-assignment (loan) ----------
+const MSG_INPUT = { productKey: 'cons_loan', lastname: 'Бат', firstname: 'Болд', phone: '99001234', amount: 5000000, term: 12, psid: '1234567890' };
+const autoSetting = (staffId, mode = 'auto') => ({ getAssignmentSettings: async () => ({ loan: { mode, staffId }, trust: { mode: 'manual', staffId: null } }) });
+
+test('D25 loan auto-assignment: no product-level assignee + loan.mode=auto assigns the staff member (history + staff email)', async () => {
+  const h = harness({ configs: [activeConfig()], users: [{ ...otherOfficer, isActive: true }], extraDeps: autoSetting(OTHER_ID) });
+  const result = await h.api.createMessengerTask(MSG_INPUT);
+  assert.equal(result.assigned, true);
+  const loan = h.records[0];
+  assert.deepEqual([loan.taskStatus, loan.assignee], ['assigned', { userId: OTHER_ID, name: 'Дорж' }]);
+  assert.ok(loan.taskHistory.some(entry => entry.type === 'assigned' && entry.assignee.userId === OTHER_ID));
+  await h.flush();
+  assert.equal(h.calls.sent.length, 1); assert.equal(h.calls.sent[0].to, 'dorj@scm.mn');
+});
+
+test('D25 loan auto-assignment: product-level default assignee keeps precedence; manual mode and inactive staff leave it unassigned', async () => {
+  const OTHER2 = 'cccccccccccccccccccccccc';
+  const precedence = harness({ configs: [activeConfig({ defaultAssigneeId: OTHER_ID })], users: [{ ...otherOfficer, isActive: true }, { ...otherOfficer, _id: OTHER2, name: 'Нөгөө', email: 'n@scm.mn', isActive: true }], extraDeps: autoSetting(OTHER2) });
+  await precedence.api.createMessengerTask(MSG_INPUT);
+  assert.equal(precedence.records[0].assignee.userId, OTHER_ID);
+  // a configured-but-inactive product assignee does not fall through to the global setting
+  const inactiveProduct = harness({ configs: [activeConfig({ defaultAssigneeId: OTHER_ID })], users: [{ ...otherOfficer, isActive: false }, { ...otherOfficer, _id: OTHER2, name: 'Нөгөө', email: 'n@scm.mn', isActive: true }], extraDeps: autoSetting(OTHER2) });
+  await inactiveProduct.api.createMessengerTask(MSG_INPUT);
+  assert.equal(inactiveProduct.records[0].assignee, undefined);
+  const manual = harness({ configs: [activeConfig()], users: [{ ...otherOfficer, isActive: true }], extraDeps: autoSetting(null, 'manual') });
+  await manual.api.createMessengerTask(MSG_INPUT);
+  assert.equal(manual.records[0].assignee, undefined); assert.equal(manual.records[0].taskStatus, 'new');
+  const inactive = harness({ configs: [activeConfig()], users: [{ ...otherOfficer, isActive: false }], extraDeps: autoSetting(OTHER_ID) });
+  await inactive.api.createMessengerTask(MSG_INPUT);
+  assert.equal(inactive.records[0].assignee, undefined);
+  assert.ok(inactive.records[0].taskHistory.some(entry => entry.type === 'note'));
+  const broken = harness({ configs: [activeConfig()], users: [{ ...otherOfficer, isActive: true }], extraDeps: { getAssignmentSettings: async () => { throw new Error('db down'); } } });
+  await broken.api.createMessengerTask(MSG_INPUT);
+  assert.equal(broken.records[0].assignee, undefined, 'settings read failure never blocks a submission');
+});

@@ -1,0 +1,351 @@
+/* ==========================================================================
+   Data surfaces — loan board (dark glass, green spectrum accent)
+   Depends on tokens from admin-theme.css (.adm-shell).
+   ========================================================================== */
+.adm-board :focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--hue) 65%, white);
+  outline-offset: 2px;
+}
+
+.adm-label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--adm-ink-3);
+}
+
+.adm-field {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background-color: rgba(255, 255, 255, 0.04);
+  color: var(--adm-ink);
+  font-size: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: border-color 200ms, box-shadow 200ms, background-color 200ms;
+}
+.adm-field::placeholder { color: var(--adm-ink-3); }
+.adm-field:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.18); }
+.adm-field:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--hue) 70%, transparent);
+  background-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hue) 22%, transparent);
+}
+.adm-field:disabled { opacity: 0.55; cursor: not-allowed; }
+select.adm-field {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2393A0B6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  text-overflow: ellipsis;
+}
+select.adm-field option { background: #0E1326; color: #F4F7FB; }
+.adm-field--sm { min-height: 38px; font-size: 13px; border-radius: 10px; }
+
+.adm-chip-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--adm-ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 200ms, border-color 200ms, color 200ms, transform 200ms var(--adm-ease);
+}
+.adm-chip-btn:hover { color: #FFFFFF; border-color: rgba(255, 255, 255, 0.2); transform: translate3d(0, -1px, 0); }
+.adm-chip-btn[aria-pressed='true'] {
+  color: #FFFFFF;
+  border-color: color-mix(in srgb, var(--hue) 55%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--hue) 24%, transparent), color-mix(in srgb, var(--hue) 10%, transparent));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--hue) 20%, transparent), 0 8px 24px -12px color-mix(in srgb, var(--hue) 80%, transparent);
+}
+.adm-chip-btn__count { color: var(--adm-ink-3); font-weight: 600; }
+.adm-chip-btn[aria-pressed='true'] .adm-chip-btn__count { color: #D9F7EA; }
+
+.adm-btn.adm-mobile-only { display: none; }
+@media (max-width: 767.98px) { .adm-btn.adm-mobile-only { display: inline-flex; } }
+
+.adm-filter-panel { flex: 1; min-width: 0; }
+@media (max-width: 767.98px) {
+  /* A backdrop-filter on the toolbar would become the containing block of the fixed filter sheet. */
+  .adm-shell .adm-toolbar { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(13, 17, 34, 0.86); }
+  .adm-filter-panel {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 55;
+    max-height: 86vh;
+    overflow-y: auto;
+    padding: 10px 16px calc(20px + env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 80px), rgba(11, 14, 28, 0.97);
+    box-shadow: 0 -30px 80px -20px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    transform: translate3d(0, 105%, 0);
+    visibility: hidden;
+    transition: transform 380ms var(--adm-ease), visibility 0s linear 380ms;
+  }
+  .adm-filter-panel[data-open='true'] { transform: none; visibility: visible; transition: transform 380ms var(--adm-ease), visibility 0s; }
+}
+
+.adm-note {
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  border: 1px solid;
+}
+.adm-note--ok { color: #B5F5D9; background: rgba(52, 211, 153, 0.10); border-color: rgba(52, 211, 153, 0.28); }
+.adm-note--err { color: #FFC9D3; background: rgba(255, 107, 134, 0.10); border-color: rgba(255, 107, 134, 0.30); }
+
+.adm-table-wrap {
+  position: relative;
+  max-height: calc(100vh - 300px);
+  min-height: 360px;
+  overflow: auto;
+  border-radius: inherit;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.adm-table { border-collapse: separate; border-spacing: 0; }
+.adm-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 14px 14px 12px;
+  background: rgba(12, 16, 32, 0.94);
+  border-bottom: 1px solid var(--adm-line-strong);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--adm-ink-3);
+  white-space: nowrap;
+}
+.adm-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+  color: var(--adm-ink-2);
+}
+.adm-table tbody tr:last-child td { border-bottom-color: transparent; }
+.adm-row { transition: background-color 180ms; }
+.adm-row > td:first-child { box-shadow: inset 2px 0 0 transparent; transition: box-shadow 220ms var(--adm-ease); }
+.adm-row:hover { background: linear-gradient(90deg, color-mix(in srgb, var(--hue) 9%, transparent), rgba(255, 255, 255, 0.025) 45%, rgba(255, 255, 255, 0.015)); }
+.adm-row:hover > td:first-child { box-shadow: inset 2px 0 0 var(--hue); }
+.adm-row[data-selected='true'] { background: rgba(255, 107, 134, 0.08); }
+
+.adm-row-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #FFFFFF;
+  font-size: 12.5px;
+  font-weight: 700;
+  transition: background-color 200ms, border-color 200ms, box-shadow 200ms;
+}
+.adm-row-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--hue) 60%, transparent);
+  background: color-mix(in srgb, var(--hue) 14%, transparent);
+  box-shadow: 0 8px 22px -12px color-mix(in srgb, var(--hue) 90%, transparent);
+}
+.adm-row-btn--lg { min-height: 44px; padding: 0 16px; font-size: 13.5px; }
+.adm-row-btn--danger { color: #FFB8C5; border-color: rgba(255, 107, 134, 0.28); background: rgba(255, 107, 134, 0.06); }
+.adm-row-btn--danger:hover:not(:disabled) { border-color: rgba(255, 107, 134, 0.6); background: rgba(255, 107, 134, 0.14); box-shadow: none; }
+
+.adm-check { width: 16px; height: 16px; accent-color: #FF6B86; cursor: pointer; }
+.adm-board .glass[data-selected='true'] { box-shadow: inset 0 0 0 1px rgba(255, 107, 134, 0.45), 0 24px 60px -28px rgba(0, 0, 0, 0.75); }
+
+/* ==========================================================================
+   Detail side sheet — frosted light glass with an ink header
+   ========================================================================== */
+.adm-drawer-overlay {
+  background: rgba(3, 5, 11, 0.62);
+  -webkit-backdrop-filter: blur(5px) saturate(120%);
+  backdrop-filter: blur(5px) saturate(120%);
+  animation: adm-fade 260ms var(--adm-ease) both;
+}
+@keyframes adm-fade { from { opacity: 0; } }
+
+.adm-drawer {
+  --hue: var(--sp-green);
+  color-scheme: light;
+  color: #1E293B;
+  background:
+    radial-gradient(120% 40% at 100% 0%, rgba(52, 211, 153, 0.08), transparent 60%),
+    linear-gradient(180deg, #F6F8FC 0%, #EEF2F8 100%);
+  box-shadow: -40px 0 120px -30px rgba(0, 0, 0, 0.85), inset 1px 0 0 rgba(255, 255, 255, 0.8);
+  animation: adm-drawer-in 460ms var(--adm-ease) both;
+}
+@keyframes adm-drawer-in { from { translate: 40px 0; opacity: 0; } to { translate: none; opacity: 1; } }
+
+.adm-drawer__head {
+  position: relative;
+  color: #FFFFFF;
+  background:
+    radial-gradient(80% 140% at 0% 0%, rgba(52, 211, 153, 0.22), transparent 55%),
+    radial-gradient(60% 120% at 100% 0%, rgba(76, 198, 255, 0.16), transparent 60%),
+    linear-gradient(160deg, #0D1A33 0%, #0A0F1F 70%);
+}
+.adm-drawer__head::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.6) 18%, #34D399 45%, #4CC6FF 70%, transparent);
+  opacity: 0.8;
+}
+
+.adm-drawer__bar {
+  background: rgba(246, 248, 252, 0.9);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.08), 0 10px 24px -18px rgba(15, 23, 42, 0.35);
+}
+
+.adm-drawer-card {
+  margin-top: 16px;
+  padding: 18px 18px 20px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.07), inset 0 1px 0 #FFFFFF, 0 12px 32px -24px rgba(15, 23, 42, 0.45);
+}
+.adm-drawer-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #475569;
+}
+.adm-drawer-card__title::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 999px;
+  background: #10B981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+}
+.adm-drawer :focus-visible { outline: 2px solid #047857; outline-offset: 2px; }
+.adm-drawer .adm-drawer__head :focus-visible { outline-color: #8FF0C8; }
+
+@media (prefers-reduced-motion: reduce) {
+  .adm-drawer, .adm-drawer-overlay { animation: none !important; }
+  .adm-filter-panel, .adm-chip-btn, .adm-row-btn { transition-duration: 1ms !important; }
+}
+
+/* ==========================================================================
+   Auth (login / 2FA / invite) — centered liquid-glass card on the aurora sky
+   ========================================================================== */
+.adm-shell .adm-auth__card {
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.015) 30%, rgba(255, 255, 255, 0) 100%),
+    rgba(10, 13, 27, 0.80);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 40px 120px -40px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* Light entering the card's top edge: white core, spectral fringe, soft bloom below. */
+.adm-auth__beam {
+  position: absolute;
+  top: 0; left: 14%; right: 14%;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9) 30%, #8FF0C8 55%, #A6E6FF 72%, transparent);
+}
+.adm-auth__beam::after {
+  content: '';
+  position: absolute;
+  left: 10%; right: 10%; top: 0;
+  height: 70px;
+  background: radial-gradient(60% 100% at 50% 0%, rgba(52, 211, 153, 0.16), transparent 70%);
+}
+
+.adm-auth__prism {
+  position: relative;
+  height: 1px;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0.0) 0%, rgba(255, 255, 255, 0.7) 18%,
+    var(--sp-rose) 34%, var(--sp-amber) 44%, var(--sp-gold) 53%, var(--sp-green) 62%,
+    var(--sp-cyan) 72%, var(--sp-indigo) 82%, var(--sp-violet) 91%, rgba(183, 148, 255, 0) 100%);
+  opacity: 0.75;
+}
+.adm-auth__prism::after {
+  content: '';
+  position: absolute;
+  inset: -3px 0;
+  background: inherit;
+  filter: blur(4px);
+  opacity: 0.5;
+}
+
+.adm-auth .adm-field { min-height: 52px; font-size: 15px; border-radius: 14px; }
+.adm-auth .adm-field--icon { padding-left: 44px; }
+.adm-auth .adm-field--code { text-align: center; font-size: 24px; font-weight: 700; letter-spacing: 0.5em; padding-left: calc(12px + 0.5em); font-variant-numeric: tabular-nums; }
+.adm-auth :focus-visible { outline: 2px solid #8FF0C8; outline-offset: 3px; }
+.adm-auth .adm-field:focus { outline: 2px solid #8FF0C8; outline-offset: 2px; border-color: transparent; }
+
+.adm-auth-submit {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #FFFFFF 0%, #E9EEF6 100%);
+  color: #0B1530;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow:
+    inset 0 -1px 0 rgba(11, 21, 48, 0.12),
+    0 14px 40px -14px rgba(143, 240, 200, 0.55),
+    0 2px 0 -1px rgba(76, 198, 255, 0.5);
+  transition: transform 220ms var(--adm-ease), box-shadow 220ms, opacity 200ms;
+}
+.adm-auth-submit:hover:not(:disabled) { transform: translate3d(0, -1px, 0); box-shadow: inset 0 -1px 0 rgba(11, 21, 48, 0.12), 0 18px 46px -14px rgba(143, 240, 200, 0.75), 0 2px 0 -1px rgba(76, 198, 255, 0.7); }
+.adm-auth-submit:active:not(:disabled) { transform: scale(0.99); }
+.adm-auth-submit:disabled { cursor: progress; opacity: 0.75; }
+
+.adm-auth-ghost {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #FFFFFF;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background-color 200ms, border-color 200ms;
+}
+.adm-auth-ghost:hover { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.24); }
+
+@media (prefers-reduced-motion: reduce) {
+  .adm-auth-submit { transition-duration: 1ms !important; }
+}
+
+.adm-shell.adm-auth { position: fixed; }

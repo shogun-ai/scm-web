@@ -2,6 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { Loader2, Mail, Send } from 'lucide-react';
 import { getAuthHeaders } from '../loanTask/api';
+import TrustDocsPanel from './TrustDocsPanel';
 
 const dt = value => { try { return value ? new Date(value).toLocaleString('mn-MN') : ''; } catch { return ''; } };
 const STATE = { sent: 'Илгээгдсэн', queued: 'Илгээгдэж байна', failed: 'Илгээж чадсангүй', skipped: 'Илгээгээгүй' };
@@ -34,7 +35,9 @@ export default function TrustMessagePanel({ apiUrl, trust, canSend = true, onSen
     } finally { setBusy(false); }
   };
 
-  return <div className="mt-6 space-y-3 border-t pt-4">
+  return <>
+  <TrustDocsPanel apiUrl={apiUrl} trust={trust} onChanged={onSent} />
+  <div className="mt-6 space-y-3 border-t pt-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 className="text-xs font-bold uppercase text-gray-400">Харилцагчид имэйл</h3>
       <button type="button" disabled={!email || !canSend} onClick={() => { setError(''); setOpen(true); }} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-[#003B5C] hover:bg-slate-50 disabled:opacity-50"><Mail size={16} aria-hidden="true" />Чөлөөт имэйл бичих</button>
@@ -61,5 +64,6 @@ export default function TrustMessagePanel({ apiUrl, trust, canSend = true, onSen
         </div>
       </div>
     </div>}
-  </div>;
+  </div>
+  </>;
 }

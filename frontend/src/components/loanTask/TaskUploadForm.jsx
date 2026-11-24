@@ -17,7 +17,10 @@ const toField = item => ({
 
 const formatDate = value => { try { return new Date(value).toLocaleString('mn-MN', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return ''; } };
 
-export default function TaskUploadForm({ token, onBack, apiUrl = API_URL }) {
+const GROUP_LABELS = { personal: 'Хувийн', funds: 'Хөрөнгийн эх үүсвэр', other: 'Бусад' };
+
+// kind: 'loan' (default) or 'trust' (D24, /api/trusts/upload). Trust items carry a `group` shown as a heading.
+export default function TaskUploadForm({ token, onBack, apiUrl = API_URL, kind = 'loan' }) {
   const [state, setState] = useState({ status: 'loading', data: null, message: '' });
   const [files, setFiles] = useState({});
   const [uploadError, setUploadError] = useState('');
@@ -30,7 +33,7 @@ export default function TaskUploadForm({ token, onBack, apiUrl = API_URL }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchUploadRequest(apiUrl, token)
+    fetchUploadRequest(apiUrl, token, kind)
       .then(data => { if (!cancelled) setState({ status: 'ready', data, message: '' }); })
       .catch(error => {
         if (cancelled) return;
@@ -38,7 +41,7 @@ export default function TaskUploadForm({ token, onBack, apiUrl = API_URL }) {
         setState({ status: code === 404 || code === 410 || code === 400 ? 'invalid' : 'error', data: null, message: errorMessage(error, '') });
       });
     return () => { cancelled = true; };
-  }, [apiUrl, token]);
+  }, [apiUrl, token, kind]);
   useEffect(() => { if (done) doneRef.current?.focus(); }, [done]);
 
   const items = Array.isArray(state.data?.items) ? state.data.items : [];
@@ -63,7 +66,7 @@ export default function TaskUploadForm({ token, onBack, apiUrl = API_URL }) {
     try {
       const payload = new FormData();
       Object.entries(files).forEach(([key, list]) => list.forEach(file => payload.append(key, file)));
-      await submitUploadFiles(apiUrl, token, payload, ev => { if (ev.total) setProgress(Math.round(ev.loaded / ev.total * 100)); });
+      await submitUploadFiles(apiUrl, token, payload, ev => { if (ev.total) setProgress(Math.round(ev.loaded / ev.total * 100)); }, kind);
       setDone(true);
       setFiles({});
     } catch (error) {
@@ -86,15 +89,16 @@ export default function TaskUploadForm({ token, onBack, apiUrl = API_URL }) {
   if (done) return shell(<section ref={doneRef} tabIndex={-1} role="status" className="rounded-2xl border border-slate-200 bg-white p-8 text-center"><CheckCircle2 size={48} className="mx-auto mb-5 text-emerald-700" aria-hidden="true" /><h1 className="text-2xl font-semibold">Баримт хүлээн авлаа</h1><p className="mt-4 text-slate-600">Баярлалаа. Ажилтан таны оруулсан баримтыг хянана.</p>{state.data?.requestNo && <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm">Хүсэлтийн дугаар <strong className="mt-1 block text-lg">{state.data.requestNo}</strong></p>}</section>);
 
   return shell(<form onSubmit={submit} noValidate className="rounded-2xl border border-slate-200 bg-white p-5 md:p-8">
-    <p className="mb-3 text-xs font-semibold tracking-[0.12em] text-[#806735]">НЭМЭЛТ БАРИМТ</p>
-    <h1 className="text-2xl font-semibold">Нэмэлт баримт оруулах</h1>
+    <p className="mb-3 text-xs font-semibold tracking-[0.12em] text-[#806735]">{kind === 'trust' ? 'НЭМЭЛТ МАТЕРИАЛ' : 'НЭМЭЛТ БАРИМТ'}</p>
+    <h1 className="text-2xl font-semibold">{kind === 'trust' ? 'Нэмэлт материал оруулах' : 'Нэмэлт баримт оруулах'}</h1>
     <p className="mt-3 text-sm text-slate-600">{state.data.productName ? `${state.data.productName} · ` : ''}Хүсэлтийн дугаар <strong>{state.data.requestNo}</strong></p>
     {state.data.expiresAt && <p className="mt-1 text-xs text-slate-500">Холбоос {formatDate(state.data.expiresAt)} хүртэл хүчинтэй.</p>}
     {state.data.note && <p className="mt-5 whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-sm leading-relaxed text-slate-700">{state.data.note}</p>}
     <fieldset disabled={loading} className="mt-6 space-y-6">
       <legend className="sr-only">Хүссэн баримтууд</legend>
       {items.length === 0 && <p className="text-sm text-slate-600">Одоогоор хүссэн баримт алга.</p>}
-      {items.map(item => <div key={item.key} className="border-b border-slate-200 pb-6 last:border-0">
+      {items.map((item, index) => <div key={item.key} className="border-b border-slate-200 pb-6 last:border-0">
+        {kind === 'trust' && item.group && item.group !== items[index - 1]?.group && <h2 className="mb-3 text-sm font-semibold text-[#806735]">{GROUP_LABELS[item.group] || item.group}</h2>}
         {item.uploaded && <p className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><CheckCircle2 size={14} aria-hidden="true" />Өмнө нь оруулсан — шаардлагатай бол дахин нэмж болно</p>}
         <TaskField field={toField(item)} mode="edit" files={files[item.key] || []} onAddFiles={add} onRemoveFile={remove} disabled={loading} />
       </div>)}

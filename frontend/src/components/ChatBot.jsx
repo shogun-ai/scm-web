@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import axios from 'axios';
 
 const INITIAL_OPTIONS = ['Зээл', 'Итгэлцэл', 'Тооцоолуур', 'Холбоо барих'];
@@ -91,7 +91,7 @@ const toAbsoluteUrl = (url = '') => {
   return `${WEB_BASE_URL}/${value}`;
 };
 
-const ChatBot = () => {
+const ChatBotWidget = () => {
   const [input, setInput] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -683,6 +683,20 @@ const ChatBot = () => {
       </button>
     </div>
   );
+};
+
+// Админ хэсэг (/admin...) болон админ нэвтрэх (/login) хуудсанд олон нийтийн чатбот товчийг харуулахгүй.
+// getSnapshot нь App-ийн re-render бүрт (pushState-ийн дараах) мөн popstate үед шинэчлэгдэнэ.
+const subscribeLocation = onChange => {
+  window.addEventListener('popstate', onChange);
+  return () => window.removeEventListener('popstate', onChange);
+};
+const getPathname = () => window.location.pathname;
+
+const ChatBot = () => {
+  const pathname = useSyncExternalStore(subscribeLocation, getPathname, () => '/');
+  if (pathname.startsWith('/admin') || pathname === '/login') return null;
+  return <ChatBotWidget />;
 };
 
 export default ChatBot;

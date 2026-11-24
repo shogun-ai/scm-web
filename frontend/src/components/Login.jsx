@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { ShieldCheck, Lock, Mail, ArrowRight } from 'lucide-react';
-import logoColored from '../assets/logo-colored.png';
+import { ShieldCheck, Lock, Mail, ArrowRight, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import AuthShell from './admin/AuthShell';
 import SetPasswordForm from './admin/SetPasswordForm';
 import { readInviteToken } from './admin/inviteUtils';
 
@@ -61,53 +61,51 @@ const Login = ({ onLogin, onBack }) => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4 [color-scheme:light] [forced-color-adjust:none]">
-      <div className="bg-white rounded-3xl shadow-2xl p-8 md:p-12 w-full max-w-md animate-fade-in relative">
-        <button onClick={onBack} className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 text-sm font-bold uppercase tracking-wider">Буцах</button>
-        
-        <div className="text-center mb-10">
-            <img src={logoColored} alt="Solongo Capital лого" className="h-16 mx-auto mb-6 object-contain" />
-            <h2 className="text-2xl font-display font-bold text-[#003B5C]">
-                {step === 1 ? 'Нэвтрэх' : '2FA Баталгаажуулалт'}
-            </h2>
-            <p className="text-gray-400 text-sm mt-2">
-                {step === 1 ? 'Админ эрхээр нэвтрэх' : 'Google Authenticator кодоо оруулна уу'}
-            </p>
-        </div>
+    <AuthShell
+      eyebrow={step === 1 ? 'Админ консол' : 'Алхам 2 / 2'}
+      title={step === 1 ? 'Нэвтрэх' : '2FA баталгаажуулалт'}
+      subtitle={step === 1 ? 'Админ эрхээр нэвтэрч хүсэлтүүдээ удирдана.' : 'Google Authenticator апп дээрх 6 оронтой кодыг оруулна уу.'}
+      onBack={onBack}
+    >
+        {notice && <div role="status" className="adm-note adm-note--ok mb-5 flex items-start gap-2"><CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden="true" /><span>{notice}</span></div>}
+        {error && <div role="alert" className="adm-note adm-note--err mb-5 flex items-start gap-2"><AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" /><span>{error}</span></div>}
 
-        {notice && <div role="status" className="bg-green-50 text-green-700 p-3 rounded-lg text-sm text-center mb-6 font-bold">{notice}</div>}
-        {error && <div className="bg-red-50 text-red-500 p-3 rounded-lg text-sm text-center mb-6 font-bold">{error}</div>}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5" aria-busy={loading}>
             {step === 1 && (
                 <>
-                    <div className="relative">
-                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20}/>
-                        <input type="email" placeholder="Имэйл хаяг" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#003B5C]" 
-                            value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
-                    </div>
-                    <div className="relative">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20}/>
-                        <input type="password" placeholder="Нууц үг" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#003B5C]" 
-                            value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
-                    </div>
+                    <label className="block">
+                        <span className="adm-label !text-[var(--adm-ink-2)]">Имэйл хаяг</span>
+                        <span className="relative mt-2 block">
+                            <Mail className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--adm-ink-3)]" size={18} aria-hidden="true" />
+                            <input type="email" placeholder="name@scm.mn" autoComplete="username" className="adm-field adm-field--icon w-full"
+                                value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
+                        </span>
+                    </label>
+                    <label className="block">
+                        <span className="adm-label !text-[var(--adm-ink-2)]">Нууц үг</span>
+                        <span className="relative mt-2 block">
+                            <Lock className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--adm-ink-3)]" size={18} aria-hidden="true" />
+                            <input type="password" placeholder="••••••••••" autoComplete="current-password" className="adm-field adm-field--icon w-full"
+                                value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
+                        </span>
+                    </label>
                 </>
             )}
 
             {step === 2 && (
-                <div className="relative animate-scale-up">
-                    <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-[#007A3D]" size={24}/>
-                    <input type="text" placeholder="000000" maxLength={6} inputMode="numeric" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#003B5C] text-center text-xl font-bold tracking-[0.5em]"
+                <label className="block">
+                    <span className="adm-label flex items-center gap-2 !text-[var(--adm-ink-2)]"><ShieldCheck size={14} className="text-[#8FF0C8]" aria-hidden="true" />Баталгаажуулах код</span>
+                    <input type="text" placeholder="000000" maxLength={6} inputMode="numeric" autoComplete="one-time-code" aria-describedby="otp-help" className="adm-field adm-field--code mt-2 w-full"
                         value={formData.token} onChange={(e) => setFormData({...formData, token: e.target.value.replace(/\s/g, '')})} autoFocus />
-                </div>
+                    <span id="otp-help" className="mt-2 block text-xs text-[var(--adm-ink-3)]">Код 30 секунд тутам шинэчлэгдэнэ.</span>
+                </label>
             )}
 
-            <button type="submit" disabled={loading} className="w-full bg-[#003B5C] text-white py-4 rounded-xl font-bold hover:bg-[#002a42] transition shadow-lg flex items-center justify-center gap-2">
-                {loading ? 'Уншиж байна...' : step === 1 ? 'Үргэлжлүүлэх' : 'Баталгаажуулах'} {step === 1 && <ArrowRight size={18}/>}
+            <button type="submit" disabled={loading} className="adm-auth-submit">
+                {loading ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" />Уншиж байна...</> : step === 1 ? <>Үргэлжлүүлэх<ArrowRight size={18} aria-hidden="true" /></> : 'Баталгаажуулах'}
             </button>
         </form>
-      </div>
-    </div>
+    </AuthShell>
   );
 };
 

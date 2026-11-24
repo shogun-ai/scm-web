@@ -11,7 +11,9 @@ import LoanTaskConfigEditor from './loanTask/LoanTaskConfigEditor';
 import { fetchLoanTaskAvailability } from './loanTask/api';
 import TaskPermissionMatrix from './admin/TaskPermissionMatrix';
 import ProfilePage from './admin/ProfilePage';
-import ProfileMenu from './admin/ProfileMenu';
+import AdminShell from './admin/AdminShell';
+import AdminDashboard from './admin/dashboard/AdminDashboard';
+import { MODULE_HUES } from './admin/theme/spectrum';
 import AdminSettingsPanel from './admin/AdminSettingsPanel';
 import FacebookStatusPanel from './admin/FacebookStatusPanel';
 import BotContentPanel from './admin/BotContentPanel';
@@ -1109,58 +1111,49 @@ const AdminPanel = ({ user, token, onLogout }) => {
     setChatbotCards(prev => prev.filter(card => card.id !== cardId));
   };
 
-  const navClass = (active) => `w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${active ? 'bg-[#D4AF37] text-[#003B5C]' : 'text-white/70 hover:bg-white/10'}`;
-  const navButton = (key, icon, label) => (
-    <button onClick={() => setActiveTab(key)} aria-current={activeTab === key ? 'page' : undefined} className={navClass(activeTab === key)}>{icon} {label}</button>
-  );
   // D17: backend эрхийн каталог өгвөл (user.permissions) харуулна, үгүй бол хуучнаар зөвшөөрнө.
   const can = (key) => user?.role === 'admin' || !myPerms || myPerms.includes(key);
   const trustCanMessage = can('trusts.message');
   const showEditGroup = user?.role === 'admin' || (loanTasksEnabled && isLoanTaskAdmin);
 
+  // Sidebar цэс — эрхийн нөхцөл өмнөхтэй яг ижил.
+  const navItem = (key, icon, label) => ({ key, icon, label, hue: MODULE_HUES[key], active: activeTab === key, onSelect: () => setActiveTab(key) });
+  const navGroups = [
+    { id: 'main', items: [
+      navItem('dashboard', LayoutDashboard, 'Хянах самбар'),
+      navItem('los', ClipboardList, loanTasksEnabled ? 'Зээлийн хүсэлт' : 'Зээлийн үйл явц'),
+      can('trusts.view') && navItem('trusts', Handshake, 'Итгэлцлийн хүсэлт'),
+      can('document_ai.use') && navItem('documentAnalysis', FileText, 'Баримт AI уншилт'),
+      SHOW_ONBOARDING_NAV && canAccessOnboarding && navItem('onboarding', UserCheck, 'Харилцагч бүртгэл'),
+    ].filter(Boolean) },
+    showEditGroup && { id: 'edit', heading: 'Админ панел засвар', items: [
+      loanTasksEnabled && isLoanTaskAdmin && navItem('loanTaskConfig', Settings, 'Хүсэлтийн маягт'),
+      ...(user?.role === 'admin' ? [
+        navItem('finance', Activity, 'Файл засах'),
+        { key: 'cms', icon: Globe, label: 'Контент засах', hue: MODULE_HUES.cms, active: activeTab === 'cms' && cmsSubTab !== 'chatbot', onSelect: () => { setActiveTab('cms'); setCmsSubTab(prev => (prev === 'chatbot' ? 'hero' : prev)); } },
+        { key: 'chatbot', icon: MessageCircle, label: 'Чатбот', hue: MODULE_HUES.chatbot, active: activeTab === 'cms' && cmsSubTab === 'chatbot', onSelect: () => { setActiveTab('cms'); setCmsSubTab('chatbot'); } },
+        navItem('botContent', Settings, 'Ботын агуулга'),
+      ] : []),
+    ].filter(Boolean) },
+    user?.role === 'admin' && { id: 'settings', heading: 'Тохиргоо', items: [
+      navItem('users', Users, 'Хэрэглэгчид'),
+      navItem('permissions', Shield, 'Эрхийн матриц'),
+      navItem('logs', Activity, 'Үйлдлийн лог'),
+      navItem('deleteSettings', Trash2, 'Устгах тохиргоо'),
+      navItem('facebook', MessageCircle, 'Facebook холболт'),
+    ] },
+  ].filter(group => group && group.items.length > 0);
+  const activeNav = navGroups.flatMap(group => group.items).find(item => item.active);
+  const shellTitle = activeTab === 'profile' ? 'Миний профайл' : (activeNav?.label || 'Админ');
+  const shellHue = activeTab === 'profile' ? MODULE_HUES.profile : (activeNav?.hue || MODULE_HUES.dashboard);
+
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 flex font-sans [color-scheme:light] [forced-color-adjust:none]">
+    <div className="min-h-screen bg-[#05070D] text-slate-800 font-sans [color-scheme:light] [forced-color-adjust:none]">
       <style>{` @media print { @page { margin: 1cm; size: auto; } body * { visibility: hidden; } #printable-content, #printable-content * { visibility: visible; } #printable-content { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; background: white; } .no-print { display: none !important; } } `}</style>
 
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-[#003B5C] text-white flex flex-col fixed h-full z-20 no-print">
-        <div className="p-6 border-b border-white/10 font-bold text-[#D4AF37] text-xl">SCM ADMIN</div>
-        <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1 text-sm" aria-label="Админ цэс">
-          {navButton('dashboard', <LayoutDashboard size={18} />, 'Хянах самбар')}
-          {navButton('los', <ClipboardList size={18} />, loanTasksEnabled ? 'Зээлийн хүсэлт' : 'Зээлийн үйл явц')}
-          {can('trusts.view') && navButton('trusts', <Handshake size={18} />, 'Итгэлцлийн хүсэлт')}
-          {can('document_ai.use') && navButton('documentAnalysis', <FileText size={18} />, 'Баримт AI уншилт')}
-          {SHOW_ONBOARDING_NAV && canAccessOnboarding && navButton('onboarding', <UserCheck size={18} />, 'Харилцагч бүртгэл')}
-          {showEditGroup && (
-            <div role="group" aria-labelledby="nav-edit-heading" className="pt-4">
-              <p id="nav-edit-heading" className="px-4 pb-1 text-[11px] font-bold uppercase tracking-widest text-white/40">Админ панел засвар</p>
-              {loanTasksEnabled && isLoanTaskAdmin && navButton('loanTaskConfig', <Settings size={18} />, 'Хүсэлтийн маягт')}
-              {user?.role === 'admin' && (<>
-                {navButton('finance', <Activity size={18} />, 'Файл засах')}
-                <button onClick={() => { setActiveTab('cms'); setCmsSubTab(prev => (prev === 'chatbot' ? 'hero' : prev)); }} className={navClass(activeTab === 'cms' && cmsSubTab !== 'chatbot')}><Globe size={18} /> Контент засах</button>
-                <button onClick={() => { setActiveTab('cms'); setCmsSubTab('chatbot'); }} className={navClass(activeTab === 'cms' && cmsSubTab === 'chatbot')}><MessageCircle size={18} /> Чатбот</button>
-                {navButton('botContent', <Settings size={18} />, 'Ботын агуулга')}
-              </>)}
-            </div>
-          )}
-          {user?.role === 'admin' && (
-            <div role="group" aria-labelledby="nav-settings-heading" className="pt-4">
-              <p id="nav-settings-heading" className="px-4 pb-1 text-[11px] font-bold uppercase tracking-widest text-white/40">Тохиргоо</p>
-              {navButton('users', <Users size={18} />, 'Хэрэглэгчид')}
-              {navButton('permissions', <Shield size={18} />, 'Эрхийн матриц')}
-              {navButton('logs', <Activity size={18} />, 'Үйлдлийн лог')}
-              {navButton('deleteSettings', <Trash2 size={18} />, 'Устгах тохиргоо')}
-              {navButton('facebook', <MessageCircle size={18} />, 'Facebook холболт')}
-            </div>
-          )}
-        </nav>
-      </aside>
-
-      <ProfileMenu user={user} onOpenProfile={() => setActiveTab('profile')} onLogout={onLogout} />
-
-      <main className="flex-1 ml-64 p-8 pt-20 no-print">
+      <AdminShell groups={navGroups} title={shellTitle} hue={shellHue} sheet={!(activeTab === 'dashboard' || (activeTab === 'los' && loanTasksEnabled))} user={user} onOpenProfile={() => setActiveTab('profile')} onLogout={onLogout}>
         {activeTab === 'los' && loanTasksEnabled && !showLegacyLos && (
-          <LoanTaskBoard apiUrl={API_URL} user={user} onOpenLegacy={() => setShowLegacyLos(true)} />
+          <LoanTaskBoard apiUrl={API_URL} user={user} />
         )}
 
         {activeTab === 'loanTaskConfig' && loanTasksEnabled && isLoanTaskAdmin && (
@@ -1186,36 +1179,18 @@ const AdminPanel = ({ user, token, onLogout }) => {
         )}
 
         {activeTab === 'dashboard' && (
-          <div className="space-y-6 animate-fade-in">
-            <h2 className="text-2xl font-bold text-[#003B5C]">Хянах самбар</h2>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {[
-                { label: 'Нийт зээлийн хүсэлт', value: requests.length, color: 'bg-blue-50 text-blue-700' },
-                { label: 'Хүлээгдэж буй', value: requests.filter(r => r.status !== 'resolved').length, color: 'bg-orange-50 text-orange-700' },
-                { label: 'Шийдвэрлэсэн', value: requests.filter(r => r.status === 'resolved').length, color: 'bg-green-50 text-green-700' },
-                { label: 'Итгэлцлийн хүсэлт', value: trusts.length, color: 'bg-purple-50 text-purple-700' },
-                ...(canAccessOnboarding ? [{ label: 'Харилцагч бүртгэл', value: onboardingSubmissions.length, color: 'bg-cyan-50 text-cyan-700' }] : []),
-              ].map((s, i) => (
-                <div key={i} className={`p-6 rounded-2xl border ${s.color}`}>
-                  <p className="text-xs font-bold uppercase opacity-60 mb-2">{s.label}</p>
-                  <p className="text-4xl font-black">{s.value}</p>
-                </div>
-              ))}
-            </div>
-            <div className="bg-white rounded-2xl border shadow-sm p-6">
-              <h3 className="font-bold text-[#003B5C] mb-4">Сүүлийн 5 хүсэлт</h3>
-              <div className="space-y-3">
-                {requests.slice(0, 5).map(req => (
-                  <div key={req._id} className="flex justify-between items-center py-3 border-b last:border-0 text-sm">
-                    <span className="font-bold">{req.lastname} {req.firstname || req.orgName}</span>
-                    <span className="text-gray-400">{new Date(req.createdAt).toLocaleDateString('mn-MN')}</span>
-                    <span className={`px-2 py-1 rounded text-xs font-bold ${req.status === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>{req.status === 'resolved' ? 'Шийдсэн' : 'Хүлээгдэж байна'}</span>
-                  </div>
-                ))}
-                {requests.length === 0 && <p className="text-gray-400 text-sm">Хүсэлт байхгүй байна.</p>}
-              </div>
-            </div>
-          </div>
+          <AdminDashboard
+            user={user}
+            requests={requests}
+            trusts={trusts}
+            onboardingCount={onboardingSubmissions.length}
+            showOnboarding={SHOW_ONBOARDING_NAV && canAccessOnboarding}
+            loading={loading}
+            apiUrl={API_URL}
+            loanTasksEnabled={loanTasksEnabled}
+            productNames={PRODUCT_NAMES}
+            onNavigate={setActiveTab}
+          />
         )}
 
         {activeTab === 'onboarding' && canAccessOnboarding && (
@@ -1316,7 +1291,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
             <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
               <table className="w-full text-left">
                 <thead className="bg-slate-50 border-b text-xs font-bold text-gray-500 uppercase">
-                  <tr><th className="p-4">Огноо</th><th>Нэр</th><th>Утас</th><th>Дүн</th><th>Төлөв</th><th>Үйлдэл</th></tr>
+                  <tr><th className="p-4">Огноо</th><th>Нэр</th><th>Утас</th><th>Дүн</th><th>Хариуцагч</th><th>Төлөв</th><th>Үйлдэл</th></tr>
                 </thead>
                 <tbody className="divide-y text-sm">
                   {trusts.map(t => (
@@ -1325,11 +1300,12 @@ const AdminPanel = ({ user, token, onLogout }) => {
                       <td className="p-4 font-bold">{t.lastname} {t.firstname}</td>
                       <td className="p-4">{t.phone}</td>
                       <td className="p-4 font-bold">{t.amount}</td>
+                      <td className={`p-4 text-xs ${t.assignee?.name ? 'font-semibold text-slate-700' : 'text-slate-500'}`}>{t.assignee?.name || 'Хуваарилаагүй'}</td>
                       <td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${t.status === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>{t.status === 'resolved' ? 'Шийдсэн' : 'Хүлээгдэж байна'}</span></td>
                       <td className="p-4"><button onClick={() => { setSelectedTrust(t); setContactNote(t.contactNote || ''); }} className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Eye size={18}/></button></td>
                     </tr>
                   ))}
-                  {trusts.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-gray-400">Хүсэлт байхгүй байна.</td></tr>}
+                  {trusts.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-gray-400">Хүсэлт байхгүй байна.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -3114,7 +3090,7 @@ const AdminPanel = ({ user, token, onLogout }) => {
             </div>
           </div>
         )}
-      </main>
+      </AdminShell>
 
       {/* --- ONBOARDING MODAL --- */}
       {selectedOnboarding && onboardingDraft && (

@@ -1,8 +1,21 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { trackLead } from '../utils/metaPixel';
 import PublicPageShell from './PublicPageShell';
 import { Send, CheckCircle, Loader, AlertCircle } from 'lucide-react';
+import TaskUploadForm from './loanTask/TaskUploadForm';
+
+const TRUST_API_URL = import.meta.env.VITE_API_URL || (['localhost', '127.0.0.1'].includes(window.location.hostname) ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com');
+
+// Removes the one-time upload token from the address bar/history (it stays in component state).
+const stripUploadTokenFromUrl = () => {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('upload')) return;
+    url.searchParams.delete('upload');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  } catch { /* keep the page usable even if history is unavailable */ }
+};
 
 const TrustRequest = ({ onBack }) => {
   const [formData, setFormData] = useState({
@@ -15,6 +28,9 @@ const TrustRequest = ({ onBack }) => {
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState('');
+  // D24: /trust-request?upload=<token> is the applicant's additional material page.
+  const [uploadToken] = useState(() => new URLSearchParams(window.location.search).get('upload'));
+  useEffect(() => { if (uploadToken) stripUploadTokenFromUrl(); }, [uploadToken]);
 
   // ==========================================
   // ✅ 1. ЭНД НЭМЭГДЭЖ БАЙНА:
@@ -92,6 +108,8 @@ const TrustRequest = ({ onBack }) => {
         setLoading(false);
     }
   };
+
+  if (uploadToken) return <TaskUploadForm kind="trust" token={uploadToken} apiUrl={TRUST_API_URL} onBack={onBack} />;
 
   if (showSuccess) return (
     <PublicPageShell title="Хүсэлт амжилттай илгээгдлээ" onBack={onBack}>

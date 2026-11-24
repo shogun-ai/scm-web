@@ -44,6 +44,9 @@ import { createScmMessenger, registerScmMessengerRoutes, createMongoSessionStore
 import { registerLoanFileRoutes } from './loanFiles.js';
 import { applyLoanTaskSchema, registerLoanTaskRoutes, legacyLoanPostGone, taskLockBlocks, sanitizeLegacyLoanWrite } from './loanTasks.js';
 import { createMailer, isValidEmailAddress } from './mailer.js';
+import { createTrustDocService, registerTrustDocRoutes } from './trustDocs.js';
+import { readAssignmentSettings } from './assignmentSettings.js';
+import { createDailyDigest, DIGEST_CRON, DIGEST_TIMEZONE } from './dailyDigest.js';
 import { registerAccountRoutes, readDeleteFlag, recordLoginEvent, normalizePixelId, META_PIXEL_KEY } from './accountRoutes.js';
 import { createPermissionService, registerPermissionRoutes, parseMatrix } from './permissions.js';
 import { sanitizeMatrix } from '../shared/permissions.js';
@@ -1655,9 +1658,16 @@ const TrustRequestSchema = new mongoose.Schema({
     channel: { type: String, enum: ['web', 'messenger', 'webchat'], default: 'web' },
     reference: String,
     messages: { type: [{ _id: false, at: Date, message: String, actor: { userId: String, name: String }, email: { template: String, result: String } }], default: undefined },
-    history: { type: [{ _id: false, at: Date, type: String, email: { template: String, result: String } }], default: undefined },
+    history: { type: [{ _id: false, at: Date, type: String, from: String, to: String, items: { type: [String], default: undefined }, note: String, count: Number, sentTo: String, assignee: { userId: String, name: String }, actor: { userId: String, name: String, system: Boolean }, email: { template: String, result: String } }], default: undefined },
+    // D25 assignment (additive; legacy docs stay untouched).
+    assignee: { userId: String, name: String }, assignedAt: Date,
+    // D24 additional material: private Cloudinary files uploaded by the applicant, and hashed upload links (never exposed via the API).
+    files: { type: [{ fileName: String, publicId: String, deliveryType: String, resourceType: String, format: String, mimeType: String, size: Number, fieldKey: String, label: String, group: String, source: String, linkId: String, uploadedAt: Date }], default: undefined },
+    uploadLinks: { type: [{ tokenHash: String, items: [{ _id: false, key: String, label: String, group: String }], note: String, expiresAt: Date, createdAt: Date, createdBy: { userId: String, name: String, system: Boolean }, revokedAt: Date, auto: Boolean }], default: undefined },
     createdAt: { type: Date, default: Date.now } 
 });
+TrustRequestSchema.index({ 'uploadLinks.tokenHash': 1 }, { sparse: true });
+TrustRequestSchema.index({ 'assignee.userId': 1 }, { sparse: true });
 const TrustRequest = mongoose.models.TrustRequest || mongoose.model('TrustRequest', TrustRequestSchema);
 
 const LogSchema = new mongoose.Schema({ 
@@ -2959,6 +2969,7 @@ const loanTasks = registerLoanTaskRoutes({
     mailer: appMailer,
     getPermissions: user => permissionService.permissionsFor(user),
     getDeleteEnabled: () => readDeleteFlag(SiteConfig),
+    getAssignmentSettings: () => readAssignmentSettings(SiteConfig),
     automate: runPostSubmissionAutomationInBackground,
     getCompanyPhone: async () => { const doc = await SiteConfig.findOne({ key: 'contact_phone' }).lean(); return typeof doc?.value === 'string' ? doc.value : ''; },
 });
@@ -6262,7 +6273,11 @@ app.post('/api/loan-research', authenticateUser, (req, res) => {
 });
 
 // D16/D17: /api/me*, /api/admin/settings, trust requests (+message), user invites, permission catalog.
-registerAccountRoutes({ app, User, SiteConfig, Log, LoginEvent, TrustRequest, authenticateUser, requireAdmin, permissions: permissionService, createLog, mailer: appMailer, bcrypt, getCompanyPhone: getCompanyPhoneConfig });
+// D24/D25: trust additional material (hashed upload links, secure file proxy), trust assignment, daily digest.
+const trustDocService = createTrustDocService({ TrustRequest, User, SiteConfig, mailer: appMailer, getCompanyPhone: getCompanyPhoneConfig, getAssignmentSettings: () => readAssignmentSettings(SiteConfig) });
+const dailyDigest = createDailyDigest({ User, LoanRequest, TrustRequest, SiteConfig, mailer: appMailer });
+registerAccountRoutes({ app, User, SiteConfig, Log, LoginEvent, TrustRequest, authenticateUser, requireAdmin, permissions: permissionService, createLog, mailer: appMailer, bcrypt, getCompanyPhone: getCompanyPhoneConfig, trustDocs: trustDocService, dailyDigest });
+registerTrustDocRoutes({ app, multer, cloudinary, http: axios, TrustRequest, User, authenticateUser, permissions: permissionService, service: trustDocService, mailer: appMailer, createLog });
 registerPermissionRoutes({ app, authenticateUser, requireAdmin, service: permissionService });
 
 app.get('/api/users', authenticateUser, requireAdmin, async (req, res) => { try { res.json(await User.find().select('-password -inviteTokenHash')); } catch (e) { res.status(500).send("Error"); } });
@@ -6798,6 +6813,8 @@ mongoose.connect(MONGO_URI).then(async () => {
     await scmMessenger.configureProfile();
     syncFacebookPostKnowledgeInBackground('startup');
     cron.schedule('0 */6 * * *', () => syncFacebookPostKnowledgeInBackground('cron'));
+    // D24: 09:00 Asia/Ulaanbaatar digest; the SiteConfig daily marker makes multiple instances/restarts safe.
+    cron.schedule(DIGEST_CRON, () => { dailyDigest.run().catch(() => console.error('[daily-digest] run failed')); }, { timezone: DIGEST_TIMEZONE });
     zentroFacebook.start();
     // Force-update financial_date to current period value
     await SiteConfig.findOneAndUpdate(

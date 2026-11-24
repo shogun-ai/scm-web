@@ -40,6 +40,7 @@ export const PERMISSIONS = [
   { key: 'loan_forms.configure', label: 'Хүсэлтийн маягт тохируулах', group: 'loan_forms', defaultRoles: ['admin'], adminOnly: true, legacy: [] },
   { key: 'trusts.view', label: 'Итгэлцлийн хүсэлт харах', group: 'trusts', defaultRoles: STAFF, legacy: [{ section: 'trusts', action: 'Жагсаалт харах', minimum: 'view' }] },
   { key: 'trusts.message', label: 'Итгэлцлийн хүсэлтэд имэйл бичих', group: 'trusts', defaultRoles: STAFF, legacy: [{ section: 'trusts', action: 'Статус шинэчлэх', minimum: 'full' }] },
+  { key: 'trusts.assign', label: 'Итгэлцлийн хүсэлтийн хариуцагч хуваарилах', group: 'trusts', defaultRoles: MANAGERS, legacy: [] },
   { key: 'document_ai.use', label: 'Баримт AI уншилт ашиглах', group: 'document_ai', defaultRoles: ['admin', 'director', 'loan_officer'], legacy: [{ section: 'los_app', action: 'Иргэний үнэмлэх AI уншуулах', minimum: 'full' }] },
   { key: 'content.edit', label: 'Контент / файл / чатбот засах', group: 'content', defaultRoles: ['admin'], legacy: [{ section: 'cms', action: 'Hero / Нүүр хуудас засах', minimum: 'full' }] },
   { key: 'admin.users_permissions_logs', label: 'Хэрэглэгч / эрх / лог удирдах', group: 'admin', defaultRoles: ['admin'], legacy: [{ section: 'users', action: 'Эрх / роль өгөх', minimum: 'full' }] },

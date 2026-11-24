@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PERMISSIONS, PERMISSION_KEYS, roleHasPermission, userHasNewPermission, resolvePermissions, effectiveMatrix, sanitizeMatrix, catalog } from './permissions.js';
 
-const EXPECTED = ['loan_requests.view_all', 'loan_requests.view_assigned', 'loan_requests.assign', 'loan_requests.change_status', 'loan_requests.request_docs', 'loan_requests.message', 'loan_requests.notes_files', 'loan_requests.reopen', 'loan_requests.delete', 'loan_forms.configure', 'trusts.view', 'trusts.message', 'document_ai.use', 'content.edit', 'admin.users_permissions_logs'];
+const EXPECTED = ['loan_requests.view_all', 'loan_requests.view_assigned', 'loan_requests.assign', 'loan_requests.change_status', 'loan_requests.request_docs', 'loan_requests.message', 'loan_requests.notes_files', 'loan_requests.reopen', 'loan_requests.delete', 'loan_forms.configure', 'trusts.view', 'trusts.message', 'trusts.assign', 'document_ai.use', 'content.edit', 'admin.users_permissions_logs'];
 
 test('catalog contains every required key with Mongolian labels and valid groups', () => {
   assert.deepEqual([...PERMISSION_KEYS].sort(), [...EXPECTED].sort());

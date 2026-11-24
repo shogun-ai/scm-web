@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { AlertTriangle, Loader2, Trash2 } from 'lucide-react';
 import { getAuthHeaders } from '../loanTask/api';
+import AutomationSettings from './AutomationSettings';
 
 // Устгах тохиргоо: loanRequestDeleteEnabled (GET/PUT /api/admin/settings).
 export default function AdminSettingsPanel({ apiUrl }) {
@@ -76,5 +77,6 @@ export default function AdminSettingsPanel({ apiUrl }) {
         {pixelError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-2 text-sm text-red-700">{pixelError}</p>}
       </form>
     </section>
+    <AutomationSettings apiUrl={apiUrl} />
   </div>;
 }

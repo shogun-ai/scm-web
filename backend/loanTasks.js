@@ -507,6 +507,7 @@ export function registerLoanTaskRoutes({
   mailer, automate, env = process.env, now = () => new Date(), getCompanyPhone = async () => '',
   schedule = setImmediate, randomBytes = crypto.randomBytes, logger = console,
   getPermissions = async user => resolvePermissions(user), getDeleteEnabled = async () => false,
+  getAssignmentSettings = async () => null,
 }) {
   const enabled = () => env.LOAN_TASKS_ENABLED === 'true';
   const ensureEnabled = (_req, res, next) => (enabled() ? next() : res.status(503).json({ message: 'Энэ үйлчилгээ түр идэвхгүй байна.', code: 'DISABLED' }));
@@ -608,6 +609,18 @@ export function registerLoanTaskRoutes({
       else {
         logger.warn?.(`[loan-tasks] default assignee unavailable product=${productKey}`);
         history.push({ at, type: 'note', note: 'Анхдагч хариуцагч идэвхгүй тул автоматаар хуваарилаагүй.', actor: SYSTEM_ACTOR });
+      }
+    } else {
+      // D25: no product-level receiver configured -> the global "auto" assignment setting (loan) applies.
+      let setting = null;
+      try { setting = (await getAssignmentSettings())?.loan || null; } catch { setting = null; }
+      if (setting?.mode === 'auto' && setting.staffId) {
+        const staff = await findActiveStaff(setting.staffId);
+        if (staff) assignee = { userId: String(staff._id), name: staff.name || '' };
+        else {
+          logger.warn?.('[loan-tasks] auto assignee unavailable');
+          history.push({ at, type: 'note', note: 'Автомат хуваарилалтын ажилтан идэвхгүй тул хуваарилаагүй.', actor: SYSTEM_ACTOR });
+        }
       }
     }
     return { assignee, history };

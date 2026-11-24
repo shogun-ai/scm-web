@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, LogOut, UserCircle } from 'lucide-react';
 
-// Баруун дээд буланд байрлах профайл цэс.
+// Профайл цэс — админ topbar-ийн баруун талд байрлана.
 export default function ProfileMenu({ user, onOpenProfile, onLogout }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -16,15 +16,21 @@ export default function ProfileMenu({ user, onOpenProfile, onLogout }) {
   const name = user?.name || user?.email || 'Профайл';
   const initial = String(name).trim().charAt(0).toUpperCase() || '?';
 
-  return <div ref={ref} className="fixed right-4 top-3 z-30 no-print">
-    <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)} className="flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-3 text-sm font-semibold text-[#003B5C] shadow-sm hover:bg-slate-50">
-      <span className="grid h-9 w-9 place-items-center rounded-full bg-[#003B5C] text-sm font-bold text-white" aria-hidden="true">{initial}</span>
+  return <div ref={ref} className="relative no-print">
+    <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)} className="flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] py-1 pl-1 pr-3 text-sm font-semibold text-[var(--adm-ink)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors hover:bg-white/[0.08]">
+      <span className="relative grid h-9 w-9 place-items-center rounded-full bg-[conic-gradient(from_200deg,var(--sp-rose),var(--sp-gold),var(--sp-green),var(--sp-cyan),var(--sp-indigo),var(--sp-violet),var(--sp-rose))] p-[1.5px]" aria-hidden="true">
+        <span className="grid h-full w-full place-items-center rounded-full bg-[#0E1326] text-sm font-bold text-white">{initial}</span>
+      </span>
       <span className="hidden max-w-[10rem] truncate sm:inline">{name}</span>
-      <ChevronDown size={16} aria-hidden="true" />
+      <ChevronDown size={16} aria-hidden="true" className={`text-[var(--adm-ink-3)] transition-transform duration-300 ${open ? 'rotate-180' : ''}`} />
     </button>
-    {open && <div role="menu" aria-label="Профайл цэс" className="absolute right-0 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
-      <button type="button" role="menuitem" onClick={() => { setOpen(false); onOpenProfile(); }} className="flex min-h-11 w-full items-center gap-2 px-4 text-left text-sm font-medium text-slate-800 hover:bg-slate-50"><UserCircle size={16} aria-hidden="true" />Миний профайл</button>
-      <button type="button" role="menuitem" onClick={() => { setOpen(false); onLogout(); }} className="flex min-h-11 w-full items-center gap-2 px-4 text-left text-sm font-medium text-red-600 hover:bg-red-50"><LogOut size={16} aria-hidden="true" />Гарах</button>
+    {open && <div role="menu" aria-label="Профайл цэс" className="adm-rise absolute right-0 mt-2 w-60 overflow-hidden rounded-2xl border border-white/10 bg-[#0E1326]/95 py-1.5 shadow-[0_24px_60px_-20px_rgba(0,0,0,0.9)] backdrop-blur-xl">
+      <div className="border-b border-white/[0.07] px-4 pb-2.5 pt-1.5">
+        <p className="truncate text-sm font-semibold text-white">{name}</p>
+        {user?.email && user?.name && <p className="truncate text-xs text-[var(--adm-ink-3)]">{user.email}</p>}
+      </div>
+      <button type="button" role="menuitem" onClick={() => { setOpen(false); onOpenProfile(); }} className="mt-1 flex min-h-11 w-full items-center gap-2.5 px-4 text-left text-sm font-medium text-[var(--adm-ink-2)] hover:bg-white/[0.06] hover:text-white"><UserCircle size={16} aria-hidden="true" />Миний профайл</button>
+      <button type="button" role="menuitem" onClick={() => { setOpen(false); onLogout(); }} className="flex min-h-11 w-full items-center gap-2.5 px-4 text-left text-sm font-medium text-[#FF9DB0] hover:bg-[#FF6B86]/10"><LogOut size={16} aria-hidden="true" />Гарах</button>
     </div>}
   </div>;
 }

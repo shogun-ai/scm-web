@@ -2,13 +2,20 @@
 // Dependencies are injected so the handlers are testable without Mongo/Express (see accountRoutes.test.js).
 import crypto from 'node:crypto';
 import * as emails from './accountEmails.js';
+import { maskEmail } from './accountEmails.js';
 import { createIntakeLimiter } from './loanIntake.js';
 import { isValidEmailAddress } from './mailer.js';
+import { sanitizeTrust, TRUST_AUTO_DOC_KEY } from './trustDocs.js';
+import { ASSIGNMENT_KEY, readAssignmentSettings, validateAssignmentPatch, isActiveRequestStaff, notifyEmailOf } from './assignmentSettings.js';
+import { DIGEST_ENABLED_KEY } from './dailyDigest.js';
 
 export const INVITE_TTL_MS = 48 * 3600 * 1000;
 export const DELETE_FLAG_KEY = 'loanRequestDeleteEnabled';
 export const META_PIXEL_KEY = 'meta_pixel_id';
-const SETTINGS_KEYS = ['loanRequestDeleteEnabled', 'metaPixelId'];
+const SETTINGS_KEYS = ['loanRequestDeleteEnabled', 'metaPixelId', 'trustAutoDocRequest', 'dailyDigestEnabled', 'assignment'];
+const BOOL_SETTINGS = { trustAutoDocRequest: { key: TRUST_AUTO_DOC_KEY, label: 'Итгэлцэл: нэмэлт материал автоматаар хүсэх' }, dailyDigestEnabled: { key: DIGEST_ENABLED_KEY, label: 'Өдөр тутмын сануулга' } };
+// Boolean setting that defaults to true unless explicitly saved as false.
+export const readDefaultTrueFlag = async (SiteConfig, key) => (await SiteConfig.findOne({ key }).lean())?.value !== false;
 const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/; // 32 random bytes, base64url
 const str = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
@@ -39,10 +46,7 @@ export function passwordPolicyError(password) {
   return null;
 }
 
-export const maskEmail = email => {
-  const [local = '', domain = ''] = String(email || '').split('@');
-  return `${local.slice(0, 1)}${'*'.repeat(Math.max(1, Math.min(local.length - 1, 6)))}@${domain}`;
-};
+export { maskEmail };
 
 export const trustReference = (id, year = new Date().getFullYear()) => `TRUST-${year}-${String(id).slice(-6).toUpperCase()}`;
 
@@ -105,12 +109,13 @@ export async function recordLoginEvent({ LoginEvent, user, req, now = new Date()
 export function registerAccountRoutes({
   app, User, SiteConfig, Log, LoginEvent, TrustRequest, authenticateUser, requireAdmin, permissions, createLog = async () => {},
   mailer, bcrypt, env = process.env, now = () => new Date(), schedule = setImmediate, randomBytes = crypto.randomBytes,
-  logger = console, getCompanyPhone = async () => '',
+  logger = console, getCompanyPhone = async () => '', trustDocs = null, dailyDigest = null,
 }) {
   const inviteReadLimiter = createIntakeLimiter({ max: 30 });
   const setPasswordLimiter = createIntakeLimiter({ max: 10 });
   const inviteSendLimiter = createIntakeLimiter({ max: 30 });
   const trustSubmitLimiter = createIntakeLimiter({ max: 10 });
+  const digestTestLimiter = createIntakeLimiter({ max: 5 });
   const adminUrl = () => env.ADMIN_APP_URL || 'https://www.scm.mn/admin';
   const setPasswordBase = () => (env.ADMIN_APP_URL || 'https://www.scm.mn/admin').replace(/[?#].*$/, '');
   const limitOf = (value, def, max) => Math.min(max, Math.max(1, Number.parseInt(value, 10) || def));
@@ -148,10 +153,21 @@ export function registerAccountRoutes({
   });
 
   // ----- Admin settings -----
+  const assignmentStaff = async () => {
+    const users = await User.find({ isActive: { $ne: false } }).select('_id name role roles isActive').limit(500).lean();
+    return (Array.isArray(users) ? users : []).filter(isActiveRequestStaff).map(user => ({ _id: String(user._id), name: user.name || '' }));
+  };
   app.get('/api/admin/settings', authenticateUser, requireAdmin, async (_req, res) => {
-    try { res.json({ loanRequestDeleteEnabled: await readDeleteFlag(SiteConfig), metaPixelId: await readMetaPixelId(SiteConfig) }); } catch { generic500(res); }
+    try {
+      res.json({
+        loanRequestDeleteEnabled: await readDeleteFlag(SiteConfig), metaPixelId: await readMetaPixelId(SiteConfig),
+        trustAutoDocRequest: await readDefaultTrueFlag(SiteConfig, TRUST_AUTO_DOC_KEY), dailyDigestEnabled: await readDefaultTrueFlag(SiteConfig, DIGEST_ENABLED_KEY),
+        assignment: await readAssignmentSettings(SiteConfig), assignmentStaff: await assignmentStaff(),
+      });
+    } catch { generic500(res); }
   });
-  // PUT accepts any non-empty subset of { loanRequestDeleteEnabled:boolean, metaPixelId:string(10-20 digits) | '' (clears) }.
+  // PUT accepts any non-empty subset of { loanRequestDeleteEnabled, trustAutoDocRequest, dailyDigestEnabled: boolean,
+  // metaPixelId: string(10-20 digits) | '' (clears), assignment: { loan?|trust?: { mode:'auto'|'manual', staffId } } }.
   app.put('/api/admin/settings', authenticateUser, requireAdmin, async (req, res) => {
     try {
       const body = req.body;
@@ -159,8 +175,15 @@ export function registerAccountRoutes({
       const keys = isObject ? Object.keys(body) : [];
       const errors = {};
       if (!isObject || !keys.length || keys.some(key => !SETTINGS_KEYS.includes(key))) errors._form = 'Тохиргоо буруу байна.';
-      if (isObject && keys.includes('loanRequestDeleteEnabled') && typeof body.loanRequestDeleteEnabled !== 'boolean') errors.loanRequestDeleteEnabled = 'true эсвэл false байна.';
+      for (const key of ['loanRequestDeleteEnabled', 'trustAutoDocRequest', 'dailyDigestEnabled']) {
+        if (isObject && keys.includes(key) && typeof body[key] !== 'boolean') errors[key] = 'true эсвэл false байна.';
+      }
       if (isObject && keys.includes('metaPixelId') && !(typeof body.metaPixelId === 'string' && (body.metaPixelId.trim() === '' || normalizePixelId(body.metaPixelId)))) errors.metaPixelId = 'Pixel ID нь 10–20 оронтой тоо байна.';
+      let assignment = null;
+      if (isObject && keys.includes('assignment') && !errors._form) {
+        const checked = await validateAssignmentPatch(body.assignment, await readAssignmentSettings(SiteConfig), User);
+        if (checked.errors) errors.assignment = checked.errors; else assignment = checked.value;
+      }
       if (Object.keys(errors).length) return res.status(400).json({ message: 'Тохиргоо буруу байна.', errors });
       const out = {};
       if (keys.includes('loanRequestDeleteEnabled')) {
@@ -171,6 +194,17 @@ export function registerAccountRoutes({
         );
         await createLog(req.user, 'admin_settings_changed', `${DELETE_FLAG_KEY}=${body.loanRequestDeleteEnabled}`);
         out.loanRequestDeleteEnabled = body.loanRequestDeleteEnabled;
+      }
+      for (const [field, def] of Object.entries(BOOL_SETTINGS)) {
+        if (!keys.includes(field)) continue;
+        await SiteConfig.findOneAndUpdate({ key: def.key }, { $set: { value: body[field], label: def.label, group: 'internal', updatedAt: now() } }, { upsert: true });
+        await createLog(req.user, 'admin_settings_changed', `${def.key}=${body[field]}`);
+        out[field] = body[field];
+      }
+      if (assignment) {
+        await SiteConfig.findOneAndUpdate({ key: ASSIGNMENT_KEY }, { $set: { value: assignment, label: 'Хүсэлт хуваарилах тохиргоо', group: 'internal', updatedAt: now() } }, { upsert: true });
+        await createLog(req.user, 'admin_settings_changed', `assignment loan=${assignment.loan.mode} trust=${assignment.trust.mode}`);
+        out.assignment = assignment;
       }
       if (keys.includes('metaPixelId')) {
         const pixelId = normalizePixelId(body.metaPixelId);
@@ -186,6 +220,16 @@ export function registerAccountRoutes({
     } catch { generic500(res); }
   });
 
+  // D24: sends the current admin their own digest right now (ignores the enabled flag and the daily idempotency marker).
+  app.post('/api/admin/daily-digest/test', authenticateUser, requireAdmin, digestTestLimiter, async (req, res) => {
+    try {
+      if (!dailyDigest) return res.status(503).json({ message: 'Үйлчилгээ идэвхгүй байна.' });
+      const outcome = await dailyDigest.sendTest(req.user);
+      await createLog(req.user, 'daily_digest_test', outcome.result);
+      res.json(outcome);
+    } catch { generic500(res); }
+  });
+
   // ----- Trust requests -----
   app.post('/api/trusts', trustSubmitLimiter, async (req, res) => {
     try {
@@ -193,24 +237,44 @@ export function registerAccountRoutes({
       if (Object.keys(errors).length) return res.status(400).json({ message: 'Мэдээллээ шалгана уу.', errors });
       const doc = new TrustRequest(value);
       doc.reference = trustReference(doc._id, now().getFullYear());
+      // D25: automatic assignment (setting trust.mode === 'auto') before the first save so the document is consistent.
+      const at = now();
+      const staff = trustDocs ? await trustDocs.autoAssignee() : null;
+      doc.history = [{ at, type: 'created', actor: { name: 'Вэб маягт', system: true } }];
+      if (staff) {
+        const assignee = { userId: String(staff._id), name: staff.name || '' };
+        doc.assignee = assignee; doc.assignedAt = at;
+        doc.history.push({ at, type: 'assigned', assignee, actor: { name: 'Систем', system: true } });
+      }
       await doc.save();
       res.status(201).json({ message: 'Success', reference: doc.reference });
       const reference = doc.reference;
+      const assigneeNotify = staff ? notifyEmailOf(staff) : '';
       fire(async () => {
         if (value.email) {
-          const outcome = await send({ to: value.email, reference, ...emails.trustAcknowledgement({ reference, phone: value.phone, companyPhone: await companyPhone() }) });
+          const outcome = await send({ to: value.email, reference, ...(assigneeNotify ? { replyTo: assigneeNotify } : {}), ...emails.trustAcknowledgement({ reference, phone: value.phone, companyPhone: await companyPhone() }) });
           await TrustRequest.updateOne({ _id: doc._id }, { $push: { history: { at: now(), type: 'email', email: { template: 'trust_ack', result: outcome?.result || 'failed' } } } }).catch(() => {});
+          // D24: ask for additional material right away (setting trust_auto_doc_request, default on).
+          if (trustDocs) await trustDocs.autoRequest({ _id: doc._id, email: value.email, reference, status: doc.status || 'pending', uploadLinks: [], assignee: doc.assignee ? { userId: doc.assignee.userId } : undefined });
         }
       });
       fire(async () => {
-        const to = str(env.TRUST_NOTIFY_EMAIL, 254) || str(env.MAIL_REPLY_TO, 254);
-        if (to) await send({ to, reference, ...emails.staffTrustNotification({ reference, phone: value.phone, adminUrl: adminUrl() }) });
+        const general = str(env.TRUST_NOTIFY_EMAIL, 254) || str(env.MAIL_REPLY_TO, 254);
+        const recipients = new Set();
+        if (general) recipients.add(general);
+        // D25: an unassigned request also reaches the shared mailbox (MAIL_REPLY_TO), like loan requests.
+        if (!staff && str(env.MAIL_REPLY_TO, 254)) recipients.add(str(env.MAIL_REPLY_TO, 254));
+        for (const to of recipients) await send({ to, reference, ...emails.staffTrustNotification({ reference, phone: value.phone, adminUrl: adminUrl(), unassigned: !staff }) });
+        if (assigneeNotify && !recipients.has(assigneeNotify)) {
+          const outcome = await send({ to: assigneeNotify, reference, ...emails.staffTrustAssignment({ reference, phone: value.phone, adminUrl: adminUrl() }) });
+          await TrustRequest.updateOne({ _id: doc._id }, { $push: { history: { at: now(), type: 'email', email: { template: 'staff_trust_assignment', result: outcome?.result || 'failed' } } } }).catch(() => {});
+        }
       });
     } catch { generic500(res); }
   });
 
   app.get('/api/trusts', authenticateUser, permissions.require('trusts.view', 'trusts.message'), async (_req, res) => {
-    try { res.json(await TrustRequest.find().sort({ createdAt: -1 }).limit(1000)); } catch { generic500(res); }
+    try { res.json((await TrustRequest.find().sort({ createdAt: -1 }).limit(1000)).map(sanitizeTrust)); } catch { generic500(res); }
   });
 
   app.put('/api/trusts/:id', authenticateUser, permissions.require('trusts.view', 'trusts.message'), async (req, res) => {
@@ -218,9 +282,18 @@ export function registerAccountRoutes({
       if (!OBJECT_ID_RE.test(req.params.id || '')) return res.status(400).json({ message: 'ID буруу байна.' });
       const update = pickTrustUpdate(req.body);
       if (!Object.keys(update).length) return res.status(400).json({ message: 'Өөрчлөх талбар байхгүй байна.' });
-      const trust = await TrustRequest.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });
+      const operation = { $set: update };
+      if (update.status) {
+        // D25: status changes are recorded in history.
+        const current = await TrustRequest.findById(req.params.id).select('status').lean();
+        if (!current) return res.status(404).json({ message: 'Хүсэлт олдсонгүй.' });
+        if ((current.status || 'pending') !== update.status) {
+          operation.$push = { history: { at: now(), type: 'status', from: current.status || 'pending', to: update.status, actor: { userId: String(req.user._id), name: req.user.name || req.user.email || 'Ажилтан', system: false } } };
+        }
+      }
+      const trust = await TrustRequest.findByIdAndUpdate(req.params.id, operation, { new: true });
       if (!trust) return res.status(404).json({ message: 'Хүсэлт олдсонгүй.' });
-      res.json(trust);
+      res.json(sanitizeTrust(trust));
     } catch { generic500(res); }
   });
 
@@ -236,13 +309,15 @@ export function registerAccountRoutes({
       const reference = trust.reference || trustReference(trust._id);
       let result = 'failed';
       try {
-        const outcome = await send({ to, reference, replyTo: senderEmail(req.user), ...emails.trustMessage({ reference, message: parsed.message, companyPhone: await companyPhone() }) });
+        // D25: Reply-To = assignee notification email -> sender -> MAIL_REPLY_TO (mailer default).
+        const replyTo = (trustDocs ? await trustDocs.assigneeEmail(trust) : '') || senderEmail(req.user);
+        const outcome = await send({ to, reference, replyTo, ...emails.trustMessage({ reference, message: parsed.message, companyPhone: await companyPhone() }) });
         result = outcome?.result || 'failed';
       } catch { logger.error?.('[account] trust message failed'); }
       const entry = { at: now(), message: parsed.message, actor: { userId: String(req.user._id), name: req.user.name || req.user.email || 'Ажилтан' }, email: { template: 'trust_message', result } };
       const updated = await TrustRequest.findByIdAndUpdate(trust._id, { $push: { messages: entry } }, { new: true });
       await createLog(req.user, 'trust_message', `${trust._id}: ${result}`);
-      res.json({ ok: true, email: { result }, trust: updated });
+      res.json({ ok: true, email: { result }, trust: sanitizeTrust(updated) });
     } catch { generic500(res); }
   });
 

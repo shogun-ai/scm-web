@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Lock } from 'lucide-react';
+import { AlertCircle, Loader2, Lock } from 'lucide-react';
+import AuthShell from './AuthShell';
 import { passwordPolicyError, stripInviteToken } from './inviteUtils';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || (['localhost', '127.0.0.1'].includes(window.location.hostname) ? 'http://localhost:5000' : 'https://scm-okjs.onrender.com');
@@ -42,39 +43,46 @@ const SetPasswordForm = ({ token, onDone, onCancel }) => {
     }
   };
 
-  const inputCls = 'w-full pl-12 pr-4 py-4 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#003B5C]';
+  const inputCls = 'adm-field adm-field--icon w-full';
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4 [color-scheme:light] [forced-color-adjust:none]">
-      <div className="bg-white rounded-3xl shadow-2xl p-8 md:p-12 w-full max-w-md animate-fade-in">
-        <h1 className="text-2xl font-bold text-[#003B5C] text-center">Нууц үг үүсгэх</h1>
-        {state === 'checking' && <p role="status" className="text-center text-gray-400 text-sm mt-6">Урилгыг шалгаж байна...</p>}
+    <AuthShell
+      eyebrow="Урилга"
+      title="Нууц үг үүсгэх"
+      subtitle={state === 'valid' ? 'Админ консолд нэвтрэх шинэ нууц үгээ тогтооно уу.' : undefined}
+    >
+        {state === 'checking' && <p role="status" className="flex items-center justify-center gap-2 py-6 text-sm text-[var(--adm-ink-2)]"><Loader2 size={18} className="animate-spin" aria-hidden="true" />Урилгыг шалгаж байна...</p>}
         {state === 'invalid' && (
-          <div className="mt-6 space-y-4">
-            <p role="alert" className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center font-bold">Урилгын холбоос хүчингүй эсвэл хугацаа дууссан байна. Админаас дахин урилга илгээхийг хүснэ үү.</p>
-            <button type="button" onClick={() => { stripInviteToken(); onCancel(); }} className="w-full border rounded-xl py-3 font-bold text-sm text-slate-600">Нэвтрэх хуудас руу</button>
+          <div className="space-y-5">
+            <p role="alert" className="adm-note adm-note--err flex items-start gap-2"><AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" /><span>Урилгын холбоос хүчингүй эсвэл хугацаа дууссан байна. Админаас дахин урилга илгээхийг хүснэ үү.</span></p>
+            <button type="button" onClick={() => { stripInviteToken(); onCancel(); }} className="adm-auth-ghost">Нэвтрэх хуудас руу</button>
           </div>
         )}
         {state === 'valid' && (
-          <form onSubmit={submit} className="space-y-4 mt-6">
-            {maskedEmail && <p className="text-center text-sm text-gray-500">Хаяг: <b>{maskedEmail}</b></p>}
-            {error && <div role="alert" className="bg-red-50 text-red-500 p-3 rounded-lg text-sm text-center font-bold">{error}</div>}
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} aria-hidden="true" />
-              <input type="password" aria-label="Шинэ нууц үг" autoComplete="new-password" placeholder="Шинэ нууц үг" className={inputCls} value={password} onChange={e => setPassword(e.target.value)} />
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} aria-hidden="true" />
-              <input type="password" aria-label="Нууц үг давтах" autoComplete="new-password" placeholder="Нууц үг давтах" className={inputCls} value={confirm} onChange={e => setConfirm(e.target.value)} />
-            </div>
-            <p className="text-xs text-gray-400">Хамгийн багадаа 10 тэмдэгт, үсэг болон тоо агуулсан байна.</p>
-            <button type="submit" disabled={loading} className="w-full bg-[#003B5C] text-white py-4 rounded-xl font-bold hover:bg-[#002a42] transition shadow-lg disabled:opacity-50">
-              {loading ? 'Хадгалж байна...' : 'Нууц үг үүсгэх'}
+          <form onSubmit={submit} className="space-y-5" aria-busy={loading}>
+            {maskedEmail && <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-[var(--adm-ink-2)]">Хаяг: <b className="font-semibold text-white">{maskedEmail}</b></p>}
+            {error && <div role="alert" className="adm-note adm-note--err flex items-start gap-2"><AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" /><span>{error}</span></div>}
+            <label className="block">
+              <span className="adm-label !text-[var(--adm-ink-2)]">Шинэ нууц үг</span>
+              <span className="relative mt-2 block">
+                <Lock className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--adm-ink-3)]" size={18} aria-hidden="true" />
+                <input type="password" autoComplete="new-password" aria-describedby="pw-policy" placeholder="Шинэ нууц үг" className={inputCls} value={password} onChange={e => setPassword(e.target.value)} />
+              </span>
+            </label>
+            <label className="block">
+              <span className="adm-label !text-[var(--adm-ink-2)]">Нууц үг давтах</span>
+              <span className="relative mt-2 block">
+                <Lock className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--adm-ink-3)]" size={18} aria-hidden="true" />
+                <input type="password" autoComplete="new-password" placeholder="Нууц үг давтах" className={inputCls} value={confirm} onChange={e => setConfirm(e.target.value)} />
+              </span>
+            </label>
+            <p id="pw-policy" className="text-xs text-[var(--adm-ink-3)]">Хамгийн багадаа 10 тэмдэгт, үсэг болон тоо агуулсан байна.</p>
+            <button type="submit" disabled={loading} className="adm-auth-submit">
+              {loading ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" />Хадгалж байна...</> : 'Нууц үг үүсгэх'}
             </button>
           </form>
         )}
-      </div>
-    </div>
+    </AuthShell>
   );
 };
 

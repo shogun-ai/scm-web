@@ -9,9 +9,9 @@ import ConfirmDeleteDialog from '../admin/ConfirmDeleteDialog';
 import { deleteLoanRequest, errorMessage, fetchTaskDetail, openLoanFile, postDocRequest, postTaskAction, postTaskFiles, postTaskMessage } from './api';
 import { FILE_CATEGORIES, categoryOf, formatMoney, isFileField, isVisible, maskRegister } from './taskFormUtils';
 
-const BOX = 'rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#003B5C] focus:outline-none focus:ring-2 focus:ring-[#003B5C]/20 disabled:opacity-60';
-const BTN = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#003B5C] px-4 text-sm font-semibold text-white disabled:opacity-50';
-const BTN_LIGHT = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-[#003B5C] hover:bg-slate-50 disabled:opacity-50';
+const BOX = 'rounded-xl border border-slate-300/80 bg-white/90 px-3 py-2 text-sm text-slate-800 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] transition focus:border-emerald-600 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 disabled:opacity-60';
+const BTN = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#0B1530] px-4 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_10px_24px_-12px_rgba(4,120,87,0.7)] transition hover:-translate-y-px hover:bg-[#13204A] disabled:translate-y-0 disabled:opacity-50';
+const BTN_LIGHT = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:border-emerald-500/60 hover:text-emerald-800 disabled:opacity-50';
 const HISTORY_LABELS = { created: 'Үүссэн', assigned: 'Хуваарилсан', unassigned: 'Хуваарилалт цуцалсан', status: 'Төлөв өөрчилсөн', reopened: 'Дахин нээсэн', docs_requested: 'Нэмэлт баримт хүссэн', note: 'Тэмдэглэл', file_added: 'Файл нэмсэн', email: 'Имэйл', message: 'Харилцагчид имэйл илгээсэн' };
 const EMAIL_CHIPS = { sent: ['Имэйл илгээгдсэн', 'bg-emerald-100 text-emerald-800'], queued: ['Имэйл илгээгдэж байна', 'bg-sky-100 text-sky-800'], failed: ['Имэйл илгээж чадсангүй', 'bg-red-100 text-red-700'], skipped: ['Имэйл илгээгээгүй', 'bg-slate-100 text-slate-600'] };
 const SOURCE_LABELS = { applicant: 'Харилцагч', staff: 'Ажилтан', applicant_link: 'Харилцагч (холбоосоор)' };
@@ -19,7 +19,7 @@ const dt = value => { try { return value ? new Date(value).toLocaleString('mn-MN
 const formatSize = bytes => (bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round((bytes || 0) / 1024))} KB`);
 
 function Section({ title, children }) {
-  return <section className="border-t border-slate-200 py-5"><h3 className="mb-3 text-sm font-bold text-[#003B5C]">{title}</h3>{children}</section>;
+  return <section className="adm-drawer-card"><h3 className="adm-drawer-card__title">{title}</h3>{children}</section>;
 }
 
 export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, onChanged, onDeleted }) {
@@ -193,24 +193,24 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
   const selectedAssignee = assignees.find(person => person._id === assigneeId);
   const notifyEmail = assigneeId ? (selectedAssignee ? selectedAssignee.notifyEmail : (assigneeId === detail?.assignee?.userId ? detail.assignee.notifyEmail : undefined)) : undefined;
   const togglePanel = name => setPanel(previous => (previous === name ? null : name));
-  const barButton = (name, label, icon) => <button type="button" aria-expanded={panel === name} aria-controls={`panel-${name}`} onClick={() => togglePanel(name)} className={`${BTN_LIGHT} ${panel === name ? 'border-[#003B5C] bg-[#003B5C]/5' : ''}`}>{icon}{label}</button>;
+  const barButton = (name, label, icon) => <button type="button" aria-expanded={panel === name} aria-controls={`panel-${name}`} onClick={() => togglePanel(name)} className={`${BTN_LIGHT} ${panel === name ? '!border-emerald-600 !bg-emerald-50 !text-emerald-900 ring-4 ring-emerald-500/10' : ''}`}>{icon}{label}</button>;
 
-  return <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <aside ref={drawerRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Хүсэлтийн дэлгэрэнгүй" className="h-full w-full overflow-y-auto bg-white shadow-2xl outline-none sm:max-w-2xl">
-      <header className="border-b border-slate-200 p-5 pb-4 sm:px-7">
+  return <div className="adm-drawer-overlay fixed inset-0 z-50 flex justify-end" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <aside ref={drawerRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Хүсэлтийн дэлгэрэнгүй" className="adm-drawer h-full w-full overflow-y-auto outline-none sm:max-w-2xl sm:rounded-l-[28px]">
+      <header className="adm-drawer__head p-5 pb-5 sm:rounded-tl-[28px] sm:px-7 sm:pt-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-mono text-xs text-slate-500">{detail?.applicationReference || ''}<ChannelBadge channel={detail?.channel} /></p>
-            <h2 className="text-xl font-bold text-[#003B5C]">{detail?.displayName || 'Хүсэлт'}</h2>
-            {detail && <p className="mt-1 text-sm text-slate-700">{detail.productName || detail.productKey || '—'}{detail.subProductName ? ` · ${detail.subProductName}` : ''}</p>}
+            <p className="flex items-center font-mono text-xs text-[#AEB9CC]"><span className="mr-2 font-sans text-[10.5px] font-bold uppercase tracking-[0.16em] text-[#7FE3B8]">Зээлийн хүсэлт</span>{detail?.applicationReference || ''}<ChannelBadge channel={detail?.channel} tone="dark" /></p>
+            <h2 className="mt-2 text-[22px] font-bold leading-tight tracking-tight text-white">{detail?.displayName || 'Хүсэлт'}</h2>
+            {detail && <p className="mt-1 text-sm text-[#C5CEDC]">{detail.productName || detail.productKey || '—'}{detail.subProductName ? ` · ${detail.subProductName}` : ''}</p>}
           </div>
-          <button type="button" onClick={onClose} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl hover:bg-slate-100" aria-label="Хаах"><X size={20} aria-hidden="true" /></button>
+          <button type="button" onClick={onClose} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.06] text-white transition hover:bg-white/[0.12]" aria-label="Хаах"><X size={20} aria-hidden="true" /></button>
         </div>
-        {detail && <div className="mt-3 flex flex-wrap items-center gap-2 text-sm"><TaskStatusBadge status={detail.taskStatus} outcome={detail.outcome} legacy={isLegacy} /><span className="text-slate-600">Хариуцагч: {detail.assignee?.name || 'Хуваарилаагүй'} · Үүссэн: {dt(detail.createdAt)}</span></div>}
-        {isLegacy && <p className="mt-2 text-xs text-slate-500">Хуучин урсгал · төлөв: {legacyLabel}{detail.outcome?.note ? ` · ${detail.outcome.note}` : ''}</p>}
+        {detail && <div className="mt-4 flex flex-wrap items-center gap-2 text-sm"><TaskStatusBadge status={detail.taskStatus} outcome={detail.outcome} legacy={isLegacy} tone="dark" /><span className="text-[#C5CEDC]">Хариуцагч: {detail.assignee?.name || 'Хуваарилаагүй'} · Үүссэн: {dt(detail.createdAt)}</span></div>}
+        {isLegacy && <p className="mt-2 text-xs text-[#AEB9CC]">Хуучин урсгал · төлөв: {legacyLabel}{detail.outcome?.note ? ` · ${detail.outcome.note}` : ''}</p>}
       </header>
 
-      {detail && <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-3 backdrop-blur sm:px-7">
+      {detail && <div className="adm-drawer__bar sticky top-0 z-10 px-5 py-3 sm:px-7">
         <div className="flex flex-wrap gap-2" role="toolbar" aria-label="Үйлдлүүд">
           {allowed.requestDocs && barButton('docs', 'Нэмэлт материал хүсэх', <Link2 size={16} aria-hidden="true" />)}
           <button type="button" className={BTN_LIGHT} disabled={busy || !applicantEmail || allowed.message === false} onClick={() => setEmailOpen(true)}><Mail size={16} aria-hidden="true" />Чөлөөт имэйл бичих</button>
@@ -228,8 +228,8 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
         {message && <p role="status" className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
 
         {detail && <>
-          <section aria-labelledby="applicant-card" className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <h3 id="applicant-card" className="mb-2 text-sm font-bold text-[#003B5C]">Харилцагчийн холбоо барих</h3>
+          <section aria-labelledby="applicant-card" className="adm-drawer-card !mt-0 mb-4">
+            <h3 id="applicant-card" className="adm-drawer-card__title">Харилцагчийн холбоо барих</h3>
             <dl className="grid gap-3 text-sm sm:grid-cols-3">
               <div><dt className="text-xs font-semibold text-slate-500">Нэр</dt><dd className="break-words text-slate-800">{applicantName || '—'}</dd></div>
               <div><dt className="text-xs font-semibold text-slate-500">Утас</dt><dd>{applicantPhone ? <a href={`tel:${applicantPhone.replace(/[^\d+]/g, '')}`} className="inline-flex min-h-9 items-center gap-1 font-semibold text-[#003B5C] underline"><Phone size={14} aria-hidden="true" />{applicantPhone}</a> : '—'}</dd></div>
@@ -237,7 +237,7 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
             </dl>
           </section>
 
-          {panel && <div id={`panel-${panel}`} className="mb-4 space-y-3 rounded-xl border border-[#003B5C]/30 bg-white p-4">
+          {panel && <div id={`panel-${panel}`} className="adm-drawer-card !mt-0 mb-4 space-y-3 ring-2 ring-emerald-500/25">
             {panel === 'assign' && allowed.assign && <div className="space-y-2">
               <div className="flex flex-wrap items-end gap-2"><label className="block min-w-0 flex-1 text-xs font-semibold text-slate-600">Хариуцагч<select className={`${BOX} mt-1 min-h-11 w-full`} value={assigneeId} disabled={busy} onChange={event => setAssigneeId(event.target.value)}><option value="">Хуваарилаагүй</option>{detail.assignee?.userId && !assignees.some(person => person._id === detail.assignee.userId) && <option value={detail.assignee.userId}>{detail.assignee.name}</option>}{assignees.map(person => <option key={person._id} value={person._id}>{person.name}</option>)}</select></label><button type="button" className={BTN} disabled={busy || assigneeId === (detail.assignee?.userId || '')} onClick={doAssign}>Хуваарилах</button></div>
               {assigneeId && (notifyEmail ? <p className="flex items-center gap-1 text-xs text-slate-600"><Bell size={14} aria-hidden="true" />Мэдэгдэл: {notifyEmail}</p> : notifyEmail === null ? <p role="note" className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800">Энэ ажилтанд мэдэгдлийн имэйл бүртгэлгүй — мэдэгдэл очихгүй. Хэрэглэгчийн тохиргооноос нэмнэ үү.</p> : null)}
