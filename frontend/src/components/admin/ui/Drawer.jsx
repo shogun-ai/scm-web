@@ -1,6 +1,6 @@
 import { Loader2 } from 'lucide-react';
 
-// Building blocks used inside <SideDrawer>. Light (frosted) tone — dense data stays on a light surface.
+// Building blocks used inside <SideDrawer> (dark liquid glass). Labels #AEB9CC (≥ 7:1), values #F4F7FB.
 
 export function DrawerSection({ title, id, first = false, className = '', children, ...rest }) {
   return <section aria-labelledby={id} className={`adm-drawer-card ${first ? '!mt-0' : ''} ${className}`} {...rest}>
@@ -9,14 +9,9 @@ export function DrawerSection({ title, id, first = false, className = '', childr
   </section>;
 }
 
-// Toggle button for the sticky action bar; `active` marks the open inline panel.
+// Glass chip for the sticky action bar; `active` marks the open inline panel (aria-expanded).
 export function DrawerAction({ icon, active, danger = false, busy = false, children, className = '', ...rest }) {
-  const tone = danger
-    ? 'border-red-300 text-red-700 hover:bg-red-50'
-    : active
-      ? 'border-[var(--drawer-ink)] bg-[color-mix(in_srgb,var(--hue)_12%,white)] text-slate-900 ring-4 ring-[color-mix(in_srgb,var(--hue)_14%,transparent)]'
-      : 'border-slate-200 text-slate-800 hover:border-[var(--drawer-ink)]';
-  return <button type="button" className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border bg-white px-3 text-sm font-semibold shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition disabled:opacity-50 ${tone} ${className}`} {...(active !== undefined ? { 'aria-expanded': Boolean(active) } : {})} {...rest}>
+  return <button type="button" className={`adm-chip-action ${danger ? 'adm-chip-action--danger' : ''} ${className}`} {...(active !== undefined ? { 'aria-expanded': Boolean(active) } : {})} {...rest}>
     {busy ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : icon}{children}
   </button>;
 }
@@ -26,20 +21,20 @@ export function DetailList({ items, columns = 3 }) {
   const cols = columns === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3';
   return <dl className={`grid gap-3 text-sm ${cols}`}>
     {items.filter(Boolean).map(item => <div key={item.label} className="min-w-0">
-      <dt className="text-xs font-semibold text-slate-600">{item.label}</dt>
-      <dd className="mt-0.5 break-words text-slate-900">{item.value ?? '—'}</dd>
+      <dt className="text-xs font-semibold text-[#AEB9CC]">{item.label}</dt>
+      <dd className="mt-0.5 break-words text-[#F4F7FB]">{item.value ?? '—'}</dd>
     </div>)}
   </dl>;
 }
 
 // Vertical timeline for history entries.
 export function Timeline({ items, empty = 'Түүх алга.' }) {
-  if (!items.length) return <p className="text-sm text-slate-600">{empty}</p>;
-  return <ol className="relative space-y-4 border-l border-slate-200 pl-4">
+  if (!items.length) return <p className="text-sm text-[#AEB9CC]">{empty}</p>;
+  return <ol className="relative space-y-4 border-l border-white/10 pl-4">
     {items.map(item => <li key={item.key} className="relative text-sm">
-      <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-[var(--hue)] shadow-[0_0_0_1px_rgba(15,23,42,0.1)]" aria-hidden="true" />
-      <p className="text-xs text-slate-600">{item.meta}</p>
-      <div className="mt-0.5 text-slate-900">{item.content}</div>
+      <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-[#0C1020] bg-[var(--hue)] shadow-[0_0_10px_var(--hue)]" aria-hidden="true" />
+      <p className="text-xs text-[#AEB9CC]">{item.meta}</p>
+      <div className="mt-0.5 text-[#F4F7FB]">{item.content}</div>
     </li>)}
   </ol>;
 }

@@ -63,34 +63,34 @@ export default function TrustDrawer({ API_URL, contactNote, formatDate, saveCont
       {!resolved && <DrawerAction icon={<Check size={16} aria-hidden="true" />} active={panel === 'status'} aria-controls="trust-panel" onClick={() => toggle('status')}>Төлөв</DrawerAction>}
       <DrawerAction icon={<MessageSquare size={16} aria-hidden="true" />} active={panel === 'note'} aria-controls="trust-panel" onClick={() => toggle('note')}>Тэмдэглэл</DrawerAction>
     </>}
-    actionsNote={!email ? <p className="text-amber-800">Харилцагчийн имэйл бүртгэлгүй тул имэйл илгээх боломжгүй. Утсаар холбогдоно уу.</p> : !trustCanMessage ? <p className="text-slate-600">Танд имэйл илгээх эрх байхгүй.</p> : null}
+    actionsNote={!email ? <p className="text-[#F7DC8A]">Харилцагчийн имэйл бүртгэлгүй тул имэйл илгээх боломжгүй. Утсаар холбогдоно уу.</p> : !trustCanMessage ? <p className="text-[#AEB9CC]">Танд имэйл илгээх эрх байхгүй.</p> : null}
   >
     <DrawerSection first id="trust-contact" title="Харилцагчийн холбоо барих" className="mb-4">
       <DetailList items={[
         { label: 'Нэр', value: `${trust.lastname || ''} ${trust.firstname || ''}`.trim() || '—' },
-        { label: 'Утас', value: phone ? <a href={`tel:${phone.replace(/[^\d+]/g, '')}`} className="inline-flex min-h-9 items-center gap-1 font-semibold text-slate-900 underline decoration-[var(--hue)] decoration-2 underline-offset-4"><Phone size={14} aria-hidden="true" />{phone}</a> : '—' },
-        { label: 'Имэйл', value: email ? <a href={`mailto:${email}`} className="break-all font-semibold text-slate-900 underline decoration-[var(--hue)] decoration-2 underline-offset-4">{email}</a> : '—' },
+        { label: 'Утас', value: phone ? <a href={`tel:${phone.replace(/[^\d+]/g, '')}`} className="adm-link inline-flex min-h-9 items-center gap-1"><Phone size={14} aria-hidden="true" />{phone}</a> : '—' },
+        { label: 'Имэйл', value: email ? <a href={`mailto:${email}`} className="adm-link break-all">{email}</a> : '—' },
         { label: 'Дүн', value: trust.amount || '—' },
         { label: 'Огноо', value: formatDate(trust.createdAt) },
         trust.contactNote ? { label: 'Тэмдэглэл', value: <span className="whitespace-pre-wrap">{trust.contactNote}</span> } : null,
       ]} />
     </DrawerSection>
 
-    {feedback && <p role={feedback.type === 'error' ? 'alert' : 'status'} className={`mb-4 rounded-xl p-3 text-sm ${feedback.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}`}>{feedback.text}</p>}
+    {feedback && <p role={feedback.type === 'error' ? 'alert' : 'status'} className={`mb-4 rounded-xl p-3 text-sm ${feedback.type === 'error' ? 'bg-[#FF6B86]/10 text-[#FFC9D3]' : 'bg-[#34D399]/10 text-[#B5F5D9]'}`}>{feedback.text}</p>}
 
-    {panel && <DrawerSection first id="trust-panel-title" title={{ docs: 'Нэмэлт материал хүсэх', assign: 'Хуваарилах', status: 'Төлөв', note: 'Тэмдэглэл' }[panel]} className="mb-4 ring-2 ring-[color-mix(in_srgb,var(--hue)_35%,transparent)]">
+    {panel && <DrawerSection first id="trust-panel-title" title={{ docs: 'Нэмэлт материал хүсэх', assign: 'Хуваарилах', status: 'Төлөв', note: 'Тэмдэглэл' }[panel]} className="mb-4 ring-1 ring-[color-mix(in_srgb,var(--hue)_45%,transparent)]">
       <div id="trust-panel">
         {panel === 'docs' && <TrustDocRequestPanel {...panelProps} canRequest={Boolean(perms?.has('trusts.message'))} permsLoaded={Boolean(perms)} />}
         {panel === 'assign' && <TrustAssignPanel {...panelProps} canAssign={Boolean(perms?.has('trusts.assign'))} />}
         {panel === 'status' && !resolved && <div className="space-y-3">
-          <p className="text-sm text-slate-700">Одоогийн төлөв: <b className="text-slate-900">Хүлээгдэж байна</b>. Харилцагчтай холбогдож асуудлыг шийдсэний дараа тэмдэглэнэ үү.</p>
-          <Button variant="ink" busy={resolving} disabled={resolving || isTrustClosed(trust)} icon={<Check size={16} aria-hidden="true" />} onClick={resolve}>Шийдсэн гэж тэмдэглэх</Button>
+          <p className="text-sm text-[#C5CEDC]">Одоогийн төлөв: <b className="text-white">Хүлээгдэж байна</b>. Харилцагчтай холбогдож асуудлыг шийдсэний дараа тэмдэглэнэ үү.</p>
+          <Button variant="primary" busy={resolving} disabled={resolving || isTrustClosed(trust)} icon={<Check size={16} aria-hidden="true" />} onClick={resolve}>Шийдсэн гэж тэмдэглэх</Button>
         </div>}
         {panel === 'note' && <div className="space-y-3">
-          <label className="block text-xs font-semibold text-slate-700">Холбоо барих тэмдэглэл
-            <textarea rows={3} value={contactNote} onChange={event => setContactNote(event.target.value)} className="adm-lfield mt-1 resize-none" placeholder="Холбоо барих тэмдэглэл..." />
+          <label className="block text-xs font-semibold text-[#C5CEDC]">Холбоо барих тэмдэглэл
+            <textarea rows={3} value={contactNote} onChange={event => setContactNote(event.target.value)} className="adm-field mt-1 w-full resize-none py-2.5" placeholder="Холбоо барих тэмдэглэл..." />
           </label>
-          <Button variant="ink" onClick={saveContactNote}>Хадгалах</Button>
+          <Button variant="primary" onClick={saveContactNote}>Хадгалах</Button>
         </div>}
       </div>
     </DrawerSection>}

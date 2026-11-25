@@ -35,10 +35,10 @@ export function TrustEmailDialog({ apiUrl, trust, onClose, onSent }) {
   };
 
   return <Modal title="Чөлөөт имэйл бичих" description={`Хүлээн авагч: ${email}`} onClose={onClose} busy={busy}
-    footer={<><Button variant="light" disabled={busy} onClick={onClose}>Болих</Button><Button variant="ink" busy={busy} icon={<Send size={16} aria-hidden="true" />} disabled={busy || !text.trim()} onClick={send}>Илгээх</Button></>}>
-    <label className="block text-xs font-semibold text-slate-700">Мессеж<textarea autoFocus rows={6} maxLength={2000} value={text} aria-describedby="trust-mail-help" onChange={event => setText(event.target.value)} className="adm-lfield mt-1" /></label>
-    <div className="mt-1 flex justify-between gap-3 text-xs"><span id="trust-mail-help" className="text-amber-800">Хувийн мэдээлэл бүү бичнэ үү.</span><span className="text-slate-600">{text.length}/2000</span></div>
-    {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+    footer={<><Button variant="secondary" disabled={busy} onClick={onClose}>Болих</Button><Button variant="primary" busy={busy} icon={<Send size={16} aria-hidden="true" />} disabled={busy || !text.trim()} onClick={send}>Илгээх</Button></>}>
+    <label className="block text-xs font-semibold text-[#C5CEDC]">Мессеж<textarea autoFocus rows={6} maxLength={2000} value={text} aria-describedby="trust-mail-help" onChange={event => setText(event.target.value)} className="adm-field mt-1 w-full py-2.5" /></label>
+    <div className="mt-1 flex justify-between gap-3 text-xs"><span id="trust-mail-help" className="text-[#F7DC8A]">Хувийн мэдээлэл бүү бичнэ үү.</span><span className="text-[#AEB9CC]">{text.length}/2000</span></div>
+    {error && <p role="alert" className="mt-3 rounded-lg bg-[#FF6B86]/10 p-2 text-sm text-[#FFC9D3]">{error}</p>}
   </Modal>;
 }
 
@@ -46,10 +46,10 @@ export function TrustEmailDialog({ apiUrl, trust, onClose, onSent }) {
 export function TrustEmailHistory({ trust }) {
   const history = Array.isArray(trust?.messages) ? trust.messages : [];
   return <DrawerSection id="trust-mail-title" title={`Харилцагчид илгээсэн имэйл (${history.length})`}>
-    {history.length === 0 ? <p className="text-sm text-slate-600">Одоогоор имэйл илгээгээгүй.</p>
-      : <ol className="max-h-72 space-y-2 overflow-y-auto" aria-label="Илгээсэн имэйлийн түүх">{[...history].reverse().map((entry, index) => <li key={`${entry.at}-${index}`} className="rounded-xl bg-sky-50 p-3 text-sm ring-1 ring-inset ring-sky-200">
-        <p className="text-xs text-slate-600">{dt(entry.at)}{entry.by?.name || entry.actor?.name ? ` · ${entry.by?.name || entry.actor?.name}` : ''}{entry.result ? ` · ${STATE[entry.result] || entry.result}` : ''}</p>
-        <p className="mt-1 whitespace-pre-wrap break-words text-slate-900">{entry.message || entry.note}</p>
+    {history.length === 0 ? <p className="text-sm text-[#AEB9CC]">Одоогоор имэйл илгээгээгүй.</p>
+      : <ol className="max-h-72 space-y-2 overflow-y-auto" aria-label="Илгээсэн имэйлийн түүх">{[...history].reverse().map((entry, index) => <li key={`${entry.at}-${index}`} className="rounded-xl bg-[#4CC6FF]/10 p-3 text-sm ring-1 ring-inset ring-[#4CC6FF]/25">
+        <p className="text-xs text-[#AEB9CC]">{dt(entry.at)}{entry.by?.name || entry.actor?.name ? ` · ${entry.by?.name || entry.actor?.name}` : ''}{entry.result ? ` · ${STATE[entry.result] || entry.result}` : ''}</p>
+        <p className="mt-1 whitespace-pre-wrap break-words text-white">{entry.message || entry.note}</p>
       </li>)}</ol>}
   </DrawerSection>;
 }

@@ -107,6 +107,15 @@ Rules learned: never leave `transform`/`filter`/`backdrop-filter` (incl. a filli
 `position: fixed` dialog — entry animations use `animation-fill-mode: backwards` for this reason; keep fixed dialogs
 out of `space-y-*` stacks (they inherit the margin).
 
+## Phase 5 — dark drawers
+- `SideDrawer` is now dark liquid glass: blur lives on a sibling `.adm-drawer-backdrop` (keeps nested fixed dialogs
+  viewport-anchored) with a module-hue rim light; sections are dark glass cards; action bar uses `.adm-chip-action`;
+  links use `.adm-link` (hue tint); file rows `.adm-glass-row`. Modal / ConfirmDialog / ConfirmDeleteDialog are dark too.
+- Measured on the dark card (worst-case aurora): labels #AEB9CC 8.0:1, values #F4F7FB 14.8:1, links green 11.7:1 / gold 11.8:1.
+- `TaskField` got `tone="dark"` (readonly only); public form styling unchanged.
+- File grouping: `categoryOfFile()` (`loanTask/fileCategory.mjs`, unit-tested) maps legacy storage names
+  (file_id, file_bank, file_car_photos, file_collateral*…) and preset labels to Хувийн / Орлого / Барьцаа.
+
 ## Open questions
 - The public `ChatBot` floating button (rendered by `App.jsx`) overlaps the admin bottom-right corner; out of scope here.
 - Tab headings inside sheets duplicate the topbar title; kept to avoid touching every tab.

@@ -21,7 +21,7 @@ const MAX_EXTRA = 5;
 const MAIL_STATE = { sent: 'Илгээгдсэн', queued: 'Илгээгдэж байна', failed: 'Илгээж чадсангүй', skipped: 'Илгээгээгүй' };
 const HISTORY_LABELS = { created: 'Хүсэлт ирсэн', assigned: 'Хуваарилсан', unassigned: 'Хуваарилалт цуцалсан', status: 'Төлөв өөрчилсөн', docs_requested: 'Нэмэлт материал хүссэн', upload: 'Харилцагч файл оруулсан', email: 'Имэйл' };
 const TEMPLATES = { trust_ack: 'Хүлээн авсан мэдэгдэл', trust_doc_request: 'Материал хүссэн имэйл', staff_trust_upload: 'Ажилтанд мэдэгдэл', staff_trust_assignment: 'Хариуцагчид мэдэгдэл', trust_message: 'Чөлөөт имэйл' };
-const BOX = 'adm-lfield';
+const BOX = 'adm-field w-full py-2';
 
 const dt = value => { try { return value ? new Date(value).toLocaleString('mn-MN') : ''; } catch { return ''; } };
 const sizeText = size => (Number.isFinite(size) && size > 0 ? (size >= 1048576 ? `${(size / 1048576).toFixed(1)} МБ` : `${Math.max(1, Math.round(size / 1024))} КБ`) : '');
@@ -67,21 +67,21 @@ export function TrustAssignPanel({ apiUrl, trust, canAssign, onTrustChange, onCh
   };
 
   return <div className="space-y-3">
-    <p className="text-sm text-slate-800">Одоогийн хариуцагч: {trust?.assignee?.name ? <><UserCheck size={15} className="mr-1 inline text-[var(--drawer-ink)]" aria-hidden="true" /><b>{trust.assignee.name}</b>{trust.assignedAt ? <span className="text-xs text-slate-600"> · {dt(trust.assignedAt)}</span> : null}</> : <span className="font-semibold text-amber-800">Хуваарилаагүй</span>}</p>
+    <p className="text-sm text-[#E6EBF3]">Одоогийн хариуцагч: {trust?.assignee?.name ? <><UserCheck size={15} className="mr-1 inline text-[var(--drawer-ink)]" aria-hidden="true" /><b>{trust.assignee.name}</b>{trust.assignedAt ? <span className="text-xs text-[#AEB9CC]"> · {dt(trust.assignedAt)}</span> : null}</> : <span className="font-semibold text-[#F7DC8A]">Хуваарилаагүй</span>}</p>
     {canAssign ? <>
       <div className="flex flex-wrap items-end gap-2">
-        <label className="block min-w-0 flex-1 text-xs font-semibold text-slate-700">Хариуцагч сонгох
+        <label className="block min-w-0 flex-1 text-xs font-semibold text-[#C5CEDC]">Хариуцагч сонгох
           <select value={staffId} onChange={event => setStaffId(event.target.value)} disabled={busy} className={`${BOX} mt-1`}>
             <option value="">Ажилтан сонгох…</option>
             {staff.map(item => <option key={item._id} value={item._id}>{item.name || item._id}</option>)}
           </select>
         </label>
-        <Button variant="ink" busy={busy} disabled={!staffId || busy} onClick={() => assign(staffId)}>Хуваарилах</Button>
-        {trust?.assignee?.userId && <Button variant="light" disabled={busy} onClick={() => assign(null)}>Цуцлах</Button>}
+        <Button variant="primary" busy={busy} disabled={!staffId || busy} onClick={() => assign(staffId)}>Хуваарилах</Button>
+        {trust?.assignee?.userId && <Button variant="secondary" disabled={busy} onClick={() => assign(null)}>Цуцлах</Button>}
       </div>
-      <p className="text-xs text-slate-600">Хуваарилахад хариуцагчид мэдэгдлийн имэйлээр (мэдэгдлийн имэйл эсвэл нэвтрэх имэйл) мэдэгдэнэ.</p>
-    </> : <p className="text-xs text-slate-600">Танд хуваарилах эрх байхгүй.</p>}
-    {msg.text && <p role={msg.type === 'error' ? 'alert' : 'status'} className={`rounded-lg p-2 text-sm ${msg.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}`}>{msg.text}</p>}
+      <p className="text-xs text-[#AEB9CC]">Хуваарилахад хариуцагчид мэдэгдлийн имэйлээр (мэдэгдлийн имэйл эсвэл нэвтрэх имэйл) мэдэгдэнэ.</p>
+    </> : <p className="text-xs text-[#AEB9CC]">Танд хуваарилах эрх байхгүй.</p>}
+    {msg.text && <p role={msg.type === 'error' ? 'alert' : 'status'} className={`rounded-lg p-2 text-sm ${msg.type === 'error' ? 'bg-[#FF6B86]/10 text-[#FFC9D3]' : 'bg-[#34D399]/10 text-[#B5F5D9]'}`}>{msg.text}</p>}
   </div>;
 }
 
@@ -120,26 +120,26 @@ export function TrustDocRequestPanel({ apiUrl, trust, canRequest, permsLoaded, o
   };
 
   return <div className="space-y-3">
-    {!email && <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">Харилцагчийн имэйл бүртгэлгүй тул материал хүсэх боломжгүй.</p>}
-    {closed && email && <p className="text-xs text-slate-600">Шийдвэрлэсэн хүсэлтэд материал хүсэх боломжгүй.</p>}
-    {!canRequest && email && !closed && permsLoaded && <p className="text-xs text-slate-600">Танд материал хүсэх эрх байхгүй.</p>}
-    {activeLink && <p className="rounded-lg bg-sky-50 p-2 text-xs text-sky-900">Идэвхтэй холбоос {dt(activeLink.expiresAt)} хүртэл хүчинтэй ({(activeLink.items || []).map(item => item.label).join(', ')}).</p>}
+    {!email && <p className="rounded-lg bg-[#F3CB55]/10 p-2 text-xs text-[#F7DC8A]">Харилцагчийн имэйл бүртгэлгүй тул материал хүсэх боломжгүй.</p>}
+    {closed && email && <p className="text-xs text-[#AEB9CC]">Шийдвэрлэсэн хүсэлтэд материал хүсэх боломжгүй.</p>}
+    {!canRequest && email && !closed && permsLoaded && <p className="text-xs text-[#AEB9CC]">Танд материал хүсэх эрх байхгүй.</p>}
+    {activeLink && <p className="rounded-lg bg-[#4CC6FF]/10 p-2 text-xs text-[#A6E6FF]">Идэвхтэй холбоос {dt(activeLink.expiresAt)} хүртэл хүчинтэй ({(activeLink.items || []).map(item => item.label).join(', ')}).</p>}
     {canRequest && email && !closed && <fieldset disabled={busy} className="space-y-2">
-      <legend className="mb-1 text-xs font-semibold text-slate-700">Хүсэх материал</legend>
-      {TRUST_PRESETS.map(item => <label key={item.key} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 has-[:checked]:border-[var(--drawer-ink)] has-[:checked]:bg-[color-mix(in_srgb,var(--hue)_8%,white)]"><input type="checkbox" checked={Boolean(selected[item.key])} onChange={() => toggle(item.key)} className="h-4 w-4 accent-[var(--drawer-ink)]" />{item.label}</label>)}
+      <legend className="mb-1 text-xs font-semibold text-[#C5CEDC]">Хүсэх материал</legend>
+      {TRUST_PRESETS.map(item => <label key={item.key} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-[#E6EBF3] hover:border-white/20 has-[:checked]:border-[var(--hue)] has-[:checked]:bg-[color-mix(in_srgb,var(--hue)_14%,transparent)]"><input type="checkbox" checked={Boolean(selected[item.key])} onChange={() => toggle(item.key)} className="h-4 w-4 accent-[var(--drawer-ink)]" />{item.label}</label>)}
       {extras.map((value, index) => <div key={index} className="flex items-center gap-2">
         <input aria-label={`Нэмэлт материал ${index + 1}`} maxLength={120} value={value} onChange={event => setExtras(previous => previous.map((item, position) => (position === index ? event.target.value : item)))} placeholder="Материалын нэр" className={`${BOX} flex-1`} />
-        <button type="button" aria-label="Устгах" onClick={() => setExtras(previous => previous.filter((_, position) => position !== index))} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"><X size={16} aria-hidden="true" /></button>
+        <button type="button" aria-label="Устгах" onClick={() => setExtras(previous => previous.filter((_, position) => position !== index))} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/[0.04] text-[#C5CEDC] hover:bg-white/[0.08]"><X size={16} aria-hidden="true" /></button>
       </div>)}
-      {extras.length < MAX_EXTRA && <button type="button" onClick={() => setExtras(previous => [...previous, ''])} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-dashed border-slate-400 px-3 text-sm font-semibold text-slate-800 hover:bg-white"><Plus size={16} aria-hidden="true" />Өөр материал нэмэх</button>}
-      <label className="block text-xs font-semibold text-slate-700">Тайлбар (заавал биш)<textarea rows={3} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} className={`${BOX} mt-1`} /></label>
+      {extras.length < MAX_EXTRA && <button type="button" onClick={() => setExtras(previous => [...previous, ''])} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-dashed border-white/20 px-3 text-sm font-semibold text-[#E6EBF3] hover:bg-white/[0.08]"><Plus size={16} aria-hidden="true" />Өөр материал нэмэх</button>}
+      <label className="block text-xs font-semibold text-[#C5CEDC]">Тайлбар (заавал биш)<textarea rows={3} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} className={`${BOX} mt-1`} /></label>
       <div className="flex flex-wrap items-center gap-3 pt-1">
-        <Button variant="ink" busy={busy} icon={<MailPlus size={16} aria-hidden="true" />} disabled={busy || !total} onClick={request}>Нэмэлт материал хүсэх{total ? ` (${total})` : ''}</Button>
-        <p className="text-xs text-slate-600">Холбоос {email ? `${email} хаягт` : 'харилцагчийн имэйлд'} 14 хоногийн хугацаатай илгээгдэнэ.</p>
+        <Button variant="primary" busy={busy} icon={<MailPlus size={16} aria-hidden="true" />} disabled={busy || !total} onClick={request}>Нэмэлт материал хүсэх{total ? ` (${total})` : ''}</Button>
+        <p className="text-xs text-[#AEB9CC]">Холбоос {email ? `${email} хаягт` : 'харилцагчийн имэйлд'} 14 хоногийн хугацаатай илгээгдэнэ.</p>
       </div>
     </fieldset>}
-    {notice && <p role="status" className="rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800">{notice}</p>}
-    {error && <p role="alert" className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+    {notice && <p role="status" className="rounded-lg bg-[#34D399]/10 p-2 text-sm text-[#B5F5D9]">{notice}</p>}
+    {error && <p role="alert" className="rounded-lg bg-[#FF6B86]/10 p-2 text-sm text-[#FFC9D3]">{error}</p>}
   </div>;
 }
 
@@ -153,21 +153,21 @@ export function TrustFilesSection({ apiUrl, trust }) {
     try { await openTrustFile(apiUrl, trust._id, file.ref, { download, fileName: file.fileName }); } catch (err) { setFileError(err.message); }
     finally { setFileBusy(''); }
   };
-  const fileBtn = 'inline-flex min-h-10 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-800 hover:border-[var(--drawer-ink)] disabled:opacity-50';
+  const fileBtn = 'adm-row-btn disabled:opacity-50';
 
   return <DrawerSection id="trust-docs-title" title={`Материал (${files.length})`}>
-    {files.length === 0 && <p className="text-sm text-slate-600">Харилцагч одоогоор материал оруулаагүй байна.</p>}
+    {files.length === 0 && <p className="text-sm text-[#AEB9CC]">Харилцагч одоогоор материал оруулаагүй байна.</p>}
     <div className="space-y-4">{grouped.map(group => <div key={group.key}>
-      <p className="mb-2 text-sm font-semibold text-slate-900">{group.label}</p>
-      <ul className="space-y-2">{group.files.map(file => <li key={file.ref} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 p-2.5 text-sm ring-1 ring-inset ring-slate-200/70">
-        <span className="flex min-w-0 flex-1 items-start gap-2"><FileText size={16} className="mt-0.5 shrink-0 text-slate-600" aria-hidden="true" /><span className="min-w-0"><span className="block break-all font-medium text-slate-900">{file.label || file.fileName}</span><span className="block break-all text-xs text-slate-600">{file.fileName}{sizeText(file.size) ? ` · ${sizeText(file.size)}` : ''}{file.uploadedAt ? ` · ${dt(file.uploadedAt)}` : ''}</span></span></span>
+      <p className="mb-2 text-sm font-semibold text-white">{group.label}</p>
+      <ul className="space-y-2">{group.files.map(file => <li key={file.ref} className="adm-glass-row flex flex-wrap items-center justify-between gap-2 p-2.5 text-sm">
+        <span className="flex min-w-0 flex-1 items-start gap-2"><FileText size={16} className="mt-0.5 shrink-0 text-[#AEB9CC]" aria-hidden="true" /><span className="min-w-0"><span className="block break-all font-medium text-white">{file.label || file.fileName}</span><span className="block break-all text-xs text-[#AEB9CC]">{file.fileName}{sizeText(file.size) ? ` · ${sizeText(file.size)}` : ''}{file.uploadedAt ? ` · ${dt(file.uploadedAt)}` : ''}</span></span></span>
         {file.canOpen ? <span className="flex gap-1.5">
           <button type="button" disabled={Boolean(fileBusy)} onClick={() => open(file, false)} className={fileBtn}>{fileBusy === `${file.ref}:o` ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ExternalLink size={14} aria-hidden="true" />}Нээх</button>
           <button type="button" disabled={Boolean(fileBusy)} onClick={() => open(file, true)} className={fileBtn}>{fileBusy === `${file.ref}:d` ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Download size={14} aria-hidden="true" />}Татах</button>
-        </span> : <span className="text-xs text-slate-600">Нээх боломжгүй</span>}
+        </span> : <span className="text-xs text-[#AEB9CC]">Нээх боломжгүй</span>}
       </li>)}</ul>
     </div>)}</div>
-    {fileError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-2 text-sm text-red-700">{fileError}</p>}
+    {fileError && <p role="alert" className="mt-3 rounded-lg bg-[#FF6B86]/10 p-2 text-sm text-[#FFC9D3]">{fileError}</p>}
   </DrawerSection>;
 }
 
@@ -175,7 +175,7 @@ export function TrustHistorySection({ trust }) {
   const history = Array.isArray(trust?.history) ? trust.history : [];
   const items = [...history].reverse().map((entry, index) => {
     const text = describeHistory(entry);
-    return text ? { key: `${entry.at}-${index}`, meta: `${dt(entry.at)}${entry.actor?.name ? ` · ${entry.actor.name}` : ''}`, content: <>{text}{entry.note ? <span className="mt-1 block whitespace-pre-wrap text-slate-700">{entry.note}</span> : null}</> } : null;
+    return text ? { key: `${entry.at}-${index}`, meta: `${dt(entry.at)}${entry.actor?.name ? ` · ${entry.actor.name}` : ''}`, content: <>{text}{entry.note ? <span className="mt-1 block whitespace-pre-wrap text-[#C5CEDC]">{entry.note}</span> : null}</> } : null;
   }).filter(Boolean);
   return <DrawerSection id="trust-history-title" title="Түүх"><Timeline items={items} /></DrawerSection>;
 }

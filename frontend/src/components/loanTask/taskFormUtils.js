@@ -1,4 +1,5 @@
-import { FILE_CATEGORIES, FILE_FORMATS, LIMITS, isFieldVisible, validateAnswers } from '@shared/loanWidgets';
+import { FILE_CATEGORIES, FILE_FORMATS, LIMITS, PRESET_WIDGETS, isFieldVisible, validateAnswers } from '@shared/loanWidgets';
+import { resolveFileCategory } from './fileCategory.mjs';
 
 export const MAX_FILE_BYTES = (LIMITS?.fileMaxMb || 10) * 1024 * 1024;
 export const DEFAULT_ACCEPT = ['pdf', 'jpg', 'png', 'webp'];
@@ -105,6 +106,10 @@ export const categoryOf = field => {
   if (CATEGORY_BY_KEY[key]) return CATEGORY_BY_KEY[key];
   return key.startsWith('collateral_') ? 'collateral' : 'other';
 };
+// Category for an uploaded file (staff drawer): configured field → legacy storage name (file_id, file_bank…) →
+// preset key/storage → preset label match. Fixes legacy files that previously all fell into "Бусад баримт".
+const FILE_PRESETS = (PRESET_WIDGETS || []).filter(item => item.type === 'file');
+export const categoryOfFile = (file, field) => resolveFileCategory(file, field, { presets: FILE_PRESETS, categoryOf, categories: FILE_CATEGORIES });
 // -> [{ key, label, fields }] in FILE_CATEGORIES order; empty categories are dropped.
 export const groupFileFields = fields => FILE_CATEGORIES
   .map(category => ({ ...category, fields: (fields || []).filter(field => categoryOf(field) === category.key) }))

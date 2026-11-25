@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
+const EDGE = { green: '#34D399', gold: '#F3CB55' };
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // Right-hand detail sheet shared by the loan and trust details (same structure everywhere):
@@ -30,7 +31,8 @@ export default function SideDrawer({ hue = 'green', label, eyebrow, reference, b
   }, []);
 
   return <div className="adm-drawer-overlay fixed inset-0 z-50 flex justify-end" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <aside ref={drawerRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={label} data-hue={hue} className="adm-drawer h-full w-full overflow-y-auto outline-none sm:max-w-2xl sm:rounded-l-[28px]">
+    <span className="adm-drawer-backdrop w-full sm:max-w-2xl sm:rounded-l-[28px]" style={{ '--edge': EDGE[hue] || EDGE.green }} aria-hidden="true" />
+    <aside ref={drawerRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={label} data-hue={hue} className="adm-drawer relative h-full w-full overflow-y-auto outline-none sm:max-w-2xl sm:rounded-l-[28px]">
       <header className="adm-drawer__head p-5 pb-5 sm:rounded-tl-[28px] sm:px-7 sm:pt-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

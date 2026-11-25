@@ -38,14 +38,14 @@ export function Reveal({ animate, children }) {
 
 const describe = (field, error) => [error ? `tf-${field.key}-error` : '', field.helpText ? `tf-${field.key}-help` : ''].filter(Boolean).join(' ') || undefined;
 
-function RegisterValue({ value }) {
+function RegisterValue({ value, dark = false }) {
   const [shown, setShown] = useState(false);
-  return <span className="inline-flex items-center gap-2"><span className="font-mono">{shown ? value : maskRegister(value)}</span><button type="button" onClick={() => setShown(v => !v)} className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs text-slate-600 hover:bg-slate-100" aria-pressed={shown}>{shown ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}{shown ? 'Нуух' : 'Харах'}</button></span>;
+  return <span className="inline-flex items-center gap-2"><span className="font-mono">{shown ? value : maskRegister(value)}</span><button type="button" onClick={() => setShown(v => !v)} className={`inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs ${dark ? 'text-[#AEB9CC] hover:bg-white/[0.08]' : 'text-slate-600 hover:bg-slate-100'}`} aria-pressed={shown}>{shown ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}{shown ? 'Нуух' : 'Харах'}</button></span>;
 }
 
-function Display({ field, value }) {
-  if (value == null || value === '' || (Array.isArray(value) && !value.length)) return <span className="text-slate-400">—</span>;
-  if (field.widget === 'register_number') return <RegisterValue value={value} />;
+function Display({ field, value, dark = false }) {
+  if (value == null || value === '' || (Array.isArray(value) && !value.length)) return <span className={dark ? 'text-[#8E9AB0]' : 'text-slate-400'}>—</span>;
+  if (field.widget === 'register_number') return <RegisterValue value={value} dark={dark} />;
   if (field.widget === 'full_name' && typeof value === 'object') return <>{[value.lastName, value.firstName].filter(Boolean).join(' ')}</>;
   if (field.widget === 'other_loans' && typeof value === 'object') {
     if (!value.hasActiveLoans) return <>Үгүй</>;
@@ -86,9 +86,11 @@ function OtherLoans({ field, value, onChange, error, disabled }) {
   </Shell>;
 }
 
-export default function TaskField({ field, value, onChange, error, disabled = false, mode = 'edit', files = [], onAddFiles, onRemoveFile }) {
+// tone="dark" only affects mode="readonly" (admin detail drawer); the public form styling is unchanged.
+export default function TaskField({ field, value, onChange, error, disabled = false, mode = 'edit', files = [], onAddFiles, onRemoveFile, tone = 'light' }) {
   if (mode === 'readonly') {
-    return <div className="text-sm"><dt className="mb-1 text-xs font-semibold text-slate-500">{field.label}</dt><dd className="text-slate-800"><Display field={field} value={value} /></dd></div>;
+    const dark = tone === 'dark';
+    return <div className="text-sm"><dt className={`mb-1 text-xs font-semibold ${dark ? 'text-[#AEB9CC]' : 'text-slate-500'}`}>{field.label}</dt><dd className={dark ? 'text-[#F4F7FB]' : 'text-slate-800'}><Display field={field} value={value} dark={dark} /></dd></div>;
   }
   const id = `tf-${field.key}`;
   const common = { id, name: field.key, disabled, 'aria-invalid': Boolean(error), 'aria-describedby': describe(field, error), 'aria-required': field.required || undefined, className: INPUT };
