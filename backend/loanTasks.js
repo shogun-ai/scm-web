@@ -1082,6 +1082,11 @@ export function registerLoanTaskRoutes({
         const context = { reference: loan.applicationReference || '', productName: productNameOf(loan), subProductName: loan.taskForm?.subProductName || '' };
         deliver(id, async () => ({ to: await staffEmail(newAssignee.userId), reference: context.reference, ...emails.staffAssignment({ ...context, adminUrl: adminUrl() }) }));
       }
+      // Rejection always notifies the applicant with the required reason; resolved sends nothing.
+      if (action.type === 'status' && action.to === 'rejected' && action.from !== 'rejected' && loan.email) {
+        const reference = loan.applicationReference || '';
+        deliver(id, async () => ({ to: loan.email, reference, replyTo: await staffEmail(updated.assignee?.userId), ...emails.applicantRejection({ reference, productName: productNameOf(loan), subProductName: loan.taskForm?.subProductName || '', reason: action.note, companyPhone: await companyPhone() }) }));
+      }
     } catch (error) { fail(res, error); }
   });
 

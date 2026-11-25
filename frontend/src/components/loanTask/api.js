@@ -32,6 +32,8 @@ export const submitUploadFiles = (apiUrl, token, formData, onUploadProgress, kin
 // ---- admin / staff ----
 export const fetchAdminConfigs = apiUrl => data(axios.get(`${base(apiUrl)}/admin/configs`, auth()));
 export const saveAdminConfig = (apiUrl, productKey, config) => data(axios.put(`${base(apiUrl)}/admin/configs/${encodeURIComponent(productKey)}`, config, auth()));
+export const fetchRejectionReasons = apiUrl => data(axios.get(`${apiUrl || API_URL}/api/loan-rejection-reasons`, auth()));
+export const saveRejectionReasons = (apiUrl, reasons) => data(axios.put(`${apiUrl || API_URL}/api/loan-rejection-reasons`, { reasons }, auth()));
 export const fetchAssignees = apiUrl => data(axios.get(`${apiUrl || API_URL}/api/loan-requests/assignees`, auth()));
 export const fetchTaskList = (apiUrl, params) => data(axios.get(base(apiUrl), { ...auth(), params }));
 export const fetchTaskSummary = (apiUrl, params) => data(axios.get(`${base(apiUrl)}/summary`, { ...auth(), params }));

@@ -98,3 +98,24 @@ export function applicantMessage({ reference, message, companyPhone } = {}) {
     ]),
   };
 }
+
+// Rejection notice to the applicant. The staff-written reason is required and is the only free text included.
+// Resolved (approved) outcomes intentionally send nothing: staff contact the applicant directly.
+export function applicantRejection({ reference, productName, subProductName, reason, companyPhone } = {}) {
+  const ref = clean(reference);
+  const lines = String(reason ?? '').split(/\r?\n/).map(clean).filter(Boolean).slice(0, 40);
+  return {
+    template: 'applicant_rejection',
+    subject: `Таны зээлийн хүсэлтийн хариу — ${ref}`,
+    ...layout([
+      'Сайн байна уу,',
+      `Таны ${ref} дугаартай зээлийн хүсэлтийг (${productLine(productName, subProductName)}) хянан үзээд энэ удаад зөвшөөрөх боломжгүй гэж шийдвэрлэлээ.`,
+      '',
+      'Шалтгаан:',
+      ...lines,
+      '',
+      'Нөхцөл байдал өөрчлөгдвөл дахин хүсэлт гаргах боломжтой.',
+      ...footer(companyPhone),
+    ]),
+  };
+}

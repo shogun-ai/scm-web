@@ -104,25 +104,34 @@ export function staffTrustUpload({ reference, count, adminUrl } = {}) {
 }
 
 // D24 daily reminder: per staff member the open requests assigned to them. No applicant names, phones, amounts or documents.
-// items: [{ reference, productName, statusLabel, assignedDays, changedDays }] (loans); trustItems: same without productName.
-export function dailyDigest({ items = [], total, trustItems = [], trustTotal, adminUrl, dateLabel } = {}) {
+// items: [{ reference, productName, statusLabel, assignedDays, changedDays, stale }] (loans); trustItems: same without productName.
+// Stale items (no change for `staleDays`+ days) are marked and summarised on top; admins also get unassigned requests.
+export function dailyDigest({ items = [], total, trustItems = [], trustTotal, adminUrl, dateLabel, staleDays = 2, unassignedItems = [], unassignedTrustItems = [] } = {}) {
   const list = (Array.isArray(items) ? items : []).slice(0, 50);
   const trusts = (Array.isArray(trustItems) ? trustItems : []).slice(0, 50);
+  const freeLoans = (Array.isArray(unassignedItems) ? unassignedItems : []).slice(0, 50);
+  const freeTrusts = (Array.isArray(unassignedTrustItems) ? unassignedTrustItems : []).slice(0, 50);
   const count = Number.isInteger(total) ? total : list.length;
   const trustCount = Number.isInteger(trustTotal) ? trustTotal : trusts.length;
   const days = value => (Number.isInteger(value) && value >= 0 ? `${value} хоног` : '—');
-  const line = (item, fallback) => `• ${clean(item.reference)} — ${clean(item.productName) || fallback} — ${clean(item.statusLabel)} (хуваарилагдсанаас ${days(item.assignedDays)}, сүүлд өөрчилсөнөөс ${days(item.changedDays)})`;
+  const line = (item, fallback) => `${item.stale ? '⚠ ' : '• '}${clean(item.reference)} — ${clean(item.productName) || fallback} — ${clean(item.statusLabel)} (хуваарилагдсанаас ${days(item.assignedDays)}, сүүлд өөрчилсөнөөс ${days(item.changedDays)})`;
+  const freeLine = (item, fallback) => `⚠ ${clean(item.reference)} — ${clean(item.productName) || fallback} — ${clean(item.statusLabel)} (ирснээс ${days(item.waitingDays)}, хариуцагчгүй)`;
   const loanRest = count - list.length;
   const trustRest = trustCount - trusts.length;
   const open = count + trustCount;
+  const stale = [...list, ...trusts].filter(item => item.stale).length;
+  const free = freeLoans.length + freeTrusts.length;
+  const subjectParts = [`${open} нээлттэй хүсэлт`, ...(stale ? [`${stale} хугацаа хэтэрсэн`] : []), ...(free ? [`${free} хуваарилаагүй`] : [])];
   return {
     template: 'daily_digest',
-    subject: `Өдөр тутмын сануулга — ${open} нээлттэй хүсэлт`,
+    subject: `Өдөр тутмын сануулга — ${subjectParts.join(', ')}`,
     ...layout([
       'Сайн байна уу,',
       open > 0 ? `${clean(dateLabel)} байдлаар танд хуваарилагдсан шийдвэрлэгдээгүй хүсэлтүүд:` : 'Танд хуваарилагдсан нээлттэй хүсэлт одоогоор алга.',
+      ...(stale ? ['', `⚠ Анхаарах: ${stale} хүсэлт ${staleDays}+ хоног хөдөлгөөнгүй байна. Эдгээрийг эхэлж шийдвэрлэнэ үү (жагсаалтын эхэнд ⚠ тэмдэгтэй).`] : []),
       ...(count > 0 ? ['', `Зээлийн хүсэлт (${count}):`, ...list.map(item => line(item, 'Зээл')), ...(loanRest > 0 ? [`… болон өөр ${loanRest} хүсэлт.`] : [])] : []),
       ...(trustCount > 0 ? ['', `Итгэлцлийн хүсэлт (${trustCount}):`, ...trusts.map(item => line(item, 'Итгэлцэл')), ...(trustRest > 0 ? [`… болон өөр ${trustRest} хүсэлт.`] : [])] : []),
+      ...(free ? ['', `Хуваарилаагүй, ${staleDays}+ хоног хүлээж буй хүсэлт (${free}):`, ...freeLoans.map(item => freeLine(item, 'Зээл')), ...freeTrusts.map(item => freeLine(item, 'Итгэлцэл'))] : []),
     ], { link: clean(adminUrl), linkLabel: 'Админ хэсэгт нээх' }),
   };
 }

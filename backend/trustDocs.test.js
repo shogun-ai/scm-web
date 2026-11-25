@@ -544,9 +544,34 @@ test('daily digest is idempotent per UB day: a second run (even concurrent) send
   assert.deepEqual(again, { status: 'skipped', reason: 'already_ran' });
   assert.equal(h.calls.sent.length, 1);
   // next UB day runs again
-  const tomorrow = createDailyDigest({ User: h.User, LoanRequest: { find: () => chain([loanOf(1, SARAA._id)]) }, TrustRequest: { find: () => chain([]) }, SiteConfig: h.SiteConfig, mailer: h.mailer, now: () => new Date(NOW.getTime() + 24 * 3600 * 1000), logger: { info() {}, error() {} } });
+  const tomorrow = createDailyDigest({ User: h.User, LoanRequest: { find: query => chain(query['assignee.userId']?.$in?.includes('') ? [] : [loanOf(1, SARAA._id)]) }, TrustRequest: { find: () => chain([]) }, SiteConfig: h.SiteConfig, mailer: h.mailer, now: () => new Date(NOW.getTime() + 24 * 3600 * 1000), logger: { info() {}, error() {} } });
   assert.equal((await tomorrow.run()).status, 'done');
   assert.equal(h.calls.sent.length, 2);
+});
+
+test('daily digest flags 2+ day idle requests first and gives admins the unassigned backlog', async () => {
+  const h = harness({
+    loans: [
+      loanOf(1, SARAA._id, { taskUpdatedAt: new Date('2026-11-23T12:00:00Z') }),
+      loanOf(2, SARAA._id),
+      loanOf(6, '', { assignee: { userId: '', name: '' }, taskStatus: 'new', createdAt: new Date('2026-11-20T00:00:00Z') }),
+      loanOf(7, '', { assignee: { userId: '', name: '' }, taskStatus: 'new', createdAt: new Date('2026-11-24T00:00:00Z'), taskUpdatedAt: new Date('2026-11-24T00:00:00Z') }),
+    ],
+    trusts: [trustOf(4, undefined, { assignee: { userId: '', name: '' }, createdAt: new Date('2026-11-19T00:00:00Z') })],
+  });
+  await h.digest.run();
+  const saraa = h.calls.sent.find(mail => mail.to === 'saraa.notify@scm.mn');
+  assert.match(saraa.subject, /2 нээлттэй хүсэлт, 1 хугацаа хэтэрсэн/);
+  assert.match(saraa.text, /Анхаарах: 1 хүсэлт 2\+ хоног хөдөлгөөнгүй/);
+  assert.ok(saraa.text.indexOf('⚠ SCM-2026-000002') > -1 && saraa.text.indexOf('⚠ SCM-2026-000002') < saraa.text.indexOf('• SCM-2026-000001'), 'stale listed first');
+  assert.equal(saraa.text.includes('SCM-2026-000006'), false, 'staff do not get the unassigned backlog');
+  const admin = h.calls.sent.find(mail => mail.to === 'admin.notify@scm.mn');
+  assert.ok(admin, 'admin gets a digest for the unassigned backlog even with nothing assigned');
+  assert.match(admin.subject, /2 хуваарилаагүй/);
+  assert.ok(admin.text.includes('⚠ SCM-2026-000006') && admin.text.includes('TRUST-2026-000004'));
+  assert.equal(admin.text.includes('SCM-2026-000007'), false, 'unassigned for less than 2 days is not listed');
+  assert.equal(h.calls.sent.some(mail => mail.to === 'director@scm.mn'), false, 'non-admin without own items gets nothing');
+  for (const pii of ['Нууц', '99887766', '7777777']) assert.equal(JSON.stringify(h.calls.sent).includes(pii), false, pii);
 });
 
 test('daily digest skips inactive staff, staff without email, staff with nothing open; respects the flag and MAIL_ENABLED', async () => {

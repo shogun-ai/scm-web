@@ -47,6 +47,7 @@ import { applyLoanTaskSchema, registerLoanTaskRoutes, legacyLoanPostGone, taskLo
 import { createMailer, isValidEmailAddress } from './mailer.js';
 import { createTrustDocService, registerTrustDocRoutes } from './trustDocs.js';
 import { readAssignmentSettings } from './assignmentSettings.js';
+import { registerRejectionReasonRoutes } from './rejectionReasons.js';
 import { createDailyDigest, DIGEST_CRON, DIGEST_TIMEZONE } from './dailyDigest.js';
 import { registerAccountRoutes, readDeleteFlag, recordLoginEvent, normalizePixelId, META_PIXEL_KEY } from './accountRoutes.js';
 import { createPermissionService, registerPermissionRoutes, parseMatrix } from './permissions.js';
@@ -2974,6 +2975,8 @@ const loanTasks = registerLoanTaskRoutes({
     automate: runPostSubmissionAutomationInBackground,
     getCompanyPhone: async () => { const doc = await SiteConfig.findOne({ key: 'contact_phone' }).lean(); return typeof doc?.value === 'string' ? doc.value : ''; },
 });
+
+registerRejectionReasonRoutes({ app, SiteConfig, authenticateUser, requireAdmin, createLog, getPermissions: user => permissionService.permissionsFor(user) });
 
 registerDashboardStatsRoute({ app, LoanRequest, TrustRequest, authenticateUser, getPermissions: user => permissionService.permissionsFor(user) });
 

@@ -1171,3 +1171,23 @@ test('D25 loan auto-assignment: product-level default assignee keeps precedence;
   await broken.api.createMessengerTask(MSG_INPUT);
   assert.equal(broken.records[0].assignee, undefined, 'settings read failure never blocks a submission');
 });
+
+test('rejection emails the applicant with the reason; resolved sends nothing', async () => {
+  let h = harness({ loans: [legacyLoan({ status: 'studying', email: 'bold@example.mn' })] });
+  let response = await h.invoke('post', '/api/loan-tasks/:id/actions', { params: { id: LOAN_ID }, body: { type: 'status', to: 'rejected', note: 'Орлогын баримт хангалтгүй\nДахин хандах боломжтой', expectedRevision: 0 } });
+  assert.equal(response.code, 200);
+  await h.flush();
+  const mail = h.calls.sent.find(message => message.template === 'applicant_rejection');
+  assert.ok(mail, 'rejection email sent');
+  assert.equal(mail.to, 'bold@example.mn');
+  assert.ok(mail.subject.includes('SCM-2025-AAAAAA'));
+  assert.ok(mail.text.includes('Орлогын баримт хангалтгүй') && mail.text.includes('Дахин хандах боломжтой'));
+  for (const pii of ['УБ90050112', 'Болд', '1000']) assert.equal(mail.text.includes(pii), false, pii);
+  assert.equal(h.store[0].taskHistory.at(-1).type, 'email');
+
+  h = harness({ loans: [legacyLoan({ status: 'studying', email: 'bold@example.mn' })] });
+  response = await h.invoke('post', '/api/loan-tasks/:id/actions', { params: { id: LOAN_ID }, body: { type: 'status', to: 'resolved', outcome: { code: 'disbursed' }, note: 'Олгосон', expectedRevision: 0 } });
+  assert.equal(response.code, 200);
+  await h.flush();
+  assert.equal(h.calls.sent.length, 0, 'resolved sends no applicant email');
+});

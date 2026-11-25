@@ -7,7 +7,7 @@ import TaskStatusBadge from './TaskStatusBadge';
 import ChannelBadge from './ChannelBadge';
 import ConfirmDeleteDialog from '../admin/ConfirmDeleteDialog';
 import SideDrawer from '../admin/ui/SideDrawer';
-import { deleteLoanRequest, errorMessage, fetchTaskDetail, openLoanFile, postDocRequest, postTaskAction, postTaskFiles, postTaskMessage } from './api';
+import { deleteLoanRequest, errorMessage, fetchRejectionReasons, fetchTaskDetail, openLoanFile, postDocRequest, postTaskAction, postTaskFiles, postTaskMessage } from './api';
 import { FILE_CATEGORIES, categoryOf, categoryOfFile, formatMoney, isFileField, isVisible, maskRegister } from './taskFormUtils';
 
 const BOX = 'adm-field py-2 disabled:opacity-60';
@@ -54,6 +54,21 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
   const [deleteError, setDeleteError] = useState('');
   const [fileBusy, setFileBusy] = useState('');
   const [fileError, setFileError] = useState('');
+  // Татгалзах шалтгааны загвар: төлөв 'rejected' сонгогдоход нэг удаа ачаална; алдаа гарвал chip нуугдана.
+  const [reasons, setReasons] = useState(null);
+  useEffect(() => {
+    if (statusTo !== 'rejected' || reasons !== null) return undefined;
+    let alive = true;
+    fetchRejectionReasons(apiUrl)
+      .then(result => { if (alive) setReasons(Array.isArray(result?.reasons) ? result.reasons.filter(item => item && typeof item.text === 'string' && item.text) : []); })
+      .catch(() => { if (alive) setReasons([]); });
+    return () => { alive = false; };
+  }, [statusTo, reasons, apiUrl]);
+  const insertReason = text => setStatusNote(current => {
+    if (current.includes(text)) return current;
+    const joined = current.trim() ? `${current.replace(/\s+$/, '')}\n${text}` : text;
+    return joined.slice(0, 2000);
+  });
   const openFile = async (file, download = false) => {
     setFileBusy(file.ref); setFileError('');
     try { await openLoanFile(apiUrl, id, file.ref, { download, fileName: file.fileName }); }
@@ -230,7 +245,8 @@ export default function LoanTaskDetail({ apiUrl, id, assignees = [], onClose, on
           {panel === 'status' && <div className="space-y-5">
             {statusChoices.length > 0 && <div className="space-y-2"><label className="block text-xs font-semibold text-[#AEB9CC]">Төлөв солих<select className={`${BOX} mt-1 min-h-11 w-full`} value={statusTo} disabled={busy} onChange={event => setStatusTo(event.target.value)}><option value="">Сонгох</option>{statusChoices.map(code => <option key={code} value={code}>{TASK_STATUS_LABELS[code] || code}</option>)}</select></label>
               {statusTo === 'resolved' && <label className="block text-xs font-semibold text-[#AEB9CC]">Үр дүн <span className="text-[#FFB8C5]" aria-hidden="true">*</span><select className={`${BOX} mt-1 min-h-11 w-full`} value={outcome} onChange={event => setOutcome(event.target.value)}><option value="">Сонгох</option>{TASK_OUTCOMES.map(code => <option key={code} value={code}>{TASK_OUTCOME_LABELS[code]}</option>)}</select></label>}
-              {(statusTo === 'rejected' || statusTo === 'resolved') && <label className="block text-xs font-semibold text-[#AEB9CC]">{statusTo === 'rejected' ? 'Татгалзсан шалтгаан' : 'Тайлбар'} <span className="text-[#FFB8C5]" aria-hidden="true">*</span><textarea className={`${BOX} mt-1 w-full`} rows={3} maxLength={2000} value={statusNote} onChange={event => setStatusNote(event.target.value)} /></label>}
+              {statusTo === 'rejected' && Array.isArray(reasons) && reasons.length > 0 && <div role="group" aria-label="Татгалзах шалтгааны загвар" className="space-y-1.5"><p className="text-xs font-semibold text-[#AEB9CC]">Загвар сонгох</p><div className="flex flex-wrap gap-1.5">{reasons.map(reason => { const active = statusNote.includes(reason.text); return <button key={reason.id} type="button" aria-pressed={active} disabled={busy} title={reason.text} onClick={() => insertReason(reason.text)} className={`${BTN_LIGHT} disabled:opacity-50 ${active ? 'ring-1 ring-[#4CC6FF]/60 text-[#A6E6FF]' : ''}`}>{reason.title}</button>; })}</div></div>}
+              {(statusTo === 'rejected' || statusTo === 'resolved') && <label className="block text-xs font-semibold text-[#AEB9CC]">{statusTo === 'rejected' ? 'Татгалзсан шалтгаан' : 'Тайлбар'} <span className="text-[#FFB8C5]" aria-hidden="true">*</span><textarea className={`${BOX} mt-1 w-full`} rows={3} maxLength={2000} value={statusNote} onChange={event => setStatusNote(event.target.value)} />{statusTo === 'rejected' && <span className="mt-1 block font-normal text-[#FFB8C5]">Энэ шалтгаан харилцагчийн имэйл рүү шууд илгээгдэнэ. Эелдэг, ойлгомжтой бичнэ үү.</span>}{statusTo === 'resolved' && <span className="mt-1 block font-normal text-[#8FA0B8]">Дотоод тэмдэглэл, харилцагчид имэйл очихгүй.</span>}</label>}
               {statusTo && statusTo !== 'rejected' && statusTo !== 'resolved' && <label className="block text-xs font-semibold text-[#AEB9CC]">Тайлбар (заавал биш)<textarea className={`${BOX} mt-1 w-full`} rows={2} maxLength={2000} value={statusNote} onChange={event => setStatusNote(event.target.value)} /></label>}
               <button type="button" className={BTN} disabled={busy || !statusTo} onClick={doStatus}>Төлөв хадгалах</button></div>}
             {allowed.reopen && <div className="space-y-2"><label className="block text-xs font-semibold text-[#AEB9CC]">Дахин нээх шалтгаан <span className="text-[#FFB8C5]" aria-hidden="true">*</span><textarea className={`${BOX} mt-1 w-full`} rows={2} maxLength={2000} value={reopenNote} onChange={event => setReopenNote(event.target.value)} /></label><button type="button" className={BTN} disabled={busy} onClick={doReopen}>Дахин нээх</button></div>}

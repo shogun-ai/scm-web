@@ -21,51 +21,93 @@ const daysSince = (value, at) => {
 };
 const TRUST_STATUS_LABELS = { pending: 'Шинэ', in_progress: 'Хянаж буй' };
 const OPEN_LIMIT = 5000;
+export const DEFAULT_STALE_DAYS = 2;
+// Requests with no change for `staleDays`+ days are flagged and listed first; admins also get unassigned ones.
+export const staleDaysOf = env => {
+  const value = Number.parseInt(env?.DIGEST_STALE_DAYS, 10);
+  return Number.isInteger(value) && value >= 1 && value <= 30 ? value : DEFAULT_STALE_DAYS;
+};
+const isAdminUser = user => user?.role === 'admin' || (Array.isArray(user?.roles) && user.roles.includes('admin'));
+const UNASSIGNED = { $in: ['', null] };
 
 export function createDailyDigest({
   User, LoanRequest, TrustRequest, SiteConfig, mailer, env = process.env, now = () => new Date(), logger = console, adminUrl,
 }) {
   const link = () => adminUrl || env.ADMIN_APP_URL || 'https://www.scm.mn/admin';
   const mailOn = () => Boolean(mailer?.send) && mailer.enabled !== false;
+  const staleDays = staleDaysOf(env);
   const isEnabled = async () => { try { return (await SiteConfig.findOne({ key: DIGEST_ENABLED_KEY }).lean())?.value !== false; } catch { return true; } };
+
+  const LOAN_SELECT = { applicationReference: 1, selectedProduct: 1, 'taskForm.productName': 1, status: 1, taskStatus: 1, assignee: 1, taskUpdatedAt: 1, createdAt: 1, taskHistory: { $slice: -20 } };
+  const TRUST_SELECT = { reference: 1, status: 1, assignee: 1, assignedAt: 1, createdAt: 1, history: { $slice: -1 } };
+  const loanItem = (loan, at) => {
+    const state = deriveTaskState(loan).taskStatus;
+    if (TERMINAL_TASK_STATUSES.includes(state)) return null;
+    const assigned = [...(Array.isArray(loan.taskHistory) ? loan.taskHistory : [])].reverse().find(entry => entry?.type === 'assigned')?.at || loan.createdAt;
+    const changedDays = daysSince(loan.taskUpdatedAt || loan.createdAt, at);
+    return {
+      reference: clean(loan.applicationReference), productName: clean(loan.taskForm?.productName || PRODUCTS_MAP[loan.selectedProduct] || loan.selectedProduct),
+      statusLabel: TASK_STATUS_LABELS[state] || state, assignedDays: daysSince(assigned, at), changedDays, waitingDays: daysSince(loan.createdAt, at),
+      stale: Number.isInteger(changedDays) && changedDays >= staleDays,
+    };
+  };
+  const trustItem = (trust, at) => {
+    if (TRUST_CLOSED_STATUSES.includes(String(trust.status || '').toLowerCase())) return null;
+    const status = clean(trust.status) || 'pending';
+    const changedDays = daysSince(Array.isArray(trust.history) && trust.history.length ? trust.history[trust.history.length - 1].at : trust.createdAt, at);
+    return {
+      reference: clean(trust.reference), statusLabel: TRUST_STATUS_LABELS[status] || status.slice(0, 40),
+      assignedDays: daysSince(trust.assignedAt || trust.createdAt, at), changedDays, waitingDays: daysSince(trust.createdAt, at),
+      stale: Number.isInteger(changedDays) && changedDays >= staleDays,
+    };
+  };
+  // Stale first, then the longest without any change.
+  const byUrgency = (a, b) => (Number(b.stale) - Number(a.stale)) || ((b.changedDays ?? -1) - (a.changedDays ?? -1));
+  const NONE = { loans: [], trusts: [] };
 
   // Open (non-terminal) assigned requests for the given user ids -> Map<userId, { loans, trusts }>.
   async function collect(userIds, at) {
     const map = new Map(userIds.map(id => [id, { loans: [], trusts: [] }]));
     if (!userIds.length) return map;
     const loans = await LoanRequest.find({ 'assignee.userId': { $in: userIds }, $nor: TERMINAL_TASK_STATUSES.map(status => taskStatusFilter(status)) })
-      .select({ applicationReference: 1, selectedProduct: 1, 'taskForm.productName': 1, status: 1, taskStatus: 1, assignee: 1, taskUpdatedAt: 1, createdAt: 1, taskHistory: { $slice: -20 } })
-      .limit(OPEN_LIMIT).lean();
+      .select(LOAN_SELECT).limit(OPEN_LIMIT).lean();
     for (const loan of Array.isArray(loans) ? loans : []) {
-      const state = deriveTaskState(loan).taskStatus;
       const bucket = map.get(String(loan.assignee?.userId || ''));
-      if (!bucket || TERMINAL_TASK_STATUSES.includes(state)) continue;
-      const assigned = [...(Array.isArray(loan.taskHistory) ? loan.taskHistory : [])].reverse().find(entry => entry?.type === 'assigned')?.at || loan.createdAt;
-      bucket.loans.push({
-        reference: clean(loan.applicationReference), productName: clean(loan.taskForm?.productName || PRODUCTS_MAP[loan.selectedProduct] || loan.selectedProduct),
-        statusLabel: TASK_STATUS_LABELS[state] || state, assignedDays: daysSince(assigned, at), changedDays: daysSince(loan.taskUpdatedAt || loan.createdAt, at),
-      });
+      const item = bucket && loanItem(loan, at);
+      if (item) bucket.loans.push(item);
     }
     const trusts = TrustRequest ? await TrustRequest.find({ 'assignee.userId': { $in: userIds }, status: { $nin: TRUST_CLOSED_STATUSES } })
-      .select({ reference: 1, status: 1, assignee: 1, assignedAt: 1, createdAt: 1, history: { $slice: -1 } }).limit(OPEN_LIMIT).lean() : [];
+      .select(TRUST_SELECT).limit(OPEN_LIMIT).lean() : [];
     for (const trust of Array.isArray(trusts) ? trusts : []) {
       const bucket = map.get(String(trust.assignee?.userId || ''));
-      if (!bucket || TRUST_CLOSED_STATUSES.includes(String(trust.status || '').toLowerCase())) continue;
-      const status = clean(trust.status) || 'pending';
-      bucket.trusts.push({
-        reference: clean(trust.reference), statusLabel: TRUST_STATUS_LABELS[status] || status.slice(0, 40),
-        assignedDays: daysSince(trust.assignedAt || trust.createdAt, at), changedDays: daysSince(Array.isArray(trust.history) && trust.history.length ? trust.history[trust.history.length - 1].at : trust.createdAt, at),
-      });
+      const item = bucket && trustItem(trust, at);
+      if (item) bucket.trusts.push(item);
     }
-    const oldest = (a, b) => (b.assignedDays ?? -1) - (a.assignedDays ?? -1);
-    for (const bucket of map.values()) { bucket.loans.sort(oldest); bucket.trusts.sort(oldest); }
+    for (const bucket of map.values()) { bucket.loans.sort(byUrgency); bucket.trusts.sort(byUrgency); }
     return map;
   }
 
-  const buildMessage = (to, bucket, at) => ({
+  // Open requests nobody owns that have waited `staleDays`+ days since creation (admins only).
+  async function collectUnassigned(at) {
+    const old = item => item && Number.isInteger(item.waitingDays) && item.waitingDays >= staleDays;
+    const oldest = (a, b) => (b.waitingDays ?? -1) - (a.waitingDays ?? -1);
+    const loans = await LoanRequest.find({ 'assignee.userId': UNASSIGNED, $nor: TERMINAL_TASK_STATUSES.map(status => taskStatusFilter(status)) })
+      .select(LOAN_SELECT).limit(OPEN_LIMIT).lean();
+    const trusts = TrustRequest ? await TrustRequest.find({ 'assignee.userId': UNASSIGNED, status: { $nin: TRUST_CLOSED_STATUSES } }).select(TRUST_SELECT).limit(OPEN_LIMIT).lean() : [];
+    return {
+      loans: (Array.isArray(loans) ? loans : []).map(loan => loanItem(loan, at)).filter(old).sort(oldest),
+      trusts: (Array.isArray(trusts) ? trusts : []).map(trust => trustItem(trust, at)).filter(old).sort(oldest),
+    };
+  }
+
+  const buildMessage = (to, bucket, at, unassigned = NONE) => ({
     to,
-    ...emails.dailyDigest({ items: bucket.loans, total: bucket.loans.length, trustItems: bucket.trusts, trustTotal: bucket.trusts.length, adminUrl: link(), dateLabel: ubDate(at) }),
+    ...emails.dailyDigest({
+      items: bucket.loans, total: bucket.loans.length, trustItems: bucket.trusts, trustTotal: bucket.trusts.length, adminUrl: link(), dateLabel: ubDate(at), staleDays,
+      unassignedItems: unassigned.loans, unassignedTrustItems: unassigned.trusts,
+    }),
   });
+  const hasAny = (bucket, unassigned) => Boolean(bucket.loans.length || bucket.trusts.length || unassigned.loans.length || unassigned.trusts.length);
 
   // Atomic once-per-UB-day claim: the marker row is created if missing, then switched to today only if it is not already today.
   async function claim(today, at) {
@@ -80,16 +122,18 @@ export function createDailyDigest({
     if (!(await isEnabled())) return { status: 'skipped', reason: 'disabled' };
     const at = now();
     if (!(await claim(ubDate(at), at))) return { status: 'skipped', reason: 'already_ran' };
-    const users = await User.find({ isActive: { $ne: false } }).select('_id name email notificationEmail isActive').limit(1000).lean();
-    const recipients = (Array.isArray(users) ? users : []).filter(user => user.isActive !== false).map(user => ({ id: String(user._id), to: notifyEmailOf(user) })).filter(item => isValidEmailAddress(item.to));
+    const users = await User.find({ isActive: { $ne: false } }).select('_id name email notificationEmail isActive role roles').limit(1000).lean();
+    const recipients = (Array.isArray(users) ? users : []).filter(user => user.isActive !== false).map(user => ({ id: String(user._id), to: notifyEmailOf(user), admin: isAdminUser(user) })).filter(item => isValidEmailAddress(item.to));
     const data = await collect(recipients.map(item => item.id), at);
+    const unassigned = recipients.some(item => item.admin) ? await collectUnassigned(at) : NONE;
     let sent = 0; let failed = 0; let staff = 0;
-    for (const { id, to } of recipients) {
-      const bucket = data.get(id);
-      if (!bucket || (!bucket.loans.length && !bucket.trusts.length)) continue;
+    for (const { id, to, admin } of recipients) {
+      const bucket = data.get(id) || NONE;
+      const extra = admin ? unassigned : NONE;
+      if (!hasAny(bucket, extra)) continue;
       staff += 1;
       try {
-        const outcome = await mailer.send({ ...buildMessage(to, bucket, at), reference: 'digest' });
+        const outcome = await mailer.send({ ...buildMessage(to, bucket, at, extra), reference: 'digest' });
         if (outcome?.result === 'sent') sent += 1; else failed += 1;
       } catch { failed += 1; }
     }
@@ -104,10 +148,11 @@ export function createDailyDigest({
     if (!isValidEmailAddress(to)) return { result: 'skipped', reason: 'no_email' };
     const at = now();
     const id = String(user._id);
-    const bucket = (await collect([id], at)).get(id) || { loans: [], trusts: [] };
-    const outcome = await mailer.send({ ...buildMessage(to, bucket, at), reference: 'digest-test' });
-    return { result: outcome?.result || 'failed', sentTo: emails.maskEmail(to), loans: bucket.loans.length, trusts: bucket.trusts.length };
+    const bucket = (await collect([id], at)).get(id) || NONE;
+    const extra = isAdminUser(user) ? await collectUnassigned(at) : NONE;
+    const outcome = await mailer.send({ ...buildMessage(to, bucket, at, extra), reference: 'digest-test' });
+    return { result: outcome?.result || 'failed', sentTo: emails.maskEmail(to), loans: bucket.loans.length, trusts: bucket.trusts.length, unassigned: extra.loans.length + extra.trusts.length };
   }
 
-  return { run, sendTest, collect, isEnabled };
+  return { run, sendTest, collect, collectUnassigned, isEnabled, staleDays };
 }
