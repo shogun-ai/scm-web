@@ -42,6 +42,7 @@ import LoanFormConfig from './models/LoanFormConfig.js';
 import { createBotContentSource, registerBotRoutes } from './botEngine.js';
 import { createScmMessenger, registerScmMessengerRoutes, createMongoSessionStore, createSharedWebhookForwarder } from './scmMessenger.js';
 import { registerLoanFileRoutes } from './loanFiles.js';
+import { registerDashboardStatsRoute } from './dashboardStats.js';
 import { applyLoanTaskSchema, registerLoanTaskRoutes, legacyLoanPostGone, taskLockBlocks, sanitizeLegacyLoanWrite } from './loanTasks.js';
 import { createMailer, isValidEmailAddress } from './mailer.js';
 import { createTrustDocService, registerTrustDocRoutes } from './trustDocs.js';
@@ -2973,6 +2974,8 @@ const loanTasks = registerLoanTaskRoutes({
     automate: runPostSubmissionAutomationInBackground,
     getCompanyPhone: async () => { const doc = await SiteConfig.findOne({ key: 'contact_phone' }).lean(); return typeof doc?.value === 'string' ? doc.value : ''; },
 });
+
+registerDashboardStatsRoute({ app, LoanRequest, TrustRequest, authenticateUser, getPermissions: user => permissionService.permissionsFor(user) });
 
 // D22: authenticated proxy that opens private loan files with the real Content-Type and file name.
 registerLoanFileRoutes({ app, authenticateUser, LoanRequest, cloudinary, http: axios, createLog, getPermissions: user => permissionService.permissionsFor(user) });

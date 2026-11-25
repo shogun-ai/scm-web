@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dailySeries, weekDelta, productMix, resolutionRate, recentActivity, niceMax, monotonePath, greeting } from './dashboardData.js';
+import { dailySeries, weekDelta, productMix, resolutionRate, recentActivity, niceMax, monotonePath, greeting, statsDate, statsSeries, sumCounts, isUsableStats, statsProductMix, statsChannels, loanKpis, seriesDelta } from './dashboardData.js';
 
 const now = new Date(2026, 10, 24, 15, 0, 0);
 const at = (daysAgo, hour = 10) => new Date(2026, 10, 24 - daysAgo, hour).toISOString();
@@ -51,4 +51,40 @@ test('greeting by hour', () => {
   assert.equal(greeting(new Date(2026, 0, 1, 9)), 'Өглөөний мэнд');
   assert.equal(greeting(new Date(2026, 0, 1, 14)), 'Өдрийн мэнд');
   assert.equal(greeting(new Date(2026, 0, 1, 21)), 'Оройн мэнд');
+});
+
+test('statsSeries aligns dates and rejects malformed input', () => {
+  const series = statsSeries([{ date: '2026-11-24', count: 2 }, { date: '2026-11-25', count: '3' }]);
+  assert.deepEqual(series.values, [2, 3]);
+  assert.equal(series.dates[1].getDate(), 25);
+  assert.equal(series.dates[1].getMonth(), 10);
+  assert.equal(statsSeries([{ date: 'x', count: 1 }]), null);
+  assert.equal(statsSeries(null), null);
+  assert.ok(Number.isNaN(statsDate('nope').getTime()));
+  assert.equal(sumCounts([{ count: 2 }, { count: 'a' }, { count: 4 }]), 6);
+});
+
+test('isUsableStats needs loans or trusts object', () => {
+  assert.equal(isUsableStats(null), false);
+  assert.equal(isUsableStats({ loans: null, trusts: null }), false);
+  assert.equal(isUsableStats({ loans: null, trusts: { total: 1 } }), true);
+  assert.equal(isUsableStats([]), false);
+});
+
+test('statsProductMix prefers CMS names, drops empty, sorts desc', () => {
+  const mix = statsProductMix([{ productKey: 'a', name: 'Raw', count: 2 }, { productKey: 'other', name: 'Бусад', count: 5 }, { productKey: 'b', name: 'B', count: 0 }, { productKey: 'c', name: 'C', count: 2 }], { a: 'Нэр A' });
+  assert.deepEqual(mix.map(row => [row.key, row.label, row.value]), [['other', 'Бусад', 5], ['c', 'C', 2], ['a', 'Нэр A', 2]]);
+  assert.deepEqual(statsProductMix(undefined), []);
+});
+
+test('statsChannels and loanKpis tolerate missing fields', () => {
+  assert.deepEqual(statsChannels({ web: 3, messenger: 1 }).map(row => [row.key, row.label, row.value]), [['web', 'Вэб', 3], ['messenger', 'Messenger', 1], ['webchat', 'Вэб чат', 0]]);
+  assert.deepEqual(loanKpis(undefined), { total: 0, unassigned: 0, awaitingDocs: 0, resolved30: 0, overdue: 0 });
+  assert.deepEqual(loanKpis({ total: 9, unassignedCount: 2, overdueAssigned: 1, byTaskStatus: { additional_docs: 3 }, resolvedPerDay: [{ count: 1 }, { count: 2 }] }), { total: 9, unassigned: 2, awaitingDocs: 3, resolved30: 3, overdue: 1 });
+});
+
+test('seriesDelta compares last 7 to previous 7', () => {
+  assert.equal(seriesDelta([1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2]), 7);
+  assert.equal(seriesDelta([3]), 3);
+  assert.equal(seriesDelta(null), 0);
 });

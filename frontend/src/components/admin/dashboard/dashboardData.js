@@ -130,3 +130,61 @@ export function greeting(now = new Date()) {
   if (hour < 18) return 'Өдрийн мэнд';
   return 'Оройн мэнд';
 }
+
+// ---------------------------------------------------------------------------
+// /api/admin/dashboard-stats adapters (task-management based numbers, no PII).
+// ---------------------------------------------------------------------------
+const num = value => (Number.isFinite(Number(value)) ? Number(value) : 0);
+const isObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+// 'YYYY-MM-DD' (Asia/Ulaanbaatar day) -> local Date at noon, safe for month/day labels in any timezone.
+export function statsDate(key) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key || ''));
+  return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12) : new Date(NaN);
+}
+
+// Per-day [{ date, count }] -> aligned dates/values. Returns null when malformed.
+export function statsSeries(perDay) {
+  if (!Array.isArray(perDay) || !perDay.length) return null;
+  const dates = perDay.map(point => statsDate(point?.date));
+  if (dates.some(date => Number.isNaN(date.getTime()))) return null;
+  return { dates, values: perDay.map(point => num(point.count)) };
+}
+
+export const sumCounts = perDay => (Array.isArray(perDay) ? perDay.reduce((sum, point) => sum + num(point?.count), 0) : 0);
+
+export function isUsableStats(stats) {
+  return isObject(stats) && (isObject(stats.loans) || isObject(stats.trusts));
+}
+
+// Product donut rows from byProduct. A name known to the CMS (`names`) wins over the backend one.
+export function statsProductMix(byProduct, names = {}) {
+  return (Array.isArray(byProduct) ? byProduct : [])
+    .filter(row => row && num(row.count) > 0)
+    .map(row => ({ key: String(row.productKey || 'other'), label: row.productKey === 'other' ? 'Бусад' : (names[row.productKey] || row.name || row.productKey), value: num(row.count) }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+}
+
+export const CHANNEL_LABELS = { web: 'Вэб', messenger: 'Messenger', webchat: 'Вэб чат' };
+export function statsChannels(byChannel) {
+  return Object.keys(CHANNEL_LABELS).map(key => ({ key, label: CHANNEL_LABELS[key], value: num(byChannel?.[key]) }));
+}
+
+// KPI / attention numbers for loans from stats.loans.
+export function loanKpis(loans) {
+  const by = loans?.byTaskStatus || {};
+  return {
+    total: num(loans?.total),
+    unassigned: num(loans?.unassignedCount),
+    awaitingDocs: num(by.additional_docs),
+    resolved30: sumCounts(loans?.resolvedPerDay),
+    overdue: num(loans?.overdueAssigned),
+  };
+}
+
+// Last 7 vs previous 7 entries of a per-day values array (oldest first).
+export function seriesDelta(values) {
+  const list = Array.isArray(values) ? values.map(num) : [];
+  const sum = items => items.reduce((total, value) => total + value, 0);
+  return sum(list.slice(-7)) - sum(list.slice(-14, -7));
+}

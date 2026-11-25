@@ -35,6 +35,7 @@ export const saveAdminConfig = (apiUrl, productKey, config) => data(axios.put(`$
 export const fetchAssignees = apiUrl => data(axios.get(`${apiUrl || API_URL}/api/loan-requests/assignees`, auth()));
 export const fetchTaskList = (apiUrl, params) => data(axios.get(base(apiUrl), { ...auth(), params }));
 export const fetchTaskSummary = (apiUrl, params) => data(axios.get(`${base(apiUrl)}/summary`, { ...auth(), params }));
+export const fetchDashboardStats = apiUrl => data(axios.get(`${apiUrl || API_URL}/api/admin/dashboard-stats`, { ...auth(), timeout: 20000 }));
 export const fetchTaskDetail = (apiUrl, id) => data(axios.get(`${base(apiUrl)}/${id}`, auth()));
 export const postTaskAction = (apiUrl, id, action) => data(axios.post(`${base(apiUrl)}/${id}/actions`, action, auth()));
 export const postTaskFiles = (apiUrl, id, formData) => data(axios.post(`${base(apiUrl)}/${id}/files`, formData, auth()));
